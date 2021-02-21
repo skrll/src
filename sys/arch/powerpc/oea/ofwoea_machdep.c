@@ -1,4 +1,4 @@
-/* $NetBSD: ofwoea_machdep.c,v 1.51 2021/02/12 23:40:02 thorpej Exp $ */
+/* $NetBSD: ofwoea_machdep.c,v 1.53 2021/02/19 18:10:51 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.51 2021/02/12 23:40:02 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.53 2021/02/19 18:10:51 thorpej Exp $");
 
 #include "ksyms.h"
 #include "wsdisplay.h"
@@ -69,6 +69,7 @@ __KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.51 2021/02/12 23:40:02 thorpej 
 #include <powerpc/oea/cpufeat.h>
 #include <powerpc/include/oea/spr.h>
 #include <powerpc/ofw_cons.h>
+#include <powerpc/ofw_machdep.h>
 #include <powerpc/spr.h>
 #include <powerpc/pic/picvar.h>
 
@@ -97,19 +98,9 @@ typedef struct _rangemap {
 	int type;
 } rangemap_t;
 
-struct ofw_translations {
-	vaddr_t va;
-	int len;
-#if defined (PMAC_G5)
-	register64_t pa;
-#else
-	register_t pa;
-#endif
-	int mode;
-}__attribute__((packed));
+struct OF_translation ofw_translations[OFW_MAX_TRANSLATIONS];
 
 struct pmap ofw_pmap;
-struct ofw_translations ofmap[32];
 char bootpath[256];
 char model_name[64];
 #if NKSYMS || defined(DDB) || defined(MODULAR)
@@ -129,13 +120,11 @@ u_int timebase_freq = 0;
 int ofw_quiesce;
 
 extern int ofwmsr;
-extern int chosen;
 extern uint32_t ticks_per_sec;
 extern uint32_t ns_per_tick;
 extern uint32_t ticks_per_intr;
 
-static int save_ofmap(struct ofw_translations *, int);
-static void restore_ofmap(struct ofw_translations *, int);
+static void restore_ofmap(void);
 static void set_timebase(void);
 
 extern void cpu_spinstart(u_int);
@@ -144,7 +133,7 @@ extern volatile u_int cpu_spinstart_ack;
 void
 ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 {
-	int ofmaplen, node, l;
+	int node, l;
 	register_t scratch;
 
 #if defined(MULTIPROCESSOR) && defined(ofppc)
@@ -216,10 +205,6 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 
 	oea_init(pic_ext_intr);
 
-	ofmaplen = save_ofmap(NULL, 0);
-	if (ofmaplen > 0)
-		save_ofmap(ofmap, ofmaplen);
-
 /*
  * XXX
  * we need to do this here instead of earlier on in ofwinit() for some reason
@@ -257,6 +242,7 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 	if (oeacpufeat & OEACPU_64_BRIDGE) {
 		vaddr_t va;
 		paddr_t pa;
+		vsize_t size;
 		int i;
 
 		pmap_setup_segment0_map(0, msgbuf_paddr, msgbuf_paddr,
@@ -264,12 +250,22 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 
 		/* Map OFW code+data */
 
-		for (i = 0; i < ofmaplen / sizeof(struct ofw_translations); i++) {
-			if (ofmap[i].va < 0xff800000)
+		for (i = 0; i < __arraycount(ofw_translations); i++) {
+			va = ofw_translations[i].virt;
+			size = ofw_translations[i].size;
+			pa = ofw_translations[i].phys;
+			/* XXX mode */
+
+			if (size == 0) {
+				/* No more, all done! */
+				break;
+			}
+
+			if (va < 0xff800000)
 				continue;
 
-			for (va = ofmap[i].va, pa = ofmap[i].pa;
-			    va < ofmap[i].va + ofmap[i].len;
+
+			for (; va < (ofw_translations[i].virt + size);
 			    va += PAGE_SIZE, pa += PAGE_SIZE) {
 				pmap_enter(pmap_kernel(), va, pa, VM_PROT_ALL,
 				    VM_PROT_ALL | PMAP_WIRED);
@@ -305,7 +301,7 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 	    : "=r"(scratch)
 	    : "K"(PSL_IR|PSL_DR|PSL_ME|PSL_RI));
 
-	restore_ofmap(ofmap, ofmaplen);
+	restore_ofmap();
 
 	rascons_finalize();
 
@@ -376,33 +372,11 @@ found:
 	mtmsr(msr);
 }
 
-static int
-save_ofmap(struct ofw_translations *map, int maxlen)
-{
-	int mmui, mmu, len;
-
-	OF_getprop(chosen, "mmu", &mmui, sizeof mmui);
-	mmu = OF_instance_to_package(mmui);
-
-	if (map) {
-		memset(map, 0, maxlen); /* to be safe */
-		len = OF_getprop(mmu, "translations", map, maxlen);
-	} else
-		len = OF_getproplen(mmu, "translations");
-
-	if (len < 0)
-		len = 0;
-	return len;
-}
-
-
-/* The PMAC_G5 code here needs to be replaced by code that looks for the
-   size_cells and does the right thing automatically.
-*/
 void
-restore_ofmap(struct ofw_translations *map, int len)
+restore_ofmap(void)
 {
-	int n = len / sizeof(struct ofw_translations);
+	vaddr_t va, size;
+	paddr_t pa;
 	int i;
 
 	pmap_pinit(&ofw_pmap);
@@ -416,24 +390,26 @@ restore_ofmap(struct ofw_translations *map, int len)
 #endif
 #endif
 
-	for (i = 0; i < n; i++) {
-#if defined (PMAC_G5)
-		register64_t pa = map[i].pa;
-#else
-		register_t pa = map[i].pa;
-#endif
-		vaddr_t va = map[i].va;
-		size_t length = map[i].len;
+	for (i = 0; i < __arraycount(ofw_translations); i++) {
+		va = ofw_translations[i].virt;
+		size = ofw_translations[i].size;
+		pa = ofw_translations[i].phys;
+		/* XXX mode */
 
-		if (va < 0xf0000000) /* XXX */
+		if (size == 0) {
+			/* No more, all done! */
+			break;
+		}
+
+		if (va < 0xf0000000)	/* XXX */
 			continue;
 
-		while (length > 0) {
-			pmap_enter(&ofw_pmap, va, (paddr_t)pa, VM_PROT_ALL,
+		while (size > 0) {
+			pmap_enter(&ofw_pmap, va, pa, VM_PROT_ALL,
 			    VM_PROT_ALL|PMAP_WIRED);
 			pa += PAGE_SIZE;
 			va += PAGE_SIZE;
-			length -= PAGE_SIZE;
+			size -= PAGE_SIZE;
 		}
 	}
 	pmap_update(&ofw_pmap);

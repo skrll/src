@@ -1,4 +1,4 @@
-/*	$NetBSD: init.c,v 1.66 2021/01/31 12:44:34 rillig Exp $	*/
+/*	$NetBSD: init.c,v 1.75 2021/02/20 19:56:44 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: init.c,v 1.66 2021/01/31 12:44:34 rillig Exp $");
+__RCSID("$NetBSD: init.c,v 1.75 2021/02/20 19:56:44 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -113,9 +113,57 @@ namlist_t	*namedmem = NULL;
 static	bool	initstack_string(tnode_t *);
 
 #ifndef DEBUG
-#define DPRINTF(a)
+#define debug_printf(fmt, ...)	do { } while (false)
+#define debug_indent()		do { } while (false)
+#define debug_enter(a)		do { } while (false)
+#define debug_step(fmt, ...)	do { } while (false)
+#define debug_leave(a)		do { } while (false)
 #else
-#define DPRINTF(a) printf a
+static int debug_ind = 0;
+
+static void __printflike(1, 2)
+debug_printf(const char *fmt, ...)
+{
+	va_list va;
+
+	va_start(va, fmt);
+	vfprintf(stdout, fmt, va);
+	va_end(va);
+}
+
+static void
+debug_indent(void)
+{
+	debug_printf("%*s", 2 * debug_ind, "");
+}
+
+static void
+debug_enter(const char *func)
+{
+	printf("%*s+ %s\n", 2 * debug_ind++, "", func);
+}
+
+static void __printflike(1, 2)
+debug_step(const char *fmt, ...)
+{
+	va_list va;
+
+	printf("%*s", 2 * debug_ind, "");
+	va_start(va, fmt);
+	vfprintf(stdout, fmt, va);
+	va_end(va);
+	printf("\n");
+}
+
+static void
+debug_leave(const char *func)
+{
+	printf("%*s- %s\n", 2 * --debug_ind, "", func);
+}
+
+#define debug_enter() debug_enter(__func__)
+#define debug_leave() debug_leave(__func__)
+
 #endif
 
 void
@@ -123,7 +171,9 @@ push_member(sbuf_t *sb)
 {
 	namlist_t *nam = xcalloc(1, sizeof (namlist_t));
 	nam->n_name = sb->sb_name;
-	DPRINTF(("%s: %s %p\n", __func__, nam->n_name, nam));
+
+	debug_step("%s: '%s' %p", __func__, nam->n_name, nam);
+
 	if (namedmem == NULL) {
 		/*
 		 * XXX: Why is this a circular list?
@@ -143,7 +193,7 @@ push_member(sbuf_t *sb)
 static void
 pop_member(void)
 {
-	DPRINTF(("%s: %s %p\n", __func__, namedmem->n_name, namedmem));
+	debug_step("%s: %s %p", __func__, namedmem->n_name, namedmem);
 	if (namedmem->n_next == namedmem) {
 		free(namedmem);
 		namedmem = NULL;
@@ -156,21 +206,59 @@ pop_member(void)
 	}
 }
 
+#ifdef DEBUG
 static void
-named_member_dprint(void)
+debug_named_member(void)
 {
 	namlist_t *name;
 
 	if (namedmem == NULL)
 		return;
 	name = namedmem;
-	DPRINTF(("named member:"));
+	debug_indent();
+	debug_printf("named member:");
 	do {
-		DPRINTF((" %s", name->n_name));
+		debug_printf(" %s", name->n_name);
 		name = name->n_next;
 	} while (name != namedmem);
-	DPRINTF(("\n"));
+	debug_printf("\n");
 }
+#else
+#define debug_named_member()	do { } while (false)
+#endif
+
+#ifdef DEBUG
+static const char *
+noyes(bool cond)
+{
+	return cond ? "yes" : "no";
+}
+
+static void
+debug_initstack(void)
+{
+	if (initstk == NULL) {
+		debug_step("initstk is empty");
+		return;
+	}
+
+	size_t i = 0;
+	for (const istk_t *elem = initstk; elem != NULL; elem = elem->i_next) {
+		debug_step("initstk[%zu]:", i);
+		debug_step("  i_type      = %s", type_name(elem->i_type));
+		debug_step("  i_subt      = %s", type_name(elem->i_subt));
+		debug_step("  i_brace     = %s", noyes(elem->i_brace));
+		debug_step("  i_nolimit   = %s", noyes(elem->i_nolimit));
+		debug_step("  i_namedmem  = %s", noyes(elem->i_namedmem));
+		debug_step("  i_mem       = %s",
+		    elem->i_mem != NULL ? elem->i_mem->s_name : "(null)");
+		debug_step("  i_remaining = %d", elem->i_remaining);
+		i++;
+	}
+}
+#else
+#define debug_initstack()	do { } while (false)
+#endif
 
 /*
  * Initialize the initialisation stack by putting an entry for the variable
@@ -190,7 +278,7 @@ initstack_init(void)
 		free(istk);
 	}
 
-	DPRINTF(("%s\n", __func__));
+	debug_enter();
 
 	/*
 	 * If the type which is to be initialized is an incomplete type,
@@ -202,6 +290,9 @@ initstack_init(void)
 	istk = initstk = xcalloc(1, sizeof (istk_t));
 	istk->i_subt = initsym->s_type;
 	istk->i_remaining = 1;
+
+	debug_initstack();
+	debug_leave();
 }
 
 static void
@@ -210,49 +301,56 @@ initstack_pop_item(void)
 	istk_t	*istk;
 	sym_t	*m;
 
+	debug_enter();
+
 	istk = initstk;
-	DPRINTF(("%s: pop type=%s, brace=%d remaining=%d named=%d\n", __func__,
-	    type_name(istk->i_type ? istk->i_type : istk->i_subt),
-	    istk->i_brace, istk->i_remaining, istk->i_namedmem));
+	debug_step("pop type=%s, brace=%d remaining=%d named=%d",
+	    type_name(istk->i_type != NULL ? istk->i_type : istk->i_subt),
+	    istk->i_brace, istk->i_remaining, istk->i_namedmem);
 
 	initstk = istk->i_next;
 	free(istk);
 	istk = initstk;
 	lint_assert(istk != NULL);
 
-	DPRINTF(("%s: top type=%s, brace=%d remaining=%d named=%d\n", __func__,
-	    type_name(istk->i_type ? istk->i_type : istk->i_subt),
-	    istk->i_brace, istk->i_remaining, istk->i_namedmem));
+	debug_step("top type=%s, brace=%d remaining=%d named=%d",
+	    type_name(istk->i_type != NULL ? istk->i_type : istk->i_subt),
+	    istk->i_brace, istk->i_remaining, istk->i_namedmem);
 
 	istk->i_remaining--;
 	lint_assert(istk->i_remaining >= 0);
 
-	DPRINTF(("%s: top remaining=%d rhs.name=%s\n", __func__,
-	    istk->i_remaining, namedmem ? namedmem->n_name : "*null*"));
+	debug_step("top remaining=%d rhs.name=%s",
+	    istk->i_remaining, namedmem != NULL ? namedmem->n_name : "*null*");
 
 	if (istk->i_remaining >= 0 && namedmem != NULL) {
 
-		DPRINTF(("%s: named remaining=%d type=%s, rhs.name=%s\n",
-		    __func__, istk->i_remaining,
-		    type_name(istk->i_type), namedmem->n_name));
+		debug_step("named remaining=%d type=%s, rhs.name=%s",
+		    istk->i_remaining, type_name(istk->i_type),
+		    namedmem->n_name);
 
-		for (m = istk->i_type->t_str->memb; m != NULL; m = m->s_next) {
-			DPRINTF(("%s: pop lhs.name=%s rhs.name=%s\n", __func__,
-			    m->s_name, namedmem->n_name));
+		for (m = istk->i_type->t_str->sou_first_member;
+		     m != NULL; m = m->s_next) {
+			debug_step("pop lhs.name=%s rhs.name=%s",
+			    m->s_name, namedmem->n_name);
 			if (m->s_bitfield && m->s_name == unnamed)
 				continue;
 			if (strcmp(m->s_name, namedmem->n_name) == 0) {
 				istk->i_subt = m->s_type;
 				istk->i_remaining++;
 				pop_member();
+				debug_initstack();
+				debug_leave();
 				return;
 			}
 		}
 		/* undefined struct/union member: %s */
 		error(101, namedmem->n_name);
-		DPRINTF(("%s: end rhs.name=%s\n", __func__, namedmem->n_name));
+		debug_step("end rhs.name=%s", namedmem->n_name);
 		pop_member();
 		istk->i_namedmem = true;
+		debug_initstack();
+		debug_leave();
 		return;
 	}
 	/*
@@ -264,10 +362,12 @@ initstack_pop_item(void)
 		do {
 			m = istk->i_mem = istk->i_mem->s_next;
 			lint_assert(m != NULL);
-			DPRINTF(("%s: pop %s\n", __func__, m->s_name));
+			debug_step("pop %s", m->s_name);
 		} while (m->s_bitfield && m->s_name == unnamed);
 		istk->i_subt = m->s_type;
 	}
+	debug_initstack();
+	debug_leave();
 }
 
 /*
@@ -279,13 +379,15 @@ initstack_pop_brace(void)
 {
 	bool brace;
 
-	DPRINTF(("%s\n", __func__));
+	debug_enter();
+	debug_initstack();
 	do {
 		brace = initstk->i_brace;
-		DPRINTF(("%s: loop brace=%d\n", __func__, brace));
+		debug_step("loop brace=%d", brace);
 		initstack_pop_item();
 	} while (!brace);
-	DPRINTF(("%s: done\n", __func__));
+	debug_initstack();
+	debug_leave();
 }
 
 /*
@@ -296,11 +398,13 @@ static void
 initstack_pop_nobrace(void)
 {
 
-	DPRINTF(("%s\n", __func__));
+	debug_enter();
+	debug_initstack();
 	while (!initstk->i_brace && initstk->i_remaining == 0 &&
 	       !initstk->i_nolimit)
 		initstack_pop_item();
-	DPRINTF(("%s: done\n", __func__));
+	debug_initstack();
+	debug_leave();
 }
 
 static void
@@ -310,11 +414,14 @@ initstack_push(void)
 	int	cnt;
 	sym_t	*m;
 
+	debug_enter();
+	debug_initstack();
+
 	istk = initstk;
 
 	/* Extend an incomplete array type by one element */
 	if (istk->i_remaining == 0) {
-		DPRINTF(("%s(extend) %s\n", __func__, type_name(istk->i_type)));
+		debug_step("(extend) %s", type_name(istk->i_type));
 		/*
 		 * Inside of other aggregate types must not be an incomplete
 		 * type.
@@ -337,17 +444,17 @@ initstack_push(void)
 again:
 	istk = initstk;
 
-	DPRINTF(("%s(%s)\n", __func__, type_name(istk->i_type)));
+	debug_step("typename %s", type_name(istk->i_type));
 	switch (istk->i_type->t_tspec) {
 	case ARRAY:
 		if (namedmem != NULL) {
-			DPRINTF(("%s: ARRAY %s brace=%d\n", __func__,
-			    namedmem->n_name, istk->i_brace));
+			debug_step("ARRAY %s brace=%d",
+			    namedmem->n_name, istk->i_brace);
 			goto pop;
 		} else if (istk->i_next->i_namedmem) {
 			istk->i_brace = true;
-			DPRINTF(("%s ARRAY brace=%d, namedmem=%d\n", __func__,
-			    istk->i_brace, istk->i_next->i_namedmem));
+			debug_step("ARRAY brace=%d, namedmem=%d",
+			    istk->i_brace, istk->i_next->i_namedmem);
 		}
 
 		if (is_incomplete(istk->i_type) &&
@@ -355,14 +462,16 @@ again:
 			/* initialisation of an incomplete type */
 			error(175);
 			initerr = true;
+			debug_initstack();
+			debug_leave();
 			return;
 		}
 		istk->i_subt = istk->i_type->t_subt;
 		istk->i_nolimit = is_incomplete(istk->i_type);
 		istk->i_remaining = istk->i_type->t_dim;
-		DPRINTF(("%s: elements array %s[%d] %s\n", __func__,
+		debug_step("elements array %s[%d] %s",
 		    type_name(istk->i_subt), istk->i_remaining,
-		    namedmem ? namedmem->n_name : "*none*"));
+		    namedmem != NULL ? namedmem->n_name : "*none*");
 		break;
 	case UNION:
 		if (tflag)
@@ -374,18 +483,22 @@ again:
 			/* initialisation of an incomplete type */
 			error(175);
 			initerr = true;
+			debug_initstack();
+			debug_leave();
 			return;
 		}
 		cnt = 0;
-		DPRINTF(("%s: lookup type=%s, name=%s named=%d\n", __func__,
+		debug_step("lookup type=%s, name=%s named=%d",
 		    type_name(istk->i_type),
-		    namedmem ? namedmem->n_name : "*none*", istk->i_namedmem));
-		for (m = istk->i_type->t_str->memb; m != NULL; m = m->s_next) {
+		    namedmem != NULL ? namedmem->n_name : "*none*",
+		    istk->i_namedmem);
+		for (m = istk->i_type->t_str->sou_first_member;
+		     m != NULL; m = m->s_next) {
 			if (m->s_bitfield && m->s_name == unnamed)
 				continue;
 			if (namedmem != NULL) {
-				DPRINTF(("%s: named lhs.member=%s, rhs.member=%s\n",
-				    __func__, m->s_name, namedmem->n_name));
+				debug_step("named lhs.member=%s, rhs.member=%s",
+				    m->s_name, namedmem->n_name);
 				if (strcmp(m->s_name, namedmem->n_name) == 0) {
 					cnt++;
 					break;
@@ -399,32 +512,34 @@ again:
 		}
 		if (namedmem != NULL) {
 			if (m == NULL) {
-				DPRINTF(("%s: pop struct\n", __func__));
+				debug_step("pop struct");
 				goto pop;
 			}
 			istk->i_mem = m;
 			istk->i_subt = m->s_type;
 			istk->i_namedmem = true;
-			DPRINTF(("%s: named name=%s\n", __func__,
-			    namedmem->n_name));
+			debug_step("named name=%s", namedmem->n_name);
 			pop_member();
 			cnt = istk->i_type->t_tspec == STRUCT ? 2 : 1;
 		}
 		istk->i_brace = true;
-		DPRINTF(("%s: unnamed type=%s, brace=%d\n", __func__,
-		    type_name(istk->i_type ? istk->i_type : istk->i_subt),
-		    istk->i_brace));
+		debug_step("unnamed type=%s, brace=%d",
+		    type_name(
+			istk->i_type != NULL ? istk->i_type : istk->i_subt),
+		    istk->i_brace);
 		if (cnt == 0) {
 			/* cannot init. struct/union with no named member */
 			error(179);
 			initerr = true;
+			debug_initstack();
+			debug_leave();
 			return;
 		}
 		istk->i_remaining = istk->i_type->t_tspec == STRUCT ? cnt : 1;
 		break;
 	default:
 		if (namedmem != NULL) {
-			DPRINTF(("%s: pop\n", __func__));
+			debug_step("pop");
 	pop:
 			inxt = initstk->i_next;
 			free(istk);
@@ -434,6 +549,9 @@ again:
 		istk->i_remaining = 1;
 		break;
 	}
+
+	debug_initstack();
+	debug_leave();
 }
 
 static void
@@ -471,7 +589,9 @@ static void
 initstack_next_brace(void)
 {
 
-	DPRINTF(("%s\n", __func__));
+	debug_enter();
+	debug_initstack();
+
 	if (initstk->i_type != NULL && is_scalar(initstk->i_type->t_tspec)) {
 		/* invalid initializer type %s */
 		error(176, type_name(initstk->i_type));
@@ -483,22 +603,34 @@ initstack_next_brace(void)
 		initstack_push();
 	if (!initerr) {
 		initstk->i_brace = true;
-		DPRINTF(("%s: %p %s\n", __func__, namedmem, type_name(
-			initstk->i_type ? initstk->i_type : initstk->i_subt)));
+		debug_step("%p %s", namedmem, type_name(
+		    initstk->i_type != NULL ? initstk->i_type
+			: initstk->i_subt));
 	}
+
+	debug_initstack();
+	debug_leave();
 }
 
 static void
 initstack_next_nobrace(void)
 {
+	debug_enter();
+	debug_initstack();
 
-	DPRINTF(("%s\n", __func__));
 	if (initstk->i_type == NULL && !is_scalar(initstk->i_subt->t_tspec)) {
 		/* {}-enclosed initializer required */
 		error(181);
 	}
 
-	/* Make sure an entry with a scalar type is at the top of the stack. */
+	/*
+	 * Make sure an entry with a scalar type is at the top of the stack.
+	 *
+	 * FIXME: Since C99 an initializer for an object with automatic
+	 *  storage need not be a constant expression anymore.  It is
+	 *  perfectly fine to initialize a struct with a struct expression,
+	 *  see d_struct_init_nested.c for a demonstration.
+	 */
 	if (!initerr)
 		initstack_check_too_many();
 	while (!initerr) {
@@ -507,15 +639,19 @@ initstack_next_nobrace(void)
 			break;
 		initstack_push();
 	}
+
+	debug_initstack();
+	debug_leave();
 }
 
 void
 init_lbrace(void)
 {
-	DPRINTF(("%s\n", __func__));
-
 	if (initerr)
 		return;
+
+	debug_enter();
+	debug_initstack();
 
 	if ((initsym->s_scl == AUTO || initsym->s_scl == REG) &&
 	    initstk->i_next == NULL) {
@@ -531,21 +667,28 @@ init_lbrace(void)
 	initstack_pop_nobrace();
 
 	initstack_next_brace();
+
+	debug_initstack();
+	debug_leave();
 }
 
 void
 init_rbrace(void)
 {
-	DPRINTF(("%s\n", __func__));
-
 	if (initerr)
 		return;
 
+	debug_enter();
+	debug_initstack();
+
 	initstack_pop_brace();
+
+	debug_initstack();
+	debug_leave();
 }
 
 void
-mkinit(tnode_t *tn)
+init_using_expr(tnode_t *tn)
 {
 	ptrdiff_t offs;
 	sym_t	*sym;
@@ -553,17 +696,16 @@ mkinit(tnode_t *tn)
 	tnode_t	*ln;
 	struct	mbl *tmem;
 	scl_t	sc;
-#ifdef DEBUG
-	char	sbuf[64];
-#endif
 
-	DPRINTF(("%s: type=%s, value=%s\n", __func__,
-	    type_name(tn->tn_type),
-	    print_tnode(sbuf, sizeof(sbuf), tn)));
-	named_member_dprint();
+	debug_enter();
+	debug_named_member();
+	debug_node(tn);
+	debug_initstack();
 
-	if (initerr || tn == NULL)
+	if (initerr || tn == NULL) {
+		debug_leave();
 		return;
+	}
 
 	sc = initsym->s_scl;
 
@@ -585,6 +727,8 @@ mkinit(tnode_t *tn)
 		ln->tn_type->t_const = false;
 		tn = build(ASSIGN, ln, tn);
 		expr(tn, false, false, false, false);
+		debug_initstack();
+		debug_leave();
 		return;
 	}
 
@@ -595,16 +739,21 @@ mkinit(tnode_t *tn)
 	initstack_pop_nobrace();
 
 	/* Initialisations by strings are done in initstack_string(). */
-	if (initstack_string(tn))
+	if (initstack_string(tn)) {
+		debug_initstack();
+		debug_leave();
 		return;
+	}
 
 	initstack_next_nobrace();
-	if (initerr || tn == NULL)
+	if (initerr || tn == NULL) {
+		debug_initstack();
+		debug_leave();
 		return;
+	}
 
 	initstk->i_remaining--;
-	DPRINTF(("%s: remaining=%d tn=%p\n", __func__,
-	    initstk->i_remaining, tn));
+	debug_step("remaining=%d tn=%p", initstk->i_remaining, tn);
 	/* Create a temporary node for the left side. */
 	ln = tgetblk(sizeof (tnode_t));
 	ln->tn_op = NAME;
@@ -620,8 +769,11 @@ mkinit(tnode_t *tn)
 
 	lint_assert(is_scalar(lt));
 
-	if (!typeok(INIT, 0, ln, tn))
+	if (!typeok(INIT, 0, ln, tn)) {
+		debug_initstack();
+		debug_leave();
 		return;
+	}
 
 	/*
 	 * Store the tree memory. This is necessary because otherwise
@@ -657,6 +809,9 @@ mkinit(tnode_t *tn)
 			}
 		}
 	}
+
+	debug_initstack();
+	debug_leave();
 }
 
 
@@ -671,6 +826,9 @@ initstack_string(tnode_t *tn)
 	if (tn->tn_op != STRING)
 		return false;
 
+	debug_enter();
+	debug_initstack();
+
 	istk = initstk;
 	strg = tn->tn_string;
 
@@ -679,22 +837,24 @@ initstack_string(tnode_t *tn)
 	 * the string.
 	 */
 	if (istk->i_subt != NULL && istk->i_subt->t_tspec == ARRAY) {
-		DPRINTF(("%s: subt array\n", __func__));
+		debug_step("subt array");
 		t = istk->i_subt->t_subt->t_tspec;
 		if (!((strg->st_tspec == CHAR &&
 		       (t == CHAR || t == UCHAR || t == SCHAR)) ||
 		      (strg->st_tspec == WCHAR && t == WCHAR))) {
+			debug_leave();
 			return false;
 		}
 		/* Put the array at top of stack */
 		initstack_push();
 		istk = initstk;
 	} else if (istk->i_type != NULL && istk->i_type->t_tspec == ARRAY) {
-		DPRINTF(("%s: type array\n", __func__));
+		debug_step("type array");
 		t = istk->i_type->t_subt->t_tspec;
 		if (!((strg->st_tspec == CHAR &&
 		       (t == CHAR || t == UCHAR || t == SCHAR)) ||
 		      (strg->st_tspec == WCHAR && t == WCHAR))) {
+			debug_leave();
 			return false;
 		}
 		/*
@@ -702,8 +862,10 @@ initstack_string(tnode_t *tn)
 		 * wrong here.
 		 */
 		if (istk->i_remaining != istk->i_type->t_dim)
+			debug_leave();
 			return false;
 	} else {
+		debug_leave();
 		return false;
 	}
 
@@ -724,5 +886,7 @@ initstack_string(tnode_t *tn)
 	/* In every case the array is initialized completely. */
 	istk->i_remaining = 0;
 
+	debug_initstack();
+	debug_leave();
 	return true;
 }
