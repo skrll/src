@@ -1,4 +1,4 @@
-/* $NetBSD: emit1.c,v 1.39 2021/01/17 14:50:11 rillig Exp $ */
+/* $NetBSD: emit1.c,v 1.42 2021/02/19 22:27:49 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: emit1.c,v 1.39 2021/01/17 14:50:11 rillig Exp $");
+__RCSID("$NetBSD: emit1.c,v 1.42 2021/02/19 22:27:49 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -99,7 +99,7 @@ outtype(const type_t *tp)
 	tspec_t	ts;
 
 	while (tp != NULL) {
-		if ((ts = tp->t_tspec) == INT && tp->t_isenum)
+		if ((ts = tp->t_tspec) == INT && tp->t_is_enum)
 			ts = ENUM;
 		switch (ts) {
 		case BOOL:	t = 'B';	s = '\0';	break;
@@ -140,9 +140,9 @@ outtype(const type_t *tp)
 		if (ts == ARRAY) {
 			outint(tp->t_dim);
 		} else if (ts == ENUM) {
-			outtt(tp->t_enum->etag, tp->t_enum->etdef);
+			outtt(tp->t_enum->en_tag, tp->t_enum->en_first_typedef);
 		} else if (ts == STRUCT || ts == UNION) {
-			outtt(tp->t_str->stag, tp->t_str->stdef);
+			outtt(tp->t_str->sou_tag, tp->t_str->sou_first_typedef);
 		} else if (ts == FUNC && tp->t_proto) {
 			na = 0;
 			for (arg = tp->t_args; arg != NULL; arg = arg->s_next)
