@@ -228,6 +228,10 @@ struct pvscsi_softc {
 	bus_space_tag_t		sc_memt;
 	bus_space_handle_t	sc_memh;
 
+
+
+
+
 	bool		 use_msg;
 	uint32_t	 max_targets;
 	int		 mm_rid;
@@ -237,6 +241,13 @@ struct pvscsi_softc {
 	void		*irq_handler;
 	int		 use_req_call_threshold;
 	int		 use_msi_or_msix;
+
+
+	pci_intr_handle_t *	sc_pihp;
+//	int			sc_nintr;
+	void **			sc_ih;
+
+
 
 	uint64_t	rings_state_ppn;
 	uint32_t	req_ring_num_pages;
@@ -1556,10 +1567,11 @@ pvscsi_setup_interrupts(struct pvscsi_softc *sc)
 		aprint_error_dev(self, "can't allocate handler\n");
 		goto fail;
 	}
-	intrstr = pci_intr_string(pc, psc->sc_pihp[0], intrbuf,
+	intrstr = pci_intr_string(pc, psc->sc_pihp, intrbuf,
 	    sizeof(intrbuf));
-	psc->sc_ih = pci_intr_establish_xname(pc, psc->sc_pihp[0], IPL_USB,
-	    xhci_intr, sc, device_xname(sc->sc_dev));
+
+	psc->sc_ih = pci_intr_establish_xname(pc, psc->sc_pihp[0], IPL_BIO,
+	    pvscsi_intr, sc, device_xname(sc->sc_dev));
 	if (psc->sc_ih == NULL) {
 		pci_intr_release(pc, psc->sc_pihp, 1);
 		psc->sc_pihp = NULL;
@@ -1569,35 +1581,9 @@ pvscsi_setup_interrupts(struct pvscsi_softc *sc)
 		aprint_error("\n");
 		goto fail;
 	}
+	pci_intr_setattr(nic->sc_pc, &nic->sc_pih, PCI_INTR_MPSAFE, true);
+
 	aprint_normal_dev(self, "interrupting at %s\n", intrstr);
-
-	flags = RF_ACTIVE;
-	if (sc->use_msi_or_msix) {
-		sc->irq_id = 1;
-	} else {
-		aprint_normal_dev(sc->dev, "Interrupt: INT\n");
-		sc->irq_id = 0;
-		flags |= RF_SHAREABLE;
-	}
-
-	sc->irq_res = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, &sc->irq_id,
-	    flags);
-	if (sc->irq_res == NULL) {
-		aprint_normal_dev(sc->dev, "IRQ allocation failed\n");
-		if (sc->use_msi_or_msix) {
-			pci_release_msi(sc->dev);
-		}
-		return (ENXIO);
-	}
-
-	error = bus_setup_intr(sc->dev, sc->irq_res,
-	    INTR_TYPE_CAM | INTR_MPSAFE, NULL, pvscsi_intr, sc,
-	    &sc->irq_handler);
-	if (error) {
-		aprint_normal_dev(sc->dev, "IRQ handler setup failed\n");
-		pvscsi_free_interrupts(sc);
-		return (error);
-	}
 
 	return (0);
 }
@@ -1814,12 +1800,28 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 
 	pvscsi_adapter_reset(sc);
 
+
+
+
+
+
+
+
+
+
+
 	devq = cam_simq_alloc(adapter_queue_size);
 	if (devq == NULL) {
 		aprint_normal_dev(dev, "cam devq alloc failed\n");
 		pvscsi_free_all(sc);
 		return;
 	}
+
+
+
+
+
+
 
 	/*
 	 * Fill in the scsipi_adapter.
@@ -1880,7 +1882,7 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 		aprint_normal_dev(dev, "cam sim alloc failed\n");
 		cam_simq_free(devq);
 		pvscsi_free_all(sc);
-		return (ENXIO);
+		return;
 	}
 
 	mutex_enter(&sc->lock);
@@ -1889,7 +1891,7 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 		aprint_normal_dev(dev, "xpt bus register failed\n");
 		pvscsi_free_all(sc);
 		mutex_exit(&sc->lock);
-		return (ENXIO);
+		return;
 	}
 
 	if (xpt_create_path(&sc->bus_path, NULL, cam_sim_path(sc->sim),
@@ -1897,8 +1899,11 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 		aprint_normal_dev(dev, "xpt create path failed\n");
 		pvscsi_free_all(sc);
 		mutex_exit(&sc->lock);
-		return (ENXIO);
+		return;
 	}
+
+
+
 
 	pvscsi_setup_rings(sc);
 	if (sc->use_msg) {
