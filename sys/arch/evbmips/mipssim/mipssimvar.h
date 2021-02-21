@@ -1,4 +1,4 @@
-/* $NetBSD: mipssimvar.h,v 1.1 2021/01/27 05:24:16 simonb Exp $ */
+/* $NetBSD: mipssimvar.h,v 1.2 2021/02/15 22:39:46 reinoud Exp $ */
 
 /*-
  * Copyright (c) 2001,2021 The NetBSD Foundation, Inc.
@@ -33,9 +33,10 @@
 #include <dev/isa/isavar.h>
 
 struct mipssim_config {
-	struct mips_bus_space mc_iot;
+	struct mips_bus_space	mc_iot;
+	struct mips_bus_dma_tag	mc_dmat;
 
-	struct mips_isa_chipset mc_ic;
+	struct mips_isa_chipset	mc_ic;
 
 	struct extent *mc_io_ex;
 
@@ -45,3 +46,4 @@ struct mipssim_config {
 extern struct mipssim_config mipssim_configuration;
 
 void	mipssim_bus_io_init(bus_space_tag_t, void *);
+void	mipssim_dma_init(struct mipssim_config *);

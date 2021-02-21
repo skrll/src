@@ -1,10 +1,10 @@
-#	$NetBSD: Makefile,v 1.59 2021/01/23 17:58:03 rillig Exp $
+#	$NetBSD: Makefile,v 1.62 2021/02/20 18:10:22 rillig Exp $
 
 .include <bsd.own.mk>
 
 PROG=		lint1
-SRCS=		cgram.y decl.c emit.c emit1.c err.c func.c init.c inittyp.c \
-		lex.c \
+SRCS=		cgram.y ckgetopt.c decl.c emit.c emit1.c err.c \
+		func.c init.c inittyp.c lex.c \
 		main1.c mem.c mem1.c oper.c print.c scan.l tree.c tyname.c
 
 MAN=		lint.7
@@ -17,10 +17,12 @@ YHEADER=
 CWARNFLAGS.clang+=	-Wno-error=implicit-int-float-conversion
 
 CPPFLAGS+=	-I${.CURDIR} -I. -DPASS=\"${PROG}.h\"
+CPPFLAGS+=	${DEBUG:D-DDEBUG}
 
 BINDIR=		/usr/libexec
 
 CLEANFILES+=	${MAN}
+CLEANFILES+=	*.gcno *.gcda *.gcov
 
 .if ${USETOOLS} == "yes"
 LINT1=		${TOOLDIR}/libexec/${MACHINE_GNU_PLATFORM}-lint1

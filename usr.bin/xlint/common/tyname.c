@@ -1,4 +1,4 @@
-/*	$NetBSD: tyname.c,v 1.26 2021/01/26 18:38:57 rillig Exp $	*/
+/*	$NetBSD: tyname.c,v 1.29 2021/02/19 22:27:49 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2005 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tyname.c,v 1.26 2021/01/26 18:38:57 rillig Exp $");
+__RCSID("$NetBSD: tyname.c,v 1.29 2021/02/19 22:27:49 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -230,16 +230,16 @@ sametype(const type_t *t1, const type_t *t2)
 		return sametype(t1->t_subt, t2->t_subt);
 	case ENUM:
 #ifdef t_enum
-		return strcmp(t1->t_enum->etag->s_name,
-		    t2->t_enum->etag->s_name) == 0;
+		return strcmp(t1->t_enum->en_tag->s_name,
+		    t2->t_enum->en_tag->s_name) == 0;
 #else
 		return true;
 #endif
 	case STRUCT:
 	case UNION:
 #ifdef t_str
-		return strcmp(t1->t_str->stag->s_name,
-		    t2->t_str->stag->s_name) == 0;
+		return strcmp(t1->t_str->sou_tag->s_name,
+		    t2->t_str->sou_tag->s_name) == 0;
 #else
 		return true;
 #endif
@@ -294,7 +294,7 @@ type_name(const type_t *tp)
 	 * XXX: Why is this necessary, and in which cases does this apply?
 	 * Shouldn't the type be an ENUM from the beginning?
 	 */
-	if ((t = tp->t_tspec) == INT && tp->t_isenum)
+	if ((t = tp->t_tspec) == INT && tp->t_is_enum)
 		t = ENUM;
 
 	buf_init(&buf);
@@ -339,7 +339,7 @@ type_name(const type_t *tp)
 	case ENUM:
 		buf_add(&buf, " ");
 #ifdef t_enum
-		buf_add(&buf, tp->t_enum->etag->s_name);
+		buf_add(&buf, tp->t_enum->en_tag->s_name);
 #else
 		buf_add(&buf,
 		    tp->t_isuniqpos ? "*anonymous*" : tp->t_tag->h_name);
@@ -349,7 +349,7 @@ type_name(const type_t *tp)
 	case UNION:
 		buf_add(&buf, " ");
 #ifdef t_str
-		buf_add(&buf, tp->t_str->stag->s_name);
+		buf_add(&buf, tp->t_str->sou_tag->s_name);
 #else
 		buf_add(&buf,
 		    tp->t_isuniqpos ? "*anonymous*" : tp->t_tag->h_name);
