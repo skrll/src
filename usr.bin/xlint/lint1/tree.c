@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.205 2021/02/04 06:54:59 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.212 2021/02/20 19:10:38 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tree.c,v 1.205 2021/02/04 06:54:59 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.212 2021/02/20 19:10:38 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -98,8 +98,8 @@ static	void	check_precedence_confusion(tnode_t *);
 extern sig_atomic_t fpe;
 
 #ifdef DEBUG
-static void
-dprint_node(const tnode_t *tn)
+void
+debug_node(const tnode_t *tn)
 {
 	static int indent = 0;
 
@@ -120,6 +120,12 @@ dprint_node(const tnode_t *tn)
 
 	if (op == NAME)
 		printf(" %s\n", tn->tn_sym->s_name);
+	else if (op == CON && is_floating(tn->tn_type->t_tspec))
+		printf(" value=%Lg", tn->tn_val->v_ldbl);
+	else if (op == CON && is_uinteger(tn->tn_type->t_tspec))
+		printf(" value=%llu\n", (unsigned long long)tn->tn_val->v_quad);
+	else if (op == CON && is_integer(tn->tn_type->t_tspec))
+		printf(" value=%lld\n", (long long)tn->tn_val->v_quad);
 	else if (op == CON)
 		printf(" value=?\n");
 	else if (op == STRING)
@@ -128,17 +134,11 @@ dprint_node(const tnode_t *tn)
 		printf("\n");
 
 		indent += 2;
-		dprint_node(tn->tn_left);
+		debug_node(tn->tn_left);
 		if (modtab[op].m_binary || tn->tn_right != NULL)
-			dprint_node(tn->tn_right);
+			debug_node(tn->tn_right);
 		indent -= 2;
 	}
-}
-#else
-/*ARGSUSED*/
-static void
-dprint_node(const tnode_t *tn)
-{
 }
 #endif
 
@@ -335,7 +335,7 @@ new_string_node(strg_t *strg)
 sym_t *
 struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 {
-	str_t	*str;
+	struct_or_union	*str;
 	type_t	*tp;
 	sym_t	*sym, *csym;
 	bool	eq;
@@ -351,9 +351,9 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 		rmsym(msym);
 		msym->s_kind = FMEMBER;
 		msym->s_scl = MOS;
-		msym->s_styp = tgetblk(sizeof (str_t));
-		msym->s_styp->stag = tgetblk(sizeof (sym_t));
-		msym->s_styp->stag->s_name = unnamed;
+		msym->s_styp = tgetblk(sizeof (struct_or_union));
+		msym->s_styp->sou_tag = tgetblk(sizeof (sym_t));
+		msym->s_styp->sou_tag->s_name = unnamed;
 		msym->s_value.v_tspec = INT;
 		return msym;
 	}
@@ -1008,13 +1008,34 @@ typeok_quest(tspec_t lt, const tnode_t **rn)
 	return true;
 }
 
+static void
+typeok_colon_pointer(const mod_t *mp, const type_t *ltp, const type_t *rtp)
+{
+	type_t *lstp = ltp->t_subt;
+	type_t *rstp = rtp->t_subt;
+	tspec_t lst = lstp->t_tspec;
+	tspec_t rst = rstp->t_tspec;
+
+	if ((lst == VOID && rst == FUNC) || (lst == FUNC && rst == VOID)) {
+		/* (void *)0 handled above */
+		if (sflag)
+			/* ANSI C forbids conv. of %s to %s, op %s */
+			warning(305, "function pointer", "'void *'",
+			    mp->m_name);
+		return;
+	}
+
+	if (eqptrtype(lstp, rstp, true))
+		return;
+	if (!eqtype(lstp, rstp, true, false, NULL))
+		warn_incompatible_pointers(mp, ltp, rtp);
+}
+
 static bool
 typeok_colon(const mod_t *mp,
 	     const tnode_t *ln, const type_t *ltp, tspec_t lt,
 	     const tnode_t *rn, const type_t *rtp, tspec_t rt)
 {
-	type_t *lstp, *rstp;
-	tspec_t lst, rst;
 
 	if (is_arithmetic(lt) && is_arithmetic(rt))
 		return true;
@@ -1026,12 +1047,6 @@ typeok_colon(const mod_t *mp,
 	if (lt == UNION && rt == UNION && ltp->t_str == rtp->t_str)
 		return true;
 
-	lstp = lt == PTR ? ltp->t_subt : NULL;
-	rstp = rt == PTR ? rtp->t_subt : NULL;
-	lst = lstp != NULL ? lstp->t_tspec : NOTSPEC;
-	rst = rstp != NULL ? rstp->t_tspec : NOTSPEC;
-
-	/* combination of any pointer and null pointer is ok */
 	if (lt == PTR && is_null_pointer(rn))
 		return true;
 	if (rt == PTR && is_null_pointer(ln))
@@ -1053,21 +1068,8 @@ typeok_colon(const mod_t *mp,
 		return true;
 	}
 
-	if (lt == PTR && rt == PTR && ((lst == VOID && rst == FUNC) ||
-				       (lst == FUNC && rst == VOID))) {
-		/* (void *)0 handled above */
-		if (sflag)
-			/* ANSI C forbids conv. of %s to %s, op %s */
-			warning(305, "function pointer", "'void *'",
-			    mp->m_name);
-		return true;
-	}
-
-	if (rt == PTR && lt == PTR) {
-		if (eqptrtype(lstp, rstp, true))
-			return true;
-		if (!eqtype(lstp, rstp, true, false, NULL))
-			warn_incompatible_pointers(mp, ltp, rtp);
+	if (lt == PTR && rt == PTR) {
+		typeok_colon_pointer(mp, ltp, rtp);
 		return true;
 	}
 
@@ -1255,9 +1257,7 @@ typeok_scalar_strict_bool(op_t op, const mod_t *mp, int arg,
 
 /* Check the types using the information from modtab[]. */
 static bool
-typeok_scalar(op_t op, const mod_t *mp,
-	      const tnode_t *ln, tspec_t lt,
-	      const tnode_t *rn, tspec_t rt)
+typeok_scalar(op_t op, const mod_t *mp, tspec_t lt, tspec_t rt)
 {
 	if (mp->m_takes_bool && lt == BOOL && rt == BOOL)
 		return true;
@@ -1452,13 +1452,13 @@ typeok_enum(op_t op, const mod_t *mp, int arg,
 	    const tnode_t *rn, const type_t *rtp)
 {
 	if (mp->m_bad_on_enum &&
-	    (ltp->t_isenum || (mp->m_binary && rtp->t_isenum))) {
+	    (ltp->t_is_enum || (mp->m_binary && rtp->t_is_enum))) {
 		check_bad_enum_operation(op, ln, rn);
 	} else if (mp->m_valid_on_enum &&
-		   (ltp->t_isenum && rtp != NULL && rtp->t_isenum)) {
+		   (ltp->t_is_enum && rtp != NULL && rtp->t_is_enum)) {
 		check_enum_type_mismatch(op, arg, ln, rn);
 	} else if (mp->m_valid_on_enum &&
-		   (ltp->t_isenum || (rtp != NULL && rtp->t_isenum))) {
+		   (ltp->t_is_enum || (rtp != NULL && rtp->t_is_enum))) {
 		check_enum_int_mismatch(op, arg, ln, rn);
 	}
 }
@@ -1486,7 +1486,7 @@ typeok(op_t op, int arg, const tnode_t *ln, const tnode_t *rn)
 
 	if (Tflag && !typeok_scalar_strict_bool(op, mp, arg, ln, rn))
 		return false;
-	if (!typeok_scalar(op, mp, ln, lt, rn, rt))
+	if (!typeok_scalar(op, mp, lt, rt))
 		return false;
 
 	if (!typeok_op(op, mp, arg, ln, ltp, lt, rn, rtp, rt))
@@ -1688,8 +1688,8 @@ check_bad_enum_operation(op_t op, const tnode_t *ln, const tnode_t *rn)
 
 	mp = &modtab[op];
 
-	if (!(ln->tn_type->t_isenum ||
-	      (mp->m_binary && rn->tn_type->t_isenum))) {
+	if (!(ln->tn_type->t_is_enum ||
+	      (mp->m_binary && rn->tn_type->t_is_enum))) {
 		return;
 	}
 
@@ -1698,8 +1698,8 @@ check_bad_enum_operation(op_t op, const tnode_t *ln, const tnode_t *rn)
 	 * could not be used as array indices).
 	 */
 	if (op == PLUS &&
-	    ((ln->tn_type->t_isenum && rn->tn_type->t_tspec == PTR) ||
-	     (rn->tn_type->t_isenum && ln->tn_type->t_tspec == PTR))) {
+	    ((ln->tn_type->t_is_enum && rn->tn_type->t_tspec == PTR) ||
+	     (rn->tn_type->t_is_enum && ln->tn_type->t_tspec == PTR))) {
 		return;
 	}
 
@@ -1760,7 +1760,7 @@ check_enum_int_mismatch(op_t op, int arg, const tnode_t *ln, const tnode_t *rn)
 		 * Initialization with 0 is allowed. Otherwise, all implicit
 		 * initializations would need to be warned upon as well.
 		 */
-		if (!rn->tn_type->t_isenum && rn->tn_op == CON &&
+		if (!rn->tn_type->t_is_enum && rn->tn_op == CON &&
 		    is_integer(rn->tn_type->t_tspec) &&
 		    rn->tn_val->v_quad == 0) {
 			return;
@@ -1925,7 +1925,7 @@ promote(op_t op, bool farg, tnode_t *tn)
 		ntp = tduptyp(tn->tn_type);
 		ntp->t_tspec = t;
 		/*
-		 * Keep t_isenum so we are later able to check compatibility
+		 * Keep t_is_enum so we are later able to check compatibility
 		 * of enum types.
 		 */
 		tn = convert(op, 0, ntp, tn);
@@ -2622,7 +2622,7 @@ has_constant_member(const type_t *tp)
 
 	lint_assert((t = tp->t_tspec) == STRUCT || t == UNION);
 
-	for (m = tp->t_str->memb; m != NULL; m = m->s_next) {
+	for (m = tp->t_str->sou_first_member; m != NULL; m = m->s_next) {
 		tp = m->s_type;
 		if (tp->t_const)
 			return true;
@@ -2983,7 +2983,7 @@ plength(type_t *tp)
 		break;
 	case STRUCT:
 	case UNION:
-		if ((elsz = tp->t_str->size) == 0)
+		if ((elsz = tp->t_str->sou_size_in_bit) == 0)
 			/* cannot do pointer arithmetic on operand of ... */
 			error(136);
 		break;
@@ -3358,7 +3358,7 @@ tsize(type_t *tp)
 			error(143);
 			elsz = 1;
 		} else {
-			elsz = tp->t_str->size;
+			elsz = tp->t_str->sou_size_in_bit;
 		}
 		break;
 	case ENUM:
@@ -3449,13 +3449,13 @@ cast(tnode_t *tn, type_t *tp)
 		 */
 	} else if (nt == UNION) {
 		sym_t *m;
-		str_t *str = tp->t_str;
+		struct_or_union *str = tp->t_str;
 		if (!Sflag) {
 			/* union cast is a C9X feature */
 			error(328);
 			return NULL;
 		}
-		for (m = str->memb; m != NULL; m = m->s_next) {
+		for (m = str->sou_first_member; m != NULL; m = m->s_next) {
 			if (sametype(m->s_type, tn->tn_type)) {
 				tn = getnode();
 				tn->tn_op = CVT;
@@ -3618,7 +3618,7 @@ check_function_arguments(type_t *ftp, tnode_t *args)
 			error(152, n);
 			return NULL;
 		} else if (is_integer(at) &&
-			   arg->tn_left->tn_type->t_isenum &&
+			   arg->tn_left->tn_type->t_is_enum &&
 			   is_incomplete(arg->tn_left->tn_type)) {
 			/* argument cannot have unknown size, arg #%d */
 			warning(152, n);
@@ -3723,6 +3723,13 @@ constant(tnode_t *tn, bool required)
 	return v;
 }
 
+static bool
+is_constcond_false(const tnode_t *tn, tspec_t t)
+{
+	return (t == BOOL || t == INT) &&
+	       tn->tn_op == CON && tn->tn_val->v_quad == 0;
+}
+
 /*
  * Perform some tests on expressions which can't be done in build() and
  * functions called by build(). These tests must be done here because
@@ -3754,7 +3761,7 @@ expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk, bool constcond_zero_ok)
 	} else if (tn->tn_op == CON) {
 		if (hflag && tctx && !constcond_flag &&
 		    !(constcond_zero_ok &&
-		      is_int_constant_zero(tn, tn->tn_type->t_tspec)))
+		      is_constcond_false(tn, tn->tn_type->t_tspec)))
 			/* constant in conditional context */
 			warning(161);
 	}
@@ -4340,7 +4347,7 @@ check_precedence_confusion(tnode_t *tn)
 	if (!hflag)
 		return;
 
-	dprint_node(tn);
+	debug_node(tn);
 
 	lint_assert(modtab[tn->tn_op].m_binary);
 	for (ln = tn->tn_left; ln->tn_op == CVT; ln = ln->tn_left)

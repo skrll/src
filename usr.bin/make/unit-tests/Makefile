@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.269 2021/02/06 18:26:03 sjg Exp $
+# $NetBSD: Makefile,v 1.271 2021/02/14 20:16:17 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -362,6 +362,7 @@ TESTS+=		varmod-select-words
 TESTS+=		varmod-shell
 TESTS+=		varmod-subst
 TESTS+=		varmod-subst-regex
+TESTS+=		varmod-sun-shell
 TESTS+=		varmod-sysv
 TESTS+=		varmod-tail
 TESTS+=		varmod-to-abs
@@ -622,8 +623,10 @@ LANG=		C
 .if ${.OBJDIR} != ${.CURDIR}
 # easy
 TMPDIR:=	${.OBJDIR}/tmp
+.elif defined(TMPDIR)
+TMPDIR:=	${TMPDIR}/uid${.MAKE.UID}
 .else
-TMPDIR:=	${TMPDIR:U/tmp}/uid${.MAKE.UID}
+TMPDIR:=	/tmp/uid${.MAKE.UID}
 .endif
 # make sure it exists
 .if !exist(${TMPDIR})

@@ -1,4 +1,4 @@
-.\"	$NetBSD: fsync.2,v 1.18 2013/09/22 10:02:05 apb Exp $
+.\"	$NetBSD: fsync.2,v 1.21 2021/02/17 22:55:20 wiz Exp $
 .\"
 .\" Copyright (c) 1983, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -29,7 +29,7 @@
 .\"
 .\"     @(#)fsync.2	8.1 (Berkeley) 6/4/93
 .\"
-.Dd September 22, 2013
+.Dd February 17, 2021
 .Dt FSYNC 2
 .Os
 .Sh NAME
@@ -106,7 +106,7 @@ on the specified range.
 .It Dv FFILESYNC
 Synchronize all modified file data and meta-data for the specified range.
 This is equivalent to
-.Xr fsync 2
+.Nm
 on the specified range.
 .It Dv FDISKSYNC
 Request the destination device to ensure that the relevant data
@@ -159,10 +159,15 @@ fails if:
 is not open for writing.
 .It Bq Er EINVAL
 .Fa start
+is less than zero, or
+.Fa start
 +
 .Fa length
 is less than
-.Fa start .
+.Fa start
+or triggers an integer overflow; or
+.Fa how
+contains an invalid value.
 .El
 .Sh NOTES
 For optimal efficiency, the

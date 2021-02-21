@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.160 2021/01/31 12:44:34 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.163 2021/02/20 16:03:56 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.160 2021/01/31 12:44:34 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.163 2021/02/20 16:03:56 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -802,7 +802,7 @@ member_declaration:
 			/* anonymous struct/union members is a C9X feature */
 			warning(49);
 		/* add all the members of the anonymous struct/union */
-		$$ = dcs->d_type->t_str->memb;
+		$$ = dcs->d_type->t_str->sou_first_member;
 		anonymize($$);
 	  }
 	| noclass_declspecs deftyp opt_type_attribute {
@@ -811,7 +811,7 @@ member_declaration:
 		if (!Sflag)
 			/* anonymous struct/union members is a C9X feature */
 			warning(49);
-		$$ = dcs->d_type->t_str->memb;
+		$$ = dcs->d_type->t_str->sou_first_member;
 		/* add all the members of the anonymous struct/union */
 		anonymize($$);
 	  }
@@ -1212,7 +1212,7 @@ param_list:
 id_list_lparn:
 	  T_LPAREN {
 		blklev++;
-		pushdecl(PARG);
+		pushdecl(PROTO_ARG);
 	  }
 	;
 
@@ -1244,7 +1244,7 @@ abstract_decl_param_list:
 abstract_decl_lparn:
 	  T_LPAREN {
 		blklev++;
-		pushdecl(PARG);
+		pushdecl(PROTO_ARG);
 	  }
 	;
 
@@ -1333,7 +1333,7 @@ init_assign_expr:
 
 init_base_expr:
 	  expr				%prec T_COMMA {
-		mkinit($1);
+		init_using_expr($1);
 	  }
 	| init_lbrace init_rbrace
 	| init_lbrace init_expr_list init_rbrace

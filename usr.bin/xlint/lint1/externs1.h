@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.65 2021/01/31 12:44:34 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.68 2021/02/20 16:34:57 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -222,6 +222,11 @@ extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
 extern	bool	constant_addr(tnode_t *, sym_t **, ptrdiff_t *);
 extern	strg_t	*cat_strings(strg_t *, strg_t *);
 extern  int64_t tsize(type_t *);
+#ifdef DEBUG
+extern	void	debug_node(const tnode_t *);
+#else
+#define debug_node(tn) (void)0
+#endif
 
 /*
  * func.c
@@ -287,12 +292,11 @@ extern	void	bitfieldtype(int);
  */
 extern	bool	initerr;
 extern	sym_t	*initsym;
-extern	int	startinit;
 
 extern	void	initstack_init(void);
 extern	void	init_rbrace(void);
 extern	void	init_lbrace(void);
-extern	void	mkinit(tnode_t *);
+extern	void	init_using_expr(tnode_t *);
 extern	void	push_member(sbuf_t *);
 
 /*
@@ -328,3 +332,12 @@ extern	int	lex_input(void);
  * print.c
  */
 extern	char	*print_tnode(char *, size_t, const tnode_t *);
+
+/*
+ * ckgetopt.c
+ */
+extern	void	check_getopt_begin_while(const tnode_t *);
+extern	void	check_getopt_begin_switch(void);
+extern	void	check_getopt_case_label(int64_t);
+extern	void	check_getopt_end_switch(void);
+extern	void	check_getopt_end_while(void);

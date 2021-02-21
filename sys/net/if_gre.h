@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gre.h,v 1.47 2021/02/03 18:13:13 roy Exp $ */
+/*	$NetBSD: if_gre.h,v 1.49 2021/02/14 19:33:29 roy Exp $ */
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -131,10 +131,6 @@ struct gre_h {
 				Present if (rt_pres == 1)
  */
 };
-#ifdef __CTASSERT
-__CTASSERT(sizeof(struct gre_h) == 4);
-#endif
-
 #define GRE_CP		0x8000  /* Checksum Present */
 #define GRE_RP		0x4000  /* Routing Present */
 #define GRE_KP		0x2000  /* Key Present */
