@@ -1,4 +1,4 @@
-/*	$NetBSD: if_arp.c,v 1.300 2021/02/13 13:00:16 roy Exp $	*/
+/*	$NetBSD: if_arp.c,v 1.307 2021/02/19 14:51:59 christos Exp $	*/
 
 /*
  * Copyright (c) 1998, 2000, 2008 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.300 2021/02/13 13:00:16 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.307 2021/02/19 14:51:59 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -684,10 +684,11 @@ arpintr(void)
 	struct arphdr *ar;
 	int s;
 	int arplen;
+	struct ifnet *rcvif;
+	bool badhrd;
 
 	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	for (;;) {
-		struct ifnet *rcvif;
 
 		IFQ_LOCK(&arpintrq);
 		IF_DEQUEUE(&arpintrq, m);
@@ -700,15 +701,12 @@ arpintr(void)
 		MCLAIM(m, &arpdomain.dom_mowner);
 		ARP_STATINC(ARP_STAT_RCVTOTAL);
 
-		/* Enforce alignment */
-		if (ARP_HDR_ALIGNED_P(mtod(m, void *)) == 0) {
-			if ((m = m_copyup(m, sizeof(*ar), 0)) == NULL)
-				goto badlen;
-		} else if (__predict_false(m->m_len < sizeof(*ar))) {
+		if (__predict_false(m->m_len < sizeof(*ar))) {
 			if ((m = m_pullup(m, sizeof(*ar))) == NULL)
 				goto badlen;
 		}
 		ar = mtod(m, struct arphdr *);
+		KASSERT(ACCESSIBLE_POINTER(ar, struct arphdr));
 
 		rcvif = m_get_rcvif(m, &s);
 		if (__predict_false(rcvif == NULL)) {
@@ -720,31 +718,24 @@ arpintr(void)
 		 * We don't want non-IEEE1394 ARP packets on IEEE1394
 		 * interfaces, and vice versa. Our life depends on that.
 		 */
-		switch (rcvif->if_type) {
-		case IFT_IEEE1394:
-			if (ntohs(ar->ar_hrd) != ARPHRD_IEEE1394) {
-				m_put_rcvif(rcvif, &s);
-				ARP_STATINC(ARP_STAT_RCVBADPROTO);
-				goto free;
-			}
-			break;
-		default:
-			if (ntohs(ar->ar_hrd) == ARPHRD_IEEE1394) {
-				m_put_rcvif(rcvif, &s);
-				ARP_STATINC(ARP_STAT_RCVBADPROTO);
-				goto free;
-			}
-			break;
-		}
+		if (ntohs(ar->ar_hrd) == ARPHRD_IEEE1394)
+			badhrd = rcvif->if_type != IFT_IEEE1394;
+		else
+			badhrd = rcvif->if_type == IFT_IEEE1394;
 
 		m_put_rcvif(rcvif, &s);
 
+		if (badhrd) {
+			ARP_STATINC(ARP_STAT_RCVBADPROTO);
+			goto free;
+		}
+
 		arplen = sizeof(*ar) + 2 * ar->ar_hln + 2 * ar->ar_pln;
-		if (m->m_len < arplen) {
+		if (__predict_false(m->m_len < arplen)) {
 			if ((m = m_pullup(m, arplen)) == NULL)
 				goto badlen;
 			ar = mtod(m, struct arphdr *);
-			KASSERT(ARP_HDR_ALIGNED_P(ar));
+			KASSERT(ACCESSIBLE_POINTER(ar, struct arphdr));
 		}
 
 		switch (ntohs(ar->ar_pro)) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.67 2021/01/31 12:44:34 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.71 2021/02/19 22:27:49 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.67 2021/01/31 12:44:34 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.71 2021/02/19 22:27:49 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -332,8 +332,7 @@ funcdef(sym_t *fsym)
 	}
 
 	if (dcs->d_notyp)
-		/* return value is implicitly declared to be int */
-		fsym->s_rimpl = true;
+		fsym->s_return_type_implicit_int = true;
 
 	reached = true;
 }
@@ -350,7 +349,7 @@ funcend(void)
 	if (reached) {
 		cstmt->c_had_return_noval = true;
 		if (funcsym->s_type->t_subt->t_tspec != VOID &&
-		    !funcsym->s_rimpl) {
+		    !funcsym->s_return_type_implicit_int) {
 			/* func. %s falls off bottom without returning value */
 			warning(217, funcsym->s_name);
 		}
@@ -362,7 +361,7 @@ funcend(void)
 	 * has already printed a warning.
 	 */
 	if (cstmt->c_had_return_noval && cstmt->c_had_return_value &&
-	    funcsym->s_rimpl)
+	    funcsym->s_return_type_implicit_int)
 		/* function %s has return (e); and return; */
 		warning(216, funcsym->s_name);
 
@@ -478,6 +477,8 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 		/* duplicate case in switch: %ld */
 		error(199, (long)nv.v_quad);
 	} else {
+		check_getopt_case_label(nv.v_quad);
+
 		/*
 		 * append the value to the list of
 		 * case values
@@ -636,12 +637,13 @@ switch1(tnode_t *tn)
 	tp = xcalloc(1, sizeof (type_t));
 	if (tn != NULL) {
 		tp->t_tspec = tn->tn_type->t_tspec;
-		if ((tp->t_isenum = tn->tn_type->t_isenum) != false)
+		if ((tp->t_is_enum = tn->tn_type->t_is_enum) != false)
 			tp->t_enum = tn->tn_type->t_enum;
 	} else {
 		tp->t_tspec = INT;
 	}
 
+	check_getopt_begin_switch();
 	expr(tn, true, false, true, false);
 
 	pushctrl(T_SWITCH);
@@ -669,10 +671,10 @@ switch2(void)
 	 * labels and the number of enumerators. If both counts are not
 	 * equal print a warning.
 	 */
-	if (cstmt->c_swtype->t_isenum) {
+	if (cstmt->c_swtype->t_is_enum) {
 		nenum = nclab = 0;
 		lint_assert(cstmt->c_swtype->t_enum != NULL);
-		for (esym = cstmt->c_swtype->t_enum->elem;
+		for (esym = cstmt->c_swtype->t_enum->en_first_enumerator;
 		     esym != NULL; esym = esym->s_next) {
 			nenum++;
 		}
@@ -684,14 +686,16 @@ switch2(void)
 		}
 	}
 
+	check_getopt_end_switch();
+
 	if (cstmt->c_break) {
 		/*
-		 * end of switch alway reached (c_break is only set if the
+		 * end of switch always reached (c_break is only set if the
 		 * break statement can be reached).
 		 */
 		reached = true;
 	} else if (!cstmt->c_default &&
-		   (!hflag || !cstmt->c_swtype->t_isenum || nenum != nclab)) {
+		   (!hflag || !cstmt->c_swtype->t_is_enum || nenum != nclab)) {
 		/*
 		 * there are possible values which are not handled in
 		 * switch
@@ -726,6 +730,7 @@ while1(tnode_t *tn)
 	if (tn != NULL && tn->tn_op == CON)
 		cstmt->c_infinite = is_nonzero(tn);
 
+	check_getopt_begin_while(tn);
 	expr(tn, false, true, true, false);
 }
 
@@ -744,6 +749,7 @@ while2(void)
 	reached = !cstmt->c_infinite || cstmt->c_break;
 	rchflg = false;
 
+	check_getopt_end_while();
 	popctrl(T_WHILE);
 }
 
@@ -985,7 +991,7 @@ doreturn(tnode_t *tn)
 		 * Assume that the function has a return value only if it
 		 * is explicitly declared.
 		 */
-		if (!funcsym->s_rimpl)
+		if (!funcsym->s_return_type_implicit_int)
 			/* function %s expects to return value */
 			warning(214, funcsym->s_name);
 	}
