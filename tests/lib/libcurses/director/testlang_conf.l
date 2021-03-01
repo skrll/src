@@ -1,5 +1,5 @@
 %{
-/*	$NetBSD: testlang_conf.l,v 1.21 2021/02/15 07:06:27 rillig Exp $ 	*/
+/*	$NetBSD: testlang_conf.l,v 1.25 2021/02/25 00:50:10 rillig Exp $ 	*/
 
 /*-
  * Copyright 2009 Brett Lymn <blymn@NetBSD.org>
@@ -59,9 +59,8 @@ dequote(const char *s, size_t *len)
 	*len = 0;
 	p = (const unsigned char *)s;
 	while (*p) {
-		if (*p == '\\' && *(p+1)) {
-			if (isdigit(*(p+1)) && *(p+2) && isdigit(*(p+2)) &&
-			    *(p+3) && isdigit(*(p+3)))
+		if (*p == '\\' && p[1]) {
+			if (isdigit(p[1]) && isdigit(p[2]) && isdigit(p[3]))
 				p += 3;
 			else
 				++p;
@@ -77,51 +76,59 @@ dequote(const char *s, size_t *len)
 	p = (const unsigned char *)s;
 	q = buf;
 	while (*p) {
-		if (*p == '\\' && *(p+1)) {
+		if (*p == '\\' && p[1]) {
 			++p;
-			if (isdigit(*p)) {
-				if (*(p+1) && isdigit(*(p+1)) && *(p+2) &&
-				    isdigit(*(p+2))) {
-					*q++ = ((*p - '0') * 8 + (*(p+1) - '0')) * 8 + (*(p+2) - '0');
+
+			if (isdigit(p[0])) {
+				if (isdigit(p[1]) && isdigit(p[2])) {
+					*q++ = (p[0] - '0') * 64 +
+					    (p[1] - '0') * 8 +
+					    (p[2] - '0');
 					p += 3;
 				} else {
 					*q++ = *p++;
 				}
-			} else {
-				switch (*p) {
-				case 'e':
-					/* escape */
-					*q++ = '\e';
-					p++;
-					break;
+				continue;
+			}
 
-				case 'n':
-					/* newline */
-					*q++ = '\n';
-					p++;
-					break;
+			switch (*p) {
+			case 'e':
+				/* escape */
+				*q++ = '\e';
+				p++;
+				break;
 
-				case 'r':
-					/* carriage return */
-					*q++ = '\r';
-					p++;
-					break;
+			case 'n':
+				/* newline */
+				*q++ = '\n';
+				p++;
+				break;
 
-				case 't':
-					/* tab */
-					*q++ = '\t';
-					p++;
-					break;
+			case 'r':
+				/* carriage return */
+				*q++ = '\r';
+				p++;
+				break;
 
-				case '\\':
-					/* backslash */
-					*q++ = '\\';
-					p++;
-					break;
+			case 't':
+				/* tab */
+				*q++ = '\t';
+				p++;
+				break;
 
-				default:
-					*q++ = *p++;
-				}
+			case '\\':
+				/* backslash */
+				*q++ = '\\';
+				p++;
+				break;
+
+			default:
+				if (isalpha(*p))
+					errx(2,
+					    "%s:%zu: Invalid escape sequence "
+					    "'\\%c' in string literal",
+					    cur_file, line, *p);
+				*q++ = *p++;
 			}
 		} else
 			*q++ = *p++;
@@ -176,10 +183,9 @@ include		BEGIN(incl);
 		char *inc_file;
 
 		if (include_ptr > MAX_INCLUDES) {
-			fprintf(stderr,
-				"Maximum number of nested includes exceeded "
-				"at line %zu of file %s\n", line, cur_file);
-				exit(2);
+			errx(2,
+			    "%s:%zu: Maximum number of nested includes "
+			    "exceeded", cur_file, line);
 		}
 
 		const char *dir_begin;

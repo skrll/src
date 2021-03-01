@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.137 2021/02/19 22:35:42 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.143 2021/02/28 18:51:51 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.137 2021/02/19 22:35:42 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.143 2021/02/28 18:51:51 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -917,7 +917,7 @@ length(const type_t *tp, const char *name)
 		}
 		/* FALLTHROUGH */
 	default:
-		elsz = size(tp->t_tspec);
+		elsz = size_in_bits(tp->t_tspec);
 		if (elsz <= 0)
 			LERROR("length(%d)", elsz);
 		break;
@@ -925,11 +925,8 @@ length(const type_t *tp, const char *name)
 	return elem * elsz;
 }
 
-/*
- * Get the alignment of the given Type in bits.
- */
 int
-getbound(const type_t *tp)
+alignment_in_bits(const type_t *tp)
 {
 	size_t	a;
 	tspec_t	t;
@@ -947,7 +944,7 @@ getbound(const type_t *tp)
 		error(14);
 		a = WORST_ALIGN(1) * CHAR_SIZE;
 	} else {
-		if ((a = size(t)) == 0) {
+		if ((a = size_in_bits(t)) == 0) {
 			a = CHAR_SIZE;
 		} else if (a > WORST_ALIGN(1) * CHAR_SIZE) {
 			a = WORST_ALIGN(1) * CHAR_SIZE;
@@ -1075,6 +1072,75 @@ check_type(sym_t *sym)
 }
 
 /*
+ * In traditional C, the only portable type for bit-fields is unsigned int.
+ *
+ * In C90, the only allowed types for bit-fields are int, signed int and
+ * unsigned int (3.5.2.1).  There is no mention of implementation-defined
+ * types.
+ *
+ * In C99, the only portable types for bit-fields are _Bool, signed int and
+ * unsigned int (6.7.2.1p4).  In addition, C99 allows "or some other
+ * implementation-defined type".
+ */
+static void
+declare_bit_field(sym_t *dsym, tspec_t *inout_t, type_t **const inout_tp)
+{
+	tspec_t t = *inout_t;
+	type_t *tp = *inout_tp;
+
+	if (t == CHAR || t == UCHAR || t == SCHAR ||
+	    t == SHORT || t == USHORT || t == ENUM) {
+		if (!bitfieldtype_ok) {
+			if (sflag) {
+				/* bit-field type '%s' invalid in ANSI C */
+				warning(273, type_name(tp));
+			} else if (pflag) {
+				/* nonportable bit-field type */
+				warning(34);
+			}
+		}
+	} else if (t == INT && dcs->d_smod == NOTSPEC) {
+		if (pflag && !bitfieldtype_ok) {
+			/* nonportable bit-field type */
+			warning(34);
+		}
+	} else if (t != INT && t != UINT && t != BOOL) {
+		/*
+		 * Non-integer types are always illegal for bitfields,
+		 * regardless of BITFIELDTYPE. Integer types not dealt with
+		 * above are okay only if BITFIELDTYPE is in effect.
+		 */
+		if (!bitfieldtype_ok || !is_integer(t)) {
+			/* illegal bit-field type '%s' */
+			warning(35, type_name(tp));
+			int sz = tp->t_flen;
+			dsym->s_type = tp = duptyp(gettyp(t = INT));
+			if ((tp->t_flen = sz) > size_in_bits(t))
+				tp->t_flen = size_in_bits(t);
+		}
+	}
+
+	if (tp->t_flen < 0 || tp->t_flen > (ssize_t)size_in_bits(t)) {
+		/* illegal bit-field size: %d */
+		error(36, tp->t_flen);
+		tp->t_flen = size_in_bits(t);
+	} else if (tp->t_flen == 0 && dsym->s_name != unnamed) {
+		/* zero size bit-field */
+		error(37);
+		tp->t_flen = size_in_bits(t);
+	}
+	if (dsym->s_scl == MOU) {
+		/* illegal use of bit-field */
+		error(41);
+		dsym->s_type->t_bitfield = false;
+		dsym->s_bitfield = false;
+	}
+
+	*inout_t = t;
+	*inout_tp = tp;
+}
+
+/*
  * Process the declarator of a struct/union element.
  */
 sym_t *
@@ -1082,8 +1148,8 @@ declarator_1_struct_union(sym_t *dsym)
 {
 	type_t	*tp;
 	tspec_t	t;
-	int	sz, len;
-	int	o = 0;	/* Appease gcc */
+	int	sz;
+	int	o = 0;	/* Appease GCC */
 	scl_t	sc;
 
 	lint_assert((sc = dsym->s_scl) == MOS || sc == MOU);
@@ -1103,57 +1169,7 @@ declarator_1_struct_union(sym_t *dsym)
 	t = (tp = dsym->s_type)->t_tspec;
 
 	if (dsym->s_bitfield) {
-		/*
-		 * only unsigned and signed int are portable bit-field types
-		 *(at least in ANSI C, in traditional C only unsigned int)
-		 */
-		if (t == CHAR || t == UCHAR || t == SCHAR ||
-		    t == SHORT || t == USHORT || t == ENUM) {
-			if (!bitfieldtype_ok) {
-				if (sflag) {
-					/* bit-field type '%s' invalid ... */
-					warning(273, type_name(tp));
-				} else if (pflag) {
-					/* nonportable bit-field type */
-					warning(34);
-				}
-			}
-		} else if (t == INT && dcs->d_smod == NOTSPEC) {
-			if (pflag && !bitfieldtype_ok) {
-				/* nonportable bit-field type */
-				warning(34);
-			}
-		} else if (t != INT && t != UINT && t != BOOL) {
-			/*
-			 * Non-integer types are always illegal for
-			 * bitfields, regardless of BITFIELDTYPE.
-			 * Integer types not dealt with above are
-			 * okay only if BITFIELDTYPE is in effect.
-			 */
-			if (!bitfieldtype_ok || !is_integer(t)) {
-				/* illegal bit-field type */
-				warning(35);
-				sz = tp->t_flen;
-				dsym->s_type = tp = duptyp(gettyp(t = INT));
-				if ((tp->t_flen = sz) > size(t))
-					tp->t_flen = size(t);
-			}
-		}
-		if ((len = tp->t_flen) < 0 || len > (ssize_t)size(t)) {
-			/* illegal bit-field size: %d */
-			error(36, len);
-			tp->t_flen = size(t);
-		} else if (len == 0 && dsym->s_name != unnamed) {
-			/* zero size bit-field */
-			error(37);
-			tp->t_flen = size(t);
-		}
-		if (dsym->s_scl == MOU) {
-			/* illegal use of bit-field */
-			error(41);
-			dsym->s_type->t_bitfield = false;
-			dsym->s_bitfield = false;
-		}
+		declare_bit_field(dsym, &t, &tp);
 	} else if (t == FUNC) {
 		/* function illegal in structure or union */
 		error(38);
@@ -1177,12 +1193,13 @@ declarator_1_struct_union(sym_t *dsym)
 		dcs->d_offset = 0;
 	}
 	if (dsym->s_bitfield) {
-		align(getbound(tp), tp->t_flen);
-		dsym->s_value.v_quad = (dcs->d_offset / size(t)) * size(t);
+		align(alignment_in_bits(tp), tp->t_flen);
+		dsym->s_value.v_quad =
+		    (dcs->d_offset / size_in_bits(t)) * size_in_bits(t);
 		tp->t_foffs = dcs->d_offset - (int)dsym->s_value.v_quad;
 		dcs->d_offset += tp->t_flen;
 	} else {
-		align(getbound(tp), 0);
+		align(alignment_in_bits(tp), 0);
 		dsym->s_value.v_quad = dcs->d_offset;
 		dcs->d_offset += sz;
 	}
@@ -2851,7 +2868,7 @@ declare_1_abstract(sym_t *sym)
 }
 
 /*
- * Checks size after declarations of variables and their initialisation.
+ * Checks size after declarations of variables and their initialization.
  */
 void
 check_size(sym_t *dsym)
