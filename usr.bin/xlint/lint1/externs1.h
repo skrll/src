@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.68 2021/02/20 16:34:57 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.72 2021/02/28 00:23:55 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -154,7 +154,7 @@ extern	void	setasm(void);
 extern	void	clrtyp(void);
 extern	void	deftyp(void);
 extern	int	length(const type_t *, const char *);
-extern	int	getbound(const type_t *);
+extern	int	alignment_in_bits(const type_t *);
 extern	sym_t	*lnklst(sym_t *, sym_t *);
 extern	void	check_type(sym_t *);
 extern	sym_t	*declarator_1_struct_union(sym_t *);
@@ -219,13 +219,13 @@ extern	val_t	*constant(tnode_t *, bool);
 extern	void	expr(tnode_t *, bool, bool, bool, bool);
 extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
 		    bool, bool, bool);
-extern	bool	constant_addr(tnode_t *, sym_t **, ptrdiff_t *);
+extern	bool	constant_addr(const tnode_t *, sym_t **, ptrdiff_t *);
 extern	strg_t	*cat_strings(strg_t *, strg_t *);
 extern  int64_t tsize(type_t *);
 #ifdef DEBUG
-extern	void	debug_node(const tnode_t *);
+extern	void	debug_node(const tnode_t *, int);
 #else
-#define debug_node(tn) (void)0
+#define debug_node(tn, indent) (void)0
 #endif
 
 /*
