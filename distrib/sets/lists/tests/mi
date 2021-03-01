@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1017 2021/02/13 06:29:45 rillig Exp $
+# $NetBSD: mi,v 1.1020 2021/02/19 12:28:56 rillig Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -1296,6 +1296,7 @@
 ./usr/tests/bin/sh/t_expand				tests-bin-tests		compattestfile,atf
 ./usr/tests/bin/sh/t_fsplit				tests-bin-tests		compattestfile,atf
 ./usr/tests/bin/sh/t_here				tests-bin-tests		compattestfile,atf
+./usr/tests/bin/sh/t_input				tests-bin-tests		compattestfile,atf
 ./usr/tests/bin/sh/t_option				tests-bin-tests		compattestfile,atf
 ./usr/tests/bin/sh/t_patterns				tests-bin-tests		compattestfile,atf
 ./usr/tests/bin/sh/t_redir				tests-bin-tests		compattestfile,atf
@@ -5473,6 +5474,8 @@
 ./usr/tests/usr.bin/make/unit-tests/varmod-subst-regex.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varmod-subst.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varmod-subst.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varmod-sun-shell.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varmod-sun-shell.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varmod-sysv.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varmod-sysv.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varmod-tail.exp				tests-usr.bin-tests	compattestfile,atf
@@ -6508,6 +6511,10 @@
 ./usr/tests/usr.bin/xlint/lint1/msg_336.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_337.c			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_337.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_338.c			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_338.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_339.c			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_339.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/t_integration			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/ztest				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/ztest/Atffile			tests-usr.bin-tests	compattestfile,atf

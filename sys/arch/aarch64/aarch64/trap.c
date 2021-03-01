@@ -1,4 +1,4 @@
-/* $NetBSD: trap.c,v 1.41 2020/12/11 18:03:33 skrll Exp $ */
+/* $NetBSD: trap.c,v 1.43 2021/02/18 11:23:15 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.41 2020/12/11 18:03:33 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.43 2021/02/18 11:23:15 jmcneill Exp $");
 
 #include "opt_arm_intr_impl.h"
 #include "opt_compat_netbsd32.h"
