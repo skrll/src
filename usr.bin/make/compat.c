@@ -1,4 +1,4 @@
-/*	$NetBSD: compat.c,v 1.218 2020/12/30 10:03:16 rillig Exp $	*/
+/*	$NetBSD: compat.c,v 1.224 2021/02/05 05:15:12 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -69,7 +69,7 @@
  * SUCH DAMAGE.
  */
 
-/*-
+/*
  * compat.c --
  *	The routines in this file implement the full-compatibility
  *	mode of PMake. Most of the special functionality of PMake
@@ -96,7 +96,7 @@
 #include "pathnames.h"
 
 /*	"@(#)compat.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: compat.c,v 1.218 2020/12/30 10:03:16 rillig Exp $");
+MAKE_RCSID("$NetBSD: compat.c,v 1.224 2021/02/05 05:15:12 rillig Exp $");
 
 static GNode *curTarg = NULL;
 static pid_t compatChild;
@@ -257,7 +257,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn, StringListNode *ln)
 			/*
 			 * Append the expanded command, to prevent the
 			 * local variables from being interpreted in the
-			 * context of the .END node.
+			 * scope of the .END node.
 			 *
 			 * A probably unintended side effect of this is that
 			 * the expanded command will be expanded again in the
@@ -281,7 +281,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn, StringListNode *ln)
 			errCheck = FALSE;
 		else if (*cmd == '+') {
 			doIt = TRUE;
-			if (!shellName)	/* we came here from jobs */
+			if (shellName == NULL)	/* we came here from jobs */
 				Shell_Init();
 		} else
 			break;
@@ -326,7 +326,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn, StringListNode *ln)
 		/* The following work for any of the builtin shell specs. */
 		int shargc = 0;
 		shargv[shargc++] = shellPath;
-		if (errCheck && shellErrFlag)
+		if (errCheck && shellErrFlag != NULL)
 			shargv[shargc++] = shellErrFlag;
 		shargv[shargc++] = DEBUG(SHELL) ? "-xc" : "-c";
 		shargv[shargc++] = cmd;
@@ -357,7 +357,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn, StringListNode *ln)
 	/*
 	 * Fork and execute the single command. If the fork fails, we abort.
 	 */
-	compatChild = cpid = vFork();
+	compatChild = cpid = vfork();
 	if (cpid < 0) {
 		Fatal("Could not fork");
 	}
@@ -509,7 +509,7 @@ MakeUnmade(GNode *gn, GNode *pgn)
 	}
 
 	if (Lst_FindDatum(&gn->implicitParents, pgn) != NULL)
-		Var_Set(IMPSRC, GNode_VarTarget(gn), pgn);
+		Var_Set(pgn, IMPSRC, GNode_VarTarget(gn));
 
 	/*
 	 * All the children were made ok. Now youngestChild->mtime contains the
@@ -602,7 +602,7 @@ MakeOther(GNode *gn, GNode *pgn)
 
 	if (Lst_FindDatum(&gn->implicitParents, pgn) != NULL) {
 		const char *target = GNode_VarTarget(gn);
-		Var_Set(IMPSRC, target != NULL ? target : "", pgn);
+		Var_Set(pgn, IMPSRC, target != NULL ? target : "");
 	}
 
 	switch (gn->made) {
@@ -707,7 +707,7 @@ Compat_Run(GNodeList *targs)
 {
 	GNode *errorNode = NULL;
 
-	if (!shellName)
+	if (shellName == NULL)
 		Shell_Init();
 
 	InitSignals();
@@ -749,6 +749,10 @@ Compat_Run(GNodeList *targs)
 	}
 
 	if (errorNode != NULL) {
+		if (DEBUG(GRAPH2))
+			Targ_PrintGraph(2);
+		else if (DEBUG(GRAPH3))
+			Targ_PrintGraph(3);
 		PrintOnError(errorNode, "\nStop.");
 		exit(1);
 	}

@@ -1,4 +1,4 @@
-/*	$NetBSD: pic_splfuncs.c,v 1.8 2018/04/01 04:35:04 ryo Exp $	*/
+/*	$NetBSD: pic_splfuncs.c,v 1.16 2021/02/20 22:53:31 jmcneill Exp $	*/
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -28,7 +28,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.8 2018/04/01 04:35:04 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.16 2021/02/20 22:53:31 jmcneill Exp $");
 
 #define _INTR_PRIVATE
 #include <sys/param.h>
@@ -45,7 +45,6 @@ __KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.8 2018/04/01 04:35:04 ryo Exp $")
 #include <arm/locore.h>	/* for compat aarch64 */
 
 #include <arm/pic/picvar.h>
-
 
 int
 _splraise(int newipl)
@@ -86,18 +85,40 @@ splx(int savedipl)
 		return;
 	}
 
-	register_t psw = cpsid(I32_bit);
-	KASSERTMSG(panicstr != NULL || savedipl < ci->ci_cpl,
-	    "splx(%d) to a higher ipl than %d", savedipl, ci->ci_cpl);
+#if defined(__HAVE_PIC_PENDING_INTRS)
+	if (__predict_true(ci->ci_pending_ipls == 0)) {
+		goto skip_pending;
+	}
 
+	const register_t psw = cpsid(I32_bit);
 	ci->ci_intr_depth++;
-	pic_do_pending_ints(psw, savedipl, NULL);
+	while ((ci->ci_pending_ipls & ~__BIT(savedipl)) > __BIT(savedipl)) {
+		KASSERT(ci->ci_pending_ipls < __BIT(NIPL));
+		for (;;) {
+			int ipl = 31 - __builtin_clz(ci->ci_pending_ipls);
+			KASSERT(ipl < NIPL);
+			if (ipl <= savedipl) {
+				break;
+			}
+
+			pic_set_priority_psw(ci, psw, ipl);
+			pic_list_deliver_irqs(ci, psw, ipl, NULL);
+			pic_list_unblock_irqs(ci);
+		}
+	}
 	ci->ci_intr_depth--;
-	KASSERTMSG(ci->ci_cpl == savedipl, "cpl %d savedipl %d",
-	    ci->ci_cpl, savedipl);
-	if ((psw & I32_bit) == 0)
+	if ((psw & I32_bit) == 0) {
 		cpsie(I32_bit);
+	}
+skip_pending:
+#endif
+
+	ci->ci_cpl = savedipl;
+	if (__predict_true(pic_list[0] != NULL)) {
+		(pic_list[0]->pic_ops->pic_set_priority)(pic_list[0], savedipl);
+	}
 	cpu_dosoftints();
+
 	KASSERTMSG(ci->ci_cpl == savedipl, "cpl %d savedipl %d",
 	    ci->ci_cpl, savedipl);
 }

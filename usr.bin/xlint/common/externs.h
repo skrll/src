@@ -1,4 +1,4 @@
-/*	$NetBSD: externs.h,v 1.12 2021/01/04 01:12:20 rillig Exp $	*/
+/*	$NetBSD: externs.h,v 1.14 2021/01/16 02:40:02 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -34,7 +34,9 @@
 /*
  * main[12].c
  */
-extern	int	pflag;
+extern	bool	pflag;
+/* Treat _Bool as incompatible to all other scalar types. */
+extern	bool	Tflag;
 
 /*
  * inittyp.c
@@ -45,7 +47,7 @@ extern	void	inittyp(void);
  * tyname.c
  */
 extern	const char *type_name(const type_t *);
-extern	int	sametype(const type_t *, const type_t *);
+extern	bool	sametype(const type_t *, const type_t *);
 extern	const	char *tspec_name(tspec_t);
 
 /*

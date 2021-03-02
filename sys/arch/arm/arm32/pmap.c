@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.422 2020/10/30 18:54:36 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.425 2021/02/01 19:02:28 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -192,7 +192,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.422 2020/10/30 18:54:36 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.425 2021/02/01 19:02:28 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -2358,7 +2358,7 @@ pmap_clearbit(struct vm_page_md *md, paddr_t pa, u_int maskbits)
 	}
 
 	/*
-	 * Loop over all current mappings setting/clearing as appropos
+	 * Loop over all current mappings setting/clearing as appropriate
 	 */
 	for (pv = SLIST_FIRST(&md->pvh_list); pv != NULL;) {
 		pmap_t pm = pv->pv_pmap;
@@ -3153,6 +3153,10 @@ pmap_enter(pmap_t pm, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 		KASSERT((pg != NULL) != (pp != NULL));
 		struct vm_page_md *md = (pg != NULL) ? VM_PAGE_TO_MD(pg) :
 		    PMAP_PAGE_TO_MD(pp);
+
+		UVMHIST_LOG(maphist, "  pg %#jx pp %#jx pvh_attrs %#jx "
+		    "nflags %#jx", (uintptr_t)pg, (uintptr_t)pp,
+		    md->pvh_attrs, nflags);
 
 		/*
 		 * This is to be a managed mapping.
@@ -4419,8 +4423,8 @@ pmap_fault_fixup(pmap_t pm, vaddr_t va, vm_prot_t ftype, int user)
 	pt_entry_t * const ptep = &l2b->l2b_kva[l2pte_index(va)];
 	pt_entry_t const opte = *ptep;
 	if (opte == 0 || (opte & L2_TYPE_MASK) == L2_TYPE_L) {
-		UVMHIST_LOG(maphist, " <-- done (empty pde for l1slot %#jx)",
-		    l1slot, 0, 0, 0);
+		UVMHIST_LOG(maphist, " <-- done (empty pte)",
+		    0, 0, 0, 0);
 		goto out;
 	}
 
@@ -4435,6 +4439,7 @@ pmap_fault_fixup(pmap_t pm, vaddr_t va, vm_prot_t ftype, int user)
 #endif
 
 	pa = l2pte_pa(opte);
+	UVMHIST_LOG(maphist, " pa %#jx opte %#jx ", pa, opte, 0, 0);
 
 	if ((ftype & VM_PROT_WRITE) && !l2pte_writable_p(opte)) {
 		/*
@@ -4470,6 +4475,7 @@ pmap_fault_fixup(pmap_t pm, vaddr_t va, vm_prot_t ftype, int user)
 		 */
 		if ((pv->pv_flags & PVF_WRITE) == 0) {
 			pmap_release_page_lock(md);
+			UVMHIST_LOG(maphist, " <-- done (write fault)", 0, 0, 0, 0);
 			goto out;
 		}
 

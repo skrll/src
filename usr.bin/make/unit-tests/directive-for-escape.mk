@@ -1,4 +1,4 @@
-# $NetBSD: directive-for-escape.mk,v 1.3 2020/12/31 14:26:37 rillig Exp $
+# $NetBSD: directive-for-escape.mk,v 1.7 2021/02/15 07:58:19 rillig Exp $
 #
 # Test escaping of special characters in the iteration values of a .for loop.
 # These values get expanded later using the :U variable modifier, and this
@@ -7,8 +7,8 @@
 
 .MAKEFLAGS: -df
 
-# Even though the .for loops takes quotes into account when splitting the
-# string into words, the quotes don't need to be balances, as of 2020-12-31.
+# Even though the .for loops take quotes into account when splitting the
+# string into words, the quotes don't need to be balanced, as of 2020-12-31.
 # This could be considered a bug.
 ASCII=	!"\#$$%&'()*+,-./0-9:;<=>?@A-Z[\]_^a-z{|}~
 
@@ -33,7 +33,7 @@ ASCII.2020-12-31=	!"\\\#$$%&'()*+,-./0-9:;<=>?@A-Z[\]_^a-z{|}~
 #
 # XXX: It is unexpected that the variable V gets expanded in the loop body.
 # The double '$$' should prevent exactly this.  Probably nobody was
-# adventurous enough to use literal dollar signs in the values for a .for
+# adventurous enough to use literal dollar signs in the values of a .for
 # loop.
 V=		value
 VALUES=		$$ $${V} $${V:=-with-modifier} $$(V) $$(V:=-with-modifier)
@@ -41,13 +41,28 @@ VALUES=		$$ $${V} $${V:=-with-modifier} $$(V) $$(V:=-with-modifier)
 .  info $i
 .endfor
 
-# Cover the code for nested '{}' in for_var_len.
+# Try to cover the code for nested '{}' in for_var_len, without success.
 #
-# The value of VALUES is not a variable expression.  Instead, it is meant to
-# represent dollar, lbrace, "UNDEF:U", backslash, dollar, backslash, dollar,
-# space, nested braces, space, "end}".
+# The value of the variable VALUES is not meant to be a variable expression.
+# Instead, it is meant to represent literal text, the only escaping mechanism
+# being that each '$' is written as '$$'.
+#
+# The .for loop splits ${VALUES} into 3 words, at the space characters, since
+# these are not escaped.
 VALUES=		$${UNDEF:U\$$\$$ {{}} end}
-# XXX: Where does the '\$$\$$' get converted into a single '\$'?
+# XXX: Where in the code does the '\$\$' get converted into a single '\$'?
+.for i in ${VALUES}
+.  info $i
+.endfor
+
+# Second try to cover the code for nested '{}' in for_var_len.
+#
+# XXX: It is wrong that for_var_len requires the braces to be balanced.
+# Each variable modifier has its own inconsistent way of parsing nested
+# variable expressions, braces and parentheses.  (Compare ':M', ':S', and
+# ':D' for details.)  The only sensible thing to do is therefore to let
+# Var_Parse do all the parsing work.
+VALUES=		begin<$${UNDEF:Ufallback:N{{{}}}}>end
 .for i in ${VALUES}
 .  info $i
 .endfor
@@ -89,8 +104,10 @@ i,=		comma
 .  info .      $$(i): $(i)
 .  info .   $$(i:M*): $(i:M*)
 .  info . $${i$${:U}}: ${i${:U}}
-.  info .    $${i\}}: ${i\}}	# XXX: unclear why SubstVarLong needs this
+.  info .    $${i\}}: ${i\}}	# XXX: unclear why ForLoop_SubstVarLong needs this
 .  info .     $${i2}: ${i2}
 .  info .     $${i,}: ${i,}
 .  info .  adjacent: $i${i}${i:M*}$i
 .endfor
+
+all:

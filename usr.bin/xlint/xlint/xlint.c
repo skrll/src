@@ -1,4 +1,4 @@
-/* $NetBSD: xlint.c,v 1.52 2021/01/04 22:26:51 rillig Exp $ */
+/* $NetBSD: xlint.c,v 1.56 2021/01/16 16:53:24 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: xlint.c,v 1.52 2021/01/04 22:26:51 rillig Exp $");
+__RCSID("$NetBSD: xlint.c,v 1.56 2021/01/16 16:53:24 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -106,16 +106,16 @@ static	char	**libsrchpath;
 static  char	*libexec_path;
 
 /* flags */
-static	int	iflag, oflag, Cflag, sflag, tflag, Fflag, dflag, Bflag, Sflag;
+static	bool	iflag, oflag, Cflag, sflag, tflag, Fflag, dflag, Bflag, Sflag;
 
 /* print the commands executed to run the stages of compilation */
-static	int	Vflag;
+static	bool	Vflag;
 
 /* filename for oflag */
 static	char	*outputfn;
 
 /* reset after first .c source has been processed */
-static	int	first = 1;
+static	bool	first = true;
 
 /*
  * name of a file which is currently written by a child and should
@@ -141,7 +141,7 @@ static	void	usage(void);
 static	void	fname(const char *);
 static	void	runchild(const char *, char *const *, const char *, int);
 static	void	findlibs(char *const *);
-static	int	rdok(const char *);
+static	bool	rdok(const char *);
 static	void	lint2(void);
 static	void	cat(char *const *, const char *);
 
@@ -290,13 +290,13 @@ usage(void)
 {
 
 	(void)fprintf(stderr,
-	    "Usage: %s [-abceghprvwxzHFS] [-s|-t] [-i|-nu] [-Dname[=def]]"
+	    "Usage: %s [-abceghprvwxzHFST] [-s|-t] [-i|-nu] [-Dname[=def]]"
 	    " [-Uname] [-X <id>[,<id>]... [-Z <cpparg>]\n", getprogname());
 	(void)fprintf(stderr,
 	    "\t[-Idirectory] [-Ldirectory] [-llibrary] [-ooutputfile]"
 	    " file...\n");
 	(void)fprintf(stderr,
-	    "       %s [-abceghprvwzHFS] [|-s|-t] -Clibrary [-Dname[=def]]\n"
+	    "       %s [-abceghprvwzHFST] [|-s|-t] -Clibrary [-Dname[=def]]\n"
 	    " [-X <id>[,<id>]... [-Z <cpparg>]\n", getprogname());
 	(void)fprintf(stderr, "\t[-Idirectory] [-Uname] [-Bpath] [-R old=new]"
 	    " file ...\n");
@@ -370,7 +370,8 @@ main(int argc, char *argv[])
 	(void)signal(SIGINT, terminate);
 	(void)signal(SIGQUIT, terminate);
 	(void)signal(SIGTERM, terminate);
-	while ((c = getopt(argc, argv, "abcd:eghil:no:prstuvwxzB:C:D:FHI:L:M:PR:SU:VX:Z:")) != -1) {
+	while ((c = getopt(argc, argv,
+	    "abcd:eghil:no:prstuvwxzB:C:D:FHI:L:M:PR:STU:VX:Z:")) != -1) {
 		switch (c) {
 
 		case 'a':
@@ -387,7 +388,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'F':
-			Fflag = 1;
+			Fflag = true;
 			/* FALLTHROUGH */
 		case 'u':
 		case 'h':
@@ -405,7 +406,7 @@ main(int argc, char *argv[])
 		case 'i':
 			if (Cflag)
 				usage();
-			iflag = 1;
+			iflag = true;
 			break;
 
 		case 'n':
@@ -439,14 +440,21 @@ main(int argc, char *argv[])
 			appcstrg(&lcflags, "-D__STRICT_ANSI__");
 			appcstrg(&l1flags, "-s");
 			appcstrg(&l2flags, "-s");
-			sflag = 1;
+			sflag = true;
 			break;
 
 		case 'S':
 			if (tflag)
 				usage();
 			appcstrg(&l1flags, "-S");
-			Sflag = 1;
+			Sflag = true;
+			break;
+
+		case 'T':
+			(void)sprintf(flgbuf, "-%c", c);
+			appcstrg(&cflags, "-I" PATH_STRICT_BOOL_INCLUDE);
+			appcstrg(&l1flags, flgbuf);
+			appcstrg(&l2flags, flgbuf);
 			break;
 
 #if ! HAVE_NBTOOL_CONFIG_H
@@ -460,7 +468,7 @@ main(int argc, char *argv[])
 			appstrg(&lcflags, concat2("-D", MACHINE_ARCH));
 			appcstrg(&l1flags, "-t");
 			appcstrg(&l2flags, "-t");
-			tflag = 1;
+			tflag = true;
 			break;
 #endif
 
@@ -471,7 +479,7 @@ main(int argc, char *argv[])
 		case 'C':
 			if (Cflag || oflag || iflag)
 				usage();
-			Cflag = 1;
+			Cflag = true;
 			appstrg(&l2flags, concat2("-C", optarg));
 			p2out = xmalloc(sizeof ("llib-l.ln") + strlen(optarg));
 			(void)sprintf(p2out, "llib-l%s.ln", optarg);
@@ -481,7 +489,7 @@ main(int argc, char *argv[])
 		case 'd':
 			if (dflag)
 				usage();
-			dflag = 1;
+			dflag = true;
 			appcstrg(&cflags, "-nostdinc");
 			appcstrg(&cflags, "-isystem");
 			appcstrg(&cflags, optarg);
@@ -502,7 +510,7 @@ main(int argc, char *argv[])
 		case 'o':
 			if (Cflag || oflag)
 				usage();
-			oflag = 1;
+			oflag = true;
 			outputfn = xstrdup(optarg);
 			break;
 
@@ -515,12 +523,12 @@ main(int argc, char *argv[])
 			break;
 
 		case 'B':
-			Bflag = 1;
+			Bflag = true;
 			libexec_path = xstrdup(optarg);
 			break;
 
 		case 'V':
-			Vflag = 1;
+			Vflag = true;
 			break;
 
 		case 'Z':
@@ -564,7 +572,7 @@ main(int argc, char *argv[])
 				usage();
 				/* NOTREACHED */
 			}
-			if (arg[2])
+			if (arg[2] != '\0')
 				appcstrg(list, arg + 2);
 			else if (argc > 1) {
 				argc--;
@@ -574,7 +582,7 @@ main(int argc, char *argv[])
 		} else {
 			/* filename */
 			fname(arg);
-			first = 0;
+			first = false;
 		}
 		argc--;
 		argv++;
@@ -618,10 +626,10 @@ fname(const char *name)
 	char	**args, *ofn, *pathname;
 	const char *CC;
 	size_t	len;
-	int is_stdin;
+	bool	is_stdin;
 	int	fd;
 
-	is_stdin = (strcmp(name, "-") == 0);
+	is_stdin = strcmp(name, "-") == 0;
 	bn = lbasename(name, '/');
 	suff = lbasename(bn, '.');
 
@@ -646,7 +654,7 @@ fname(const char *name)
 	if (oflag) {
 		ofn = outputfn;
 		outputfn = NULL;
-		oflag = 0;
+		oflag = false;
 	} else if (iflag) {
 		if (is_stdin) {
 			warnx("-i not supported without -o for standard input");
@@ -672,7 +680,7 @@ fname(const char *name)
 	if ((CC = getenv("CC")) == NULL)
 		CC = DEFAULT_CC;
 	if ((pathname = findcc(CC)) == NULL)
-		if (!setenv("PATH", DEFAULT_PATH, 1))
+		if (setenv("PATH", DEFAULT_PATH, 1) == 0)
 			pathname = findcc(CC);
 	if (pathname == NULL) {
 		(void)fprintf(stderr, "%s: %s: not found\n", getprogname(), CC);
@@ -817,18 +825,18 @@ findlibs(char *const *liblst)
 	free(lfn);
 }
 
-static int
+static bool
 rdok(const char *path)
 {
 	struct	stat sbuf;
 
 	if (stat(path, &sbuf) == -1)
-		return 0;
+		return false;
 	if (!S_ISREG(sbuf.st_mode))
-		return 0;
+		return false;
 	if (access(path, R_OK) == -1)
-		return 0;
-	return 1;
+		return false;
+	return true;
 }
 
 static void

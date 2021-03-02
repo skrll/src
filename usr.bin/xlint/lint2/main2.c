@@ -1,4 +1,4 @@
-/*	$NetBSD: main2.c,v 1.10 2021/01/04 22:26:51 rillig Exp $	*/
+/*	$NetBSD: main2.c,v 1.13 2021/01/16 02:40:02 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: main2.c,v 1.10 2021/01/04 22:26:51 rillig Exp $");
+__RCSID("$NetBSD: main2.c,v 1.13 2021/01/16 02:40:02 rillig Exp $");
 #endif
 
 #include <stdio.h>
@@ -48,45 +48,46 @@ __RCSID("$NetBSD: main2.c,v 1.10 2021/01/04 22:26:51 rillig Exp $");
 #include "lint2.h"
 
 /* warnings for symbols which are declared but not defined or used */
-int	xflag;
+bool	xflag;
 
 /*
  * warnings for symbols which are used and not defined or defined
  * and not used
  */
-int	uflag = 1;
+bool	uflag = true;
 
 /* Create a lint library in the current directory with name libname. */
-int	Cflag;
-const	char *libname;
+bool	Cflag;
+const char *libname;
 
-int	pflag;
+bool	pflag;
 
 /*
  * warnings for (tentative) definitions of the same name in more than
  * one translation unit
  */
-int	sflag;
+bool	sflag;
 
-int	tflag;
+bool	Tflag;
+bool	tflag;
 
 /*
  * If a complaint stems from a included file, print the name of the included
  * file instead of the name specified at the command line followed by '?'
  */
-int	Hflag;
+bool	Hflag;
 
-int	hflag;
+bool	hflag;
 
 /* Print full path names, not only the last component */
-int	Fflag;
+bool	Fflag;
 
 /*
  * List of libraries (from -l flag). These libraries are read after all
  * other input files has been read and, for Cflag, after the new lint library
  * has been written.
  */
-const	char	**libs;
+const char **libs;
 
 static	void	usage(void);
 
@@ -100,39 +101,42 @@ main(int argc, char *argv[])
 	libs = xcalloc(1, sizeof (char *));
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "hpstxuC:HFl:")) != -1) {
+	while ((c = getopt(argc, argv, "hpstxuC:HTFl:")) != -1) {
 		switch (c) {
 		case 's':
-			sflag = 1;
+			sflag = true;
+			break;
+		case 'T':
+			Tflag = true;
 			break;
 		case 't':
-			tflag = 1;
+			tflag = true;
 			break;
 		case 'u':
-			uflag = 0;
+			uflag = false;
 			break;
 		case 'x':
-			xflag = 1;
+			xflag = true;
 			break;
 		case 'p':
-			pflag = 1;
+			pflag = true;
 			break;
 		case 'C':
 			len = strlen(optarg);
 			lname = xmalloc(len + 10);
 			(void)sprintf(lname, "llib-l%s.ln", optarg);
 			libname = lname;
-			Cflag = 1;
-			uflag = 0;
+			Cflag = true;
+			uflag = false;
 			break;
 		case 'H':
-			Hflag = 1;
+			Hflag = true;
 			break;
 		case 'h':
-			hflag++;
+			hflag = true;
 			break;
 		case 'F':
-			Fflag = 1;
+			Fflag = true;
 			break;
 		case 'l':
 			for (i = 0; libs[i] != NULL; i++)
@@ -187,6 +191,6 @@ static void
 usage(void)
 {
 	(void)fprintf(stderr,
-		      "usage: lint2 -hpstxuHF -Clib -l lib ... src1 ...\n");
+		      "usage: lint2 -hpstxuHFT -Clib -l lib ... src1 ...\n");
 	exit(1);
 }

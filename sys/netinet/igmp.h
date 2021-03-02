@@ -1,4 +1,4 @@
-/*	$NetBSD: igmp.h,v 1.12 2014/05/29 23:02:48 rmind Exp $	*/
+/*	$NetBSD: igmp.h,v 1.15 2021/02/03 18:13:13 roy Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -88,7 +88,10 @@ struct igmp {
 	uint8_t		igmp_code;	/* code for routing sub-messages   */
 	uint16_t	igmp_cksum;	/* IP-style checksum               */
 	struct in_addr	igmp_group;	/* group address being reported    */
-} __packed;		/*  (zero for queries)             */
+};			/*  (zero for queries)             */
+#ifdef __CTASSERT
+__CTASSERT(sizeof(struct igmp) == 8);
+#endif
 
 #define	IGMP_MINLEN			8
 
