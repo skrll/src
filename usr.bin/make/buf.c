@@ -1,4 +1,4 @@
-/*	$NetBSD: buf.c,v 1.45 2020/11/23 19:07:12 rillig Exp $	*/
+/*	$NetBSD: buf.c,v 1.51 2021/01/30 21:18:14 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -69,17 +69,17 @@
  * SUCH DAMAGE.
  */
 
-/* Automatically-expanding null-terminated buffers. */
+/* Automatically-expanding null-terminated character buffers. */
 
 #include <limits.h>
 #include "make.h"
 
 /*	"@(#)buf.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: buf.c,v 1.45 2020/11/23 19:07:12 rillig Exp $");
+MAKE_RCSID("$NetBSD: buf.c,v 1.51 2021/01/30 21:18:14 rillig Exp $");
 
-/* Make space in the buffer for adding a single byte. */
+/* Make space in the buffer for adding at least 16 more bytes. */
 void
-Buf_Expand_1(Buffer *buf)
+Buf_Expand(Buffer *buf)
 {
 	buf->cap += buf->cap > 16 ? buf->cap : 16;
 	buf->data = bmake_realloc(buf->data, buf->cap);
@@ -92,7 +92,7 @@ Buf_AddBytes(Buffer *buf, const char *bytes, size_t bytes_len)
 	size_t old_len = buf->len;
 	char *end;
 
-	if (__predict_false(old_len + bytes_len >= buf->cap)) {
+	if (old_len + bytes_len >= buf->cap) {
 		size_t minIncr = bytes_len + 16;
 		buf->cap += buf->cap > minIncr ? buf->cap : minIncr;
 		buf->data = bmake_realloc(buf->data, buf->cap);
@@ -135,19 +135,6 @@ Buf_AddInt(Buffer *buf, int n)
 	Buf_AddBytes(buf, str, len);
 }
 
-/* Get the data (usually a string) from the buffer.
- * The returned data is valid until the next modifying operation
- * on the buffer.
- *
- * Returns the data and optionally the length of the data. */
-char *
-Buf_GetAll(Buffer *buf, size_t *out_len)
-{
-	if (out_len != NULL)
-		*out_len = buf->len;
-	return buf->data;
-}
-
 /* Mark the buffer as empty, so it can be filled with data again. */
 void
 Buf_Empty(Buffer *buf)
@@ -172,21 +159,36 @@ Buf_Init(Buffer *buf)
 	Buf_InitSize(buf, 256);
 }
 
-/* Reset the buffer.
- * If freeData is TRUE, the data from the buffer is freed as well.
- * Otherwise it is kept and returned. */
-char *
-Buf_Destroy(Buffer *buf, Boolean freeData)
+/*
+ * Free the data from the buffer.
+ * Leave the buffer itself in an indeterminate state.
+ */
+void
+Buf_Done(Buffer *buf)
 {
-	char *data = buf->data;
-	if (freeData) {
-		free(data);
-		data = NULL;
-	}
+	free(buf->data);
 
+#ifdef CLEANUP
 	buf->cap = 0;
 	buf->len = 0;
 	buf->data = NULL;
+#endif
+}
+
+/*
+ * Return the data from the buffer.
+ * Leave the buffer itself in an indeterminate state.
+ */
+char *
+Buf_DoneData(Buffer *buf)
+{
+	char *data = buf->data;
+
+#ifdef CLEANUP
+	buf->cap = 0;
+	buf->len = 0;
+	buf->data = NULL;
+#endif
 
 	return data;
 }
@@ -195,21 +197,24 @@ Buf_Destroy(Buffer *buf, Boolean freeData)
 # define BUF_COMPACT_LIMIT 128	/* worthwhile saving */
 #endif
 
-/* Reset the buffer and return its data.
+/*
+ * Return the data from the buffer.
+ * Leave the buffer itself in an indeterminate state.
  *
  * If the buffer size is much greater than its content,
- * a new buffer will be allocated and the old one freed. */
+ * a new buffer will be allocated and the old one freed.
+ */
 char *
-Buf_DestroyCompact(Buffer *buf)
+Buf_DoneDataCompact(Buffer *buf)
 {
 #if BUF_COMPACT_LIMIT > 0
 	if (buf->cap - buf->len >= BUF_COMPACT_LIMIT) {
 		/* We trust realloc to be smart */
 		char *data = bmake_realloc(buf->data, buf->len + 1);
 		data[buf->len] = '\0';	/* XXX: unnecessary */
-		Buf_Destroy(buf, FALSE);
+		Buf_DoneData(buf);
 		return data;
 	}
 #endif
-	return Buf_Destroy(buf, FALSE);
+	return Buf_DoneData(buf);
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: siisata.c,v 1.43 2020/10/10 20:27:54 thorpej Exp $ */
+/* $NetBSD: siisata.c,v 1.46 2021/01/11 16:48:35 skrll Exp $ */
 
 /* from ahcisata_core.c */
 
@@ -79,7 +79,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: siisata.c,v 1.43 2020/10/10 20:27:54 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: siisata.c,v 1.46 2021/01/11 16:48:35 skrll Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -184,16 +184,16 @@ void siisata_atapi_kill_pending(struct scsipi_periph *);
 #endif /* NATAPIBUS */
 
 const struct ata_bustype siisata_ata_bustype = {
-	SCSIPI_BUSTYPE_ATA,
-	siisata_ata_bio,
-	siisata_reset_drive,
-	siisata_reset_channel,
-	siisata_exec_command,
-	ata_get_params,
-	siisata_ata_addref,
-	siisata_ata_delref,
-	siisata_killpending,
-	siisata_channel_recover,
+	.bustype_type = SCSIPI_BUSTYPE_ATA,
+	.ata_bio = siisata_ata_bio,
+	.ata_reset_drive = siisata_reset_drive,
+	.ata_reset_channel = siisata_reset_channel,
+	.ata_exec_command = siisata_exec_command,
+	.ata_get_params = ata_get_params,
+	.ata_addref = siisata_ata_addref,
+	.ata_delref = siisata_ata_delref,
+	.ata_killpending = siisata_killpending,
+	.ata_recovery = siisata_channel_recover,
 };
 
 #if NATAPIBUS > 0
@@ -561,7 +561,7 @@ siisata_intr_port(struct siisata_channel *schp)
 			 * We don't expect the recovery to trigger error,
 			 * but handle this just in case.
 			 */
-			if (!ISSET(chp->ch_flags, ATACH_RECOVERING)) 
+			if (!ISSET(chp->ch_flags, ATACH_RECOVERING))
 				recover = true;
 			else {
 				aprint_error_dev(sc->sc_atac.atac_dev,
@@ -604,7 +604,7 @@ process:
 		 */
 		uint32_t aslots = ata_queue_active(chp);
 
-		for (int slot=0; slot < SIISATA_MAX_SLOTS; slot++) {
+		for (int slot = 0; slot < SIISATA_MAX_SLOTS; slot++) {
 			if ((aslots & __BIT(slot)) != 0 &&
 			    (pss & PR_PXSS(slot)) == 0) {
 				xfer = ata_queue_hwslot_to_xfer(chp, slot);
@@ -841,7 +841,7 @@ siisata_probe_drive(struct ata_channel *chp)
 		}
 		if (timed_out) {
 			aprint_error_dev(sc->sc_atac.atac_dev,
-			    "timed out waiting for PORT_READY on port %d, " 
+			    "timed out waiting for PORT_READY on port %d, "
 			    "reinitializing\n", chp->ch_channel);
 			if (siisata_reinit_port(chp, -1))
 				siisata_reset_channel(chp, AT_WAIT);

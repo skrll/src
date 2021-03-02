@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.135 2020/10/15 09:37:40 jmcneill Exp $	*/
+/*	$NetBSD: xhci.c,v 1.138 2021/01/05 18:00:21 skrll Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.135 2020/10/15 09:37:40 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.138 2021/01/05 18:00:21 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -1080,14 +1080,14 @@ xhci_init(struct xhci_softc *sc)
 	    (uint32_t)sc->sc_maxslots);
 	aprint_debug_dev(sc->sc_dev, "sc_maxports %d\n", sc->sc_maxports);
 
-	usbd_status err;
-
+	int err;
 	sc->sc_maxspbuf = XHCI_HCS2_MAXSPBUF(hcs2);
 	aprint_debug_dev(sc->sc_dev, "sc_maxspbuf %d\n", sc->sc_maxspbuf);
 	if (sc->sc_maxspbuf != 0) {
 		err = usb_allocmem(&sc->sc_bus,
 		    sizeof(uint64_t) * sc->sc_maxspbuf, sizeof(uint64_t),
-		    USBMALLOC_COHERENT, &sc->sc_spbufarray_dma);
+		    USBMALLOC_COHERENT | USBMALLOC_ZERO,
+		    &sc->sc_spbufarray_dma);
 		if (err) {
 			aprint_error_dev(sc->sc_dev,
 			    "spbufarray init fail, err %d\n", err);
@@ -1101,7 +1101,8 @@ xhci_init(struct xhci_softc *sc)
 			usb_dma_t * const dma = &sc->sc_spbuf_dma[i];
 			/* allocate contexts */
 			err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz,
-			    sc->sc_pgsz, USBMALLOC_COHERENT, dma);
+			    sc->sc_pgsz, USBMALLOC_COHERENT | USBMALLOC_ZERO,
+			    dma);
 			if (err) {
 				aprint_error_dev(sc->sc_dev,
 				    "spbufarray_dma init fail, err %d\n", err);
@@ -1149,7 +1150,8 @@ xhci_init(struct xhci_softc *sc)
 	    XHCI_EVENT_RING_SEGMENT_TABLE_ALIGN);
 	KASSERTMSG(size <= (512 * 1024), "eventst size %zu too large", size);
 	align = XHCI_EVENT_RING_SEGMENT_TABLE_ALIGN;
-	err = usb_allocmem(&sc->sc_bus, size, align, USBMALLOC_COHERENT, dma);
+	err = usb_allocmem(&sc->sc_bus, size, align,
+	    USBMALLOC_COHERENT | USBMALLOC_ZERO, dma);
 	if (err) {
 		aprint_error_dev(sc->sc_dev, "eventst init fail, err %d\n",
 		    err);
@@ -1157,8 +1159,6 @@ xhci_init(struct xhci_softc *sc)
 		goto bad3;
 	}
 
-	memset(KERNADDR(dma, 0), 0, size);
-	usb_syncmem(dma, 0, size, BUS_DMASYNC_PREWRITE);
 	aprint_debug_dev(sc->sc_dev, "eventst: 0x%016jx %p %zx\n",
 	    (uintmax_t)DMAADDR(&sc->sc_eventst_dma, 0),
 	    KERNADDR(&sc->sc_eventst_dma, 0),
@@ -1168,7 +1168,8 @@ xhci_init(struct xhci_softc *sc)
 	size = (1 + sc->sc_maxslots) * sizeof(uint64_t);
 	KASSERTMSG(size <= 2048, "dcbaa size %zu too large", size);
 	align = XHCI_DEVICE_CONTEXT_BASE_ADDRESS_ARRAY_ALIGN;
-	err = usb_allocmem(&sc->sc_bus, size, align, USBMALLOC_COHERENT, dma);
+	err = usb_allocmem(&sc->sc_bus, size, align,
+	    USBMALLOC_COHERENT | USBMALLOC_ZERO, dma);
 	if (err) {
 		aprint_error_dev(sc->sc_dev, "dcbaa init fail, err %d\n", err);
 		rv = ENOMEM;
@@ -1179,15 +1180,14 @@ xhci_init(struct xhci_softc *sc)
 	    KERNADDR(&sc->sc_dcbaa_dma, 0),
 	    sc->sc_dcbaa_dma.udma_block->size);
 
-	memset(KERNADDR(dma, 0), 0, size);
 	if (sc->sc_maxspbuf != 0) {
 		/*
 		 * DCBA entry 0 hold the scratchbuf array pointer.
 		 */
 		*(uint64_t *)KERNADDR(dma, 0) =
 		    htole64(DMAADDR(&sc->sc_spbufarray_dma, 0));
+		usb_syncmem(dma, 0, size, BUS_DMASYNC_PREWRITE);
 	}
-	usb_syncmem(dma, 0, size, BUS_DMASYNC_PREWRITE);
 
 	sc->sc_slots = kmem_zalloc(sizeof(*sc->sc_slots) * sc->sc_maxslots,
 	    KM_SLEEP);
@@ -2569,7 +2569,6 @@ static usbd_status
 xhci_ring_init(struct xhci_softc * const sc, struct xhci_ring **xrp,
     size_t ntrb, size_t align)
 {
-	usbd_status err;
 	size_t size = ntrb * XHCI_TRB_SIZE;
 	struct xhci_ring *xr;
 
@@ -2580,8 +2579,8 @@ xhci_ring_init(struct xhci_softc * const sc, struct xhci_ring **xrp,
 	xr = kmem_zalloc(sizeof(struct xhci_ring), KM_SLEEP);
 	DPRINTFN(1, "ring %#jx", (uintptr_t)xr, 0, 0, 0);
 
-	err = usb_allocmem(&sc->sc_bus, size, align, USBMALLOC_COHERENT,
-	    &xr->xr_dma);
+	int err = usb_allocmem(&sc->sc_bus, size, align,
+	    USBMALLOC_COHERENT | USBMALLOC_ZERO, &xr->xr_dma);
 	if (err) {
 		kmem_free(xr, sizeof(struct xhci_ring));
 		DPRINTFN(1, "alloc xr_dma failed %jd", err, 0, 0, 0);
@@ -3011,7 +3010,6 @@ xhci_init_slot(struct usbd_device *dev, uint32_t slot)
 {
 	struct xhci_softc * const sc = XHCI_BUS2SC(dev->ud_bus);
 	struct xhci_slot *xs;
-	usbd_status err;
 
 	XHCIHIST_FUNC();
 	XHCIHIST_CALLARGS("slot %ju", slot, 0, 0, 0);
@@ -3019,33 +3017,30 @@ xhci_init_slot(struct usbd_device *dev, uint32_t slot)
 	xs = &sc->sc_slots[slot];
 
 	/* allocate contexts */
-	err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
-	    USBMALLOC_COHERENT, &xs->xs_dc_dma);
+	int err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
+	    USBMALLOC_COHERENT | USBMALLOC_ZERO, &xs->xs_dc_dma);
 	if (err) {
 		DPRINTFN(1, "failed to allocmem output device context %jd",
 		    err, 0, 0, 0);
-		return err;
+		return USBD_NOMEM;
 	}
-	memset(KERNADDR(&xs->xs_dc_dma, 0), 0, sc->sc_pgsz);
 
 	err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
-	    USBMALLOC_COHERENT, &xs->xs_ic_dma);
+	    USBMALLOC_COHERENT | USBMALLOC_ZERO, &xs->xs_ic_dma);
 	if (err) {
 		DPRINTFN(1, "failed to allocmem input device context %jd",
 		    err, 0, 0, 0);
-		goto bad1;
+		return USBD_NOMEM;
 	}
-	memset(KERNADDR(&xs->xs_ic_dma, 0), 0, sc->sc_pgsz);
 
 	memset(&xs->xs_xr[0], 0, sizeof(xs->xs_xr));
 	xs->xs_idx = slot;
 
 	return USBD_NORMAL_COMPLETION;
 
- bad1:
 	usb_freemem(&sc->sc_bus, &xs->xs_dc_dma);
 	xs->xs_idx = 0;
-	return err;
+	return USBD_NOMEM;
 }
 
 static void
@@ -4412,7 +4407,6 @@ xhci_device_intr_abort(struct usbd_xfer *xfer)
 	XHCIHIST_CALLARGS("%#jx", (uintptr_t)xfer, 0, 0, 0);
 
 	KASSERT(mutex_owned(&sc->sc_lock));
-	KASSERT(xfer->ux_pipe->up_intrxfer == xfer);
 	usbd_xfer_abort(xfer);
 }
 

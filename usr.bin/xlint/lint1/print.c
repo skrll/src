@@ -1,4 +1,4 @@
-/*	$NetBSD: print.c,v 1.4 2008/07/31 15:21:34 christos Exp $	*/
+/*	$NetBSD: print.c,v 1.10 2021/01/05 23:20:53 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -35,80 +35,15 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: print.c,v 1.4 2008/07/31 15:21:34 christos Exp $");
+__RCSID("$NetBSD: print.c,v 1.10 2021/01/05 23:20:53 rillig Exp $");
 #endif
 
 #include <stdio.h>
 
 #include "lint1.h"
-#include "externs1.h"
-
-static const char *str_op_t[] =
-{
-	"*noop*",
-	"->",
-	".",
-	"!",
-	"~",
-	"++",
-	"--",
-	"++<",
-	"--<",
-	"++>",
-	"-->",
-	"+",
-	"-",
-	"*",
-	"&",
-	"*",
-	"/",
-	"%",
-	"+",
-	"-",
-	"<<",
-	">>",
-	"<",
-	"<=",
-	">",
-	">=",
-	"==",
-	"!=",
-	"&",
-	"^",
-	"|",
-	"&&",
-	"||",
-	"?",
-	":",
-	"=",
-	"*=",
-	"/=",
-	"%=",
-	"+=",
-	"-=",
-	"<<=",
-	">>=",
-	"&=",
-	"^=",
-	"|=",
-	"*name*",
-	"*constant*",
-	"*string*",
-	"*field select*",
-	"*call*",
-	",",
-	"*(cast)*",
-	"*icall*",
-	"*load*",
-	"*push*",
-	"return",
-	"*init*",
-	"*case*",
-	"*farg*",
-};
 
 char *
-prtnode(char *buf, size_t bufsiz, const tnode_t *tn)
+print_tnode(char *buf, size_t bufsiz, const tnode_t *tn)
 {
 	strg_t *st;
 	val_t *v;
@@ -132,9 +67,9 @@ prtnode(char *buf, size_t bufsiz, const tnode_t *tn)
 			break;
 		}
 		break;
-		
+
 	case STRING:
-		st = tn->tn_strg;
+		st = tn->tn_string;
 		switch (st->st_tspec) {
 		case CHAR:
 		case SCHAR:
@@ -147,7 +82,7 @@ prtnode(char *buf, size_t bufsiz, const tnode_t *tn)
 		}
 		break;
 	default:
-		(void)snprintf(buf, bufsiz, "%s", str_op_t[tn->tn_op]);
+		(void)snprintf(buf, bufsiz, "%s", getopname(tn->tn_op));
 		break;
 	}
 	return buf;

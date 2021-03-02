@@ -1,4 +1,4 @@
-/* $NetBSD: rk_i2c.c,v 1.8 2020/09/19 18:19:09 ryo Exp $ */
+/* $NetBSD: rk_i2c.c,v 1.10 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: rk_i2c.c,v 1.8 2020/09/19 18:19:09 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk_i2c.c,v 1.10 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -100,9 +100,9 @@ __KERNEL_RCSID(0, "$NetBSD: rk_i2c.c,v 1.8 2020/09/19 18:19:09 ryo Exp $");
 #define	RKI2C_TXDATA(n)		(0x100 + (n) * 4)
 #define	RKI2C_RXDATA(n)		(0x200 + (n) * 4)
 
-static const char * const compatible[] = {
-	"rockchip,rk3399-i2c",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "rockchip,rk3399-i2c" },
+	DEVICE_COMPAT_EOL
 };
 
 struct rk_i2c_softc {
@@ -361,24 +361,12 @@ rk_i2c_exec(void *priv, i2c_op_t op, i2c_addr_t addr,
 	return error;
 }
 
-static i2c_tag_t
-rk_i2c_get_tag(device_t dev)
-{
-	struct rk_i2c_softc * const sc = device_private(dev);
-
-	return &sc->sc_ic;
-}
-
-static const struct fdtbus_i2c_controller_func rk_i2c_funcs = {
-	.get_tag = rk_i2c_get_tag,
-};
-
 static int
 rk_i2c_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -428,7 +416,7 @@ rk_i2c_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ic.ic_cookie = sc;
 	sc->sc_ic.ic_exec = rk_i2c_exec;
 
-	fdtbus_register_i2c_controller(self, phandle, &rk_i2c_funcs);
+	fdtbus_register_i2c_controller(&sc->sc_ic, phandle);
 
 	fdtbus_attach_i2cbus(self, phandle, &sc->sc_ic, iicbus_print);
 }

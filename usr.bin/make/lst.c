@@ -1,4 +1,4 @@
-/* $NetBSD: lst.c,v 1.101 2020/12/13 20:57:17 rillig Exp $ */
+/* $NetBSD: lst.c,v 1.104 2021/02/01 19:39:31 rillig Exp $ */
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -34,7 +34,7 @@
 
 #include "make.h"
 
-MAKE_RCSID("$NetBSD: lst.c,v 1.101 2020/12/13 20:57:17 rillig Exp $");
+MAKE_RCSID("$NetBSD: lst.c,v 1.104 2021/02/01 19:39:31 rillig Exp $");
 
 static ListNode *
 LstNodeNew(ListNode *prev, ListNode *next, void *datum)
@@ -86,15 +86,6 @@ Lst_Free(List *list)
 {
 
 	Lst_Done(list);
-	free(list);
-}
-
-/* Destroy a list and free all its resources. The freeProc is called with the
- * datum from each node in turn before the node is freed. */
-void
-Lst_Destroy(List *list, LstFreeProc freeProc)
-{
-	Lst_DoneCall(list, freeProc);
 	free(list);
 }
 
@@ -154,8 +145,10 @@ Lst_Append(List *list, void *datum)
 	}
 }
 
-/* Remove the given node from the given list.
- * The datum stored in the node must be freed by the caller, if necessary. */
+/*
+ * Remove the given node from the given list.
+ * The datum stored in the node must be freed by the caller, if necessary.
+ */
 void
 Lst_Remove(List *list, ListNode *ln)
 {
@@ -181,17 +174,21 @@ LstNode_Set(ListNode *ln, void *datum)
 	ln->datum = datum;
 }
 
-/* Replace the datum in the given node with NULL.
- * Having NULL values in a list is unusual though. */
+/*
+ * Replace the datum in the given node with NULL.
+ * Having NULL values in a list is unusual though.
+ */
 void
 LstNode_SetNull(ListNode *ln)
 {
 	ln->datum = NULL;
 }
 
-/* Return the first node that contains the given datum, or NULL.
+/*
+ * Return the first node that contains the given datum, or NULL.
  *
- * Time complexity: O(length(list)) */
+ * Time complexity: O(length(list))
+ */
 ListNode *
 Lst_FindDatum(List *list, const void *datum)
 {
@@ -206,8 +203,10 @@ Lst_FindDatum(List *list, const void *datum)
 	return NULL;
 }
 
-/* Move all nodes from src to the end of dst.
- * The source list becomes empty but is not freed. */
+/*
+ * Move all nodes from src to the end of dst.
+ * The source list becomes empty but is not freed.
+ */
 void
 Lst_MoveAll(List *dst, List *src)
 {
@@ -261,8 +260,10 @@ Vector_Init(Vector *v, size_t itemSize)
 	v->items = bmake_malloc(v->cap * v->itemSize);
 }
 
-/* Add space for a new item to the vector and return a pointer to that space.
- * The returned data is valid until the next modifying operation. */
+/*
+ * Add space for a new item to the vector and return a pointer to that space.
+ * The returned data is valid until the next modifying operation.
+ */
 void *
 Vector_Push(Vector *v)
 {
@@ -274,8 +275,10 @@ Vector_Push(Vector *v)
 	return Vector_Get(v, v->len - 1);
 }
 
-/* Return the pointer to the last item in the vector.
- * The returned data is valid until the next modifying operation. */
+/*
+ * Remove the last item from the vector, return the pointer to it.
+ * The returned data is valid until the next modifying operation.
+ */
 void *
 Vector_Pop(Vector *v)
 {

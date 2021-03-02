@@ -1,4 +1,4 @@
-# $NetBSD: varmod-assign.mk,v 1.8 2020/10/18 21:37:24 rillig Exp $
+# $NetBSD: varmod-assign.mk,v 1.10 2021/02/14 12:14:37 rillig Exp $
 #
 # Tests for the obscure ::= variable modifiers, which perform variable
 # assignments during evaluation, just like the = operator in C.
@@ -88,11 +88,10 @@ mod-assign-shell-error:
 	@${SH_OK::!= echo word; true } echo ok=${SH_OK}
 
 	# If the command fails, the variable keeps its previous value.
-	# FIXME: the error message says: "previous" returned non-zero status
 	@${SH_ERR::=previous}
 	@${SH_ERR::!= echo word; false } echo err=${SH_ERR}
 
-# XXX: The ::= modifier expands its right-hand side, exactly once.
+# XXX: The ::= modifier expands its right-hand side exactly once.
 # This differs subtly from normal assignments such as '+=' or '=', which copy
 # their right-hand side literally.
 APPEND.prev=		previous
@@ -103,5 +102,15 @@ APPEND.dollar=		$${APPEND.indirect}
 .  error
 .endif
 .if ${APPEND.var} != "previous indirect \${:Unot expanded}"
+.  error
+.endif
+
+
+# The assignment modifier can be used in a variable expression that is
+# enclosed in parentheses.  In such a case, parsing stops at the first ')',
+# not at the first '}'.
+VAR=	previous
+_:=	$(VAR::=current})
+.if ${VAR} != "current}"
 .  error
 .endif

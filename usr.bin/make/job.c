@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.388 2020/12/15 21:19:47 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.420 2021/02/05 22:15:44 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -69,14 +69,14 @@
  * SUCH DAMAGE.
  */
 
-/*-
+/*
  * job.c --
  *	handle the creation etc. of our child processes.
  *
  * Interface:
  *	Job_Init	Called to initialize this module. In addition,
- *			any commands attached to the .BEGIN target
- *			are executed before this function returns.
+ *			the .BEGIN target is made including all of its
+ *			dependencies before this function returns.
  *			Hence, the makefiles must have been parsed
  *			before this function is called.
  *
@@ -99,9 +99,9 @@
  *			a time given by the SEL_* constants, below,
  *			or until output is ready.
  *
- *	Job_ParseShell	Given the line following a .SHELL target, parse
- *			the line as a shell specification. Returns
- *			FALSE if the spec was incorrect.
+ *	Job_ParseShell	Given a special dependency line with target '.SHELL',
+ *			define the shell that is used for the creation
+ *			commands in jobs mode.
  *
  *	Job_Finish	Perform any final processing which needs doing.
  *			This includes the execution of any commands
@@ -109,10 +109,9 @@
  *			target. It should only be called when the
  *			job table is empty.
  *
- *	Job_AbortAll	Abort all currently running jobs. It doesn't
- *			handle output or do anything for the jobs,
- *			just kills them. It should only be called in
- *			an emergency.
+ *	Job_AbortAll	Abort all currently running jobs. Do not handle
+ *			output or do anything for the jobs, just kill them.
+ *			Should only be called in an emergency.
  *
  *	Job_CheckCommands
  *			Verify that the commands for a target are
@@ -143,7 +142,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.388 2020/12/15 21:19:47 rillig Exp $");
+MAKE_RCSID("$NetBSD: job.c,v 1.420 2021/02/05 22:15:44 sjg Exp $");
 
 /*
  * A shell defines how the commands are run.  All commands for a target are
@@ -164,15 +163,15 @@ MAKE_RCSID("$NetBSD: job.c,v 1.388 2020/12/15 21:19:47 rillig Exp $");
  * The error checking for individual commands is controlled using hasErrCtl,
  * errOn, errOff and runChkTmpl.
  *
- * If a shell doesn't have error control, echoTmpl becomes a printf template
- * for echoing the command, should echoing be on; runIgnTmpl becomes
- * another printf template for executing the command while ignoring the return
+ * In case a shell doesn't have error control, echoTmpl is a printf template
+ * for echoing the command, should echoing be on; runIgnTmpl is another
+ * printf template for executing the command while ignoring the return
  * status. Finally runChkTmpl is a printf template for running the command and
  * causing the shell to exit on error. If any of these strings are empty when
  * hasErrCtl is FALSE, the command will be executed anyway as is, and if it
  * causes an error, so be it. Any templates set up to echo the command will
- * escape any '$ ` \ "' characters in the command string to avoid common
- * problems with echo "%s\n" as a template.
+ * escape any '$ ` \ "' characters in the command string to avoid unwanted
+ * shell code injection, the escaped command is safe to use in double quotes.
  *
  * The command-line flags "echo" and "exit" also control the behavior.  The
  * "echo" flag causes the shell to start echoing commands right away.  The
@@ -217,7 +216,7 @@ typedef struct Shell {
 } Shell;
 
 typedef struct CommandFlags {
-	/* Whether to echo the command before running it. */
+	/* Whether to echo the command before or instead of running it. */
 	Boolean echo;
 
 	/* Run the command even in -n or -N mode. */
@@ -253,6 +252,7 @@ typedef enum AbortReason {	/* why is the make aborting? */
 	ABORT_ERROR,		/* Because of an error */
 	ABORT_INTERRUPT,	/* Because it was interrupted */
 	ABORT_WAIT		/* Waiting for jobs to finish */
+	/* XXX: "WAIT" is not a _reason_ for aborting, it's rather a status. */
 } AbortReason;
 static AbortReason aborting = ABORT_NONE;
 #define JOB_TOKENS "+EI+"	/* Token to requeue for each abort state */
@@ -399,13 +399,15 @@ static Shell shells[] = {
     }
 };
 
-/* This is the shell to which we pass all commands in the Makefile.
- * It is set by the Job_ParseShell function. */
+/*
+ * This is the shell to which we pass all commands in the Makefile.
+ * It is set by the Job_ParseShell function.
+ */
 static Shell *shell = &shells[DEFSHELL_INDEX];
 const char *shellPath = NULL;	/* full pathname of executable image */
 const char *shellName = NULL;	/* last component of shellPath */
 char *shellErrFlag = NULL;
-static char *shellArgv = NULL;	/* Custom shell args */
+static char *shell_freeIt = NULL; /* Allocated memory for custom .SHELL */
 
 
 static Job *job_table;		/* The structures that describe them */
@@ -419,11 +421,11 @@ static Boolean make_suspended = FALSE; /* Whether we've seen a SIGTSTP (etc) */
  * the output channels of children
  */
 static struct pollfd *fds = NULL;
-static Job **allJobs = NULL;
-static nfds_t nJobs = 0;
+static Job **jobByFdIndex = NULL;
+static nfds_t fdsLen = 0;
 static void watchfd(Job *);
 static void clearfd(Job *);
-static int readyfd(Job *);
+static Boolean readyfd(Job *);
 
 static char *targPrefix = NULL; /* To identify a job change in the output. */
 static Job tokenWaitJob;	/* token wait pseudo-job */
@@ -437,9 +439,10 @@ enum {
 };
 
 static sigset_t caught_signals;	/* Set of signals we handle */
+static volatile sig_atomic_t caught_sigchld;
 
 static void JobDoOutput(Job *, Boolean);
-static void JobInterrupt(int, int) MAKE_ATTR_DEAD;
+static void JobInterrupt(Boolean, int) MAKE_ATTR_DEAD;
 static void JobRestartJobs(void);
 static void JobSigReset(void);
 
@@ -597,9 +600,11 @@ JobCondPassSig(int signo)
  *
  * Sends a token on the child exit pipe to wake us up from select()/poll().
  */
+/*ARGSUSED*/
 static void
 JobChildSig(int signo MAKE_ATTR_UNUSED)
 {
+	caught_sigchld = 1;
 	while (write(childExitJob.outPipe, CHILD_EXIT, 1) == -1 &&
 	       errno == EAGAIN)
 		continue;
@@ -607,6 +612,7 @@ JobChildSig(int signo MAKE_ATTR_UNUSED)
 
 
 /* Resume all stopped jobs. */
+/*ARGSUSED*/
 static void
 JobContinueSig(int signo MAKE_ATTR_UNUSED)
 {
@@ -890,7 +896,7 @@ JobPrintSpecials(Job *job, ShellWriter *wr, const char *escCmd, Boolean run,
  * after all other targets have been made.
  */
 static void
-JobPrintCommand(Job *job, ShellWriter *wr, const char *ucmd)
+JobPrintCommand(Job *job, ShellWriter *wr, StringListNode *ln, const char *ucmd)
 {
 	Boolean run;
 
@@ -917,7 +923,7 @@ JobPrintCommand(Job *job, ShellWriter *wr, const char *ucmd)
 		 * We're not actually executing anything...
 		 * but this one needs to be - use compat mode just for it.
 		 */
-		Compat_RunCommand(ucmd, job->node);
+		Compat_RunCommand(ucmd, job->node, ln);
 		free(xcmdStart);
 		return;
 	}
@@ -948,7 +954,7 @@ JobPrintCommand(Job *job, ShellWriter *wr, const char *ucmd)
 		 * set up commands to run through it.
 		 */
 
-		if (!shell->hasErrCtl && shell->runChkTmpl &&
+		if (!shell->hasErrCtl && shell->runChkTmpl != NULL &&
 		    shell->runChkTmpl[0] != '\0') {
 			if (job->echo && cmdFlags.echo) {
 				ShellWriter_EchoOff(wr);
@@ -985,7 +991,7 @@ JobPrintCommand(Job *job, ShellWriter *wr, const char *ucmd)
  * Print all commands to the shell file that is later executed.
  *
  * The special command "..." stops printing and saves the remaining commands
- * to be executed later.
+ * to be executed later, when the target '.END' is made.
  *
  * Return whether at least one command was written to the shell file.
  */
@@ -1005,14 +1011,17 @@ JobPrintCommands(Job *job)
 			break;
 		}
 
-		JobPrintCommand(job, &wr, ln->datum);
+		JobPrintCommand(job, &wr, ln, ln->datum);
 		seen = TRUE;
 	}
 
 	return seen;
 }
 
-/* Save the delayed commands, to be executed when everything else is done. */
+/*
+ * Save the delayed commands (those after '...'), to be executed later in
+ * the '.END' node, when everything else is done.
+ */
 static void
 JobSaveCommands(Job *job)
 {
@@ -1021,9 +1030,11 @@ JobSaveCommands(Job *job)
 	for (ln = job->tailCmds; ln != NULL; ln = ln->next) {
 		const char *cmd = ln->datum;
 		char *expanded_cmd;
-		/* XXX: This Var_Subst is only intended to expand the dynamic
+		/*
+		 * XXX: This Var_Subst is only intended to expand the dynamic
 		 * variables such as .TARGET, .IMPSRC.  It is not intended to
-		 * expand the other variables as well; see deptgt-end.mk. */
+		 * expand the other variables as well; see deptgt-end.mk.
+		 */
 		(void)Var_Subst(cmd, job->node, VARE_WANTRES, &expanded_cmd);
 		/* TODO: handle errors */
 		Lst_Append(&Targ_GetEndNode()->commands, expanded_cmd);
@@ -1231,10 +1242,12 @@ TouchRegular(GNode *gn)
 	(void)close(fd);	/* XXX: What about propagating the error? */
 }
 
-/* Touch the given target. Called by JobStart when the -t flag was given.
+/*
+ * Touch the given target. Called by JobStart when the -t flag was given.
  *
  * The modification date of the file is changed.
- * If the file did not exist, it is created. */
+ * If the file did not exist, it is created.
+ */
 void
 Job_Touch(GNode *gn, Boolean echo)
 {
@@ -1264,7 +1277,8 @@ Job_Touch(GNode *gn, Boolean echo)
 		TouchRegular(gn);
 }
 
-/* Make sure the given node has all the commands it needs.
+/*
+ * Make sure the given node has all the commands it needs.
  *
  * The node will have commands from the .DEFAULT rule added to it if it
  * needs them.
@@ -1302,7 +1316,7 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 		 * .DEFAULT itself.
 		 */
 		Make_HandleUse(defaultNode, gn);
-		Var_Set(IMPSRC, GNode_VarTarget(gn), gn);
+		Var_Set(gn, IMPSRC, GNode_VarTarget(gn));
 		return TRUE;
 	}
 
@@ -1345,9 +1359,11 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 	return FALSE;
 }
 
-/* Execute the shell for the given job.
+/*
+ * Execute the shell for the given job.
  *
- * See Job_CatchOutput for handling the output of the shell. */
+ * See Job_CatchOutput for handling the output of the shell.
+ */
 static void
 JobExec(Job *job, char **argv)
 {
@@ -1380,7 +1396,9 @@ JobExec(Job *job, char **argv)
 	/* Pre-emptively mark job running, pid still zero though */
 	job->status = JOB_ST_RUNNING;
 
-	cpid = vFork();
+	Var_ReexportVars();
+
+	cpid = vfork();
 	if (cpid == -1)
 		Punt("Cannot vfork: %s", strerror(errno));
 
@@ -1453,15 +1471,13 @@ JobExec(Job *job, char **argv)
 		 * commit suicide.
 		 */
 #if defined(MAKE_NATIVE) || defined(HAVE_SETPGID)
-#  if defined(SYSV)
+# if defined(SYSV)
 		/* XXX: dsl - I'm sure this should be setpgrp()... */
 		(void)setsid();
-#  else
+# else
 		(void)setpgid(0, getpid());
-#  endif
+# endif
 #endif
-
-		Var_ReexportVars();
 
 		(void)execv(shellPath, argv);
 		execDie("exec", shellPath);
@@ -1491,9 +1507,7 @@ JobExec(Job *job, char **argv)
 		job->cmdFILE = NULL;
 	}
 
-	/*
-	 * Now the job is actually running, add it to the table.
-	 */
+	/* Now that the job is actually running, add it to the table. */
 	if (DEBUG(JOB)) {
 		debug_printf("JobExec(%s): pid %d added to jobs table\n",
 		    job->node->name, job->pid);
@@ -1530,16 +1544,16 @@ JobMakeArgv(Job *job, char **argv)
 		    (!job->echo ? "" :
 			(shell->echoFlag != NULL ? shell->echoFlag : "")));
 
-		if (args[1]) {
+		if (args[1] != '\0') {
 			argv[argc] = args;
 			argc++;
 		}
 	} else {
-		if (!job->ignerr && shell->errFlag) {
+		if (!job->ignerr && shell->errFlag != NULL) {
 			argv[argc] = UNCONST(shell->errFlag);
 			argc++;
 		}
-		if (job->echo && shell->echoFlag) {
+		if (job->echo && shell->echoFlag != NULL) {
 			argv[argc] = UNCONST(shell->echoFlag);
 			argc++;
 		}
@@ -1548,15 +1562,14 @@ JobMakeArgv(Job *job, char **argv)
 }
 
 static void
-JobOpenTmpFile(Job *job, GNode *gn, Boolean cmdsOK, Boolean *out_run)
+JobWriteShellCommands(Job *job, GNode *gn, Boolean cmdsOK, Boolean *out_run)
 {
 	/*
 	 * tfile is the name of a file into which all shell commands
 	 * are put. It is removed before the child shell is executed,
 	 * unless DEBUG(SCRIPT) is set.
 	 */
-	char *tfile;
-	sigset_t mask;
+	char tfile[MAXPATHLEN];
 	int tfd;		/* File descriptor to the temp file */
 
 	/*
@@ -1568,22 +1581,13 @@ JobOpenTmpFile(Job *job, GNode *gn, Boolean cmdsOK, Boolean *out_run)
 		DieHorribly();
 	}
 
-	JobSigLock(&mask);
-	tfd = mkTempFile(TMPPAT, &tfile);
-	if (!DEBUG(SCRIPT))
-		(void)eunlink(tfile);
-	JobSigUnlock(&mask);
+	tfd = Job_TempFile(TMPPAT, tfile, sizeof tfile);
 
 	job->cmdFILE = fdopen(tfd, "w+");
 	if (job->cmdFILE == NULL)
 		Punt("Could not fdopen %s", tfile);
 
 	(void)fcntl(fileno(job->cmdFILE), F_SETFD, FD_CLOEXEC);
-	/*
-	 * Send the commands to the command file, flush all its
-	 * buffers then rewind and remove the thing.
-	 */
-	*out_run = TRUE;
 
 #ifdef USE_META
 	if (useMeta) {
@@ -1593,11 +1597,7 @@ JobOpenTmpFile(Job *job, GNode *gn, Boolean cmdsOK, Boolean *out_run)
 	}
 #endif
 
-	/* We can do all the commands at once. hooray for sanity */
-	if (!JobPrintCommands(job))
-		*out_run = FALSE;
-
-	free(tfile);
+	*out_run = JobPrintCommands(job);
 }
 
 /*
@@ -1651,46 +1651,36 @@ JobStart(GNode *gn, Boolean special)
 	cmdsOK = Job_CheckCommands(gn, Error);
 
 	job->inPollfd = NULL;
-	/*
-	 * If the -n flag wasn't given, we open up OUR (not the child's)
-	 * temporary file to stuff commands in it. The thing is rd/wr so
-	 * we don't need to reopen it to feed it to the shell. If the -n
-	 * flag *was* given, we just set the file to be stdout. Cute, huh?
-	 */
-	if (((gn->type & OP_MAKE) && !opts.noRecursiveExecute) ||
+
+	if (Lst_IsEmpty(&gn->commands)) {
+		job->cmdFILE = stdout;
+		run = FALSE;
+	} else if (((gn->type & OP_MAKE) && !opts.noRecursiveExecute) ||
 	    (!opts.noExecute && !opts.touchFlag)) {
-		JobOpenTmpFile(job, gn, cmdsOK, &run);
+		/*
+		 * The above condition looks very similar to
+		 * GNode_ShouldExecute but is subtly different.  It prevents
+		 * that .MAKE targets are touched since these are usually
+		 * virtual targets.
+		 */
+
+		JobWriteShellCommands(job, gn, cmdsOK, &run);
+		(void)fflush(job->cmdFILE);
 	} else if (!GNode_ShouldExecute(gn)) {
 		/*
-		 * Not executing anything -- just print all the commands to
-		 * stdout in one fell swoop. This will still set up
-		 * job->tailCmds correctly.
+		 * Just print all the commands to stdout in one fell swoop.
+		 * This still sets up job->tailCmds correctly.
 		 */
 		SwitchOutputTo(gn);
 		job->cmdFILE = stdout;
-		/*
-		 * Only print the commands if they're ok, but don't die if
-		 * they're not -- just let the user know they're bad and
-		 * keep going. It doesn't do any harm in this case and may
-		 * do some good.
-		 */
 		if (cmdsOK)
 			JobPrintCommands(job);
-		/* Don't execute the shell, thank you. */
 		run = FALSE;
+		(void)fflush(job->cmdFILE);
 	} else {
-		/*
-		 * Just touch the target and note that no shell should be
-		 * executed. Set cmdFILE to stdout to make life easier.
-		 * Check the commands, too, but don't die if they're no
-		 * good -- it does no harm to keep working up the graph.
-		 */
-		job->cmdFILE = stdout;
 		Job_Touch(gn, job->echo);
 		run = FALSE;
 	}
-	/* Just in case it isn't already... */
-	(void)fflush(job->cmdFILE);
 
 	/* If we're not supposed to execute a shell, don't. */
 	if (!run) {
@@ -1729,41 +1719,42 @@ JobStart(GNode *gn, Boolean special)
 }
 
 /*
- * Print the output of the shell command, skipping the noPrint command of
- * the shell, if any.
+ * Print the output of the shell command, skipping the noPrint text of the
+ * shell, if any.  The default shell does not have noPrint though, which means
+ * that in all practical cases, handling the output is left to the caller.
  */
 static char *
-JobOutput(char *cp, char *endp)
+JobOutput(char *cp, char *endp)	/* XXX: should all be const */
 {
-	char *ecp;
+	char *ecp;		/* XXX: should be const */
 
 	if (shell->noPrint == NULL || shell->noPrint[0] == '\0')
 		return cp;
 
+	/*
+	 * XXX: What happens if shell->noPrint occurs on the boundary of
+	 * the buffer?  To work correctly in all cases, this should rather
+	 * be a proper stream filter instead of doing string matching on
+	 * selected chunks of the output.
+	 */
 	while ((ecp = strstr(cp, shell->noPrint)) != NULL) {
 		if (ecp != cp) {
-			*ecp = '\0';
+			*ecp = '\0';	/* XXX: avoid writing to the buffer */
 			/*
 			 * The only way there wouldn't be a newline after
 			 * this line is if it were the last in the buffer.
-			 * however, since the non-printable comes after it,
+			 * however, since the noPrint output comes after it,
 			 * there must be a newline, so we don't print one.
 			 */
+			/* XXX: What about null bytes in the output? */
 			(void)fprintf(stdout, "%s", cp);
 			(void)fflush(stdout);
 		}
 		cp = ecp + shell->noPrintLen;
-		if (cp != endp) {
-			/*
-			 * Still more to print, look again after skipping
-			 * the whitespace following the non-printable
-			 * command.
-			 */
-			cp++;
-			pp_skip_whitespace(&cp);
-		} else {
-			return cp;
-		}
+		if (cp == endp)
+			break;
+		cp++;		/* skip over the (XXX: assumed) newline */
+		pp_skip_whitespace(&cp);
 	}
 	return cp;
 }
@@ -1930,11 +1921,11 @@ JobRun(GNode *targ)
 	 * Running these jobs in compat mode also guarantees that these
 	 * jobs do not overlap with other unrelated jobs.
 	 */
-	List *lst = Lst_New();
-	Lst_Append(lst, targ);
-	(void)Make_Run(lst);
-	Lst_Destroy(lst, NULL);
-	JobStart(targ, JOB_SPECIAL);
+	GNodeList lst = LST_INIT;
+	Lst_Append(&lst, targ);
+	(void)Make_Run(&lst);
+	Lst_Done(&lst);
+	JobStart(targ, TRUE);
 	while (jobTokensRunning != 0) {
 		Job_CatchOutput();
 	}
@@ -1948,7 +1939,8 @@ JobRun(GNode *targ)
 #endif
 }
 
-/* Handle the exit of a child. Called from Make_Make.
+/*
+ * Handle the exit of a child. Called from Make_Make.
  *
  * The job descriptor is removed from the list of children.
  *
@@ -1966,6 +1958,11 @@ Job_CatchChildren(void)
 	/* Don't even bother if we know there's no one around. */
 	if (jobTokensRunning == 0)
 		return;
+
+	/* Have we received SIGCHLD since last call? */
+	if (caught_sigchld == 0)
+		return;
+	caught_sigchld = 0;
 
 	while ((pid = waitpid((pid_t)-1, &status, WNOHANG | WUNTRACED)) > 0) {
 		DEBUG2(JOB, "Process %d exited/stopped status %x.\n",
@@ -2025,10 +2022,12 @@ JobReapChild(pid_t pid, int status, Boolean isJobs)
 	JobFinish(job, status);
 }
 
-/* Catch the output from our children, if we're using pipes do so. Otherwise
+/*
+ * Catch the output from our children, if we're using pipes do so. Otherwise
  * just block time until we get a signal(most likely a SIGCHLD) since there's
  * no point in just spinning when there's nothing to do and the reaping of a
- * child can wait for a while. */
+ * child can wait for a while.
+ */
 void
 Job_CatchOutput(void)
 {
@@ -2040,7 +2039,7 @@ Job_CatchOutput(void)
 
 	/* The first fd in the list is the job token pipe */
 	do {
-		nready = poll(fds + 1 - wantToken, nJobs - 1 + wantToken,
+		nready = poll(fds + 1 - wantToken, fdsLen - 1 + wantToken,
 		    POLL_MSEC);
 	} while (nready < 0 && errno == EINTR);
 
@@ -2051,22 +2050,17 @@ Job_CatchOutput(void)
 		char token = 0;
 		ssize_t count;
 		count = read(childExitJob.inPipe, &token, 1);
-		switch (count) {
-		case 0:
-			Punt("unexpected eof on token pipe");
-		case -1:
-			Punt("token pipe read: %s", strerror(errno));
-		case 1:
+		if (count == 1) {
 			if (token == DO_JOB_RESUME[0])
 				/*
 				 * Complete relay requested from our SIGCONT
 				 * handler
 				 */
 				JobRestartJobs();
-			break;
-		default:
-			abort();
-		}
+		} else if (count == 0)
+			Punt("unexpected eof on token pipe");
+		else
+			Punt("token pipe read: %s", strerror(errno));
 		nready--;
 	}
 
@@ -2074,10 +2068,10 @@ Job_CatchOutput(void)
 	if (nready == 0)
 		return;
 
-	for (i = npseudojobs * nfds_per_job(); i < nJobs; i++) {
-		if (!fds[i].revents)
+	for (i = npseudojobs * nfds_per_job(); i < fdsLen; i++) {
+		if (fds[i].revents == 0)
 			continue;
-		job = allJobs[i];
+		job = jobByFdIndex[i];
 		if (job->status == JOB_ST_RUNNING)
 			JobDoOutput(job, FALSE);
 #if defined(USE_FILEMON) && !defined(USE_FILEMON_DEV)
@@ -2097,8 +2091,10 @@ Job_CatchOutput(void)
 	}
 }
 
-/* Start the creation of a target. Basically a front-end for JobStart used by
- * the Make module. */
+/*
+ * Start the creation of a target. Basically a front-end for JobStart used by
+ * the Make module.
+ */
 void
 Job_Make(GNode *gn)
 {
@@ -2127,13 +2123,13 @@ Shell_Init(void)
 	if (shellPath == NULL)
 		InitShellNameAndPath();
 
-	Var_SetWithFlags(".SHELL", shellPath, VAR_CMDLINE, VAR_SET_READONLY);
+	Var_SetWithFlags(SCOPE_CMDLINE, ".SHELL", shellPath, VAR_SET_READONLY);
 	if (shell->errFlag == NULL)
 		shell->errFlag = "";
 	if (shell->echoFlag == NULL)
 		shell->echoFlag = "";
 	if (shell->hasErrCtl && shell->errFlag[0] != '\0') {
-		if (shellErrFlag &&
+		if (shellErrFlag != NULL &&
 		    strcmp(shell->errFlag, &shellErrFlag[1]) != 0) {
 			free(shellErrFlag);
 			shellErrFlag = NULL;
@@ -2167,12 +2163,12 @@ Job_SetPrefix(void)
 {
 	if (targPrefix != NULL) {
 		free(targPrefix);
-	} else if (!Var_Exists(MAKE_JOB_PREFIX, VAR_GLOBAL)) {
-		Var_Set(MAKE_JOB_PREFIX, "---", VAR_GLOBAL);
+	} else if (!Var_Exists(SCOPE_GLOBAL, MAKE_JOB_PREFIX)) {
+		Global_Set(MAKE_JOB_PREFIX, "---");
 	}
 
 	(void)Var_Subst("${" MAKE_JOB_PREFIX "}",
-	    VAR_GLOBAL, VARE_WANTRES, &targPrefix);
+	    SCOPE_GLOBAL, VARE_WANTRES, &targPrefix);
 	/* TODO: handle errors */
 }
 
@@ -2195,6 +2191,7 @@ Job_Init(void)
 	memset(job_table, 0, (size_t)opts.maxJobs * sizeof *job_table);
 	job_table_end = job_table + opts.maxJobs;
 	wantToken = 0;
+	caught_sigchld = 0;
 
 	aborting = ABORT_NONE;
 	job_errors = 0;
@@ -2220,13 +2217,13 @@ Job_Init(void)
 
 	JobCreatePipe(&childExitJob, 3);
 
-	/* Preallocate enough for the maximum number of jobs.  */
-	fds = bmake_malloc(sizeof *fds *
-			   (npseudojobs + (size_t)opts.maxJobs) *
-			   nfds_per_job());
-	allJobs = bmake_malloc(sizeof *allJobs *
-			       (npseudojobs + (size_t)opts.maxJobs) *
-			       nfds_per_job());
+	{
+		/* Preallocate enough for the maximum number of jobs. */
+		size_t nfds = (npseudojobs + (size_t)opts.maxJobs) *
+			      nfds_per_job();
+		fds = bmake_malloc(sizeof *fds * nfds);
+		jobByFdIndex = bmake_malloc(sizeof *jobByFdIndex * nfds);
+	}
 
 	/* These are permanent entries and take slots 0 and 1 */
 	watchfd(&tokenWaitJob);
@@ -2269,7 +2266,7 @@ Job_Init(void)
 static void
 DelSig(int sig)
 {
-	if (sigismember(&caught_signals, sig))
+	if (sigismember(&caught_signals, sig) != 0)
 		(void)bmake_signal(sig, SIG_DFL);
 }
 
@@ -2360,7 +2357,7 @@ Job_ParseShell(char *line)
 	/* XXX: don't use line as an iterator variable */
 	pp_skip_whitespace(&line);
 
-	free(shellArgv);
+	free(shell_freeIt);
 
 	memset(&newShell, 0, sizeof newShell);
 
@@ -2375,7 +2372,7 @@ Job_ParseShell(char *line)
 		Error("Unterminated quoted string [%s]", line);
 		return FALSE;
 	}
-	shellArgv = path;
+	shell_freeIt = path;
 
 	for (path = NULL, argv = words; argc != 0; argc--, argv++) {
 		char *arg = *argv;
@@ -2492,7 +2489,7 @@ Job_ParseShell(char *line)
 		Shell_Init();
 	}
 
-	if (shell->echoOn && shell->echoOff)
+	if (shell->echoOn != NULL && shell->echoOff != NULL)
 		shell->hasEchoCtl = TRUE;
 
 	if (!shell->hasErrCtl) {
@@ -2522,7 +2519,7 @@ Job_ParseShell(char *line)
  *	signo		signal received
  */
 static void
-JobInterrupt(int runINTERRUPT, int signo)
+JobInterrupt(Boolean runINTERRUPT, int signo)
 {
 	Job *job;		/* job descriptor in that element */
 	GNode *interrupt;	/* the node describing the .INTERRUPT target */
@@ -2540,7 +2537,7 @@ JobInterrupt(int runINTERRUPT, int signo)
 		gn = job->node;
 
 		JobDeleteTarget(gn);
-		if (job->pid) {
+		if (job->pid != 0) {
 			DEBUG2(JOB,
 			    "JobInterrupt passing signal %d to child %d.\n",
 			    signo, job->pid);
@@ -2586,7 +2583,7 @@ void
 Job_End(void)
 {
 #ifdef CLEANUP
-	free(shellArgv);
+	free(shell_freeIt);
 #endif
 }
 
@@ -2681,17 +2678,17 @@ watchfd(Job *job)
 	if (job->inPollfd != NULL)
 		Punt("Watching watched job");
 
-	fds[nJobs].fd = job->inPipe;
-	fds[nJobs].events = POLLIN;
-	allJobs[nJobs] = job;
-	job->inPollfd = &fds[nJobs];
-	nJobs++;
+	fds[fdsLen].fd = job->inPipe;
+	fds[fdsLen].events = POLLIN;
+	jobByFdIndex[fdsLen] = job;
+	job->inPollfd = &fds[fdsLen];
+	fdsLen++;
 #if defined(USE_FILEMON) && !defined(USE_FILEMON_DEV)
 	if (useMeta) {
-		fds[nJobs].fd = meta_job_fd(job);
-		fds[nJobs].events = fds[nJobs].fd == -1 ? 0 : POLLIN;
-		allJobs[nJobs] = job;
-		nJobs++;
+		fds[fdsLen].fd = meta_job_fd(job);
+		fds[fdsLen].events = fds[fdsLen].fd == -1 ? 0 : POLLIN;
+		jobByFdIndex[fdsLen] = job;
+		fdsLen++;
 	}
 #endif
 }
@@ -2703,7 +2700,7 @@ clearfd(Job *job)
 	if (job->inPollfd == NULL)
 		Punt("Unwatching unwatched job");
 	i = (size_t)(job->inPollfd - fds);
-	nJobs--;
+	fdsLen--;
 #if defined(USE_FILEMON) && !defined(USE_FILEMON_DEV)
 	if (useMeta) {
 		/*
@@ -2711,29 +2708,29 @@ clearfd(Job *job)
 		 * pollfd number should be even.
 		 */
 		assert(nfds_per_job() == 2);
-		if (i % 2)
+		if (i % 2 != 0)
 			Punt("odd-numbered fd with meta");
-		nJobs--;
+		fdsLen--;
 	}
 #endif
 	/*
 	 * Move last job in table into hole made by dead job.
 	 */
-	if (nJobs != i) {
-		fds[i] = fds[nJobs];
-		allJobs[i] = allJobs[nJobs];
-		allJobs[i]->inPollfd = &fds[i];
+	if (fdsLen != i) {
+		fds[i] = fds[fdsLen];
+		jobByFdIndex[i] = jobByFdIndex[fdsLen];
+		jobByFdIndex[i]->inPollfd = &fds[i];
 #if defined(USE_FILEMON) && !defined(USE_FILEMON_DEV)
 		if (useMeta) {
-			fds[i + 1] = fds[nJobs + 1];
-			allJobs[i + 1] = allJobs[nJobs + 1];
+			fds[i + 1] = fds[fdsLen + 1];
+			jobByFdIndex[i + 1] = jobByFdIndex[fdsLen + 1];
 		}
 #endif
 	}
 	job->inPollfd = NULL;
 }
 
-static int
+static Boolean
 readyfd(Job *job)
 {
 	if (job->inPollfd == NULL)
@@ -2741,8 +2738,10 @@ readyfd(Job *job)
 	return (job->inPollfd->revents & POLLIN) != 0;
 }
 
-/* Put a token (back) into the job pipe.
- * This allows a make process to start a build job. */
+/*
+ * Put a token (back) into the job pipe.
+ * This allows a make process to start a build job.
+ */
 static void
 JobTokenAdd(void)
 {
@@ -2756,6 +2755,22 @@ JobTokenAdd(void)
 	    getpid(), aborting, JOB_TOKENS[aborting]);
 	while (write(tokenWaitJob.outPipe, &tok, 1) == -1 && errno == EAGAIN)
 		continue;
+}
+
+/* Get a temp file */
+int
+Job_TempFile(const char *pattern, char *tfile, size_t tfile_sz)
+{
+	int fd;
+	sigset_t mask;
+
+	JobSigLock(&mask);
+	fd = mkTempFile(pattern, tfile, tfile_sz);
+	if (tfile != NULL && !DEBUG(SCRIPT))
+	    unlink(tfile);
+	JobSigUnlock(&mask);
+
+	return fd;
 }
 
 /* Prep the job token pipe in the root make process. */
@@ -2779,8 +2794,8 @@ Job_ServerStart(int max_tokens, int jp_0, int jp_1)
 	snprintf(jobarg, sizeof jobarg, "%d,%d",
 	    tokenWaitJob.inPipe, tokenWaitJob.outPipe);
 
-	Var_Append(MAKEFLAGS, "-J", VAR_GLOBAL);
-	Var_Append(MAKEFLAGS, jobarg, VAR_GLOBAL);
+	Global_Append(MAKEFLAGS, "-J");
+	Global_Append(MAKEFLAGS, jobarg);
 
 	/*
 	 * Preload the job pipe with one token per job, save the one
@@ -2801,7 +2816,7 @@ Job_TokenReturn(void)
 	jobTokensRunning--;
 	if (jobTokensRunning < 0)
 		Punt("token botch");
-	if (jobTokensRunning || JOB_TOKENS[aborting] != '+')
+	if (jobTokensRunning != 0 || JOB_TOKENS[aborting] != '+')
 		JobTokenAdd();
 }
 
@@ -2835,6 +2850,7 @@ Job_TokenWithdraw(void)
 			Fatal("job pipe read: %s", strerror(errno));
 		}
 		DEBUG1(JOB, "(%d) blocked for token\n", getpid());
+		wantToken = 1;
 		return FALSE;
 	}
 
@@ -2848,7 +2864,7 @@ Job_TokenWithdraw(void)
 		       errno == EAGAIN)
 			continue;
 		if (shouldDieQuietly(NULL, 1))
-			exit(2);
+			exit(6);	/* we aborted */
 		Fatal("A failure has been detected "
 		      "in another branch of the parallel make");
 	}
@@ -2878,7 +2894,7 @@ Job_RunTarget(const char *target, const char *fname)
 		return FALSE;
 
 	if (fname != NULL)
-		Var_Set(ALLSRC, fname, gn);
+		Var_Set(gn, ALLSRC, fname);
 
 	JobRun(gn);
 	/* XXX: Replace with GNode_IsError(gn) */

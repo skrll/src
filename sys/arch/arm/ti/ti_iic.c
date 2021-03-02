@@ -1,4 +1,4 @@
-/* $NetBSD: ti_iic.c,v 1.7 2020/08/16 03:48:59 riastradh Exp $ */
+/* $NetBSD: ti_iic.c,v 1.13 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*
  * Copyright (c) 2013 Manuel Bouyer.  All rights reserved.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_iic.c,v 1.7 2020/08/16 03:48:59 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_iic.c,v 1.13 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -146,11 +146,11 @@ static const u_int ti_iic_regmap[TI_NTYPES][TI_NREGS] = {
 	},
 };
 
-static const struct of_compat_data compat_data[] = {
-	/* compatible		type */
-	{ "ti,omap3-i2c",	TI_IIC_OMAP3 },
-	{ "ti,omap4-i2c",	TI_IIC_OMAP4 },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	/* compatible			type */
+	{ .compat = "ti,omap3-i2c",	.value = TI_IIC_OMAP3 },
+	{ .compat = "ti,omap4-i2c",	.value = TI_IIC_OMAP4 },
+	DEVICE_COMPAT_EOL
 };
 
 /* operation in progress */
@@ -217,12 +217,6 @@ static int	ti_iic_wait(struct ti_iic_softc *, uint16_t, uint16_t, int);
 static uint32_t	ti_iic_stat(struct ti_iic_softc *, uint32_t);
 static int	ti_iic_flush(struct ti_iic_softc *);
 
-static i2c_tag_t ti_iic_get_tag(device_t);
-
-static const struct fdtbus_i2c_controller_func ti_iic_funcs = {
-	.get_tag = ti_iic_get_tag,
-};
-
 CFATTACH_DECL_NEW(ti_iic, sizeof(struct ti_iic_softc),
     ti_iic_match, ti_iic_attach, NULL, NULL);
 
@@ -231,7 +225,7 @@ ti_iic_match(device_t parent, cfdata_t match, void *opaque)
 {
 	struct fdt_attach_args * const faa = opaque;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -275,10 +269,10 @@ ti_iic_attach(device_t parent, device_t self, void *opaque)
 		aprint_error(": couldn't map registers\n");
 		return;
 	}
-	sc->sc_type = of_search_compatible(phandle, compat_data)->data;
+	sc->sc_type = of_compatible_lookup(phandle, compat_data)->value;
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_NET, 0,
-	    ti_iic_intr, sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_NET, 0,
+	    ti_iic_intr, sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error(": couldn't establish interrupt\n");
 		return;
@@ -302,7 +296,7 @@ ti_iic_attach(device_t parent, device_t self, void *opaque)
 	ti_iic_reset(sc);
 	ti_iic_flush(sc);
 
-	fdtbus_register_i2c_controller(self, phandle, &ti_iic_funcs);
+	fdtbus_register_i2c_controller(&sc->sc_ic, phandle);
 
 	fdtbus_attach_i2cbus(self, phandle, &sc->sc_ic, iicbus_print);
 }
@@ -704,12 +698,4 @@ ti_iic_flush(struct ti_iic_softc *sc)
 
 	I2C_WRITE_REG(sc, I2C_CNT, 0);
 	return 0;
-}
-
-static i2c_tag_t
-ti_iic_get_tag(device_t dev)
-{
-	struct ti_iic_softc * const sc = device_private(dev);
-
-	return &sc->sc_ic;
 }

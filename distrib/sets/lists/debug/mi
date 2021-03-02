@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.344 2020/12/12 03:03:14 pgoyette Exp $
+# $NetBSD: mi,v 1.348 2021/01/14 19:11:48 pgoyette Exp $
 ./etc/mtree/set.debug                           comp-sys-root
 ./usr/lib					comp-sys-usr		compatdir
 ./usr/lib/i18n/libBIG5_g.a			comp-c-debuglib		debuglib,compatfile
@@ -320,6 +320,7 @@
 ./usr/libdata/debug/bin/tar.debug		comp-util-debug		debug,bsdtar
 ./usr/libdata/debug/bin/test.debug		comp-util-debug		debug
 ./usr/libdata/debug/libexec/lfs_cleanerd.debug	comp-sysutil-debug	debug
+./usr/libdata/debug/netbsd			comp-sysutil-debug	debug,kernel_dir
 ./usr/libdata/debug/sbin/amrctl.debug		comp-sysutil-debug	debug
 ./usr/libdata/debug/sbin/apmlabel.debug		comp-sysutil-debug	debug
 ./usr/libdata/debug/sbin/atactl.debug		comp-sysutil-debug	debug
@@ -750,6 +751,7 @@
 ./usr/libdata/debug/usr/bin/quota.debug		comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/radioctl.debug	comp-audio-debug	debug
 ./usr/libdata/debug/usr/bin/ranlib.debug	comp-util-debug		binutils,debug
+./usr/libdata/debug/usr/bin/resize.debug	comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/rcs.debug		comp-rcs-debug		debug
 ./usr/libdata/debug/usr/bin/rcsclean.debug	comp-rcs-debug		debug
 ./usr/libdata/debug/usr/bin/rcsdiff.debug	comp-rcs-debug		debug
@@ -936,6 +938,7 @@
 ./usr/libdata/debug/usr/games/snscore.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/strfile.debug	comp-utils-debug	debug
 ./usr/libdata/debug/usr/games/teachgammon.debug	comp-games-debug	debug
+./usr/libdata/debug/usr/games/testpat.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/tetris.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/trek.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/unstr.debug	comp-utils-debug	debug

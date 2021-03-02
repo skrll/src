@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.503 2020/12/19 22:33:11 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.549 2021/02/05 05:46:27 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -84,7 +84,7 @@
  *	Parse_End	Clean up the module
  *
  *	Parse_File	Parse a top-level makefile.  Included files are
- *			handled by Parse_include_file though.
+ *			handled by IncludeFile instead.
  *
  *	Parse_IsVar	Return TRUE if the given line is a variable
  *			assignment. Used by MainParseArgs to determine if
@@ -98,18 +98,10 @@
  */
 
 #include <sys/types.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
-
-#ifndef MAP_FILE
-#define MAP_FILE 0
-#endif
-#ifndef MAP_COPY
-#define MAP_COPY MAP_PRIVATE
-#endif
 
 #include "make.h"
 #include "dir.h"
@@ -117,7 +109,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.503 2020/12/19 22:33:11 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.549 2021/02/05 05:46:27 rillig Exp $");
 
 /* types and constants */
 
@@ -198,18 +190,22 @@ static GNode *mainNode;
 
 /* eval state */
 
-/* During parsing, the targets from the left-hand side of the currently
+/*
+ * During parsing, the targets from the left-hand side of the currently
  * active dependency line, or NULL if the current line does not belong to a
  * dependency line, for example because it is a variable assignment.
  *
- * See unit-tests/deptgt.mk, keyword "parse.c:targets". */
+ * See unit-tests/deptgt.mk, keyword "parse.c:targets".
+ */
 static GNodeList *targets;
 
 #ifdef CLEANUP
-/* All shell commands for all targets, in no particular order and possibly
+/*
+ * All shell commands for all targets, in no particular order and possibly
  * with duplicates.  Kept in a separate list since the commands from .USE or
  * .USEBEFORE nodes are shared with other GNodes, thereby giving up the
- * easily understandable ownership over the allocated strings. */
+ * easily understandable ownership over the allocated strings.
+ */
 static StringList targCmds = LST_INIT;
 #endif
 
@@ -228,44 +224,12 @@ static int fatals = 0;
  * Variables for doing includes
  */
 
-/* The include chain of makefiles.  At the bottom is the top-level makefile
- * from the command line, and on top of that, there are the included files or
- * .for loops, up to and including the current file.
+/*
+ * The include chain of makefiles.  At index 0 is the top-level makefile from
+ * the command line, followed by the included files or .for loops, up to and
+ * including the current file.
  *
- * This data could be used to print stack traces on parse errors.  As of
- * 2020-09-14, this is not done though.  It seems quite simple to print the
- * tuples (fname:lineno:fromForLoop), from top to bottom.  This simple idea is
- * made complicated by the fact that the .for loops also use this stack for
- * storing information.
- *
- * The lineno fields of the IFiles with fromForLoop == TRUE look confusing,
- * which is demonstrated by the test 'include-main.mk'.  They seem sorted
- * backwards since they tell the number of completely parsed lines, which for
- * a .for loop is right after the terminating .endfor.  To compensate for this
- * confusion, there is another field first_lineno pointing at the start of the
- * .for loop, 1-based for human consumption.
- *
- * To make the stack trace intuitive, the entry below the first .for loop must
- * be ignored completely since neither its lineno nor its first_lineno is
- * useful.  Instead, the topmost of each chain of .for loop needs to be
- * printed twice, once with its first_lineno and once with its lineno.
- *
- * As of 2020-10-28, using the above rules, the stack trace for the .info line
- * in include-subsub.mk would be:
- *
- *	includes[5]:	include-subsub.mk:4
- *			(lineno, from an .include)
- *	includes[4]:	include-sub.mk:32
- *			(lineno, from a .for loop below an .include)
- *	includes[4]:	include-sub.mk:31
- *			(first_lineno, from a .for loop, lineno == 32)
- *	includes[3]:	include-sub.mk:30
- *			(first_lineno, from a .for loop, lineno == 33)
- *	includes[2]:	include-sub.mk:29
- *			(first_lineno, from a .for loop, lineno == 34)
- *	includes[1]:	include-sub.mk:35
- *			(not printed since it is below a .for loop)
- *	includes[0]:	include-main.mk:27
+ * See PrintStackTrace for how to interpret the data.
  */
 static Vector /* of IFile */ includes;
 
@@ -283,8 +247,8 @@ CurFile(void)
 }
 
 /* include paths */
-SearchPath *parseIncPath;	/* dirs for "..." includes */
-SearchPath *sysIncPath;		/* dirs for <...> includes */
+SearchPath *parseIncPath;	/* directories for "..." includes */
+SearchPath *sysIncPath;		/* directories for <...> includes */
 SearchPath *defSysIncPath;	/* default for sysIncPath */
 
 /* parser tables */
@@ -354,21 +318,19 @@ struct loadedfile {
 	const char *path;	/* name, for error reports */
 	char *buf;		/* contents buffer */
 	size_t len;		/* length of contents */
-	size_t maplen;		/* length of mmap area, or 0 */
 	Boolean used;		/* XXX: have we used the data yet */
 };
 
 /* XXX: What is the lifetime of the path? Who manages the memory? */
 static struct loadedfile *
-loadedfile_create(const char *path)
+loadedfile_create(const char *path, char *buf, size_t buflen)
 {
 	struct loadedfile *lf;
 
 	lf = bmake_malloc(sizeof *lf);
 	lf->path = path == NULL ? "(stdin)" : path;
-	lf->buf = NULL;
-	lf->len = 0;
-	lf->maplen = 0;
+	lf->buf = buf;
+	lf->len = buflen;
 	lf->used = FALSE;
 	return lf;
 }
@@ -376,12 +338,7 @@ loadedfile_create(const char *path)
 static void
 loadedfile_destroy(struct loadedfile *lf)
 {
-	if (lf->buf != NULL) {
-		if (lf->maplen > 0)
-			munmap(lf->buf, lf->maplen);
-		else
-			free(lf->buf);
-	}
+	free(lf->buf);
 	free(lf);
 }
 
@@ -420,61 +377,15 @@ load_getsize(int fd, size_t *ret)
 	 * st_size is an off_t, which is 64 bits signed; *ret is
 	 * size_t, which might be 32 bits unsigned or 64 bits
 	 * unsigned. Rather than being elaborate, just punt on
-	 * files that are more than 2^31 bytes. We should never
-	 * see a makefile that size in practice...
+	 * files that are more than 1 GiB. We should never
+	 * see a makefile that size in practice.
 	 *
 	 * While we're at it reject negative sizes too, just in case.
 	 */
-	if (st.st_size < 0 || st.st_size > 0x7fffffff)
+	if (st.st_size < 0 || st.st_size > 0x3fffffff)
 		return FALSE;
 
 	*ret = (size_t)st.st_size;
-	return TRUE;
-}
-
-static Boolean
-loadedfile_mmap(struct loadedfile *lf, int fd)
-{
-	static unsigned long pagesize = 0;
-
-	if (!load_getsize(fd, &lf->len))
-		return FALSE;
-
-	/* found a size, try mmap */
-	if (pagesize == 0)
-		pagesize = (unsigned long)sysconf(_SC_PAGESIZE);
-	if (pagesize == 0 || pagesize == (unsigned long)-1)
-		pagesize = 0x1000;
-
-	/* round size up to a page */
-	lf->maplen = pagesize * ((lf->len + pagesize - 1) / pagesize);
-
-	/*
-	 * XXX hack for dealing with empty files; remove when
-	 * we're no longer limited by interfacing to the old
-	 * logic elsewhere in this file.
-	 */
-	if (lf->maplen == 0)
-		lf->maplen = pagesize;
-
-	/*
-	 * FUTURE: remove PROT_WRITE when the parser no longer
-	 * needs to scribble on the input.
-	 */
-	lf->buf = mmap(NULL, lf->maplen, PROT_READ | PROT_WRITE,
-	    MAP_FILE | MAP_COPY, fd, 0);
-	if (lf->buf == MAP_FAILED)
-		return FALSE;
-
-	if (lf->len == lf->maplen && lf->buf[lf->len - 1] != '\n') {
-		char *b = bmake_malloc(lf->len + 1);
-		b[lf->len] = '\n';
-		memcpy(b, lf->buf, lf->len++);
-		munmap(lf->buf, lf->maplen);
-		lf->maplen = 0;
-		lf->buf = b;
-	}
-
 	return TRUE;
 }
 
@@ -490,78 +401,115 @@ loadedfile_mmap(struct loadedfile *lf, int fd)
 static struct loadedfile *
 loadfile(const char *path, int fd)
 {
-	struct loadedfile *lf;
-	ssize_t result;
-	size_t bufpos;
+	ssize_t n;
+	Buffer buf;
+	size_t filesize;
 
-	lf = loadedfile_create(path);
 
 	if (path == NULL) {
 		assert(fd == -1);
 		fd = STDIN_FILENO;
-	} else {
-#if 0 /* notyet */
-		fd = open(path, O_RDONLY);
-		if (fd < 0) {
-			...
-			Error("%s: %s", path, strerror(errno));
-			exit(1);
-		}
-#endif
 	}
 
-	if (loadedfile_mmap(lf, fd))
-		goto done;
+	if (load_getsize(fd, &filesize)) {
+		/*
+		 * Avoid resizing the buffer later for no reason.
+		 *
+		 * At the same time leave space for adding a final '\n',
+		 * just in case it is missing in the file.
+		 */
+		filesize++;
+	} else
+		filesize = 1024;
+	Buf_InitSize(&buf, filesize);
 
-	/* cannot mmap; load the traditional way */
-
-	lf->maplen = 0;
-	lf->len = 1024;
-	lf->buf = bmake_malloc(lf->len);
-
-	bufpos = 0;
 	for (;;) {
-		assert(bufpos <= lf->len);
-		if (bufpos == lf->len) {
-			if (lf->len > SIZE_MAX / 2) {
+		assert(buf.len <= buf.cap);
+		if (buf.len == buf.cap) {
+			if (buf.cap > 0x1fffffff) {
 				errno = EFBIG;
 				Error("%s: file too large", path);
-				exit(1);
+				exit(2); /* Not 1 so -q can distinguish error */
 			}
-			lf->len *= 2;
-			lf->buf = bmake_realloc(lf->buf, lf->len);
+			Buf_Expand(&buf);
 		}
-		assert(bufpos < lf->len);
-		result = read(fd, lf->buf + bufpos, lf->len - bufpos);
-		if (result < 0) {
+		assert(buf.len < buf.cap);
+		n = read(fd, buf.data + buf.len, buf.cap - buf.len);
+		if (n < 0) {
 			Error("%s: read error: %s", path, strerror(errno));
-			exit(1);
+			exit(2);	/* Not 1 so -q can distinguish error */
 		}
-		if (result == 0)
+		if (n == 0)
 			break;
 
-		bufpos += (size_t)result;
+		buf.len += (size_t)n;
 	}
-	assert(bufpos <= lf->len);
-	lf->len = bufpos;
+	assert(buf.len <= buf.cap);
 
-	/* truncate malloc region to actual length (maybe not useful) */
-	if (lf->len > 0) {
-		/* as for mmap case, ensure trailing \n */
-		if (lf->buf[lf->len - 1] != '\n')
-			lf->len++;
-		lf->buf = bmake_realloc(lf->buf, lf->len);
-		lf->buf[lf->len - 1] = '\n';
-	}
+	if (!Buf_EndsWith(&buf, '\n'))
+		Buf_AddByte(&buf, '\n');
 
-done:
 	if (path != NULL)
 		close(fd);
 
-	return lf;
+	{
+		struct loadedfile *lf = loadedfile_create(path,
+		    buf.data, buf.len);
+		Buf_DoneData(&buf);
+		return lf;
+	}
 }
 
-/* old code */
+static void
+PrintStackTrace(void)
+{
+	const IFile *entries;
+	size_t i, n;
+
+	if (!(DEBUG(PARSE)))
+		return;
+
+	entries = GetInclude(0);
+	n = includes.len;
+	if (n == 0)
+		return;
+	n--;			/* This entry is already in the diagnostic. */
+
+	/*
+	 * For the IFiles with fromForLoop, lineno seems to be sorted
+	 * backwards.  This is because lineno is the number of completely
+	 * parsed lines, which for a .for loop is right after the
+	 * corresponding .endfor.  The intuitive line number comes from
+	 * first_lineno instead, which points at the start of the .for loop.
+	 *
+	 * To make the stack trace intuitive, the entry below each chain of
+	 * .for loop entries must be ignored completely since neither its
+	 * lineno nor its first_lineno is useful.  Instead, the topmost of
+	 * each chain of .for loop entries needs to be printed twice, once
+	 * with its first_lineno and once with its lineno.
+	 */
+
+	for (i = n; i-- > 0;) {
+		const IFile *entry = entries + i;
+		const char *fname = entry->fname;
+		Boolean printLineno;
+		char dirbuf[MAXPATHLEN + 1];
+
+		if (fname[0] != '/' && strcmp(fname, "(stdin)") != 0)
+			fname = realpath(fname, dirbuf);
+
+		printLineno = !entry->fromForLoop;
+		if (i + 1 < n && entries[i + 1].fromForLoop == printLineno)
+			printLineno = entry->fromForLoop;
+
+		if (printLineno)
+			debug_printf("\tin .include from %s:%d\n",
+			    fname, entry->lineno);
+		if (entry->fromForLoop)
+			debug_printf("\tin .for loop from %s:%d\n",
+			    fname, entry->first_lineno);
+	}
+}
 
 /* Check if the current character is escaped on the current line. */
 static Boolean
@@ -577,8 +525,10 @@ ParseIsEscaped(const char *line, const char *c)
 	}
 }
 
-/* Add the filename and lineno to the GNode so that we remember where it
- * was first defined. */
+/*
+ * Add the filename and lineno to the GNode so that we remember where it
+ * was first defined.
+ */
 static void
 ParseMark(GNode *gn)
 {
@@ -587,8 +537,10 @@ ParseMark(GNode *gn)
 	gn->lineno = curFile->lineno;
 }
 
-/* Look in the table of keywords for one matching the given string.
- * Return the index of the keyword, or -1 if it isn't there. */
+/*
+ * Look in the table of keywords for one matching the given string.
+ * Return the index of the keyword, or -1 if it isn't there.
+ */
 static int
 ParseFindKeyword(const char *str)
 {
@@ -614,8 +566,7 @@ static void
 PrintLocation(FILE *f, const char *fname, size_t lineno)
 {
 	char dirbuf[MAXPATHLEN + 1];
-	const char *dir, *base;
-	void *dir_freeIt, *base_freeIt;
+	FStr dir, base;
 
 	if (*fname == '/' || strcmp(fname, "(stdin)") == 0) {
 		(void)fprintf(f, "\"%s\" line %u: ", fname, (unsigned)lineno);
@@ -625,19 +576,21 @@ PrintLocation(FILE *f, const char *fname, size_t lineno)
 	/* Find out which makefile is the culprit.
 	 * We try ${.PARSEDIR} and apply realpath(3) if not absolute. */
 
-	dir = Var_Value(".PARSEDIR", VAR_GLOBAL, &dir_freeIt);
-	if (dir == NULL)
-		dir = ".";
-	if (*dir != '/')
-		dir = realpath(dir, dirbuf);
+	dir = Var_Value(SCOPE_GLOBAL, ".PARSEDIR");
+	if (dir.str == NULL)
+		dir.str = ".";
+	if (dir.str[0] != '/')
+		dir.str = realpath(dir.str, dirbuf);
 
-	base = Var_Value(".PARSEFILE", VAR_GLOBAL, &base_freeIt);
-	if (base == NULL)
-		base = str_basename(fname);
+	base = Var_Value(SCOPE_GLOBAL, ".PARSEFILE");
+	if (base.str == NULL)
+		base.str = str_basename(fname);
 
-	(void)fprintf(f, "\"%s/%s\" line %u: ", dir, base, (unsigned)lineno);
-	bmake_free(base_freeIt);
-	bmake_free(dir_freeIt);
+	(void)fprintf(f, "\"%s/%s\" line %u: ",
+	    dir.str, base.str, (unsigned)lineno);
+
+	FStr_Done(&base);
+	FStr_Done(&dir);
 }
 
 static void
@@ -657,13 +610,17 @@ ParseVErrorInternal(FILE *f, const char *fname, size_t lineno,
 	(void)fflush(f);
 
 	if (type == PARSE_INFO)
-		return;
-	if (type == PARSE_FATAL || opts.parseWarnFatal)
-		fatals++;
-	if (opts.parseWarnFatal && !fatal_warning_error_printed) {
+		goto print_stack_trace;
+	if (type == PARSE_WARNING && !opts.parseWarnFatal)
+		goto print_stack_trace;
+	fatals++;
+	if (type == PARSE_WARNING && !fatal_warning_error_printed) {
 		Error("parsing warnings being treated as errors");
 		fatal_warning_error_printed = TRUE;
 	}
+
+print_stack_trace:
+	PrintStackTrace();
 }
 
 static void
@@ -685,12 +642,14 @@ ParseErrorInternal(const char *fname, size_t lineno,
 	}
 }
 
-/* Print a parse error message, including location information.
+/*
+ * Print a parse error message, including location information.
  *
  * If the level is PARSE_FATAL, continue parsing until the end of the
  * current top-level makefile, then exit (see Parse_File).
  *
- * Fmt is given without a trailing newline. */
+ * Fmt is given without a trailing newline.
+ */
 void
 Parse_Error(ParseErrorLevel type, const char *fmt, ...)
 {
@@ -721,8 +680,10 @@ Parse_Error(ParseErrorLevel type, const char *fmt, ...)
 }
 
 
-/* Parse and handle a .info, .warning or .error directive.
- * For an .error directive, immediately exit. */
+/*
+ * Parse and handle an .info, .warning or .error directive.
+ * For an .error directive, immediately exit.
+ */
 static void
 ParseMessage(ParseErrorLevel level, const char *levelName, const char *umsg)
 {
@@ -734,7 +695,7 @@ ParseMessage(ParseErrorLevel level, const char *levelName, const char *umsg)
 		return;
 	}
 
-	(void)Var_Subst(umsg, VAR_CMDLINE, VARE_WANTRES, &xmsg);
+	(void)Var_Subst(umsg, SCOPE_CMDLINE, VARE_WANTRES, &xmsg);
 	/* TODO: handle errors */
 
 	Parse_Error(level, "%s", xmsg);
@@ -746,11 +707,13 @@ ParseMessage(ParseErrorLevel level, const char *levelName, const char *umsg)
 	}
 }
 
-/* Add the child to the parent's children.
+/*
+ * Add the child to the parent's children.
  *
  * Additionally, add the parent to the child's parents, but only if the
  * target is not special.  An example for such a special target is .END,
- * which does not need to be informed once the child target has been made. */
+ * which does not need to be informed once the child target has been made.
+ */
 static void
 LinkSource(GNode *pgn, GNode *cgn, Boolean isSpecial)
 {
@@ -909,11 +872,9 @@ static void
 ParseDependencySourceMain(const char *src)
 {
 	/*
-	 * In a line like ".MAIN: source1 source2", it means we need to add
-	 * the sources of said target to the list of things to create.
-	 *
-	 * Note that this will only be invoked if the user didn't specify a
-	 * target on the command line and the .MAIN occurs for the first time.
+	 * In a line like ".MAIN: source1 source2", add all sources to the
+	 * list of things to create, but only if the user didn't specify a
+	 * target on the command line and .MAIN occurs for the first time.
 	 *
 	 * See ParseDoDependencyTargetSpecial, branch SP_MAIN.
 	 * See unit-tests/cond-func-make-main.mk.
@@ -923,7 +884,7 @@ ParseDependencySourceMain(const char *src)
 	 * Add the name to the .TARGETS variable as well, so the user can
 	 * employ that, if desired.
 	 */
-	Var_Append(".TARGETS", src, VAR_GLOBAL);
+	Global_Append(".TARGETS", src);
 }
 
 static void
@@ -960,12 +921,11 @@ ParseDependencySourceOther(const char *src, GNodeType tOp,
 	GNode *gn;
 
 	/*
-	 * If the source is not an attribute, we need to find/create
-	 * a node for it. After that we can apply any operator to it
-	 * from a special target or link it to its parents, as
-	 * appropriate.
+	 * The source is not an attribute, so find/create a node for it.
+	 * After that, apply any operator to it from a special target or
+	 * link it to its parents, as appropriate.
 	 *
-	 * In the case of a source that was the object of a :: operator,
+	 * In the case of a source that was the object of a '::' operator,
 	 * the attribute is applied to all of its instances (as kept in
 	 * the 'cohorts' list of the node) or all the cohorts are linked
 	 * to all the targets.
@@ -1055,7 +1015,7 @@ ParseErrorNoDependency(const char *lstart)
 		Parse_Error(PARSE_FATAL, "Unknown directive \"%.*s\"",
 		    (int)(dirend - dirstart), dirstart);
 	} else
-		Parse_Error(PARSE_FATAL, "Need an operator");
+		Parse_Error(PARSE_FATAL, "Invalid line type");
 }
 
 static void
@@ -1080,14 +1040,12 @@ ParseDependencyTargetWord(const char **pp, const char *lstart)
 			 * we wouldn't be here.
 			 */
 			const char *nested_p = cp;
-			const char *nested_val;
-			void *freeIt;
+			FStr nested_val;
 
-			/* XXX: Why VARE_WANTRES? */
-			(void)Var_Parse(&nested_p, VAR_CMDLINE,
-			    VARE_WANTRES | VARE_UNDEFERR, &nested_val, &freeIt);
+			(void)Var_Parse(&nested_p, SCOPE_CMDLINE, VARE_NONE,
+			    &nested_val);
 			/* TODO: handle errors */
-			free(freeIt);
+			FStr_Done(&nested_val);
 			cp += nested_p - cp;
 		} else
 			cp++;
@@ -1099,7 +1057,7 @@ ParseDependencyTargetWord(const char **pp, const char *lstart)
 /* Handle special targets like .PATH, .DEFAULT, .BEGIN, .ORDER. */
 static void
 ParseDoDependencyTargetSpecial(ParseSpecial *inout_specType,
-			       const char *line, /* XXX: bad name */
+			       const char *targetName,
 			       SearchPathList **inout_paths)
 {
 	switch (*inout_specType) {
@@ -1121,7 +1079,7 @@ ParseDoDependencyTargetSpecial(ParseSpecial *inout_specType,
 	case SP_STALE:
 	case SP_ERROR:
 	case SP_INTERRUPT: {
-		GNode *gn = Targ_GetNode(line);
+		GNode *gn = Targ_GetNode(targetName);
 		if (doing_depend)
 			ParseMark(gn);
 		gn->type |= OP_NOTMAIN | OP_SPECIAL;
@@ -1164,15 +1122,15 @@ ParseDoDependencyTargetSpecial(ParseSpecial *inout_specType,
  * Call on the suffix module to give us a path to modify.
  */
 static Boolean
-ParseDoDependencyTargetPath(const char *line, /* XXX: bad name */
+ParseDoDependencyTargetPath(const char *suffixName,
 			    SearchPathList **inout_paths)
 {
 	SearchPath *path;
 
-	path = Suff_GetPath(&line[5]);
+	path = Suff_GetPath(suffixName);
 	if (path == NULL) {
 		Parse_Error(PARSE_FATAL,
-		    "Suffix '%s' not defined (yet)", &line[5]);
+		    "Suffix '%s' not defined (yet)", suffixName);
 		return FALSE;
 	}
 
@@ -1187,20 +1145,20 @@ ParseDoDependencyTargetPath(const char *line, /* XXX: bad name */
  * See if it's a special target and if so set specType to match it.
  */
 static Boolean
-ParseDoDependencyTarget(const char *line, /* XXX: bad name */
+ParseDoDependencyTarget(const char *targetName,
 			ParseSpecial *inout_specType,
 			GNodeType *out_tOp, SearchPathList **inout_paths)
 {
 	int keywd;
 
-	if (!(line[0] == '.' && ch_isupper(line[1])))
+	if (!(targetName[0] == '.' && ch_isupper(targetName[1])))
 		return TRUE;
 
 	/*
 	 * See if the target is a special target that must have it
 	 * or its sources handled specially.
 	 */
-	keywd = ParseFindKeyword(line);
+	keywd = ParseFindKeyword(targetName);
 	if (keywd != -1) {
 		if (*inout_specType == SP_PATH &&
 		    parseKeywords[keywd].spec != SP_PATH) {
@@ -1211,22 +1169,21 @@ ParseDoDependencyTarget(const char *line, /* XXX: bad name */
 		*inout_specType = parseKeywords[keywd].spec;
 		*out_tOp = parseKeywords[keywd].op;
 
-		ParseDoDependencyTargetSpecial(inout_specType, line,
+		ParseDoDependencyTargetSpecial(inout_specType, targetName,
 		    inout_paths);
 
-	} else if (strncmp(line, ".PATH", 5) == 0) {
+	} else if (strncmp(targetName, ".PATH", 5) == 0) {
 		*inout_specType = SP_PATH;
-		if (!ParseDoDependencyTargetPath(line, inout_paths))
+		if (!ParseDoDependencyTargetPath(targetName + 5, inout_paths))
 			return FALSE;
 	}
 	return TRUE;
 }
 
 static void
-ParseDoDependencyTargetMundane(char *line, /* XXX: bad name */
-			       StringList *curTargs)
+ParseDoDependencyTargetMundane(char *targetName, StringList *curTargs)
 {
-	if (Dir_HasWildcards(line)) {
+	if (Dir_HasWildcards(targetName)) {
 		/*
 		 * Targets are to be sought only in the current directory,
 		 * so create an empty path for the thing. Note we need to
@@ -1235,7 +1192,7 @@ ParseDoDependencyTargetMundane(char *line, /* XXX: bad name */
 		 */
 		SearchPath *emptyPath = SearchPath_New();
 
-		Dir_Expand(line, emptyPath, curTargs);
+		SearchPath_Expand(emptyPath, targetName, curTargs);
 
 		SearchPath_Free(emptyPath);
 	} else {
@@ -1243,7 +1200,7 @@ ParseDoDependencyTargetMundane(char *line, /* XXX: bad name */
 		 * No wildcards, but we want to avoid code duplication,
 		 * so create a list with the word on it.
 		 */
-		Lst_Append(curTargs, line);
+		Lst_Append(curTargs, targetName);
 	}
 
 	/* Apply the targets. */
@@ -1367,7 +1324,7 @@ ParseDoDependencySourcesEmpty(ParseSpecial specType, SearchPathList *paths)
 		break;
 #ifdef POSIX
 	case SP_POSIX:
-		Var_Set("%POSIX", "1003.2", VAR_GLOBAL);
+		Global_Set("%POSIX", "1003.2");
 		break;
 #endif
 	default:
@@ -1381,7 +1338,7 @@ AddToPaths(const char *dir, SearchPathList *paths)
 	if (paths != NULL) {
 		SearchPathListNode *ln;
 		for (ln = paths->first; ln != NULL; ln = ln->next)
-			(void)Dir_AddDir(ln->datum, dir);
+			(void)SearchPath_Add(ln->datum, dir);
 	}
 }
 
@@ -1484,7 +1441,7 @@ ParseDoDependencyTargets(char **inout_cp,
 			 * there was an error in the specification. On error,
 			 * line should remain untouched.
 			 */
-			if (!Arch_ParseArchive(&tgt, targets, VAR_CMDLINE)) {
+			if (!Arch_ParseArchive(&tgt, targets, SCOPE_CMDLINE)) {
 				Parse_Error(PARSE_FATAL,
 				    "Error in archive specification: \"%s\"",
 				    tgt);
@@ -1589,7 +1546,8 @@ ParseDoDependencySourcesMundane(char *start, char *end,
 
 		if (*end == '(') {
 			GNodeList sources = LST_INIT;
-			if (!Arch_ParseArchive(&start, &sources, VAR_CMDLINE)) {
+			if (!Arch_ParseArchive(&start, &sources,
+			    SCOPE_CMDLINE)) {
 				Parse_Error(PARSE_FATAL,
 				    "Error in source archive spec \"%s\"",
 				    start);
@@ -1616,7 +1574,8 @@ ParseDoDependencySourcesMundane(char *start, char *end,
 	return TRUE;
 }
 
-/* Parse a dependency line consisting of targets, followed by a dependency
+/*
+ * Parse a dependency line consisting of targets, followed by a dependency
  * operator, optionally followed by sources.
  *
  * The nodes of the sources are linked as children to the nodes of the
@@ -1909,13 +1868,13 @@ Parse_IsVar(const char *p, VarAssign *out_var)
  * Check for syntax errors such as unclosed expressions or unknown modifiers.
  */
 static void
-VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *ctxt)
+VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *scope)
 {
-	if (opts.lint) {
+	if (opts.strict) {
 		if (type != VAR_SUBST && strchr(uvalue, '$') != NULL) {
 			char *expandedValue;
 
-			(void)Var_Subst(uvalue, ctxt, VARE_NONE,
+			(void)Var_Subst(uvalue, scope, VARE_NONE,
 			    &expandedValue);
 			/* TODO: handle errors */
 			free(expandedValue);
@@ -1924,103 +1883,89 @@ VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *ctxt)
 }
 
 static void
-VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
-		    const char **out_avalue, void **out_avalue_freeIt)
+VarAssign_EvalSubst(GNode *scope, const char *name, const char *uvalue,
+		    FStr *out_avalue)
 {
-	const char *avalue;
 	char *evalue;
-	Boolean savedPreserveUndefined = preserveUndefined;
-
-	/* TODO: Can this assignment to preserveUndefined be moved further down
-	 * to the actually interesting Var_Subst call, without affecting any
-	 * edge cases?
-	 *
-	 * It might affect the implicit expansion of the variable name in the
-	 * Var_Exists and Var_Set calls, even though it's unlikely that anyone
-	 * cared about this edge case when adding this code.  In addition,
-	 * variable assignments should not refer to any undefined variables in
-	 * the variable name. */
-	preserveUndefined = TRUE;
 
 	/*
 	 * make sure that we set the variable the first time to nothing
-	 * so that it gets substituted!
+	 * so that it gets substituted.
+	 *
+	 * TODO: Add a test that demonstrates why this code is needed,
+	 *  apart from making the debug log longer.
 	 */
-	if (!Var_Exists(name, ctxt))
-		Var_Set(name, "", ctxt);
+	if (!Var_ExistsExpand(scope, name))
+		Var_SetExpand(scope, name, "");
 
-	(void)Var_Subst(uvalue, ctxt, VARE_WANTRES | VARE_KEEP_DOLLAR, &evalue);
+	(void)Var_Subst(uvalue, scope,
+	    VARE_WANTRES | VARE_KEEP_DOLLAR | VARE_KEEP_UNDEF, &evalue);
 	/* TODO: handle errors */
-	preserveUndefined = savedPreserveUndefined;
-	avalue = evalue;
-	Var_Set(name, avalue, ctxt);
 
-	*out_avalue = avalue;
-	*out_avalue_freeIt = evalue;
+	Var_SetExpand(scope, name, evalue);
+
+	*out_avalue = FStr_InitOwn(evalue);
 }
 
 static void
-VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
-		    const char **out_avalue, void **out_avalue_freeIt)
+VarAssign_EvalShell(const char *name, const char *uvalue, GNode *scope,
+		    FStr *out_avalue)
 {
-	const char *cmd, *errfmt;
+	FStr cmd;
+	const char *errfmt;
 	char *cmdOut;
-	void *cmd_freeIt = NULL;
 
-	cmd = uvalue;
-	if (strchr(cmd, '$') != NULL) {
-		char *ecmd;
-		(void)Var_Subst(cmd, VAR_CMDLINE, VARE_WANTRES | VARE_UNDEFERR,
-		    &ecmd);
+	cmd = FStr_InitRefer(uvalue);
+	if (strchr(cmd.str, '$') != NULL) {
+		char *expanded;
+		(void)Var_Subst(cmd.str, SCOPE_CMDLINE,
+		    VARE_WANTRES | VARE_UNDEFERR, &expanded);
 		/* TODO: handle errors */
-		cmd = cmd_freeIt = ecmd;
+		cmd = FStr_InitOwn(expanded);
 	}
 
-	cmdOut = Cmd_Exec(cmd, &errfmt);
-	Var_Set(name, cmdOut, ctxt);
-	*out_avalue = *out_avalue_freeIt = cmdOut;
+	cmdOut = Cmd_Exec(cmd.str, &errfmt);
+	Var_SetExpand(scope, name, cmdOut);
+	*out_avalue = FStr_InitOwn(cmdOut);
 
 	if (errfmt != NULL)
-		Parse_Error(PARSE_WARNING, errfmt, cmd);
+		Parse_Error(PARSE_WARNING, errfmt, cmd.str);
 
-	free(cmd_freeIt);
+	FStr_Done(&cmd);
 }
 
-/* Perform a variable assignment.
+/*
+ * Perform a variable assignment.
  *
- * The actual value of the variable is returned in *out_avalue and
- * *out_avalue_freeIt.  Especially for VAR_SUBST and VAR_SHELL this can differ
- * from the literal value.
+ * The actual value of the variable is returned in *out_TRUE_avalue.
+ * Especially for VAR_SUBST and VAR_SHELL this can differ from the literal
+ * value.
  *
- * Return whether the assignment was actually done.  The assignment is only
- * skipped if the operator is '?=' and the variable already exists. */
+ * Return whether the assignment was actually performed, which is usually
+ * the case.  It is only skipped if the operator is '?=' and the variable
+ * already exists.
+ */
 static Boolean
 VarAssign_Eval(const char *name, VarAssignOp op, const char *uvalue,
-	       GNode *ctxt, const char **out_avalue, void **out_avalue_freeIt)
+	       GNode *scope, FStr *out_TRUE_avalue)
 {
-	const char *avalue = uvalue;
-	void *avalue_freeIt = NULL;
+	FStr avalue = FStr_InitRefer(uvalue);
 
 	if (op == VAR_APPEND)
-		Var_Append(name, uvalue, ctxt);
+		Var_AppendExpand(scope, name, uvalue);
 	else if (op == VAR_SUBST)
-		VarAssign_EvalSubst(name, uvalue, ctxt, &avalue,
-		    &avalue_freeIt);
+		VarAssign_EvalSubst(scope, name, uvalue, &avalue);
 	else if (op == VAR_SHELL)
-		VarAssign_EvalShell(name, uvalue, ctxt, &avalue,
-		    &avalue_freeIt);
+		VarAssign_EvalShell(name, uvalue, scope, &avalue);
 	else {
-		if (op == VAR_DEFAULT && Var_Exists(name, ctxt)) {
-			*out_avalue_freeIt = NULL;
+		if (op == VAR_DEFAULT && Var_ExistsExpand(scope, name))
 			return FALSE;
-		}
 
 		/* Normal assignment -- just do it. */
-		Var_Set(name, uvalue, ctxt);
+		Var_SetExpand(scope, name, uvalue);
 	}
 
-	*out_avalue = avalue;
-	*out_avalue_freeIt = avalue_freeIt;
+	*out_TRUE_avalue = avalue;
 	return TRUE;
 }
 
@@ -2043,25 +1988,26 @@ VarAssignSpecial(const char *name, const char *avalue)
 		Var_ExportVars(avalue);
 }
 
-/* Perform the variable variable assignment in the given context. */
+/* Perform the variable variable assignment in the given scope. */
 void
-Parse_DoVar(VarAssign *var, GNode *ctxt)
+Parse_DoVar(VarAssign *var, GNode *scope)
 {
-	const char *avalue;	/* actual value (maybe expanded) */
-	void *avalue_freeIt;
+	FStr avalue;	/* actual value (maybe expanded) */
 
-	VarCheckSyntax(var->op, var->value, ctxt);
-	if (VarAssign_Eval(var->varname, var->op, var->value, ctxt,
-	    &avalue, &avalue_freeIt))
-		VarAssignSpecial(var->varname, avalue);
+	VarCheckSyntax(var->op, var->value, scope);
+	if (VarAssign_Eval(var->varname, var->op, var->value, scope, &avalue)) {
+		VarAssignSpecial(var->varname, avalue.str);
+		FStr_Done(&avalue);
+	}
 
-	free(avalue_freeIt);
 	free(var->varname);
 }
 
 
-/* See if the command possibly calls a sub-make by using the variable
- * expressions ${.MAKE}, ${MAKE} or the plain word "make". */
+/*
+ * See if the command possibly calls a sub-make by using the variable
+ * expressions ${.MAKE}, ${MAKE} or the plain word "make".
+ */
 static Boolean
 MaybeSubMake(const char *cmd)
 {
@@ -2099,10 +2045,12 @@ MaybeSubMake(const char *cmd)
 	return FALSE;
 }
 
-/* Append the command to the target node.
+/*
+ * Append the command to the target node.
  *
  * The node may be marked as a submake node if the command is determined to
- * be that. */
+ * be that.
+ */
 static void
 ParseAddCmd(GNode *gn, char *cmd)
 {
@@ -2142,10 +2090,11 @@ ParseAddCmd(GNode *gn, char *cmd)
 void
 Parse_AddIncludeDir(const char *dir)
 {
-	(void)Dir_AddDir(parseIncPath, dir);
+	(void)SearchPath_Add(parseIncPath, dir);
 }
 
-/* Handle one of the .[-ds]include directives by remembering the current file
+/*
+ * Handle one of the .[-ds]include directives by remembering the current file
  * and pushing the included file on the stack.  After the included file has
  * finished, parsing continues with the including file; see Parse_SetInput
  * and ParseEOF.
@@ -2155,7 +2104,7 @@ Parse_AddIncludeDir(const char *dir)
  * line options.
  */
 static void
-Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
+IncludeFile(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 {
 	struct loadedfile *lf;
 	char *fullname;		/* full pathname of file */
@@ -2211,7 +2160,7 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 			const char *suff;
 			SearchPath *suffPath = NULL;
 
-			if ((suff = strrchr(file, '.'))) {
+			if ((suff = strrchr(file, '.')) != NULL) {
 				suffPath = Suff_GetPath(suff);
 				if (suffPath != NULL)
 					fullname = Dir_FindFile(file, suffPath);
@@ -2230,8 +2179,8 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 		/*
 		 * Look for it on the system path
 		 */
-		SearchPath *path = Lst_IsEmpty(sysIncPath) ? defSysIncPath
-		    : sysIncPath;
+		SearchPath *path = Lst_IsEmpty(&sysIncPath->dirs)
+		    ? defSysIncPath : sysIncPath;
 		fullname = Dir_FindFile(file, path);
 	}
 
@@ -2261,12 +2210,12 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 }
 
 static void
-ParseDoInclude(char *line /* XXX: bad name */)
+ParseDoInclude(char *directive)
 {
 	char endc;		/* the character which ends the file spec */
 	char *cp;		/* current position in file spec */
-	Boolean silent = line[0] != 'i';
-	char *file = line + (silent ? 8 : 7);
+	Boolean silent = directive[0] != 'i';
+	char *file = directive + (silent ? 8 : 7);
 
 	/* Skip to delimiter character so we know where to look */
 	pp_skip_hspace(&file);
@@ -2288,7 +2237,7 @@ ParseDoInclude(char *line /* XXX: bad name */)
 		endc = '"';
 
 	/* Skip to matching delimiter */
-	for (cp = ++file; *cp && *cp != endc; cp++)
+	for (cp = ++file; *cp != '\0' && *cp != endc; cp++)
 		continue;
 
 	if (*cp != endc) {
@@ -2303,15 +2252,17 @@ ParseDoInclude(char *line /* XXX: bad name */)
 	 * Substitute for any variables in the filename before trying to
 	 * find the file.
 	 */
-	(void)Var_Subst(file, VAR_CMDLINE, VARE_WANTRES, &file);
+	(void)Var_Subst(file, SCOPE_CMDLINE, VARE_WANTRES, &file);
 	/* TODO: handle errors */
 
-	Parse_include_file(file, endc == '>', line[0] == 'd', silent);
+	IncludeFile(file, endc == '>', directive[0] == 'd', silent);
 	free(file);
 }
 
-/* Split filename into dirname + basename, then assign these to the
- * given variables. */
+/*
+ * Split filename into dirname + basename, then assign these to the
+ * given variables.
+ */
 static void
 SetFilenameVars(const char *filename, const char *dirvar, const char *filevar)
 {
@@ -2328,8 +2279,8 @@ SetFilenameVars(const char *filename, const char *dirvar, const char *filevar)
 		basename = slash + 1;
 	}
 
-	Var_Set(dirvar, dirname, VAR_GLOBAL);
-	Var_Set(filevar, basename, VAR_GLOBAL);
+	Global_SetExpand(dirvar, dirname);
+	Global_SetExpand(filevar, basename);
 
 	DEBUG5(PARSE, "%s: ${%s} = `%s' ${%s} = `%s'\n",
 	    __func__, dirvar, dirname, filevar, basename);
@@ -2367,8 +2318,8 @@ ParseSetParseFile(const char *filename)
 		SetFilenameVars(including,
 		    ".INCLUDEDFROMDIR", ".INCLUDEDFROMFILE");
 	} else {
-		Var_Delete(".INCLUDEDFROMDIR", VAR_GLOBAL);
-		Var_Delete(".INCLUDEDFROMFILE", VAR_GLOBAL);
+		Global_Delete(".INCLUDEDFROMDIR");
+		Global_Delete(".INCLUDEDFROMFILE");
 	}
 }
 
@@ -2405,23 +2356,24 @@ StrContainsWord(const char *str, const char *word)
 static Boolean
 VarContainsWord(const char *varname, const char *word)
 {
-	void *val_freeIt;
-	const char *val = Var_Value(varname, VAR_GLOBAL, &val_freeIt);
-	Boolean found = val != NULL && StrContainsWord(val, word);
-	bmake_free(val_freeIt);
+	FStr val = Var_Value(SCOPE_GLOBAL, varname);
+	Boolean found = val.str != NULL && StrContainsWord(val.str, word);
+	FStr_Done(&val);
 	return found;
 }
 
-/* Track the makefiles we read - so makefiles can set dependencies on them.
+/*
+ * Track the makefiles we read - so makefiles can set dependencies on them.
  * Avoid adding anything more than once.
  *
  * Time complexity: O(n) per call, in total O(n^2), where n is the number
- * of makefiles that have been loaded. */
+ * of makefiles that have been loaded.
+ */
 static void
 ParseTrackInput(const char *name)
 {
 	if (!VarContainsWord(MAKE_MAKEFILES, name))
-		Var_Append(MAKE_MAKEFILES, name, VAR_GLOBAL);
+		Global_Append(MAKE_MAKEFILES, name);
 }
 
 
@@ -2468,7 +2420,7 @@ Parse_SetInput(const char *name, int lineno, int fd,
 	buf = curFile->readMore(curFile->readMoreArg, &len);
 	if (buf == NULL) {
 		/* Was all a waste of time ... */
-		if (curFile->fname)
+		if (curFile->fname != NULL)
 			free(curFile->fname);
 		free(curFile);
 		return;
@@ -2538,7 +2490,7 @@ ParseTraditionalInclude(char *line)
 	 * Substitute for any variables in the file name before trying to
 	 * find the thing.
 	 */
-	(void)Var_Subst(file, VAR_CMDLINE, VARE_WANTRES, &all_files);
+	(void)Var_Subst(file, SCOPE_CMDLINE, VARE_WANTRES, &all_files);
 	/* TODO: handle errors */
 
 	if (*file == '\0') {
@@ -2556,7 +2508,7 @@ ParseTraditionalInclude(char *line)
 		else
 			done = TRUE;
 
-		Parse_include_file(file, FALSE, FALSE, silent);
+		IncludeFile(file, FALSE, FALSE, silent);
 	}
 out:
 	free(all_files);
@@ -2575,7 +2527,7 @@ ParseGmakeExport(char *line)
 
 	pp_skip_whitespace(&variable);
 
-	for (value = variable; *value && *value != '='; value++)
+	for (value = variable; *value != '\0' && *value != '='; value++)
 		continue;
 
 	if (*value != '=') {
@@ -2588,7 +2540,7 @@ ParseGmakeExport(char *line)
 	/*
 	 * Expand the value before putting it in the environment.
 	 */
-	(void)Var_Subst(value, VAR_CMDLINE, VARE_WANTRES, &value);
+	(void)Var_Subst(value, SCOPE_CMDLINE, VARE_WANTRES, &value);
 	/* TODO: handle errors */
 
 	setenv(variable, value, 1);
@@ -2633,16 +2585,16 @@ ParseEOF(void)
 	}
 
 	/* Dispose of curFile info */
-	/* Leak curFile->fname because all the gnodes have pointers to it. */
+	/* Leak curFile->fname because all the GNodes have pointers to it. */
 	free(curFile->buf_freeIt);
 	Vector_Pop(&includes);
 
 	if (includes.len == 0) {
 		/* We've run out of input */
-		Var_Delete(".PARSEDIR", VAR_GLOBAL);
-		Var_Delete(".PARSEFILE", VAR_GLOBAL);
-		Var_Delete(".INCLUDEDFROMDIR", VAR_GLOBAL);
-		Var_Delete(".INCLUDEDFROMFILE", VAR_GLOBAL);
+		Global_Delete(".PARSEDIR");
+		Global_Delete(".PARSEFILE");
+		Global_Delete(".INCLUDEDFROMDIR");
+		Global_Delete(".INCLUDEDFROMFILE");
 		return FALSE;
 	}
 
@@ -2696,10 +2648,18 @@ ParseRawLine(IFile *curFile, char **out_line, char **out_line_end,
 		if (ch == '\\') {
 			if (firstBackslash == NULL)
 				firstBackslash = p;
-			if (p[1] == '\n')
+			if (p[1] == '\n') {
 				curFile->lineno++;
+				if (p + 2 == curFile->buf_end) {
+					line_end = p;
+					*line_end = '\n';
+					p += 2;
+					continue;
+				}
+			}
 			p += 2;
 			line_end = p;
+			assert(p <= curFile->buf_end);
 			continue;
 		}
 
@@ -2733,7 +2693,7 @@ ParseRawLine(IFile *curFile, char **out_line, char **out_line_end,
  * with a single space.
  */
 static void
-UnescapeBackslash(char *const line, char *start)
+UnescapeBackslash(char *line, char *start)
 {
 	char *src = start;
 	char *dst = start;
@@ -2825,7 +2785,6 @@ ParseGetLine(GetLineMode mode)
 	char *firstBackslash;
 	char *firstComment;
 
-	/* Loop through blank lines and comment lines */
 	for (;;) {
 		ParseRawLineResult res = ParseRawLine(curFile,
 		    &line, &line_end, &firstBackslash, &firstComment);
@@ -2840,6 +2799,7 @@ ParseGetLine(GetLineMode mode)
 		}
 
 		/* We now have a line of data */
+		assert(ch_isspace(*line_end));
 		*line_end = '\0';
 
 		if (mode == GLM_FOR_BODY)
@@ -2851,10 +2811,8 @@ ParseGetLine(GetLineMode mode)
 	}
 
 	/* Brutally ignore anything after a non-escaped '#' in non-commands. */
-	if (firstComment != NULL && line[0] != '\t') {
-		line_end = firstComment;
-		*line_end = '\0';
-	}
+	if (firstComment != NULL && line[0] != '\t')
+		*firstComment = '\0';
 
 	/* If we didn't see a '\\' then the in-situ data is fine. */
 	if (firstBackslash == NULL)
@@ -3057,10 +3015,10 @@ ParseDirective(char *line)
 		Var_Undef(cp);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export")) {
-		Var_Export(VEM_PARENT, arg);
+		Var_Export(VEM_PLAIN, arg);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export-env")) {
-		Var_Export(VEM_NORMAL, arg);
+		Var_Export(VEM_ENV, arg);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export-literal")) {
 		Var_Export(VEM_LITERAL, arg);
@@ -3093,7 +3051,7 @@ ParseVarassign(const char *line)
 		return FALSE;
 
 	FinishDependencyGroup();
-	Parse_DoVar(&var, VAR_GLOBAL);
+	Parse_DoVar(&var, SCOPE_GLOBAL);
 	return TRUE;
 }
 
@@ -3118,8 +3076,10 @@ FindSemicolon(char *p)
 	return p;
 }
 
-/* dependency	-> target... op [source...]
- * op		-> ':' | '::' | '!' */
+/*
+ * dependency	-> target... op [source...]
+ * op		-> ':' | '::' | '!'
+ */
 static void
 ParseDependency(char *line)
 {
@@ -3172,8 +3132,8 @@ ParseDependency(char *line)
 	 * Var_Parse does not print any parse errors in such a case.
 	 * It simply returns the special empty string var_Error,
 	 * which cannot be detected in the result of Var_Subst. */
-	eflags = opts.lint ? VARE_WANTRES : VARE_WANTRES | VARE_UNDEFERR;
-	(void)Var_Subst(line, VAR_CMDLINE, eflags, &expanded_line);
+	eflags = opts.strict ? VARE_WANTRES : VARE_WANTRES | VARE_UNDEFERR;
+	(void)Var_Subst(line, SCOPE_CMDLINE, eflags, &expanded_line);
 	/* TODO: handle errors */
 
 	/* Need a fresh list for the target nodes */
@@ -3317,13 +3277,11 @@ Parse_MainName(GNodeList *mainList)
 	if (mainNode == NULL)
 		Punt("no target to make.");
 
-	if (mainNode->type & OP_DOUBLEDEP) {
-		Lst_Append(mainList, mainNode);
+	Lst_Append(mainList, mainNode);
+	if (mainNode->type & OP_DOUBLEDEP)
 		Lst_AppendAll(mainList, &mainNode->cohorts);
-	} else
-		Lst_Append(mainList, mainNode);
 
-	Var_Append(".TARGETS", mainNode->name, VAR_GLOBAL);
+	Global_Append(".TARGETS", mainNode->name);
 }
 
 int

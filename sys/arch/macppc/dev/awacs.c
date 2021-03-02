@@ -1,4 +1,4 @@
-/*	$NetBSD: awacs.c,v 1.48 2019/06/08 08:02:37 isaki Exp $	*/
+/*	$NetBSD: awacs.c,v 1.50 2021/02/06 07:20:36 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2000 Tsubai Masanari.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: awacs.c,v 1.48 2019/06/08 08:02:37 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: awacs.c,v 1.50 2021/02/06 07:20:36 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/audioio.h>
@@ -110,7 +110,6 @@ static void awacs_attach(device_t, device_t, void *);
 static int awacs_intr(void *);
 static int awacs_status_intr(void *);
 
-static void awacs_close(void *);
 static int awacs_query_format(void *, audio_format_query_t *);
 static int awacs_set_format(void *, int,
 		     const audio_params_t *, const audio_params_t *,
@@ -154,7 +153,6 @@ CFATTACH_DECL_NEW(awacs, sizeof(struct awacs_softc),
     awacs_match, awacs_attach, NULL, NULL);
 
 const struct audio_hw_if awacs_hw_if = {
-	.close			= awacs_close,
 	.query_format		= awacs_query_format,
 	.set_format		= awacs_set_format,
 	.round_blocksize	= awacs_round_blocksize,
@@ -373,7 +371,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 	cv_init(&sc->sc_event, "awacs_wait");
 
 	/* check if the chip is a screamer */
-	sc->sc_screamer = (of_compatible(ca->ca_node, screamer) != -1);
+	sc->sc_screamer = of_compatible(ca->ca_node, screamer);
 	if (!sc->sc_screamer) {
 		/* look for 'sound' child node */
 		int sound_node;
@@ -381,8 +379,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 		sound_node = OF_child(ca->ca_node);
 		while ((sound_node != 0) && (!sc->sc_screamer)) {
 
-			sc->sc_screamer = 
-			    (of_compatible(sound_node, screamer) != -1);
+			sc->sc_screamer = of_compatible(sound_node, screamer);
 			sound_node = OF_peer(sound_node);
 		}
 	}
@@ -426,7 +423,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 	 */
 	perch = OF_finddevice("/perch");
 	root_node = OF_finddevice("/");
-	if (of_compatible(root_node, detect_reversed) != -1) {
+	if (of_compatible(root_node, detect_reversed)) {
 
 		/* 0x02 is for the microphone jack, high active */
 		/*
@@ -435,8 +432,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 		 */
 		sc->sc_headphones_mask = 0x8;
 		sc->sc_headphones_in = 0x0;
-	} else if ((perch != -1) ||
-	    (of_compatible(root_node, use_gpio4) != -1)) {
+	} else if ((perch != -1) || of_compatible(root_node, use_gpio4)) {
 		/*
 		 * this is for the beige G3's 'personality card' which uses
 		 * yet another wiring of the headphone detect GPIOs
@@ -450,7 +446,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 		sc->sc_headphones_in = 0x8;
 	}
 
-	if (of_compatible(root_node, no_parallel_output) != -1)
+	if (of_compatible(root_node, no_parallel_output))
 		sc->sc_need_parallel_output = 0;
 	else {
 		sc->sc_need_parallel_output = 1;
@@ -622,22 +618,6 @@ awacs_intr(void *v)
 	return 1;
 }
 
-/*
- * Close function is called at splaudio().
- */
-static void
-awacs_close(void *h)
-{
-	struct awacs_softc *sc;
-
-	sc = h;
-	awacs_halt_output(sc);
-	awacs_halt_input(sc);
-
-	sc->sc_ointr = 0;
-	sc->sc_iintr = 0;
-}
-
 static int
 awacs_query_format(void *h, audio_format_query_t *afp)
 {
@@ -680,6 +660,7 @@ awacs_halt_output(void *h)
 	sc = h;
 	dbdma_stop(sc->sc_odma);
 	dbdma_reset(sc->sc_odma);
+	sc->sc_ointr = NULL;
 	return 0;
 }
 
@@ -691,6 +672,7 @@ awacs_halt_input(void *h)
 	sc = h;
 	dbdma_stop(sc->sc_idma);
 	dbdma_reset(sc->sc_idma);
+	sc->sc_iintr = NULL;
 	return 0;
 }
 

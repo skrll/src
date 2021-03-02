@@ -1,4 +1,4 @@
-/*	$NetBSD: compat.c,v 1.215 2020/12/13 19:33:53 rillig Exp $	*/
+/*	$NetBSD: compat.c,v 1.224 2021/02/05 05:15:12 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -69,7 +69,7 @@
  * SUCH DAMAGE.
  */
 
-/*-
+/*
  * compat.c --
  *	The routines in this file implement the full-compatibility
  *	mode of PMake. Most of the special functionality of PMake
@@ -96,7 +96,7 @@
 #include "pathnames.h"
 
 /*	"@(#)compat.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: compat.c,v 1.215 2020/12/13 19:33:53 rillig Exp $");
+MAKE_RCSID("$NetBSD: compat.c,v 1.224 2021/02/05 05:15:12 rillig Exp $");
 
 static GNode *curTarg = NULL;
 static pid_t compatChild;
@@ -118,7 +118,8 @@ CompatDeleteTarget(GNode *gn)
 	}
 }
 
-/* Interrupt the creation of the current target and remove it if it ain't
+/*
+ * Interrupt the creation of the current target and remove it if it ain't
  * precious. Then exit.
  *
  * If .INTERRUPT exists, its commands are run first WITH INTERRUPTS IGNORED.
@@ -206,18 +207,20 @@ UseShell(const char *cmd MAKE_ATTR_UNUSED)
 #endif
 }
 
-/* Execute the next command for a target. If the command returns an error,
+/*
+ * Execute the next command for a target. If the command returns an error,
  * the node's made field is set to ERROR and creation stops.
  *
  * Input:
  *	cmdp		Command to execute
- *	gnp		Node from which the command came
+ *	gn		Node from which the command came
+ *	ln		List node that contains the command
  *
  * Results:
  *	0 if the command succeeded, 1 if an error occurred.
  */
 int
-Compat_RunCommand(const char *cmdp, GNode *gn)
+Compat_RunCommand(const char *cmdp, GNode *gn, StringListNode *ln)
 {
 	char *cmdStart;		/* Start of expanded command */
 	char *bp;
@@ -228,7 +231,6 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	int status;		/* Description of child's death */
 	pid_t cpid;		/* Child actually found */
 	pid_t retstat;		/* Result of wait */
-	StringListNode *cmdNode; /* Node where current command is located */
 	const char **volatile av; /* Argument vector for thing to exec */
 	char **volatile mav;	/* Copy of the argument vector for freeing */
 	Boolean useShell;	/* TRUE if command should be executed
@@ -239,12 +241,6 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	errCheck = !(gn->type & OP_IGNORE);
 	doIt = FALSE;
 
-	/* Luckily the commands don't end up in a string pool, otherwise
-	 * this comparison could match too early, in a dependency using "..."
-	 * for delayed commands, run in parallel mode, using the same shell
-	 * command line more than once; see JobPrintCommand.
-	 * TODO: write a unit-test to protect against this potential bug. */
-	cmdNode = Lst_FindDatum(&gn->commands, cmd);
 	(void)Var_Subst(cmd, gn, VARE_WANTRES, &cmdStart);
 	/* TODO: handle errors */
 
@@ -253,7 +249,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 		return 0;
 	}
 	cmd = cmdStart;
-	LstNode_Set(cmdNode, cmdStart);
+	LstNode_Set(ln, cmdStart);
 
 	if (gn->type & OP_SAVE_CMDS) {
 		GNode *endNode = Targ_GetEndNode();
@@ -261,7 +257,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 			/*
 			 * Append the expanded command, to prevent the
 			 * local variables from being interpreted in the
-			 * context of the .END node.
+			 * scope of the .END node.
 			 *
 			 * A probably unintended side effect of this is that
 			 * the expanded command will be expanded again in the
@@ -285,7 +281,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 			errCheck = FALSE;
 		else if (*cmd == '+') {
 			doIt = TRUE;
-			if (!shellName)	/* we came here from jobs */
+			if (shellName == NULL)	/* we came here from jobs */
 				Shell_Init();
 		} else
 			break;
@@ -330,7 +326,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 		/* The following work for any of the builtin shell specs. */
 		int shargc = 0;
 		shargv[shargc++] = shellPath;
-		if (errCheck && shellErrFlag)
+		if (errCheck && shellErrFlag != NULL)
 			shargv[shargc++] = shellErrFlag;
 		shargv[shargc++] = DEBUG(SHELL) ? "-xc" : "-c";
 		shargv[shargc++] = cmd;
@@ -356,15 +352,16 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	}
 #endif
 
+	Var_ReexportVars();
+
 	/*
 	 * Fork and execute the single command. If the fork fails, we abort.
 	 */
-	compatChild = cpid = vFork();
+	compatChild = cpid = vfork();
 	if (cpid < 0) {
 		Fatal("Could not fork");
 	}
 	if (cpid == 0) {
-		Var_ReexportVars();
 #ifdef USE_META
 		if (useMeta) {
 			meta_compat_child();
@@ -379,7 +376,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 
 	/* XXX: Memory management looks suspicious here. */
 	/* XXX: Setting a list item to NULL is unexpected. */
-	LstNode_SetNull(cmdNode);
+	LstNode_SetNull(ln);
 
 #ifdef USE_META
 	if (useMeta) {
@@ -467,7 +464,7 @@ RunCommands(GNode *gn)
 
 	for (ln = gn->commands.first; ln != NULL; ln = ln->next) {
 		const char *cmd = ln->datum;
-		if (Compat_RunCommand(cmd, gn) != 0)
+		if (Compat_RunCommand(cmd, gn, ln) != 0)
 			break;
 	}
 }
@@ -512,7 +509,7 @@ MakeUnmade(GNode *gn, GNode *pgn)
 	}
 
 	if (Lst_FindDatum(&gn->implicitParents, pgn) != NULL)
-		Var_Set(IMPSRC, GNode_VarTarget(gn), pgn);
+		Var_Set(pgn, IMPSRC, GNode_VarTarget(gn));
 
 	/*
 	 * All the children were made ok. Now youngestChild->mtime contains the
@@ -605,7 +602,7 @@ MakeOther(GNode *gn, GNode *pgn)
 
 	if (Lst_FindDatum(&gn->implicitParents, pgn) != NULL) {
 		const char *target = GNode_VarTarget(gn);
-		Var_Set(IMPSRC, target != NULL ? target : "", pgn);
+		Var_Set(pgn, IMPSRC, target != NULL ? target : "");
 	}
 
 	switch (gn->made) {
@@ -629,7 +626,8 @@ MakeOther(GNode *gn, GNode *pgn)
 	}
 }
 
-/* Make a target.
+/*
+ * Make a target.
  *
  * If an error is detected and not being ignored, the process exits.
  *
@@ -698,7 +696,8 @@ InitSignals(void)
 		bmake_signal(SIGQUIT, CompatInterrupt);
 }
 
-/* Initialize this module and start making.
+/*
+ * Initialize this module and start making.
  *
  * Input:
  *	targs		The target nodes to re-create
@@ -708,7 +707,7 @@ Compat_Run(GNodeList *targs)
 {
 	GNode *errorNode = NULL;
 
-	if (!shellName)
+	if (shellName == NULL)
 		Shell_Init();
 
 	InitSignals();
@@ -750,6 +749,10 @@ Compat_Run(GNodeList *targs)
 	}
 
 	if (errorNode != NULL) {
+		if (DEBUG(GRAPH2))
+			Targ_PrintGraph(2);
+		else if (DEBUG(GRAPH3))
+			Targ_PrintGraph(3);
 		PrintOnError(errorNode, "\nStop.");
 		exit(1);
 	}
