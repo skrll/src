@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.133 2021/01/31 11:23:01 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.137 2021/02/19 22:35:42 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.133 2021/01/31 11:23:01 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.137 2021/02/19 22:35:42 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -179,11 +179,11 @@ is_incomplete(const type_t *tp)
 	if ((t = tp->t_tspec) == VOID) {
 		return true;
 	} else if (t == ARRAY) {
-		return tp->t_aincompl;
+		return tp->t_incomplete_array;
 	} else if (t == STRUCT || t == UNION) {
-		return tp->t_str->sincompl;
+		return tp->t_str->sou_incomplete;
 	} else if (t == ENUM) {
-		return tp->t_enum->eincompl;
+		return tp->t_enum->en_incomplete;
 	}
 	return false;
 }
@@ -197,12 +197,12 @@ setcomplete(type_t *tp, bool complete)
 	tspec_t	t;
 
 	if ((t = tp->t_tspec) == ARRAY) {
-		tp->t_aincompl = !complete;
+		tp->t_incomplete_array = !complete;
 	} else if (t == STRUCT || t == UNION) {
-		tp->t_str->sincompl = !complete;
+		tp->t_str->sou_incomplete = !complete;
 	} else {
 		lint_assert(t == ENUM);
-		tp->t_enum->eincompl = !complete;
+		tp->t_enum->en_incomplete = !complete;
 	}
 }
 
@@ -482,11 +482,11 @@ settdsym(type_t *tp, sym_t *sym)
 	tspec_t	t;
 
 	if ((t = tp->t_tspec) == STRUCT || t == UNION) {
-		if (tp->t_str->stdef == NULL)
-			tp->t_str->stdef = sym;
+		if (tp->t_str->sou_first_typedef == NULL)
+			tp->t_str->sou_first_typedef = sym;
 	} else if (t == ENUM) {
-		if (tp->t_enum->etdef == NULL)
-			tp->t_enum->etdef = sym;
+		if (tp->t_enum->en_first_typedef == NULL)
+			tp->t_enum->en_first_typedef = sym;
 	}
 }
 
@@ -504,25 +504,26 @@ bitfieldsize(sym_t **mem)
 static void
 setpackedsize(type_t *tp)
 {
-	str_t *sp;
+	struct_or_union *sp;
 	sym_t *mem;
 
 	switch (tp->t_tspec) {
 	case STRUCT:
 	case UNION:
 		sp = tp->t_str;
-		sp->size = 0;
-		for (mem = sp->memb; mem != NULL; mem = mem->s_next) {
+		sp->sou_size_in_bit = 0;
+		for (mem = sp->sou_first_member;
+		     mem != NULL; mem = mem->s_next) {
 			if (mem->s_type->t_bitfield) {
-				sp->size += bitfieldsize(&mem);
+				sp->sou_size_in_bit += bitfieldsize(&mem);
 				if (mem == NULL)
 					break;
 			}
 			size_t x = (size_t)tsize(mem->s_type);
 			if (tp->t_tspec == STRUCT)
-				sp->size += x;
-			else if (x > sp->size)
-				sp->size = x;
+				sp->sou_size_in_bit += x;
+			else if (x > sp->sou_size_in_bit)
+				sp->sou_size_in_bit = x;
 		}
 		break;
 	default:
@@ -653,7 +654,7 @@ popdecl(void)
 		/* check usage of local vars */
 		check_usage(di);
 		/* FALLTHROUGH */
-	case PARG:
+	case PROTO_ARG:
 		/* usage of arguments will be checked by funcend() */
 		rmsyms(di->d_dlsyms);
 		break;
@@ -824,7 +825,7 @@ deftyp(void)
 			error(8);
 			scl = NOSCL;
 		}
-	} else if (dcs->d_ctx == ARG || dcs->d_ctx == PARG) {
+	} else if (dcs->d_ctx == ARG || dcs->d_ctx == PROTO_ARG) {
 		if (scl != NOSCL && scl != REG) {
 			/* only register valid as formal parameter storage... */
 			error(9);
@@ -905,9 +906,9 @@ length(const type_t *tp, const char *name)
 	case UNION:
 		if (is_incomplete(tp) && name != NULL) {
 			/* incomplete structure or union %s: %s */
-			error(31, tp->t_str->stag->s_name, name);
+			error(31, tp->t_str->sou_tag->s_name, name);
 		}
-		elsz = tp->t_str->size;
+		elsz = tp->t_str->sou_size_in_bit;
 		break;
 	case ENUM:
 		if (is_incomplete(tp) && name != NULL) {
@@ -940,7 +941,7 @@ getbound(const type_t *tp)
 		return -1;
 
 	if ((t = tp->t_tspec) == STRUCT || t == UNION) {
-		a = tp->t_str->align;
+		a = tp->t_str->sou_align_in_bit;
 	} else if (t == FUNC) {
 		/* compiler takes alignment of function */
 		error(14);
@@ -1014,7 +1015,7 @@ check_type(sym_t *sym)
 				}
 				return;
 			} else if (tp->t_const || tp->t_volatile) {
-				if (sflag) {	/* XXX oder better !tflag ? */
+				if (sflag) {	/* XXX or better !tflag ? */
 					/* function cannot return const... */
 					warning(228);
 				}
@@ -1046,7 +1047,7 @@ check_type(sym_t *sym)
 #endif
 			}
 		} else if (to == NOTSPEC && t == VOID) {
-			if (dcs->d_ctx == PARG) {
+			if (dcs->d_ctx == PROTO_ARG) {
 				if (sym->s_scl != ABSTRACT) {
 					lint_assert(sym->s_name != unnamed);
 					/* void param. cannot have name: %s */
@@ -1413,7 +1414,7 @@ new_style_function(sym_t *decl, sym_t *args)
 	 */
 	for (sym = dcs->d_dlsyms; sym != NULL; sym = sym->s_dlnxt) {
 		sc = sym->s_scl;
-		if (sc == STRTAG || sc == UNIONTAG || sc == ENUMTAG) {
+		if (sc == STRUCT_TAG || sc == UNION_TAG || sc == ENUM_TAG) {
 			/* dubious tag declaration: %s %s */
 			warning(85, storage_class_name(sc), sym->s_name);
 		}
@@ -1533,7 +1534,7 @@ declarator_name(sym_t *sym)
 			sym->s_def = DECL;
 		}
 		break;
-	case PARG:
+	case PROTO_ARG:
 		sym->s_arg = true;
 		/* FALLTHROUGH */
 	case ARG:
@@ -1618,12 +1619,12 @@ mktag(sym_t *tag, tspec_t kind, bool decl, bool semi)
 	type_t	*tp;
 
 	if (kind == STRUCT) {
-		scl = STRTAG;
+		scl = STRUCT_TAG;
 	} else if (kind == UNION) {
-		scl = UNIONTAG;
+		scl = UNION_TAG;
 	} else {
 		lint_assert(kind == ENUM);
-		scl = ENUMTAG;
+		scl = ENUM_TAG;
 	}
 
 	if (tag != NULL) {
@@ -1632,7 +1633,7 @@ mktag(sym_t *tag, tspec_t kind, bool decl, bool semi)
 		} else {
 			/* a new tag, no empty declaration */
 			dcs->d_next->d_nedecl = true;
-			if (scl == ENUMTAG && !decl) {
+			if (scl == ENUM_TAG && !decl) {
 				if (!tflag && (sflag || pflag))
 					/* forward reference to enum type */
 					warning(42);
@@ -1660,13 +1661,13 @@ mktag(sym_t *tag, tspec_t kind, bool decl, bool semi)
 	if (tp->t_tspec == NOTSPEC) {
 		tp->t_tspec = kind;
 		if (kind != ENUM) {
-			tp->t_str = getblk(sizeof (str_t));
-			tp->t_str->align = CHAR_SIZE;
-			tp->t_str->stag = tag;
+			tp->t_str = getblk(sizeof (struct_or_union));
+			tp->t_str->sou_align_in_bit = CHAR_SIZE;
+			tp->t_str->sou_tag = tag;
 		} else {
-			tp->t_isenum = true;
+			tp->t_is_enum = true;
 			tp->t_enum = getblk(sizeof(*tp->t_enum));
-			tp->t_enum->etag = tag;
+			tp->t_enum->en_tag = tag;
 		}
 		setcomplete(tp, false);
 	}
@@ -1748,9 +1749,9 @@ storage_class_name(scl_t sc)
 	case AUTO:	s = "auto";	break;
 	case REG:	s = "register";	break;
 	case TYPEDEF:	s = "typedef";	break;
-	case STRTAG:	s = "struct";	break;
-	case UNIONTAG:	s = "union";	break;
-	case ENUMTAG:	s = "enum";	break;
+	case STRUCT_TAG:s = "struct";	break;
+	case UNION_TAG:	s = "union";	break;
+	case ENUM_TAG:	s = "enum";	break;
 	default:	lint_assert(/*CONSTCOND*/false);
 	}
 	return s;
@@ -1763,7 +1764,7 @@ type_t *
 complete_tag_struct_or_union(type_t *tp, sym_t *fmem)
 {
 	tspec_t	t;
-	str_t	*sp;
+	struct_or_union	*sp;
 	int	n;
 	sym_t	*mem;
 
@@ -1772,14 +1773,14 @@ complete_tag_struct_or_union(type_t *tp, sym_t *fmem)
 	t = tp->t_tspec;
 	align(dcs->d_stralign, 0);
 	sp = tp->t_str;
-	sp->align = dcs->d_stralign;
-	sp->memb = fmem;
+	sp->sou_align_in_bit = dcs->d_stralign;
+	sp->sou_first_member = fmem;
 	if (tp->t_packed)
 		setpackedsize(tp);
 	else
-		sp->size = dcs->d_offset;
+		sp->sou_size_in_bit = dcs->d_offset;
 
-	if (sp->size == 0) {
+	if (sp->sou_size_in_bit == 0) {
 		/* zero sized %s is a C9X feature */
 		c99ism(47, ttab[t].tt_name);
 	}
@@ -1790,17 +1791,17 @@ complete_tag_struct_or_union(type_t *tp, sym_t *fmem)
 		if (mem->s_styp == NULL) {
 			mem->s_styp = sp;
 			if (mem->s_type->t_bitfield) {
-				sp->size += bitfieldsize(&mem);
+				sp->sou_size_in_bit += bitfieldsize(&mem);
 				if (mem == NULL)
 					break;
 			}
-			sp->size += tsize(mem->s_type);
+			sp->sou_size_in_bit += tsize(mem->s_type);
 		}
 		if (mem->s_name != unnamed)
 			n++;
 	}
 
-	if (n == 0 && sp->size != 0) {
+	if (n == 0 && sp->sou_size_in_bit != 0) {
 		/* %s has no named members */
 		warning(65, t == STRUCT ? "structure" : "union");
 	}
@@ -1812,7 +1813,7 @@ complete_tag_enum(type_t *tp, sym_t *fmem)
 {
 
 	setcomplete(tp, true);
-	tp->t_enum->elem = fmem;
+	tp->t_enum->en_first_enumerator = fmem;
 	return tp;
 }
 
@@ -2797,7 +2798,7 @@ abstract_name(void)
 {
 	sym_t	*sym;
 
-	lint_assert(dcs->d_ctx == ABSTRACT || dcs->d_ctx == PARG);
+	lint_assert(dcs->d_ctx == ABSTRACT || dcs->d_ctx == PROTO_ARG);
 
 	sym = getblk(sizeof (sym_t));
 
@@ -2806,7 +2807,7 @@ abstract_name(void)
 	sym->s_scl = ABSTRACT;
 	sym->s_blklev = -1;
 
-	if (dcs->d_ctx == PARG)
+	if (dcs->d_ctx == PROTO_ARG)
 		sym->s_arg = true;
 
 	sym->s_type = dcs->d_type;

@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.60 2021/01/23 22:20:17 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.65 2021/02/19 22:35:42 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -116,7 +116,7 @@ typedef struct {
 #define v_ldbl	v_u._v_ldbl
 
 /*
- * Structures of type str_t uniquely identify structures. This can't
+ * Structures of type struct_or_union uniquely identify structures. This can't
  * be done in structures of type type_t, because these are copied
  * if they must be modified. So it would not be possible to check
  * if two structures are identical by comparing the pointers to
@@ -126,23 +126,23 @@ typedef struct {
  * the structure type in pass 2.
  */
 typedef	struct {
-	u_int	size;		/* size in bit */
-	u_int	align : 15;	/* alignment in bit */
-	bool	sincompl : 1;	/* set if incomplete type */
-	struct	sym *memb;	/* list of members */
-	struct	sym *stag;	/* symbol table entry of tag */
-	struct	sym *stdef;	/* symbol table entry of first typename */
-} str_t;
+	u_int	sou_size_in_bit;
+	u_int	sou_align_in_bit : 15;
+	bool	sou_incomplete : 1;
+	struct	sym *sou_first_member;
+	struct	sym *sou_tag;
+	struct	sym *sou_first_typedef;
+} struct_or_union;
 
 /*
  * same as above for enums
  */
 typedef	struct {
-	bool	eincompl : 1;	/* incomplete enum type */
-	struct	sym *elem;	/* list of enumerators */
-	struct	sym *etag;	/* symbol table entry of tag */
-	struct	sym *etdef;	/* symbol table entry of first typename */
-} tenum_t;
+	bool	en_incomplete : 1;
+	struct	sym *en_first_enumerator;
+	struct	sym *en_tag;
+	struct	sym *en_first_typedef;
+} enumeration;
 
 /*
  * Types are represented by concatenation of structures of type type_t
@@ -150,19 +150,19 @@ typedef	struct {
  */
 struct type {
 	tspec_t	t_tspec;	/* type specifier */
-	bool	t_aincompl : 1;	/* incomplete array type */
+	bool	t_incomplete_array : 1;
 	bool	t_const : 1;	/* const modifier */
 	bool	t_volatile : 1;	/* volatile modifier */
 	bool	t_proto : 1;	/* function prototype (t_args valid) */
 	bool	t_vararg : 1;	/* prototype with '...' */
 	bool	t_typedef : 1;	/* type defined with typedef */
 	bool	t_bitfield : 1;
-	bool	t_isenum : 1;	/* type is (or was) enum (t_enum valid) */
+	bool	t_is_enum : 1;	/* type is (or was) enum (t_enum valid) */
 	bool	t_packed : 1;
 	union {
 		int	_t_dim;		/* dimension */
-		str_t	*_t_str;	/* struct/union tag */
-		tenum_t	*_t_enum;	/* enum tag */
+		struct_or_union	*_t_str;
+		enumeration	*_t_enum;
 		struct	sym *_t_args;	/* arguments (if t_proto) */
 	} t_u;
 	struct {
@@ -200,15 +200,15 @@ typedef enum {
 	AUTO,		/* automatic symbols (except register) */
 	REG,		/* register */
 	TYPEDEF,	/* typedef */
-	STRTAG,
-	UNIONTAG,
-	ENUMTAG,
+	STRUCT_TAG,
+	UNION_TAG,
+	ENUM_TAG,
 	MOS,		/* member of struct */
 	MOU,		/* member of union */
 	CTCONST,	/* enumerator, enum constant or bool constant */
 	ABSTRACT,	/* abstract symbol (sizeof, casts, unnamed argument) */
 	ARG,		/* argument */
-	PARG,		/* used in declaration stack during prototype
+	PROTO_ARG,	/* used in declaration stack during prototype
 			   declaration */
 	INLINE		/* only used by the parser */
 } scl_t;
@@ -234,7 +234,7 @@ typedef	struct sym {
 	bool	s_reg : 1;	/* symbol is register variable */
 	bool	s_defarg : 1;	/* undefined symbol in old style function
 				   definition */
-	bool	s_rimpl : 1;	/* return value of function implicit decl. */
+	bool	s_return_type_implicit_int : 1;
 	bool	s_osdef : 1;	/* symbol stems from old style function def. */
 	bool	s_inline : 1;	/* true if this is an inline function */
 	struct	sym *s_ext_sym;	/* for local declared external symbols pointer
@@ -246,8 +246,8 @@ typedef	struct sym {
 	type_t	*s_type;
 	val_t	s_value;	/* value (if enum or bool constant) */
 	union {
-		str_t	*_s_st;	/* tag, if it is a struct/union member */
-		tenum_t	*_s_et;	/* tag, if it is an enumerator */
+		struct_or_union	*_s_st;
+		enumeration	*_s_et;
 		tspec_t	_s_tsp;	/* type (only for keywords) */
 		tqual_t	_s_tqu;	/* qualifier (only for keywords) */
 		struct	sym *_s_args; /* arguments in old style function
@@ -313,13 +313,14 @@ typedef	struct tnode {
  *
  * ctx describes the context of the current declaration. Its value is
  * one of
- *	EXTERN	global declarations
- *	MOS oder MOU declarations of struct or union members
- *	CTCONST	declarations of enums
- *	ARG	declaration of arguments in old style function definitions
- *	PARG	declaration of arguments in function prototypes
- *	AUTO	declaration of local symbols
- *	ABSTRACT abstract declarations (sizeof, casts)
+ *	EXTERN		global declarations
+ *	MOS or MOU	declarations of struct or union members
+ *	CTCONST		declarations of enums
+ *	ARG		declaration of arguments in old style function
+ *			definitions
+ *	PROTO_ARG	declaration of arguments in function prototypes
+ *	AUTO		declaration of local symbols
+ *	ABSTRACT	abstract declarations (sizeof, casts)
  *
  */
 typedef	struct dinfo {
