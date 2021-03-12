@@ -10,9 +10,13 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
 
+#include <sys/atomic.h>
+#include <sys/buf.h>
 #include <sys/bus.h>
+#include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/queue.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
@@ -30,21 +34,19 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <cam/scsi/scsi_message.h>
 #endif
 
-#if 0
-#include <scsi/scsi_all.h>
-#include <scsi/scsi_message.h>
-#include <scsi/scsiconf.h>
-#endif
+#include <dev/scsipi/scsi_all.h>
+#include <dev/scsipi/scsi_message.h>
+#include <dev/scsipi/scsiconf.h>
+#include <dev/scsipi/scsipi_disk.h>
 
 #include "pvscsi.h"
 
 #define	PVSCSI_DEFAULT_NUM_PAGES_REQ_RING	8
 #define	PVSCSI_SENSE_LENGTH			256
 
-#if 0
-MALLOC_DECLARE(M_PVSCSI);
-MALLOC_DEFINE(M_PVSCSI, "pvscsi", "PVSCSI memory");
-#endif
+#define PVSCSI_MAXPHYS				MAXPHYS
+#define PVSCSI_MAXPHYS_SEGS			(PVSCSI_MAXPHYS / PAGE_SIZE)
+
 
 #ifdef PVSCSI_DEBUG_LOGGING
 #define	DEBUG_PRINTF(level, dev, fmt, ...)				\
@@ -86,13 +88,13 @@ static void pvscsi_setup_rings(struct pvscsi_softc *sc);
 static void pvscsi_setup_msg_ring(struct pvscsi_softc *sc);
 static int pvscsi_hw_supports_msg(struct pvscsi_softc *sc);
 
-static void pvscsi_timeout(void *arg);
+//static void pvscsi_timeout(void *arg);
 static void pvscsi_freeze(struct pvscsi_softc *sc);
 static void pvscsi_adapter_reset(struct pvscsi_softc *sc);
-static void pvscsi_bus_reset(struct pvscsi_softc *sc);
-static void pvscsi_device_reset(struct pvscsi_softc *sc, uint32_t target);
-static void pvscsi_abort(struct pvscsi_softc *sc, uint32_t target,
-    union ccb *ccb);
+//static void pvscsi_bus_reset(struct pvscsi_softc *sc);
+//static void pvscsi_device_reset(struct pvscsi_softc *sc, uint32_t target);
+// static void pvscsi_abort(struct pvscsi_softc *sc, uint32_t target,
+//     union ccb *ccb);
 
 static void pvscsi_process_completion(struct pvscsi_softc *sc,
     struct pvscsi_ring_cmp_desc *e);
@@ -102,12 +104,17 @@ static void pvscsi_process_msg(struct pvscsi_softc *sc,
 static void pvscsi_process_msg_ring(struct pvscsi_softc *sc);
 
 static void pvscsi_intr_locked(struct pvscsi_softc *sc);
-static void pvscsi_intr(void *xsc);
-static void pvscsi_poll(struct cam_sim *sim);
+static int pvscsi_intr(void *xsc);
+// static void pvscsi_poll(struct cam_sim *sim);
 
+static void pvscsi_scsipi_request(struct scsipi_channel *,
+    scsipi_adapter_req_t, void *);
+
+#if 0
 static void pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg,
     int error);
 static void pvscsi_action(struct cam_sim *sim, union ccb *ccb);
+#endif
 
 static inline uint64_t pvscsi_hcb_to_context(struct pvscsi_softc *sc,
     struct pvscsi_hcb *hcb);
@@ -116,8 +123,6 @@ static inline struct pvscsi_hcb* pvscsi_context_to_hcb(struct pvscsi_softc *sc,
 static struct pvscsi_hcb * pvscsi_hcb_get(struct pvscsi_softc *sc);
 static void pvscsi_hcb_put(struct pvscsi_softc *sc, struct pvscsi_hcb *hcb);
 
-static void pvscsi_dma_cb(void *arg, bus_dma_segment_t *segs, int nseg,
-    int error);
 static void pvscsi_dma_free(struct pvscsi_softc *sc, struct pvscsi_dma *dma);
 static int pvscsi_dma_alloc(struct pvscsi_softc *sc, struct pvscsi_dma *dma,
     bus_size_t size, bus_size_t alignment);
@@ -129,42 +134,65 @@ static int pvscsi_dma_alloc_per_hcb(struct pvscsi_softc *sc);
 static void pvscsi_free_rings(struct pvscsi_softc *sc);
 static int pvscsi_allocate_rings(struct pvscsi_softc *sc);
 static void pvscsi_free_interrupts(struct pvscsi_softc *sc);
-static int pvscsi_setup_interrupts(struct pvscsi_softc *sc);
+static int pvscsi_setup_interrupts(struct pvscsi_softc *sc, const struct pci_attach_args *);
 static void pvscsi_free_all(struct pvscsi_softc *sc);
 
 static void pvscsi_attach(device_t, device_t, void *);
 static int pvscsi_detach(device_t, int);
 static int pvscsi_probe(device_t, cfdata_t, void *);
-static int pvscsi_get_tunable(struct pvscsi_softc *sc, char *name, int value);
+// static int pvscsi_get_tunable(struct pvscsi_softc *sc, const char *name, int value);
+
+#define pvscsi_get_tunable(_sc, _name, _value)	(_value)
 
 #ifdef PVSCSI_DEBUG_LOGGING
 static int pvscsi_log_level = 0;
-static SYSCTL_NODE(_hw, OID_AUTO, pvscsi, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
-    "PVSCSI driver parameters");
-SYSCTL_INT(_hw_pvscsi, OID_AUTO, log_level, CTLFLAG_RWTUN, &pvscsi_log_level,
-    0, "PVSCSI debug log level");
 #endif
 
-//XXXNH define a real one
-#define TUNABLE_INT(__x, __y)
+#define TUNABLE_INT(__x, __d)					\
+	err = sysctl_createv(clog, 0, &rnode, &cnode,		\
+	    CTLFLAG_PERMANENT|CTLFLAG_READWRITE, CTLTYPE_INT,	\
+	    #__x, SYSCTL_DESCR(__d),				\
+	    NULL, 0, &(pvscsi_ ## __x), sizeof(pvscsi_ ## __x), \
+	    CTL_CREATE,	CTL_EOL);				\
+	if (err)						\
+		goto fail;
 
 static int pvscsi_request_ring_pages = 0;
-TUNABLE_INT("hw.pvscsi.request_ring_pages", &pvscsi_request_ring_pages);
-
 static int pvscsi_use_msg = 1;
-TUNABLE_INT("hw.pvscsi.use_msg", &pvscsi_use_msg);
-
 static int pvscsi_use_msi = 1;
-TUNABLE_INT("hw.pvscsi.use_msi", &pvscsi_use_msi);
-
 static int pvscsi_use_msix = 1;
-TUNABLE_INT("hw.pvscsi.use_msix", &pvscsi_use_msix);
-
 static int pvscsi_use_req_call_threshold = 1;
-TUNABLE_INT("hw.pvscsi.use_req_call_threshold", &pvscsi_use_req_call_threshold);
-
 static int pvscsi_max_queue_depth = 0;
-TUNABLE_INT("hw.pvscsi.max_queue_depth", &pvscsi_max_queue_depth);
+
+SYSCTL_SETUP(sysctl_hw_pvscsi_setup, "sysctl hw.pvscsi setup")
+{
+	int err;
+	const struct sysctlnode *rnode;
+	const struct sysctlnode *cnode;
+
+	err = sysctl_createv(clog, 0, NULL, &rnode,
+	    CTLFLAG_PERMANENT, CTLTYPE_NODE, "pvscsi",
+	    SYSCTL_DESCR("pvscsi global controls"),
+	    NULL, 0, NULL, 0, CTL_HW, CTL_CREATE, CTL_EOL);
+
+	if (err)
+		goto fail;
+
+#ifdef PVSCSI_DEBUG_LOGGING
+	TUNABLE_INT(log_level, "Enable debugging output");
+#endif
+
+	TUNABLE_INT(request_ring_pages, "No. of pages for the request ring");
+	TUNABLE_INT(use_msg, "Use message passing");
+	TUNABLE_INT(use_msi, "Use MSI interrupt");
+	TUNABLE_INT(use_msix, "Use MSXI interrupt");
+	TUNABLE_INT(use_req_call_threshold, "Use request limit");
+	TUNABLE_INT(max_queue_depth, "Maximum size of request queue");
+
+	return;
+fail:
+	aprint_error("%s: sysctl_createv failed (err = %d)\n", __func__, err);
+}
 
 struct pvscsi_sg_list {
 	struct pvscsi_sg_element sge[PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT];
@@ -179,23 +207,29 @@ struct pvscsi_sg_list {
 #define	PVSCSI_HCB_BUS_RESET	3
 
 struct pvscsi_hcb {
+	struct scsipi_xfer 		*xs;
+	struct pvscsi_softc		*sc;	// XXX needed?
+
+	bus_dmamap_t		 	dma_map;
 //	union ccb			*ccb;
 	struct pvscsi_ring_req_desc	*e;
 	int				 recovery;
 	SLIST_ENTRY(pvscsi_hcb)		 links;
 
-	struct callout			 callout;
+//	struct callout			 callout;
 	bus_addr_t			 dma_map_offset;
 	bus_size_t			 dma_map_size;
 	void				*sense_buffer;
 	bus_addr_t			 sense_buffer_paddr;
+//	bus_addr_t			 sense_buffer_offset;
 	struct pvscsi_sg_list		*sg_list;
 	bus_addr_t			 sg_list_paddr;
+	bus_addr_t			 sg_list_offset;
 //	bus_dma_segment_t		 seg[1];
-};};
+};
 
 struct pvscsi_dma {
-	bus_dma_tag_t	 tag;
+//	bus_dma_tag_t	 tag;
 	bus_dmamap_t	 map;
 	void		*vaddr;
 	bus_addr_t	 paddr;
@@ -207,6 +241,11 @@ struct pvscsi_dma {
 struct pvscsi_softc {
 	device_t		 dev;
 	kmutex_t		lock;
+
+	device_t		 sc_scsibus_dv;
+	struct scsipi_adapter	 sc_adapter;
+	struct scsipi_channel 	 sc_channel;
+
 #if 0
 	struct cam_sim		*sim;
 	struct cam_path		*bus_path;
@@ -223,14 +262,10 @@ struct pvscsi_softc {
 // 	bus_dma_tag_t		parent_dmat;
 // 	bus_dma_tag_t		buffer_dmat;
 
-
 	bus_dma_tag_t		sc_dmat;
 	bus_space_tag_t		sc_memt;
 	bus_space_handle_t	sc_memh;
-
-
-
-
+	bus_size_t		sc_mems;
 
 	bool		 use_msg;
 	uint32_t	 max_targets;
@@ -238,13 +273,14 @@ struct pvscsi_softc {
 //	struct resource	*mm_res;
 	int		 irq_id;
 //	struct resource	*irq_res;
-	void		*irq_handler;
+// 	void		*irq_handler;
 	int		 use_req_call_threshold;
-	int		 use_msi_or_msix;
+//	int		 use_msi_or_msix;
 
 
+	pci_chipset_tag_t	sc_pc;
 	pci_intr_handle_t *	sc_pihp;
-//	int			sc_nintr;
+// 	int			sc_nintr;
 	void **			sc_ih;
 
 
@@ -270,25 +306,12 @@ CFATTACH_DECL3_NEW(pvscsi, sizeof(struct pvscsi_softc),
     pvscsi_probe, pvscsi_attach, pvscsi_detach, NULL, NULL, NULL,
     DVF_DETACH_SHUTDOWN);
 
-#if 0
-static int pvscsi_get_tunable(struct pvscsi_softc *sc, char *name, int value)
-{
-	char cfg[64];
-
-	snprintf(cfg, sizeof(cfg), "hw.pvscsi.%d.%s", device_get_unit(sc->dev),
-	    name);
-	TUNABLE_INT_FETCH(cfg, &value);
-
-	return (value);
-}
-#endif
-
 static void
 pvscsi_freeze(struct pvscsi_softc *sc)
 {
 
 	if (!sc->frozen) {
-		xpt_freeze_simq(sc->sim, 1);
+//		xpt_freeze_simq(sc->sim, 1);
 		sc->frozen = 1;
 	}
 }
@@ -346,9 +369,9 @@ pvscsi_kick_io(struct pvscsi_softc *sc, uint8_t cdb0)
 {
 	struct pvscsi_rings_state *s;
 
-	if (cdb0 == READ_6  || cdb0 == READ_10  ||
-	    cdb0 == READ_12  || cdb0 == READ_16 ||
-	    cdb0 == WRITE_6 || cdb0 == WRITE_10 ||
+	if (/*cdb0 == READ_6 ||*/ cdb0 == READ_10  ||
+	    cdb0 == READ_12  || cdb0 == READ_16  ||
+	    /*cdb0 == WRITE_6  ||*/ cdb0 == WRITE_10 ||
 	    cdb0 == WRITE_12 || cdb0 == WRITE_16) {
 		s = sc->rings_state;
 
@@ -417,7 +440,7 @@ pvscsi_hcb_put(struct pvscsi_softc *sc, struct pvscsi_hcb *hcb)
 {
 
 	KASSERT(mutex_owned(&sc->lock));
-	hcb->ccb = NULL;
+	hcb->xs = NULL;
 	hcb->e = NULL;
 	hcb->recovery = PVSCSI_HCB_NONE;
 	SLIST_INSERT_HEAD(&sc->free_list, hcb, links);
@@ -454,7 +477,7 @@ static int pvscsi_setup_req_call(struct pvscsi_softc *sc, uint32_t enable)
 	status = pvscsi_reg_read(sc, PVSCSI_REG_OFFSET_COMMAND_STATUS);
 
 	if (status != -1) {
-		bzero(&cmd, sizeof(cmd));
+		memset(&cmd, 0, sizeof(cmd));
 		cmd.enable = enable;
 		pvscsi_write_cmd(sc, PVSCSI_CMD_SETUP_REQCALLTHRESHOLD,
 		    &cmd, sizeof(cmd));
@@ -465,23 +488,6 @@ static int pvscsi_setup_req_call(struct pvscsi_softc *sc, uint32_t enable)
 		return (0);
 	}
 }
-
-
-#if 0
-static void
-pvscsi_dma_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
-{
-	bus_addr_t *dest;
-
-	KASSERTMSG(nseg == 1, "more than one segment");
-
-	dest = arg;
-
-	if (!error) {
-		*dest = segs->ds_addr;
-	}
-}
-#endif
 
 static void
 pvscsi_dma_free(struct pvscsi_softc *sc, struct pvscsi_dma *dma)
@@ -502,18 +508,7 @@ pvscsi_dma_alloc(struct pvscsi_softc *sc, struct pvscsi_dma *dma,
 	int error;
 	int nsegs;
 
-	bzero(dma, sizeof(*dma));
-
-#if 0
-	error = bus_dma_tag_create(sc->parent_dmat, alignment, 0,
-	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL, NULL, size, 1, size,
-	    BUS_DMA_ALLOCNOW, NULL, NULL, &dma->tag);
-	if (error) {
-		aprint_normal_dev(sc->dev, "error creating dma tag, error %d\n",
-		    error);
-		goto fail;
-	}
-#endif
+	memset(dma, 0, sizeof(*dma));
 
 	error = bus_dmamem_alloc(sc->sc_dmat, size, alignment, 0, dma->seg,
 	    __arraycount(dma->seg), &nsegs, BUS_DMA_WAITOK);
@@ -587,28 +582,28 @@ static void
 pvscsi_dma_free_per_hcb(struct pvscsi_softc *sc, uint32_t hcbs_allocated)
 {
 	int i;
-	int lock_owned;
+//	int lock_owned;
 	struct pvscsi_hcb *hcb;
 
-	lock_owned = mutex_owned(&sc->lock);
+//	lock_owned = mutex_owned(&sc->lock);
 
+#if 0
 	if (lock_owned) {
 		mutex_exit(&sc->lock);
 	}
 	for (i = 0; i < hcbs_allocated; ++i) {
 		hcb = sc->hcbs + i;
-		callout_hal(t&hcb->callout, NULL);
+		//callout_hal(t&hcb->callout, NULL);
 	};
 	if (lock_owned) {
 		mutex_enter(&sc->lock);
 	}
-
-#if 0
+#endif
 	for (i = 0; i < hcbs_allocated; ++i) {
 		hcb = sc->hcbs + i;
-		bus_dmamap_destroy(sc->buffer_dmat, hcb->dma_map);
+		bus_dmamap_destroy(sc->sc_dmat, hcb->dma_map);
 	};
-#endif
+
 	pvscsi_dma_free(sc, &sc->sense_buffer_dma);
 	pvscsi_dma_free(sc, &sc->sg_list_dma);
 }
@@ -640,30 +635,34 @@ pvscsi_dma_alloc_per_hcb(struct pvscsi_softc *sc)
 
 	for (i = 0; i < sc->hcb_cnt; ++i) {
 		hcb = sc->hcbs + i;
-#if 0
-		error = bus_dmamap_create(sc->sc_dmat, 0, &hcb->dma_map);
+
+		error = bus_dmamap_create(sc->sc_dmat, PVSCSI_MAXPHYS,
+		    PVSCSI_MAXPHYS_SEGS, PVSCSI_MAXPHYS, 0,
+		    BUS_DMA_WAITOK, &hcb->dma_map);
 		if (error) {
 			aprint_normal_dev(sc->dev,
 			    "Error creating dma map for hcb %d, error %d\n",
 			    i, error);
 			goto fail;
 		}
-#endif
+
+		hcb->sc = sc;
 		hcb->dma_map_offset = PVSCSI_SENSE_LENGTH * i;
 		hcb->dma_map_size = PVSCSI_SENSE_LENGTH;
 		hcb->sense_buffer =
 		    (void *)((char *)sc->sense_buffer_dma.vaddr +
 		    PVSCSI_SENSE_LENGTH * i);
-		hcb->sense_buffer_paddr =
-		    sc->sense_buffer_dma.paddr + PVSCSI_SENSE_LENGTH * i;
+		hcb->sense_buffer_paddr = sc->sense_buffer_dma.paddr +
+		    PVSCSI_SENSE_LENGTH * i;
 
 		hcb->sg_list =
 		    (struct pvscsi_sg_list *)((char *)sc->sg_list_dma.vaddr +
 		    sizeof(struct pvscsi_sg_list) * i);
 		hcb->sg_list_paddr =
 		    sc->sg_list_dma.paddr + sizeof(struct pvscsi_sg_list) * i;
+		hcb->sg_list_offset = sizeof(struct pvscsi_sg_list) * i;
 
-		callout_init(&hcb->callout, CALLOUT_MPSAFE);
+//		callout_init(&hcb->callout, CALLOUT_MPSAFE);
 	}
 
 	SLIST_INIT(&sc->free_list);
@@ -758,7 +757,7 @@ pvscsi_setup_rings(struct pvscsi_softc *sc)
 	struct pvscsi_cmd_desc_setup_rings cmd;
 	uint32_t i;
 
-	bzero(&cmd, sizeof(cmd));
+	memset(&cmd, 0, sizeof(cmd));
 
 	cmd.rings_state_ppn = sc->rings_state_ppn;
 
@@ -773,6 +772,8 @@ pvscsi_setup_rings(struct pvscsi_softc *sc)
 	}
 
 	pvscsi_write_cmd(sc, PVSCSI_CMD_SETUP_RINGS, &cmd, sizeof(cmd));
+
+	//bus_dma clean the setup page
 }
 
 static int
@@ -818,6 +819,7 @@ pvscsi_adapter_reset(struct pvscsi_softc *sc)
 	DEBUG_PRINTF(2, sc->dev, "adapter reset done: %u\n", val);
 }
 
+#if 0
 static void
 pvscsi_bus_reset(struct pvscsi_softc *sc)
 {
@@ -846,6 +848,7 @@ pvscsi_device_reset(struct pvscsi_softc *sc, uint32_t target)
 
 	DEBUG_PRINTF(2, sc->dev, "device reset done\n");
 }
+#endif
 
 #if 0
 static void
@@ -892,46 +895,48 @@ pvscsi_probe(device_t dev, cfdata_t cf, void *aux)
 	return 0;
 }
 
+#if 0
 static void
 pvscsi_timeout(void *arg)
 {
 	struct pvscsi_hcb *hcb;
 	struct pvscsi_softc *sc;
-	union ccb *ccb;
+	struct scsipi_xfer *xs;
+//	union ccb *ccb;
 
 	hcb = arg;
-	ccb = hcb->ccb;
+	xs = hcb->xs;
 
-	if (ccb == NULL) {
+	if (xs == NULL) {
 		/* Already completed */
 		return;
 	}
 
-	sc = ccb->ccb_h.ccb_pvscsi_sc;
+	sc = hcb->sc;
 	KASSERT(mutex_owned(&sc->lock));
 
-	aprint_normal_dev(sc->dev, "Command timed out hcb=%p ccb=%p.\n", hcb, ccb);
+	aprint_normal_dev(sc->dev, "Command timed out hcb=%p xs=%p.\n", hcb, xs);
 
 	switch (hcb->recovery) {
 	case PVSCSI_HCB_NONE:
 		hcb->recovery = PVSCSI_HCB_ABORT;
-		pvscsi_abort(sc, ccb->ccb_h.target_id, ccb);
-		callout_reset(&hcb->callout, mstohz(PVSCSI_ABORT_TIMEOUT * 1000),
-		    pvscsi_timeout, hcb);
+//		pvscsi_abort(sc, ccb->ccb_h.target_id, ccb);
+// 		callout_reset(&hcb->callout, mstohz(PVSCSI_ABORT_TIMEOUT * 1000),
+// 		    pvscsi_timeout, hcb);
 		break;
 	case PVSCSI_HCB_ABORT:
 		hcb->recovery = PVSCSI_HCB_DEVICE_RESET;
 		pvscsi_freeze(sc);
-		pvscsi_device_reset(sc, ccb->ccb_h.target_id);
-		callout_reset(&hcb->callout, mstohz(PVSCSI_RESET_TIMEOUT * 1000),
-		    pvscsi_timeout, hcb);
+//		pvscsi_device_reset(sc, ccb->ccb_h.target_id);
+// 		callout_reset(&hcb->callout, mstohz(PVSCSI_RESET_TIMEOUT * 1000),
+// 		    pvscsi_timeout, hcb);
 		break;
 	case PVSCSI_HCB_DEVICE_RESET:
 		hcb->recovery = PVSCSI_HCB_BUS_RESET;
 		pvscsi_freeze(sc);
 		pvscsi_bus_reset(sc);
-		callout_reset(&hcb->callout, mstohz(PVSCSI_RESET_TIMEOUT * 1000),
-		    pvscsi_timeout, hcb);
+// 		callout_reset(&hcb->callout, mstohz(PVSCSI_RESET_TIMEOUT * 1000),
+// 		    pvscsi_timeout, hcb);
 		break;
 	case PVSCSI_HCB_BUS_RESET:
 		pvscsi_freeze(sc);
@@ -939,60 +944,59 @@ pvscsi_timeout(void *arg)
 		break;
 	};
 }
+#endif
 
 static void
 pvscsi_process_completion(struct pvscsi_softc *sc,
     struct pvscsi_ring_cmp_desc *e)
 {
 	struct pvscsi_hcb *hcb;
-	union ccb *ccb;
-	uint32_t status;
+	struct scsipi_xfer *xs;
+	uint32_t error = XS_NOERROR;
 	uint32_t btstat;
 	uint32_t sdstat;
 	int op;
 
 	hcb = pvscsi_context_to_hcb(sc, e->context);
 
-	callout_stop(&hcb->callout);
+	callout_stop(&hcb->xs->xs_callout);
 
-	ccb = hcb->ccb;
+	xs = hcb->xs;
 
 	btstat = e->host_status;
 	sdstat = e->scsi_status;
 
-	ccb->csio.scsi_status = sdstat;
-	ccb->csio.resid = ccb->csio.dxfer_len - e->data_len;
+	xs->status = sdstat;		// XXXNH check this
+	xs->resid = xs->datalen - e->data_len;
 
-	if ((ccb->ccb_h.flags & CAM_DIR_MASK) != CAM_DIR_NONE) {
-		if ((ccb->ccb_h.flags & CAM_DIR_MASK) == CAM_DIR_IN) {
-			op = BUS_DMASYNC_POSTREAD;
-		} else {
-			op = BUS_DMASYNC_POSTWRITE;
-		}
-		bus_dmamap_sync(sc->sc_dmat, sc->sense_buffer_dma.map,
-		    hcb->dma_map_offset, hcb->dma_map_size, op);
-		//bus_dmamap_unload(sc->buffer_dmat, hcb->dma_map);
+	if ((xs->xs_control & XS_CTL_DATA_IN) == XS_CTL_DATA_IN) {
+		op = BUS_DMASYNC_POSTREAD;
+	} else {
+		op = BUS_DMASYNC_POSTWRITE;
 	}
+	//XXXNH sense buffer? Apparently so...
+	bus_dmamap_sync(sc->sc_dmat, sc->sense_buffer_dma.map,
+	    hcb->dma_map_offset, hcb->dma_map_size, op);
 
-	if (btstat == BTSTAT_SUCCESS && sdstat == SCSI_STATUS_OK) {
+	if (btstat == BTSTAT_SUCCESS && sdstat == SCSI_OK) {
 		DEBUG_PRINTF(3, sc->dev,
 		    "completing command context %llx success\n",
 		    (unsigned long long)e->context);
-		ccb->csio.resid = 0;
-		status = CAM_REQ_CMP;
+		xs->resid = 0;
 	} else {
+
 		switch (btstat) {
 		case BTSTAT_SUCCESS:
 		case BTSTAT_LINKED_COMMAND_COMPLETED:
 		case BTSTAT_LINKED_COMMAND_COMPLETED_WITH_FLAG:
 			switch (sdstat) {
-			case SCSI_STATUS_OK:
-				ccb->csio.resid = 0;
-				status = CAM_REQ_CMP;
+			case SCSI_OK:
+				xs->resid = 0;
+				error = XS_NOERROR;
 				break;
-			case SCSI_STATUS_CHECK_COND:
-				status = CAM_SCSI_STATUS_ERROR;
-
+			case SCSI_CHECK:
+	//			status = CAM_SCSI_STATUS_ERROR;
+	#if 0
 				if (ccb->csio.sense_len != 0) {
 					status |= CAM_AUTOSNS_VALID;
 
@@ -1003,91 +1007,105 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 					    MIN(ccb->csio.sense_len,
 						e->sense_len));
 				}
+	#endif
 				break;
-			case SCSI_STATUS_BUSY:
-			case SCSI_STATUS_QUEUE_FULL:
-				status = CAM_REQUEUE_REQ;
+			case SCSI_BUSY:
+			case SCSI_QUEUE_FULL:
+				error = XS_NOERROR;
 				break;
-			case SCSI_STATUS_CMD_TERMINATED:
-			case SCSI_STATUS_TASK_ABORTED:
-				status = CAM_REQ_ABORTED;
+			case SCSI_TERMINATED:
+// 			case SCSI_STATUS_TASK_ABORTED:
+				error = XS_DRIVER_STUFFUP;
 				break;
 			default:
 				DEBUG_PRINTF(1, sc->dev,
 				    "ccb: %p sdstat=0x%x\n", ccb, sdstat);
-				status = CAM_SCSI_STATUS_ERROR;
+//				status = CAM_SCSI_STATUS_ERROR;
+				error = XS_DRIVER_STUFFUP;
 				break;
 			}
 			break;
 		case BTSTAT_SELTIMEO:
-			status = CAM_SEL_TIMEOUT;
+			error = XS_SELTIMEOUT;
 			break;
 		case BTSTAT_DATARUN:
 		case BTSTAT_DATA_UNDERRUN:
-			status = CAM_DATA_RUN_ERR;
+			// XXXNH FreeBSD was XS_DRIVER_STUFFUP
+			//xs->resid = xs->datalen - c->data_len;
+			error = XS_NOERROR;
 			break;
 		case BTSTAT_ABORTQUEUE:
 		case BTSTAT_HATIMEOUT:
-			status = CAM_REQUEUE_REQ;
+			error = XS_NOERROR;
 			break;
 		case BTSTAT_NORESPONSE:
 		case BTSTAT_SENTRST:
 		case BTSTAT_RECVRST:
 		case BTSTAT_BUSRESET:
-			status = CAM_SCSI_BUS_RESET;
+			error = XS_RESET;
 			break;
 		case BTSTAT_SCSIPARITY:
-			status = CAM_UNCOR_PARITY;
+			error = XS_DRIVER_STUFFUP;
 			break;
 		case BTSTAT_BUSFREE:
-			status = CAM_UNEXP_BUSFREE;
+			error = XS_DRIVER_STUFFUP;
 			break;
 		case BTSTAT_INVPHASE:
-			status = CAM_SEQUENCE_FAIL;
+			error = XS_DRIVER_STUFFUP;
 			break;
 		case BTSTAT_SENSFAILED:
-			status = CAM_AUTOSENSE_FAIL;
+			error = XS_DRIVER_STUFFUP;
 			break;
 		case BTSTAT_LUNMISMATCH:
 		case BTSTAT_TAGREJECT:
 		case BTSTAT_DISCONNECT:
 		case BTSTAT_BADMSG:
 		case BTSTAT_INVPARAM:
-			status = CAM_REQ_CMP_ERR;
+			error = XS_DRIVER_STUFFUP;
 			break;
 		case BTSTAT_HASOFTWARE:
 		case BTSTAT_HAHARDWARE:
-			status = CAM_NO_HBA;
+			error = XS_DRIVER_STUFFUP;
 			break;
 		default:
 			aprint_normal_dev(sc->dev, "unknown hba status: 0x%x\n",
 			    btstat);
-			status = CAM_NO_HBA;
+			error = XS_DRIVER_STUFFUP;
 			break;
 		}
 
 		DEBUG_PRINTF(3, sc->dev,
-		    "completing command context %llx btstat %x sdstat %x - status %x\n",
-		    (unsigned long long)e->context, btstat, sdstat, status);
+		    "completing command context %llx btstat %x sdstat %x - error %x\n",
+		    (unsigned long long)e->context, btstat, sdstat, error);
 	}
 
-	ccb->ccb_h.ccb_pvscsi_hcb = NULL;
-	ccb->ccb_h.ccb_pvscsi_sc = NULL;
+	xs->error = error;
+//	ccb->ccb_h.ccb_pvscsi_hcb = NULL;
+//	ccb->ccb_h.ccb_pvscsi_sc = NULL;
 	pvscsi_hcb_put(sc, hcb);
 
-	ccb->ccb_h.status =
-	    status | (ccb->ccb_h.status & ~(CAM_STATUS_MASK | CAM_SIM_QUEUED));
+// 	mutex_exit(&sc->sc_mutex);
+	scsipi_done(xs);
+// 	mutex_enter(&sc->sc_mutex);
 
-	if (sc->frozen) {
-		ccb->ccb_h.status |= CAM_RELEASE_SIMQ;
-		sc->frozen = 0;
-	}
 
-	if (status != CAM_REQ_CMP) {
-		ccb->ccb_h.status |= CAM_DEV_QFRZN;
-		xpt_freeze_devq(ccb->ccb_h.path, /*count*/ 1);
-	}
-	xpt_done(ccb);
+
+
+
+
+// 	ccb->ccb_h.status =
+// 	    status | (ccb->ccb_h.status & ~(CAM_STATUS_MASK | CAM_SIM_QUEUED));
+//
+// 	if (sc->frozen) {
+// 		ccb->ccb_h.status |= CAM_RELEASE_SIMQ;
+// 		sc->frozen = 0;
+// 	}
+//
+// 	if (status != XS_NOERROR) {
+// 		ccb->ccb_h.status |= CAM_DEV_QFRZN;
+// 		xpt_freeze_devq(ccb->ccb_h.path, /*count*/ 1);
+// 	}
+// 	xpt_done(ccb);
 }
 
 static void
@@ -1109,7 +1127,7 @@ pvscsi_process_cmp_ring(struct pvscsi_softc *sc)
 
 		pvscsi_process_completion(sc, e);
 
-		mb();
+		// XXXNH bus_dma
 		s->cmp_cons_idx++;
 	}
 }
@@ -1119,33 +1137,36 @@ pvscsi_process_msg(struct pvscsi_softc *sc, struct pvscsi_ring_msg_desc *e)
 {
 	struct pvscsi_ring_msg_dev_status_changed *desc;
 
-	union ccb *ccb;
 	switch (e->type) {
 	case PVSCSI_MSG_DEV_ADDED:
 	case PVSCSI_MSG_DEV_REMOVED: {
 		desc = (struct pvscsi_ring_msg_dev_status_changed *)e;
+		struct scsibus_softc *ssc = device_private(sc->sc_scsibus_dv);
 
 		aprint_normal_dev(sc->dev, "MSG: device %s at scsi%u:%u:%u\n",
 		    desc->type == PVSCSI_MSG_DEV_ADDED ? "addition" : "removal",
 		    desc->bus, desc->target, desc->lun[1]);
 
-		ccb = xpt_alloc_ccb_nowait();
-		if (ccb == NULL) {
-			aprint_normal_dev(sc->dev,
-			    "Error allocating CCB for dev change.\n");
-			break;
-		}
+		if (desc->type == PVSCSI_MSG_DEV_ADDED) {
+			if (scsi_probe_bus(ssc,
+			    desc->target, desc->lun[1]) != 0) {
+				aprint_normal_dev(sc->dev,
+				    "Error creating path for dev change.\n");
+//				xpt_free_ccb(ccb);
+				break;
+			}
+		} else {
+			if (scsipi_target_detach(ssc->sc_channel,
+			    desc->target, desc->lun[1],
+			    DETACH_FORCE) != 0) {
+				aprint_normal_dev(sc->dev,
+				    "Error detaching target %d lun %d\n",
+				    desc->target, desc->lun[1]);
+			};
 
-		if (xpt_create_path(&ccb->ccb_h.path, NULL,
-		    cam_sim_path(sc->sim), desc->target, desc->lun[1])
-		    != CAM_REQ_CMP) {
-			aprint_normal_dev(sc->dev,
-			    "Error creating path for dev change.\n");
-			xpt_free_ccb(ccb);
-			break;
 		}
-
-		xpt_rescan(ccb);
+//
+//		xpt_rescan(ccb);
 	} break;
 	default:
 		aprint_normal_dev(sc->dev, "Unknown msg type 0x%x\n", e->type);
@@ -1171,8 +1192,9 @@ pvscsi_process_msg_ring(struct pvscsi_softc *sc)
 
 		pvscsi_process_msg(sc, e);
 
-		mb();
+		//XXXNH bus_dma
 		s->msg_cons_idx++;
+		membar_producer();
 	}
 }
 
@@ -1194,31 +1216,32 @@ pvscsi_intr_locked(struct pvscsi_softc *sc)
 	}
 }
 
-static void
+static int
 pvscsi_intr(void *xsc)
 {
 	struct pvscsi_softc *sc;
 
 	sc = xsc;
 
-	mtx_assert(&sc->lock, MA_NOTOWNED);
-
 	mutex_enter(&sc->lock);
 	pvscsi_intr_locked(xsc);
 	mutex_exit(&sc->lock);
+
+	return 1;
 }
 
-static void
-pvscsi_poll(struct cam_sim *sim)
-{
-	struct pvscsi_softc *sc;
+// static void
+// pvscsi_poll(struct cam_sim *sim)
+// {
+// 	struct pvscsi_softc *sc;
+//
+// 	sc = cam_sim_softc(sim);
+//
+// 	KASSERT(mutex_owned(&sc->lock));
+// 	pvscsi_intr_locked(sc);
+// }
 
-	sc = cam_sim_softc(sim);
-
-	KASSERT(mutex_owned(&sc->lock));
-	pvscsi_intr_locked(sc);
-}
-
+#if 0
 static void
 pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 {
@@ -1244,7 +1267,7 @@ pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 		if (error == EFBIG) {
 			ccb->ccb_h.status = CAM_REQ_TOO_BIG;
 		} else {
-			ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+			ccb->ccb_h.status = XS_NOERROR_ERR;
 		}
 
 		pvscsi_hcb_put(sc, hcb);
@@ -1306,124 +1329,283 @@ pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 		    0, pvscsi_timeout, hcb, 0);
 	}
 
-	mb();
+	membar_produer();
 	s->req_prod_idx++;
 	pvscsi_kick_io(sc, cdb0);
 }
+#endif
+
 
 static void
-pvscsi_action(struct cam_sim *sim, union ccb *ccb)
+pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
+    request, void *arg)
 {
-	struct pvscsi_softc *sc;
-	struct ccb_hdr *ccb_h;
+	struct pvscsi_softc *sc = device_private(chan->chan_adapter->adapt_dev);
 
-	sc = cam_sim_softc(sim);
-	ccb_h = &ccb->ccb_h;
+#if 0
+//	struct ccb_hdr *ccb_h;
 
-	KASSERT(mutex_owned(&sc->lock));
+//	sc = cam_sim_softc(sim);
+//	ccb_h = &ccb->ccb_h;
 
-	switch (ccb_h->func_code) {
-	case XPT_SCSI_IO:
-	{
-		struct ccb_scsiio *csio;
-		uint32_t req_num_entries_log2;
-		struct pvscsi_ring_req_desc *ring;
-		struct pvscsi_ring_req_desc *e;
-		struct pvscsi_rings_state *s;
-		struct pvscsi_hcb *hcb;
+//	KASSERT(mutex_owned(&sc->lock));
+#endif
 
-		csio = &ccb->csio;
-		ring = sc->req_ring;
-		s = sc->rings_state;
+	if (request == ADAPTER_REQ_SET_XFER_MODE) {
+		struct scsipi_xfer_mode *xm = arg;
 
-		hcb = NULL;
+		xm->xm_mode = PERIPH_CAP_TQING;
+		xm->xm_period = 0;
+		xm->xm_offset = 0;
+		scsipi_async_event(chan, ASYNC_EVENT_XFER_MODE, xm);
+		return;
+	} else if (request != ADAPTER_REQ_RUN_XFER) {
+		DEBUG_PRINTF(1, sc->dev, "unhandled %d\n", request);
+		return;
+	}
 
-		/*
-		 * Check if it was completed already (such as aborted
-		 * by upper layers)
-		 */
-		if ((ccb_h->status & CAM_STATUS_MASK) != CAM_REQ_INPROG) {
-			xpt_done(ccb);
-			return;
-		}
+	/* request is ADAPTER_REQ_RUN_XFER */
+	struct scsipi_xfer *xs = arg;
+	struct scsipi_periph *periph = xs->xs_periph;
 
-		req_num_entries_log2 = s->req_num_entries_log2;
+	//XXXNH
+	KASSERT(XS_CTL_TAGTYPE(xs) == 1);
 
-		if (s->req_prod_idx - s->cmp_cons_idx >=
-		    (1 << req_num_entries_log2)) {
-			aprint_normal_dev(sc->dev,
-			    "Not enough room on completion ring.\n");
-			pvscsi_freeze(sc);
-			ccb_h->status = CAM_REQUEUE_REQ;
-			goto finish_ccb;
-		}
-
-		hcb = pvscsi_hcb_get(sc);
-		if (hcb == NULL) {
-			aprint_normal_dev(sc->dev, "No free hcbs.\n");
-			pvscsi_freeze(sc);
-			ccb_h->status = CAM_REQUEUE_REQ;
-			goto finish_ccb;
-		}
-
-		hcb->ccb = ccb;
-		ccb_h->ccb_pvscsi_hcb = hcb;
-		ccb_h->ccb_pvscsi_sc = sc;
-
-		if (csio->cdb_len > sizeof(e->cdb)) {
-			DEBUG_PRINTF(2, sc->dev, "cdb length %u too large\n",
-			    csio->cdb_len);
-			ccb_h->status = CAM_REQ_INVALID;
-			goto finish_ccb;
-		}
-
-		if (ccb_h->flags & CAM_CDB_PHYS) {
-			DEBUG_PRINTF(2, sc->dev,
-			    "CAM_CDB_PHYS not implemented\n");
-			ccb_h->status = CAM_REQ_INVALID;
-			goto finish_ccb;
-		}
-
-		e = ring + (s->req_prod_idx & MASK(req_num_entries_log2));
-
-		e->bus = cam_sim_bus(sim);
-		e->target = ccb_h->target_id;
-		memset(e->lun, 0, sizeof(e->lun));
-		e->lun[1] = ccb_h->target_lun;
-		e->data_addr = 0;
-		e->data_len = csio->dxfer_len;
-		e->vcpu_hint = curcpu;
-
-		e->cdb_len = csio->cdb_len;
-		memcpy(e->cdb, scsiio_cdb_ptr(csio), csio->cdb_len);
-
-		e->sense_addr = 0;
-		e->sense_len = csio->sense_len;
-		if (e->sense_len > 0) {
-			e->sense_addr = hcb->sense_buffer_paddr;
-		}
-
-		e->tag = MSG_SIMPLE_Q_TAG;
-		if (ccb_h->flags & CAM_TAG_ACTION_VALID) {
-			e->tag = csio->tag_action;
-		}
-
-		e->context = pvscsi_hcb_to_context(sc, hcb);
-		hcb->e = e;
-
-		DEBUG_PRINTF(3, sc->dev,
-		    " queuing command %02x context %llx\n", e->cdb[0],
-		    (unsigned long long)e->context);
-		bus_dmamap_load_ccb(sc->buffer_dmat, hcb->dma_map, ccb,
-		    pvscsi_execute_ccb, hcb, 0);
+#if 0
+	/* tag */
+	switch (XS_CTL_TAGTYPE(xs)) {
+	case XS_CTL_HEAD_TAG:
+		req->task_attr = VIRTIO_SCSI_S_HEAD;
 		break;
 
-finish_ccb:
-		if (hcb != NULL) {
-			pvscsi_hcb_put(sc, hcb);
+#if 0	/* XXX */
+	case XS_CTL_ACA_TAG:
+		req->task_attr = VIRTIO_SCSI_S_ACA;
+		break;
+#endif
+
+	case XS_CTL_ORDERED_TAG:
+		req->task_attr = VIRTIO_SCSI_S_ORDERED;
+		break;
+
+	case XS_CTL_SIMPLE_TAG:
+	default:
+		req->task_attr = VIRTIO_SCSI_S_SIMPLE;
+		break;
+	}
+#endif
+
+
+
+	uint32_t req_num_entries_log2;
+	struct pvscsi_ring_req_desc *ring;
+	struct pvscsi_ring_req_desc *e;
+	struct pvscsi_rings_state *s;
+	struct pvscsi_hcb *hcb;
+
+	if (xs->cmdlen < 0 || xs->cmdlen > sizeof(e->cdb)) {
+		DEBUG_PRINTF(1, sc->dev, "bad cmdlen %zu > %zu\n",
+		    (size_t)xs->cmdlen, sizeof(e->cdb));
+		/* not a temporary condition */
+		xs->error = XS_DRIVER_STUFFUP;
+		scsipi_done(xs);
+		return;
+	}
+
+//	csio = &ccb->csio;
+	ring = sc->req_ring;
+	s = sc->rings_state;
+
+	hcb = NULL;
+	req_num_entries_log2 = s->req_num_entries_log2;
+
+	if (s->req_prod_idx - s->cmp_cons_idx >=
+	    (1 << req_num_entries_log2)) {
+		aprint_normal_dev(sc->dev,
+		    "Not enough room on completion ring.\n");
+		pvscsi_freeze(sc);
+		xs->error = XS_RESOURCE_SHORTAGE;
+//		ccb_h->status = XS_NOERROR;
+		goto finish_xs;
+	}
+
+	hcb = pvscsi_hcb_get(sc);
+	if (hcb == NULL) {
+		aprint_normal_dev(sc->dev, "No free hcbs.\n");
+		xs->error = XS_RESOURCE_SHORTAGE;
+		pvscsi_freeze(sc);
+//		ccb_h->status = XS_NOERROR;
+		goto finish_xs;
+	}
+
+
+	hcb->xs = xs;
+// 		hcb->ccb = ccb;
+// 		ccb_h->ccb_pvscsi_hcb = hcb;
+// 		ccb_h->ccb_pvscsi_sc = sc;
+
+	if (xs->cmdlen > sizeof(e->cdb)) {
+		DEBUG_PRINTF(2, sc->dev, "cdb length %u too large\n",
+		    xs->cmdlen);
+		xs->error = XS_DRIVER_STUFFUP;
+//			ccb_h->status = CAM_REQ_INVALID;
+		goto finish_xs;
+	}
+
+// 		if (ccb_h->flags & CAM_CDB_PHYS) {
+// 			DEBUG_PRINTF(2, sc->dev,
+// 			    "CAM_CDB_PHYS not implemented\n");
+// 			ccb_h->status = CAM_REQ_INVALID;
+// 			goto finish_xs;
+// 		}
+//
+//
+
+	e = ring + (s->req_prod_idx & MASK(req_num_entries_log2));
+
+	memset(e, 0, sizeof(*e));
+	e->bus = 0;				/* From OpenBSD */
+	e->target = periph->periph_target;
+	//memset(e->lun, 0, sizeof(e->lun));
+	e->lun[0] = periph->periph_lun;
+//	e->lun[0] = 1;                                    	/* from vioscsi */
+//	e->lun[1] = periph->periph_target;                      /* from vioscsi */
+//	e->lun[2] = 0x40 | ((periph->periph_lun >> 8) & 0x3F);  /* from vioscsi */
+//	e->lun[3] = periph->periph_lun & 0xFF;                  /* from vioscsi */
+	e->data_addr = 0;
+	e->data_len = xs->datalen;
+	e->vcpu_hint = cpu_index(curcpu());
+	e->flags = 0;
+
+	e->cdb_len = xs->cmdlen;
+//	memset(e->cdb, 0, sizeof(e->cdb));
+	memcpy(e->cdb, xs->cmd, xs->cmdlen);
+
+	e->sense_addr = 0;
+	e->sense_len = sizeof(xs->sense);;
+	if (e->sense_len > 0) {
+		e->sense_addr = hcb->sense_buffer_paddr;
+	}
+
+	e->tag = MSG_SIMPLE_Q_TAG;
+
+	switch (xs->xs_control & (XS_CTL_DATA_IN | XS_CTL_DATA_OUT)) {
+	case XS_CTL_DATA_IN:
+		e->flags |= PVSCSI_FLAG_CMD_DIR_TOHOST;
+		break;
+	case XS_CTL_DATA_OUT:
+		e->flags |= PVSCSI_FLAG_CMD_DIR_TODEVICE;
+		break;
+	default:
+		e->flags |= PVSCSI_FLAG_CMD_DIR_NONE;
+		break;
+	}
+
+// 	if (ccb_h->flags & CAM_TAG_ACTION_VALID) {
+// 		e->tag = csio->tag_action;
+// 	}
+
+	e->context = pvscsi_hcb_to_context(sc, hcb);
+	hcb->e = e;
+
+	DEBUG_PRINTF(3, sc->dev,
+	    " queuing command %02x context %llx\n", e->cdb[0],
+	    (unsigned long long)e->context);
+
+	int flags;
+	flags  = (xs->xs_control & XS_CTL_DATA_IN) ? BUS_DMA_READ : BUS_DMA_WRITE;
+	flags |= (xs->xs_control & XS_CTL_NOSLEEP) ? BUS_DMA_NOWAIT : BUS_DMA_WAITOK;
+
+	int error = bus_dmamap_load(sc->sc_dmat, hcb->dma_map,
+	    xs->data, xs->datalen, NULL, flags);
+
+	if (error) {
+		if (error == ENOMEM || error == EAGAIN) {
+			/*
+			 * Map is allocated with ALLOCNOW, so this should
+			 * actually never ever happen.
+			 */
+			xs->error = XS_RESOURCE_SHORTAGE;
+		} else {
+			xs->error = XS_DRIVER_STUFFUP;
+			// XXXNH do something
 		}
-		xpt_done(ccb);
-	} break;
+		scsipi_done(xs);
+		return;
+	}
+
+	int op = (xs->xs_control & XS_CTL_DATA_IN) ? BUS_DMASYNC_PREREAD :
+	    BUS_DMASYNC_PREWRITE;
+	int nseg = hcb->dma_map->dm_nsegs;
+	bus_dma_segment_t *segs = hcb->dma_map->dm_segs;
+	if (nseg != 0) {
+		if (nseg > 1) {
+			int i;
+			struct pvscsi_sg_element *sge;
+
+			KASSERTMSG(nseg <= PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT,
+			    "too many sg segments");
+
+			sge = hcb->sg_list->sge;
+			e->flags |= PVSCSI_FLAG_CMD_WITH_SG_LIST;
+
+			for (i = 0; i < nseg; ++i) {
+				sge[i].addr = segs[i].ds_addr;
+				sge[i].length = segs[i].ds_len;
+				sge[i].flags = 0;
+			}
+
+			//XXXNH
+		//	bus_dmamap_t *dmap = hcb->sg_list_dma->dma_map;
+			e->data_addr = hcb->sg_list_paddr;
+
+			bus_dmamap_sync(sc->sc_dmat,
+			    sc->sg_list_dma.map, hcb->sg_list_offset,
+			    sizeof(*sge) * nseg, BUS_DMASYNC_PREWRITE);
+		} else {
+			e->data_addr = segs->ds_addr;
+		}
+
+		bus_dmamap_sync(sc->sc_dmat, hcb->dma_map, 0,
+		    xs->datalen, op);
+	} else {
+		e->data_addr = 0;
+	}
+
+	uint8_t cdb0 = e->cdb[0];
+//	ccb->ccb_h.status |= CAM_SIM_QUEUED;
+
+// 	if (ccb->ccb_h.timeout != CAM_TIME_INFINITY) {
+// 		callout_reset_sbt(&hcb->callout, ccb->ccb_h.timeout * SBT_1MS,
+// 		    0, pvscsi_timeout, hcb, 0);
+// 	}
+
+	//membar_producer();
+	bus_dmamap_sync(sc->sc_dmat, sc->rings_state_dma.map, 0,
+	    PAGE_SIZE, BUS_DMASYNC_PREWRITE);
+
+	s->req_prod_idx++;
+	bus_dmamap_sync(sc->sc_dmat, sc->rings_state_dma.map, 0,
+	    PAGE_SIZE, BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
+
+	//membar_producer();
+
+	pvscsi_kick_io(sc, cdb0);
+
+	return;
+
+
+finish_xs:
+	scsipi_done(xs);
+
+// 		if (hcb != NULL) {
+// 			pvscsi_hcb_put(sc, hcb);
+// 		}
+// 		xpt_done(ccb);
+}
+
+#if 0
+break;
 	case XPT_ABORT:
 	{
 		struct pvscsi_hcb *abort_hcb;
@@ -1435,7 +1617,7 @@ finish_ccb:
 		if (abort_hcb->ccb != NULL && abort_hcb->ccb == abort_ccb) {
 			if (abort_ccb->ccb_h.func_code == XPT_SCSI_IO) {
 				pvscsi_abort(sc, ccb_h->target_id, abort_ccb);
-				ccb_h->status = CAM_REQ_CMP;
+				ccb_h->status = XS_NOERROR;
 			} else {
 				ccb_h->status = CAM_UA_ABORT;
 			}
@@ -1443,20 +1625,20 @@ finish_ccb:
 			aprint_normal_dev(sc->dev,
 			    "Could not find hcb for ccb %p (tgt %u)\n",
 			    ccb, ccb_h->target_id);
-			ccb_h->status = CAM_REQ_CMP;
+			ccb_h->status = XS_NOERROR;
 		}
 		xpt_done(ccb);
 	} break;
 	case XPT_RESET_DEV:
 	{
 		pvscsi_device_reset(sc, ccb_h->target_id);
-		ccb_h->status = CAM_REQ_CMP;
+		ccb_h->status = XS_NOERROR;
 		xpt_done(ccb);
 	} break;
 	case XPT_RESET_BUS:
 	{
 		pvscsi_bus_reset(sc);
-		ccb_h->status = CAM_REQ_CMP;
+		ccb_h->status = XS_NOERROR;
 		xpt_done(ccb);
 	} break;
 	case XPT_PATH_INQ:
@@ -1488,7 +1670,7 @@ finish_ccb:
 		cpi->transport = XPORT_SAS;
 		cpi->transport_version = 0;
 
-		ccb_h->status = CAM_REQ_CMP;
+		ccb_h->status = XS_NOERROR;
 		xpt_done(ccb);
 	} break;
 	case XPT_GET_TRAN_SETTINGS:
@@ -1505,7 +1687,7 @@ finish_ccb:
 		cts->proto_specific.scsi.flags = CTS_SCSI_FLAGS_TAG_ENB;
 		cts->proto_specific.scsi.valid = CTS_SCSI_VALID_TQ;
 
-		ccb_h->status = CAM_REQ_CMP;
+		ccb_h->status = XS_NOERROR;
 		xpt_done(ccb);
 	} break;
 	case XPT_CALC_GEOMETRY:
@@ -1519,34 +1701,43 @@ finish_ccb:
 		break;
 	}
 }
+#endif
 
 static void
 pvscsi_free_interrupts(struct pvscsi_softc *sc)
 {
 
-	if (sc->irq_handler != NULL) {
-		bus_teardown_intr(sc->dev, sc->irq_res, sc->irq_handler);
+	if (sc->sc_ih != NULL) {
+		pci_intr_disestablish(sc->sc_pc, sc->sc_ih);
+		sc->sc_ih = NULL;
 	}
-	if (sc->irq_res != NULL) {
-		bus_release_resource(sc->dev, SYS_RES_IRQ, sc->irq_id,
-		    sc->irq_res);
+	if (sc->sc_pihp != NULL) {
+		pci_intr_release(sc->sc_pc, sc->sc_pihp, 1);
+		sc->sc_pihp = NULL;
 	}
-	if (sc->use_msi_or_msix) {
-		pci_release_msi(sc->dev);
-	}
+// 	if (sc->irq_handler != NULL) {
+// 		bus_teardown_intr(sc->dev, sc->irq_res, sc->irq_handler);
+// 	}
+// 	if (sc->irq_res != NULL) {
+// 		bus_release_resource(sc->dev, SYS_RES_IRQ, sc->irq_id,
+// 		    sc->irq_res);
+// 	}
+// 	if (sc->use_msi_or_msix) {
+// 		pci_release_msi(sc->dev);
+// 	}
 }
 
 static int
-pvscsi_setup_interrupts(struct pvscsi_softc *sc)
+pvscsi_setup_interrupts(struct pvscsi_softc *sc, const struct pci_attach_args *pa)
 {
-	int error;
-	int flags;
+// 	int error;
+// 	int flags;
 	int use_msix;
 	int use_msi;
-	int count;
+// 	int count;
 
-	sc->use_msi_or_msix = 0;
-
+// 	sc->use_msi_or_msix = 0;
+//
 	int counts[PCI_INTR_TYPE_SIZE];
 	for (int i = 0; i < PCI_INTR_TYPE_SIZE; i++) {
 		counts[i] = 1;
@@ -1556,80 +1747,106 @@ pvscsi_setup_interrupts(struct pvscsi_softc *sc)
 	use_msi = pvscsi_get_tunable(sc, "use_msi", pvscsi_use_msi);
 
 	if (!use_msix) {
-		count[PCI_INTR_TYPE_MSIX] = 0;
+		counts[PCI_INTR_TYPE_MSIX] = 0;
 	}
 	if (!use_msi) {
-		count[PCI_INTR_TYPE_MSI] = 0;
+		counts[PCI_INTR_TYPE_MSI] = 0;
 	}
 
 	/* Allocate and establish the interrupt. */
-	if (pci_intr_alloc(pa, &psc->sc_pihp, counts, PCI_INTR_TYPE_MSIX)) {
-		aprint_error_dev(self, "can't allocate handler\n");
+	if (pci_intr_alloc(pa, &sc->sc_pihp, counts, PCI_INTR_TYPE_MSIX)) {
+		aprint_error_dev(sc->dev, "can't allocate handler\n");
 		goto fail;
 	}
-	intrstr = pci_intr_string(pc, psc->sc_pihp, intrbuf,
+
+	char intrbuf[PCI_INTRSTR_LEN];
+	const pci_chipset_tag_t pc = pa->pa_pc;
+	char const *intrstr = pci_intr_string(pc, sc->sc_pihp[0], intrbuf,
 	    sizeof(intrbuf));
 
-	psc->sc_ih = pci_intr_establish_xname(pc, psc->sc_pihp[0], IPL_BIO,
-	    pvscsi_intr, sc, device_xname(sc->sc_dev));
-	if (psc->sc_ih == NULL) {
-		pci_intr_release(pc, psc->sc_pihp, 1);
-		psc->sc_pihp = NULL;
-		aprint_error_dev(self, "couldn't establish interrupt");
+	sc->sc_ih = pci_intr_establish_xname(pc, sc->sc_pihp[0], IPL_BIO,
+	    pvscsi_intr, sc, device_xname(sc->dev));
+	if (sc->sc_ih == NULL) {
+		pci_intr_release(pc, sc->sc_pihp, 1);
+		sc->sc_pihp = NULL;
+		aprint_error_dev(sc->dev, "couldn't establish interrupt");
 		if (intrstr != NULL)
 			aprint_error(" at %s", intrstr);
 		aprint_error("\n");
 		goto fail;
 	}
-	pci_intr_setattr(nic->sc_pc, &nic->sc_pih, PCI_INTR_MPSAFE, true);
+	pci_intr_setattr(pc, sc->sc_pihp, PCI_INTR_MPSAFE, true);
 
-	aprint_normal_dev(self, "interrupting at %s\n", intrstr);
+	aprint_normal_dev(sc->dev, "interrupting at %s\n", intrstr);
 
 	return (0);
+
+fail:
+	if (sc->sc_ih != NULL) {
+		pci_intr_disestablish(sc->sc_pc, sc->sc_ih);
+		sc->sc_ih = NULL;
+	}
+	if (sc->sc_pihp != NULL) {
+		pci_intr_release(sc->sc_pc, sc->sc_pihp, 1);
+		sc->sc_pihp = NULL;
+	}
+	if (sc->sc_mems) {
+		bus_space_unmap(sc->sc_memt, sc->sc_memh, sc->sc_mems);
+		sc->sc_mems = 0;
+	}
+
+	return 1;
 }
 
 static void
 pvscsi_free_all(struct pvscsi_softc *sc)
 {
 
-	if (sc->sim) {
-		int32_t status;
-
-		if (sc->bus_path) {
-			xpt_free_path(sc->bus_path);
-		}
-
-		status = xpt_bus_deregister(cam_sim_path(sc->sim));
-		if (status != CAM_REQ_CMP) {
-			aprint_normal_dev(sc->dev,
-			    "Error deregistering bus, status=%d\n", status);
-		}
-
-		cam_sim_free(sc->sim, TRUE);
-	}
-
+// 	if (sc->sim) {
+// 		int32_t status;
+//
+// 		if (sc->bus_path) {
+// 			xpt_free_path(sc->bus_path);
+// 		}
+//
+// 		status = xpt_bus_deregister(cam_sim_path(sc->sim));
+// 		if (status != XS_NOERROR) {
+// 			aprint_normal_dev(sc->dev,
+// 			    "Error deregistering bus, status=%d\n", status);
+// 		}
+//
+// 		cam_sim_free(sc->sim, TRUE);
+// 	}
+//
 	pvscsi_dma_free_per_hcb(sc, sc->hcb_cnt);
 
 	if (sc->hcbs) {
-		free(sc->hcbs, M_PVSCSI);
+		kmem_free(sc->hcbs, sc->hcb_cnt * sizeof(*sc->hcbs));
 	}
 
 	pvscsi_free_rings(sc);
 
 	pvscsi_free_interrupts(sc);
 
-	if (sc->buffer_dmat != NULL) {
-		bus_dma_tag_destroy(sc->buffer_dmat);
+// 	if (sc->buffer_dmat != NULL) {
+// 		bus_dma_tag_destroy(sc->buffer_dmat);
+// 	}
+
+// 	if (sc->parent_dmat != NULL) {
+// 		bus_dma_tag_destroy(sc->parent_dmat);
+// 	}
+
+// 	if (sc->mm_res != NULL) {
+// 		bus_release_resource(sc->dev, SYS_RES_MEMORY, sc->mm_rid,
+// 		    sc->mm_res);
+// 	}
+
+	if (sc->sc_mems) {
+		bus_space_unmap(sc->sc_memt, sc->sc_memh, sc->sc_mems);
+		sc->sc_mems = 0;
 	}
 
-	if (sc->parent_dmat != NULL) {
-		bus_dma_tag_destroy(sc->parent_dmat);
-	}
 
-	if (sc->mm_res != NULL) {
-		bus_release_resource(sc->dev, SYS_RES_MEMORY, sc->mm_rid,
-		    sc->mm_res);
-	}
 }
 
 static inline void
@@ -1651,29 +1868,37 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	const struct pci_attach_args *pa = aux;
 	struct pvscsi_softc *sc;
 	int rid;
-	int barid;
+// 	int barid;
 	int error;
 	int max_queue_depth;
 	int adapter_queue_size;
-	struct cam_devq *devq;
 
 	sc = device_private(dev);
 	sc->dev = dev;
 
-	kmutex_init(&sc->lock, MUTEX_DEFAULT, IPL_BIO);
+	struct scsipi_adapter *adapt = &sc->sc_adapter;
+	struct scsipi_channel *chan = &sc->sc_channel;
 
+	mutex_init(&sc->lock, MUTEX_DEFAULT, IPL_BIO);
+
+	sc->sc_pc = pa->pa_pc;
 	pci_enable_busmaster(dev, pa->pa_pc, pa->pa_tag);
 
 	pci_aprint_devinfo_fancy(pa, "virtual disk controller",
 	    VMWARE_PVSCSI_DEVSTR, true);
 
-//	sc->mm_rid = -1;
-	pcireg_t memt;
-	for (rid = PCI_MAPREG_START; rid < PCI_MAPREG_END; rid += sizeof(memt)) {
-		rid = PCI_BAR(barid);
+	/*
+	 * Map the device.  All devices support memory-mapped acccess.
+	 */
+	bool memh_valid;
+	bus_space_tag_t memt;
+	bus_space_handle_t memh;
+	bus_size_t mems;
+	pcireg_t regt;
 
-		memt = pci_mapreg_type(pa->pa_pc, pa->pa_tag, rid);
-		if (PCI_MAPREG_TYPE(memt) == PCI_MAPREG_TYPE_MEM)
+	for (rid = PCI_MAPREG_START; rid < PCI_MAPREG_END; rid += sizeof(regt)) {
+		regt = pci_mapreg_type(pa->pa_pc, pa->pa_tag, rid);
+		if (PCI_MAPREG_TYPE(regt) == PCI_MAPREG_TYPE_MEM)
 			break;
 	}
 
@@ -1682,17 +1907,8 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 		    "unable to locate device registers\n");
 	}
 
-	/*
-	 * Map the device.  All devices support memory-mapped acccess.
-	 */
-	bool memh_valid;
-	bus_space_tag_t memt;
-	bus_space_handle_t memh;
-//	bus_addr_t membase;
-//	bus_size_t memsize;
-
-	memh_valid = (pci_mapreg_map(pa, rid, memtype, 0, &memt, &memh,
-	    &membase, &memsize) == 0);
+	memh_valid = (pci_mapreg_map(pa, rid, regt, 0, &memt, &memh,
+	    /*&membase*/ NULL, &mems) == 0);
 	if (!memh_valid) {
 		aprint_error_dev(dev,
 		    "unable to map device registers\n");
@@ -1700,13 +1916,14 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	}
 	sc->sc_memt = memt;
 	sc->sc_memh = memh;
+	sc->sc_mems = mems;
 
 	if (pci_dma64_available(pa)) {
 		sc->sc_dmat = pa->pa_dmat64;
-		aprint_verbose_dev(self, "64-bit DMA\n");
+		aprint_verbose_dev(sc->dev, "64-bit DMA\n");
 	} else {
-		aprint_verbose_dev(self, "32-bit DMA\n");
-		sc->sc_bus.ub_dmatag = pa->pa_dmat;
+		aprint_verbose_dev(sc->dev, "32-bit DMA\n");
+		sc->sc_dmat = pa->pa_dmat;
 	}
 
 #if 0
@@ -1734,11 +1951,11 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	}
 #endif
 
-	error = pvscsi_setup_interrupts(sc);
+	error = pvscsi_setup_interrupts(sc, pa);
 	if (error) {
 		aprint_normal_dev(dev, "Interrupt setup failed\n");
 		pvscsi_free_all(sc);
-		return (error);
+		return;
 	}
 
 	sc->max_targets = pvscsi_get_max_targets(sc);
@@ -1778,7 +1995,7 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	aprint_normal_dev(sc->dev, "MSG num pages: %d\n", sc->msg_ring_num_pages);
 	aprint_normal_dev(sc->dev, "Queue size: %d\n", adapter_queue_size);
 
-// 	aprint_normal_dev(sc->sc_dev,
+// 	aprint_normal_dev(sc->dev,
 // 	    "cmd_per_lun %u qsize %d seg_max %u max_target %hu"
 // 	    " max_lun %u\n",
 // 	    cmd_per_lun, qsize, seg_max, max_target, max_lun);
@@ -1800,15 +2017,7 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 
 	pvscsi_adapter_reset(sc);
 
-
-
-
-
-
-
-
-
-
+#if 0
 
 	devq = cam_simq_alloc(adapter_queue_size);
 	if (devq == NULL) {
@@ -1816,22 +2025,21 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 		pvscsi_free_all(sc);
 		return;
 	}
+#endif
 
-
-
-
-
-
+#define cmd_per_lun 64		/* XXXNH linux driver??? */
+#define max_lun 8		/* XXXNH openbsd driver??? */
+#define max_target 16		/* XXXNH mirror MIN(..., 16) below :S */
 
 	/*
 	 * Fill in the scsipi_adapter.
 	 */
 	memset(adapt, 0, sizeof(*adapt));
-	adapt->adapt_dev = sc->sc_dev;
+	adapt->adapt_dev = sc->dev;
 	adapt->adapt_nchannels = 1;
-	adapt->adapt_openings = MIN(qsize, cmd_per_lun);
+	adapt->adapt_openings = MIN(adapter_queue_size, cmd_per_lun);
 	adapt->adapt_max_periph = adapt->adapt_openings;
-	adapt->adapt_request = vioscsi_scsipi_request;
+	adapt->adapt_request = pvscsi_scsipi_request;
 	adapt->adapt_minphys = minphys;
 
 
@@ -1863,19 +2071,10 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	 */
 	chan->chan_defquirks = PQUIRK_FORCELUNS;
 
-	config_found(self, &sc->sc_channel, scsiprint);
 
 
 
-
-
-
-
-
-
-
-
-
+#if 0
 	sc->sim = cam_sim_alloc(pvscsi_action, pvscsi_poll, "pvscsi", sc,
 	    device_get_unit(dev), &sc->lock, 1, adapter_queue_size, devq);
 	if (sc->sim == NULL) {
@@ -1885,23 +2084,7 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 		return;
 	}
 
-	mutex_enter(&sc->lock);
-
-	if (xpt_bus_register(sc->sim, dev, 0) != CAM_SUCCESS) {
-		aprint_normal_dev(dev, "xpt bus register failed\n");
-		pvscsi_free_all(sc);
-		mutex_exit(&sc->lock);
-		return;
-	}
-
-	if (xpt_create_path(&sc->bus_path, NULL, cam_sim_path(sc->sim),
-	    CAM_TARGET_WILDCARD, CAM_LUN_WILDCARD) != CAM_REQ_CMP) {
-		aprint_normal_dev(dev, "xpt create path failed\n");
-		pvscsi_free_all(sc);
-		mutex_exit(&sc->lock);
-		return;
-	}
-
+#endif
 
 
 
@@ -1915,6 +2098,8 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	pvscsi_intr_enable(sc);
 
 	mutex_exit(&sc->lock);
+
+	sc->sc_scsibus_dv = config_found(sc->dev, &sc->sc_channel, scsiprint);
 
 	return;
 }

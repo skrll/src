@@ -121,6 +121,8 @@ struct pvscsi_ring_req_desc {
 	uint8_t		unused[59];
 };
 
+CTASSERT(sizeof(struct pvscsi_ring_req_desc) == 128);
+
 struct pvscsi_ring_cmp_desc {
 	uint64_t	context;
 	uint64_t	data_len;
@@ -129,6 +131,8 @@ struct pvscsi_ring_cmp_desc {
 	uint16_t	scsi_status;
 	uint32_t	_pad[2];
 };
+
+CTASSERT(sizeof(struct pvscsi_ring_cmp_desc) == 32);
 
 #define	PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT	128
 #define	PVSCSI_MAX_NUM_SG_SEGMENTS		128
