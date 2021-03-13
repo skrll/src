@@ -36,7 +36,6 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.56 2020/12/12 09:27:31 skrll E
 #include "opt_cpuoptions.h"
 #include "opt_ddb.h"
 #include "opt_fdt.h"
-#include "opt_kasan.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
 
@@ -400,9 +399,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	 */
 	pmap_bootstrap(kernelvmstart, VM_MAX_KERNEL_ADDRESS);
 
-#ifdef KASAN
 	kasan_init();
-#endif
 
 	/*
 	 * setup lwp0
