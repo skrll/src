@@ -8,9 +8,6 @@ defflag opt_cpuoptions.h	AARCH64_DEVICE_MEM_STRONGLY_ORDERED
 
 defflag	opt_cputypes.h		CPU_ARMV8
 defflag	opt_cputypes.h		CPU_CORTEX: CPU_ARMV8
-defflag	opt_cputypes.h		CPU_CORTEXA35: CPU_CORTEX
-defflag	opt_cputypes.h		CPU_CORTEXA53: CPU_CORTEX
-defflag	opt_cputypes.h		CPU_CORTEXA57: CPU_CORTEX
 defflag	opt_cputypes.h		CPU_THUNDERX: CPU_ARMV8
 
 # Interrupt implementation header definition

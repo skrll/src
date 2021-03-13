@@ -58,7 +58,7 @@ static void ahci_probe_drive(struct ata_channel *);
 static void ahci_setup_channel(struct ata_channel *);
 
 static void ahci_ata_bio(struct ata_drive_datas *, struct ata_xfer *);
-static int ahci_do_reset_drive(struct ata_channel *, int, int, uint32_t *,
+static int  ahci_do_reset_drive(struct ata_channel *, int, int, uint32_t *,
 	uint8_t);
 static void ahci_reset_drive(struct ata_drive_datas *, int, uint32_t *);
 static void ahci_reset_channel(struct ata_channel *, int);
@@ -77,7 +77,7 @@ static void ahci_cmd_kill_xfer(struct ata_channel *, struct ata_xfer *, int);
 static int  ahci_bio_start(struct ata_channel *, struct ata_xfer *);
 static void ahci_bio_poll(struct ata_channel *, struct ata_xfer *);
 static void ahci_bio_abort(struct ata_channel *, struct ata_xfer *);
-static int ahci_bio_complete(struct ata_channel *, struct ata_xfer *, int);
+static int  ahci_bio_complete(struct ata_channel *, struct ata_xfer *, int);
 static void ahci_bio_kill_xfer(struct ata_channel *, struct ata_xfer *, int) ;
 static void ahci_channel_stop(struct ahci_softc *, struct ata_channel *, int);
 static void ahci_channel_start(struct ahci_softc *, struct ata_channel *,
@@ -95,7 +95,7 @@ static void ahci_atapi_scsipi_request(struct scsipi_channel *,
 static int  ahci_atapi_start(struct ata_channel *, struct ata_xfer *);
 static void ahci_atapi_poll(struct ata_channel *, struct ata_xfer *);
 static void ahci_atapi_abort(struct ata_channel *, struct ata_xfer *);
-static int ahci_atapi_complete(struct ata_channel *, struct ata_xfer *, int);
+static int  ahci_atapi_complete(struct ata_channel *, struct ata_xfer *, int);
 static void ahci_atapi_kill_xfer(struct ata_channel *, struct ata_xfer *, int);
 static void ahci_atapi_probe_device(struct atapibus_softc *, int);
 
