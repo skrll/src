@@ -1203,6 +1203,7 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 		/* BUS_DMASYNC_POSTWRITE was aleady handled as a fastpath */
 		}
 		/*
+		 * XXXNH this comment is soooo wrong.
 		 * Drain the write buffer of DMA operators.
 		 * 1) when cpu->device (prewrite)
 		 * 2) when device->cpu (postread)
