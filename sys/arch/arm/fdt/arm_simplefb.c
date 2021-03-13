@@ -237,6 +237,9 @@ arm_simplefb_preattach(void)
 		return;
 	}
 
+	if (size < width * height * depth)
+		return;
+
 	if (bus_space_map(bst, addr, size,
 	    BUS_SPACE_MAP_LINEAR | BUS_SPACE_MAP_PREFETCHABLE, &bsh) != 0)
 		return;

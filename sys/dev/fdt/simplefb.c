@@ -169,6 +169,11 @@ simplefb_attach_genfb(struct simplefb_softc *sc)
 		return ENXIO;
 	}
 
+	if (size < width * height * depth) {
+		aprint_error(": incorrect size\n");
+		return ENXIO;
+	}
+
 	/* Device may have been reconfigured. MD code will tell us. */
 	if (prop_dictionary_get_uint64(dict, "simplefb-physaddr", &sfb_addr) &&
 	    sfb_addr != 0) {
