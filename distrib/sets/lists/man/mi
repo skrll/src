@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1714 2021/02/26 11:05:33 nia Exp $
+# $NetBSD: mi,v 1.1716 2021/03/01 21:01:39 jakllsch Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -4814,6 +4814,7 @@
 ./usr/share/man/html4/rcons.html		man-sys-htmlman		html
 ./usr/share/man/html4/rdcphy.html		man-sys-htmlman		html
 ./usr/share/man/html4/re.html			man-sys-htmlman		html
+./usr/share/man/html4/rge.html			man-sys-htmlman		html
 ./usr/share/man/html4/rgephy.html		man-sys-htmlman		html
 ./usr/share/man/html4/rlphy.html		man-sys-htmlman		html
 ./usr/share/man/html4/rmidi.html		man-sys-htmlman		html
@@ -7879,6 +7880,7 @@
 ./usr/share/man/man4/rcons.4			man-sys-man		.man
 ./usr/share/man/man4/rdcphy.4			man-sys-man		.man
 ./usr/share/man/man4/re.4			man-sys-man		.man
+./usr/share/man/man4/rge.4			man-sys-man		.man
 ./usr/share/man/man4/rgephy.4			man-sys-man		.man
 ./usr/share/man/man4/rl.4			man-obsolete		obsolete
 ./usr/share/man/man4/rlphy.4			man-sys-man		.man

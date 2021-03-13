@@ -1,4 +1,4 @@
-.\" $NetBSD: regex.3,v 1.28 2021/02/24 09:10:12 wiz Exp $
+.\" $NetBSD: regex.3,v 1.32 2021/03/11 18:49:18 christos Exp $
 .\"
 .\" Copyright (c) 1992, 1993, 1994 Henry Spencer.
 .\" Copyright (c) 1992, 1993, 1994
@@ -34,7 +34,7 @@
 .\"	@(#)regex.3	8.4 (Berkeley) 3/20/94
 .\" $FreeBSD: head/lib/libc/regex/regex.3 363817 2020-08-04 02:06:49Z kevans $
 .\"
-.Dd February 22, 2021
+.Dd March 11, 2021
 .Dt REGEX 3
 .Os
 .Sh NAME
@@ -194,30 +194,44 @@ caution in software intended to be portable to other systems.
 .It Dv REG_GNU
 Include GNU-inspired extensions:
 .Pp
-.Bl -tag -offset indent -width XX -compact 
+.Bl -tag -offset indent -width XX -compact
 .It \eN
 Use backreference
 .Dv N
 where
 .Dv N
-is between
-.Dv [1-9] .
+is a single digit number between
+.Dv 1
+and
+.Dv 9 .
+.It \ea
+Visual Bell
 .It \eb
 Match a position that is a word boundary.
 .It \eB
 Match a position that is a not word boundary.
+.It \ef
+Form Feed
+.It \en
+Line Feed
+.It \er
+Carriage return
 .It \es
 Alias for [[:space:]]
 .It \eS
 Alias for [^[:space:]]
+.It \et
+Horizontal Tab
+.It \ev
+Vertical Tab
 .It \ew
-Alias for [[:alnum:]]
+Alias for [[:alnum:]_]
 .It \eW
-Alias for [^[:alnum:]]
+Alias for [^[:alnum:]_]
 .It \e'
-Matches the end of the subject.
+Matches the end of the subject string (the string to be matched).
 .It \e`
-Matches the beginning of the subject.
+Matches the beginning of the subject string.
 .El
 .Pp
 This is an extension,

@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.33 2021/03/01 01:53:46 thorpej Exp $	*/
+/*	$NetBSD: pmap.h,v 1.35 2021/03/12 04:57:42 thorpej Exp $	*/
 
 /*-
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -107,6 +107,8 @@ struct pmap_ops {
 	void (*pmapop_pvo_verify)(void);
 	vaddr_t (*pmapop_steal_memory)(vsize_t, vaddr_t *, vaddr_t *);
 	void (*pmapop_bootstrap)(paddr_t, paddr_t);
+	void (*pmapop_bootstrap1)(paddr_t, paddr_t);
+	void (*pmapop_bootstrap2)(void);
 };
 
 #ifdef	_KERNEL
@@ -155,6 +157,13 @@ void pmap_procwr(struct proc *, vaddr_t, size_t);
 int pmap_pte_spill(pmap_t, vaddr_t, bool);
 int pmap_ste_spill(pmap_t, vaddr_t, bool);
 void pmap_pinit(pmap_t);
+
+#ifdef PPC_OEA601
+bool	pmap_extract_ioseg601(vaddr_t, paddr_t *);
+#endif /* PPC_OEA601 */
+#ifdef PPC_OEA
+bool	pmap_extract_battable(vaddr_t, paddr_t *);
+#endif /* PPC_OEA */
 
 u_int powerpc_mmap_flags(paddr_t);
 #define POWERPC_MMAP_FLAG_MASK	0xf

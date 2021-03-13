@@ -1,4 +1,4 @@
-/* $NetBSD: ofwoea_machdep.c,v 1.56 2021/02/27 02:52:48 thorpej Exp $ */
+/* $NetBSD: ofwoea_machdep.c,v 1.59 2021/03/05 18:10:06 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.56 2021/02/27 02:52:48 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.59 2021/03/05 18:10:06 thorpej Exp $");
 
 #include "ksyms.h"
 #include "wsdisplay.h"
@@ -136,11 +136,10 @@ extern uint32_t ticks_per_sec;
 extern uint32_t ns_per_tick;
 extern uint32_t ticks_per_intr;
 
-static void restore_ofmap(void);
-static void set_timebase(void);
+static void get_timebase_frequency(void);
+static void init_decrementer(void);
 
-extern void cpu_spinstart(u_int);
-extern volatile u_int cpu_spinstart_ack;
+static void restore_ofmap(void);
 
 void
 ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
@@ -154,35 +153,6 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 	    sizeof(endsym));
 	if (startsym == NULL || endsym == NULL)
 	    startsym = endsym = NULL;
-#endif
-
-	/* Initialize bus_space */
-	ofwoea_bus_space_init();
-
-	ofwoea_consinit();
-
-	if (ofw_quiesce)
-		OF_quiesce();
-
-#if defined(MULTIPROCESSOR) && defined(ofppc)
-	char cpupath[32];
-	int i, l, node;
-
-	for (i = 1; i < CPU_MAXNUM; i++) {
-		snprintf(cpupath, sizeof(cpupath), "/cpus/@%x", i);
-		node = OF_finddevice(cpupath);
-		if (node <= 0)
-			continue;
-		aprint_verbose("Starting up CPU %d %s\n", i, cpupath);
-		OF_start_cpu(node, (u_int)cpu_spinstart, i);
-		for (l = 0; l < 100000000; l++) {
-			if (cpu_spinstart_ack == i) {
-				aprint_verbose("CPU %d spun up.\n", i);
-				break;
-			}
-			__asm volatile ("sync");
-		}
-	}
 #endif
 
 	/* Parse the args string */
@@ -204,6 +174,15 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 			bootpath[len] = 0;
 	}
 
+	/* Get the timebase frequency from the firmware. */
+	get_timebase_frequency();
+
+	/* Probe for the console device; it's initialized later. */
+	ofwoea_cnprobe();
+
+	if (ofw_quiesce)
+		OF_quiesce();
+
 	oea_init(pic_ext_intr);
 
 	/*
@@ -212,6 +191,12 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 	 * firmware code fall into ours.
 	 */
 	ofwmsr &= ~PSL_IP;
+
+	/* Initialize bus_space */
+	ofwoea_bus_space_init();
+
+	/* Initialize the console device. */
+	ofwoea_consinit();
 
 	uvm_md_init();
 
@@ -291,8 +276,8 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 	ksyms_addsyms_elf((int)((uintptr_t)endsym - (uintptr_t)startsym), startsym, endsym);
 #endif
 
-	/* CPU clock stuff */
-	set_timebase();
+	/* Kick off the clock. */
+	init_decrementer();
 
 #ifdef DDB
 	if (boothowto & RB_KDB)
@@ -300,22 +285,22 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 #endif
 }
 
-void
-set_timebase(void)
+static void
+get_timebase_frequency(void)
 {
-	int qhandle, phandle, msr, scratch, node;
+	int qhandle, phandle, node;
 	char type[32];
 
 	if (timebase_freq != 0) {
 		ticks_per_sec = timebase_freq;
-		goto found;
+		return;
 	}
 
 	node = OF_finddevice("/cpus/@0");
 	if (node != -1 &&
 	    OF_getprop(node, "timebase-frequency", &ticks_per_sec,
 		       sizeof ticks_per_sec) > 0) {
-		goto found;
+		return;
 	}
 
 	node = OF_finddevice("/");
@@ -324,7 +309,7 @@ set_timebase(void)
 		    && strcmp(type, "cpu") == 0
 		    && OF_getprop(qhandle, "timebase-frequency",
 			&ticks_per_sec, sizeof ticks_per_sec) > 0) {
-			goto found;
+			return;
 		}
 		if ((phandle = OF_child(qhandle)))
 			continue;
@@ -335,8 +320,15 @@ set_timebase(void)
 		}
 	}
 	panic("no cpu node");
+}
 
-found:
+static void
+init_decrementer(void)
+{
+	int scratch, msr;
+
+	KASSERT(ticks_per_sec != 0);
+
 	__asm volatile ("mfmsr %0; andi. %1,%0,%2; mtmsr %1"
 		: "=r"(msr), "=r"(scratch) : "K"((u_short)~PSL_EE));
 	ns_per_tick = 1000000000 / ticks_per_sec;
@@ -345,10 +337,10 @@ found:
 
 #ifdef PPC_OEA601
 	if ((mfpvr() >> 16) == MPC601)
-	    curcpu()->ci_lasttb = rtc_nanosecs();
+		curcpu()->ci_lasttb = rtc_nanosecs();
 	else
 #endif
-	curcpu()->ci_lasttb = mftbl();
+		curcpu()->ci_lasttb = mftbl();
 
 	mtspr(SPR_DEC, ticks_per_intr);
 	mtmsr(msr);
