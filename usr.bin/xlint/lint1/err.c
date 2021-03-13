@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.79 2021/02/19 12:28:56 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.86 2021/02/28 02:45:37 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.79 2021/02/19 12:28:56 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.86 2021/02/28 02:45:37 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -94,7 +94,7 @@ const	char *msgs[] = {
 	"argument type defaults to 'int': %s",			      /* 32 */
 	"duplicate member name: %s",				      /* 33 */
 	"nonportable bit-field type",				      /* 34 */
-	"illegal bit-field type",				      /* 35 */
+	"illegal bit-field type '%s'",				      /* 35 */
 	"illegal bit-field size: %d",				      /* 36 */
 	"zero size bit-field",					      /* 37 */
 	"function illegal in structure or union",		      /* 38 */
@@ -189,12 +189,12 @@ const	char *msgs[] = {
 	"'&' before array or function: ignored",		      /* 127 */
 	"operands have incompatible pointer types, op %s (%s != %s)", /* 128 */
 	"expression has null effect",				      /* 129 */
-	"enum type mismatch, op %s",				      /* 130 */
+	"enum type mismatch: '%s' '%s' '%s'",			      /* 130 */
 	"conversion to '%s' may sign-extend incorrectly",	      /* 131 */
 	"conversion from '%s' to '%s' may lose accuracy",	      /* 132 */
 	"conversion of pointer to '%s' loses bits",		      /* 133 */
 	"conversion of pointer to '%s' may lose bits",		      /* 134 */
-	"possible pointer alignment problem",			      /* 135 */
+	"converting '%s' to '%s' may cause alignment problem",	      /* 135 */
 	"cannot do pointer arithmetic on operand of unknown size",    /* 136 */
 	"use of incomplete enum type, op %s",			      /* 137 */
 	"unknown operand size, op %s",				      /* 138 */
@@ -212,7 +212,7 @@ const	char *msgs[] = {
 	"argument mismatch: %d arg%s passed, %d expected",	      /* 150 */
 	"void expressions may not be arguments, arg #%d",	      /* 151 */
 	"argument cannot have unknown size, arg #%d",		      /* 152 */
-	"argument has incompatible pointer type, arg #%d (%s != %s)", /* 153 */
+	"converting '%s' to incompatible '%s' for argument %d",	      /* 153 */
 	"illegal combination of %s (%s) and %s (%s), arg #%d",	      /* 154 */
 	"argument is incompatible with prototype, arg #%d",	      /* 155 */
 	"enum type mismatch, arg #%d (%s != %s)",		      /* 156 */
@@ -234,7 +234,7 @@ const	char *msgs[] = {
 	"too many struct/union initializers",			      /* 172 */
 	"too many array initializers, expected %d",		      /* 173 */
 	"too many initializers",				      /* 174 */
-	"initialisation of an incomplete type",			      /* 175 */
+	"initialization of an incomplete type",			      /* 175 */
 	"invalid initializer type %s",				      /* 176 */
 	"non-constant initializer",				      /* 177 */
 	"initializer does not fit",				      /* 178 */
@@ -244,8 +244,8 @@ const	char *msgs[] = {
 	"incompatible pointer types (%s != %s)",		      /* 182 */
 	"illegal combination of %s (%s) and %s (%s)",		      /* 183 */
 	"illegal pointer combination",				      /* 184 */
-	"initialisation type mismatch (%s) and (%s)",		      /* 185 */
-	"bit-field initialisation is illegal in traditional C",	      /* 186 */
+	"initialization type mismatch (%s) and (%s)",		      /* 185 */
+	"bit-field initialization is illegal in traditional C",	      /* 186 */
 	"non-null byte ignored in string initializer",		      /* 187 */
 	"no automatic aggregate initialization in traditional C",     /* 188 */
 	"",			/* no longer used */		      /* 189 */
@@ -269,7 +269,7 @@ const	char *msgs[] = {
 	"loop not entered at top",				      /* 207 */
 	"break outside loop or switch",				      /* 208 */
 	"continue outside loop",				      /* 209 */
-	"enum type mismatch in initialisation",			      /* 210 */
+	"enum type mismatch between '%s' and '%s' in initialization", /* 210 */
 	"return value type mismatch (%s) and (%s)",		      /* 211 */
 	"cannot return incomplete type",			      /* 212 */
 	"void function %s cannot return value",			      /* 213 */
@@ -280,7 +280,7 @@ const	char *msgs[] = {
 	"ANSI C treats constant as unsigned, op %s",		      /* 218 */
 	"concatenated strings are illegal in traditional C",	      /* 219 */
 	"fallthrough on case statement",			      /* 220 */
-	"initialisation of unsigned with negative constant",	      /* 221 */
+	"initialization of unsigned with negative constant",	      /* 221 */
 	"conversion of negative constant to unsigned type",	      /* 222 */
 	"end-of-loop code not reached",				      /* 223 */
 	"cannot recover from previous errors",			      /* 224 */
@@ -288,7 +288,7 @@ const	char *msgs[] = {
 	"static variable %s unused",				      /* 226 */
 	"const object %s should have initializer",		      /* 227 */
 	"function cannot return const or volatile object",	      /* 228 */
-	"questionable conversion of function pointer",		      /* 229 */
+	"converting '%s' to '%s' is questionable",		      /* 229 */
 	"nonportable character comparison, op %s",		      /* 230 */
 	"argument %s unused in function %s",			      /* 231 */
 	"label %s unused in function %s",			      /* 232 */
@@ -297,14 +297,14 @@ const	char *msgs[] = {
 	"enum %s never defined",				      /* 235 */
 	"static function %s unused",				      /* 236 */
 	"redeclaration of formal parameter %s",			      /* 237 */
-	"initialisation of union is illegal in traditional C",	      /* 238 */
+	"initialization of union is illegal in traditional C",	      /* 238 */
 	"constant argument to NOT",				      /* 239 */
 	"assignment of different structures (%s != %s)",	      /* 240 */
 	"dubious operation on enum, op %s",			      /* 241 */
 	"combination of '%s' and '%s', op %s",			      /* 242 */
 	"dubious comparison of enums, op %s",			      /* 243 */
 	"illegal structure pointer combination",		      /* 244 */
-	"illegal structure pointer combination, op %s",		      /* 245 */
+	"incompatible structure pointers: '%s' '%s' '%s'",	      /* 245 */
 	"dubious conversion of enum to '%s'",			      /* 246 */
 	"pointer cast from '%s' to '%s' may be troublesome",	      /* 247 */
 	"floating-point constant out of range",			      /* 248 */
@@ -336,7 +336,7 @@ const	char *msgs[] = {
 	"ANSI C forbids comparison of %s with %s",		      /* 274 */
 	"cast discards 'const' from type '%s'",			      /* 275 */
 	"__%s__ is illegal for type %s",			      /* 276 */
-	"initialisation of '%s' with '%s'",			      /* 277 */
+	"initialization of '%s' with '%s'",			      /* 277 */
 	"combination of '%s' and '%s', arg #%d",		      /* 278 */
 	"combination of '%s' and '%s' in return",		      /* 279 */
 	"must be outside function: /* %s */",			      /* 280 */

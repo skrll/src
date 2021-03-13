@@ -1,4 +1,4 @@
-/*	$NetBSD: gic.c,v 1.44 2021/02/09 14:24:14 jakllsch Exp $	*/
+/*	$NetBSD: gic.c,v 1.46 2021/02/23 10:03:04 jmcneill Exp $	*/
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -34,7 +34,7 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.44 2021/02/09 14:24:14 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.46 2021/02/23 10:03:04 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -223,6 +223,7 @@ armgic_set_priority(struct pic_softc *pic, int ipl)
 {
 	struct armgic_softc * const sc = PICTOSOFTC(pic);
 	struct cpu_info * const ci = curcpu();
+#if 0
 	const uint32_t newpri = armgic_ipl_to_priority(ipl);
 	const uint32_t curpri = gicc_read(sc, GICC_PMR);
 
@@ -240,6 +241,13 @@ armgic_set_priority(struct pic_softc *pic, int ipl)
 		/* lowering ipl */
 		ci->ci_cpl = ipl;
 		gicc_write(sc, GICC_PMR, newpri);
+#endif
+
+	const uint32_t priority = armgic_ipl_to_priority(ipl);
+	if (priority > ci->ci_hwpl) {
+		/* Lowering priority mask */
+		ci->ci_hwpl = priority;
+		gicc_write(sc, GICC_PMR, priority);
 	}
 }
 
@@ -338,6 +346,15 @@ armgic_irq_handler(void *tf)
 
 	ci->ci_data.cpu_nintr++;
 
+	const uint32_t priority = armgic_ipl_to_priority(old_ipl);
+	if (ci->ci_hwpl != priority) {
+		ci->ci_hwpl = priority;
+		gicc_write(sc, GICC_PMR, priority);
+		if (old_ipl == IPL_HIGH) {
+			return;
+		}
+	}
+
 	for (;;) {
 		uint32_t iar = gicc_read(sc, GICC_IAR);
 		uint32_t irq = __SHIFTOUT(iar, GICC_IAR_IRQ);
@@ -368,7 +385,7 @@ armgic_irq_handler(void *tf)
 		if (__predict_true(ipl > ci->ci_cpl)) {
 			/* raising ipl */
 			gicc_write(sc, GICC_PMR, armgic_ipl_to_priority(ipl));
-			ci->ci_cpl = ipl;
+			ci->ci_hwpl = ci->ci_cpl = ipl;
 		}
 		ENABLE_INTERRUPT();
 		pic_dispatch(is, tf);
@@ -562,6 +579,7 @@ armgic_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 			    sc->sc_enabled_local);
 		}
 	}
+	ci->ci_hwpl = armgic_ipl_to_priority(ci->ci_cpl);
 	gicc_write(sc, GICC_PMR, armgic_ipl_to_priority(ci->ci_cpl));	// set PMR
 	gicc_write(sc, GICC_CTRL, GICC_CTRL_V1_Enable);	// enable interrupt
 	ENABLE_INTERRUPT();				// allow IRQ exceptions

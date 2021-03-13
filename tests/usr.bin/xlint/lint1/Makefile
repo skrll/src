@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.31 2021/02/19 12:28:56 rillig Exp $
+# $NetBSD: Makefile,v 1.34 2021/02/28 22:12:16 rillig Exp $
 
 NOMAN=		# defined
 
@@ -28,6 +28,8 @@ FILES+=		d_c99_decls_after_stmt3.c
 FILES+=		d_c99_flex_array_packed.c
 FILES+=		d_c99_for_loops.c
 FILES+=		d_c99_func.c
+FILES+=		d_c99_init.c
+FILES+=		d_c99_init.exp
 FILES+=		d_c99_nested_struct.c
 FILES+=		d_c99_recursive_init.c
 FILES+=		d_c99_struct_init.c
@@ -37,6 +39,7 @@ FILES+=		d_c99_union_init1.c
 FILES+=		d_c99_union_init2.c
 FILES+=		d_c99_union_init3.c
 FILES+=		d_c99_union_init4.c
+FILES+=		d_c99_union_init5.c
 FILES+=		d_c9x_array_init.c
 FILES+=		d_c9x_recursive_init.c
 FILES+=		d_cast_fun_array_param.c
@@ -76,6 +79,8 @@ FILES+=		d_long_double_int.exp
 FILES+=		d_nested_structs.c
 FILES+=		d_nolimit_init.c
 FILES+=		d_packed_structs.c
+FILES+=		d_pr_22119.c
+FILES+=		d_pr_22119.exp
 FILES+=		d_return_type.c
 FILES+=		d_return_type.exp
 FILES+=		d_shift_to_narrower_type.c
