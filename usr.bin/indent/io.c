@@ -1,4 +1,4 @@
-/*	$NetBSD: io.c,v 1.34 2021/03/13 00:26:56 rillig Exp $	*/
+/*	$NetBSD: io.c,v 1.45 2021/03/13 13:55:42 rillig Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-4-Clause
@@ -46,7 +46,7 @@ static char sccsid[] = "@(#)io.c	8.1 (Berkeley) 6/6/93";
 #include <sys/cdefs.h>
 #ifndef lint
 #if defined(__NetBSD__)
-__RCSID("$NetBSD: io.c,v 1.34 2021/03/13 00:26:56 rillig Exp $");
+__RCSID("$NetBSD: io.c,v 1.45 2021/03/13 13:55:42 rillig Exp $");
 #elif defined(__FreeBSD__)
 __FBSDID("$FreeBSD: head/usr.bin/indent/io.c 334927 2018-06-10 16:44:18Z pstef $");
 #endif
@@ -68,24 +68,20 @@ static void
 output_char(char ch)
 {
     fputc(ch, output);
+    debug_vis_range("output_char '", &ch, &ch + 1, "'\n");
 }
 
 static void
 output_range(const char *s, const char *e)
 {
     fwrite(s, 1, (size_t)(e - s), output);
+    debug_vis_range("output_range \"", s, e, "\"\n");
 }
 
 static inline void
 output_string(const char *s)
 {
     output_range(s, s + strlen(s));
-}
-
-static void
-output_int(int i)
-{
-    fprintf(output, "%d", i);
 }
 
 static int
@@ -99,14 +95,15 @@ output_indent(int old_ind, int new_ind)
 	if (n > 0)
 	    ind -= ind % tabsize;
 	for (int i = 0; i < n; i++) {
-	    output_char('\t');
+	    fputc('\t', output);
 	    ind += tabsize;
 	}
     }
 
     for (; ind < new_ind; ind++)
-        output_char(' ');
+        fputc(' ', output);
 
+    debug_println("output_indent %d", ind);
     return ind;
 }
 
@@ -118,7 +115,7 @@ output_indent(int old_ind, int new_ind)
 void
 dump_line(void)
 {
-    int cur_col, target_col;
+    int cur_col;
     static int  not_first_line;
 
     if (ps.procname[0]) {
@@ -165,7 +162,7 @@ dump_line(void)
 	    while (e_lab > s_lab && (e_lab[-1] == ' ' || e_lab[-1] == '\t'))
 		e_lab--;
 	    *e_lab = '\0';
-	    cur_col = 1 + output_indent(0, compute_label_column() - 1);
+	    cur_col = 1 + output_indent(0, compute_label_indent());
 	    if (s_lab[0] == '#' && (strncmp(s_lab, "#else", 5) == 0
 				    || strncmp(s_lab, "#endif", 6) == 0)) {
 		char *s = s_lab;
@@ -187,52 +184,56 @@ dump_line(void)
 		}
 	    } else
 	        output_range(s_lab, e_lab);
-	    cur_col = count_spaces(cur_col, s_lab);
+	    cur_col = 1 + indentation_after(cur_col - 1, s_lab);
 	} else
 	    cur_col = 1;	/* there is no label section */
 
 	ps.pcase = false;
 
 	if (s_code != e_code) {	/* print code section, if any */
-	    char *p;
-
 	    if (comment_open) {
 		comment_open = 0;
 		output_string(".*/\n");
 	    }
-	    target_col = compute_code_column();
+	    int target_col = 1 + compute_code_indent();
 	    {
 		int i;
 
-		for (i = 0; i < ps.p_l_follow; i++)
-		    if (ps.paren_indents[i] >= 0)
-			ps.paren_indents[i] = -(ps.paren_indents[i] + target_col);
+		for (i = 0; i < ps.p_l_follow; i++) {
+		    if (ps.paren_indents[i] >= 0) {
+			int ind = ps.paren_indents[i];
+			/*
+			 * XXX: this mix of 'indent' and 'column' smells like
+			 * an off-by-one error.
+			 */
+			ps.paren_indents[i] = -(ind + target_col);
+			debug_println(
+			    "setting pi[%d] from %d to %d for column %d",
+			    i, ind, ps.paren_indents[i], target_col);
+		    }
+		}
 	    }
 	    cur_col = 1 + output_indent(cur_col - 1, target_col - 1);
-	    for (p = s_code; p < e_code; p++)
-		if (*p == (char) 0200)
-		    output_int(target_col * 7);
-		else
-		    output_char(*p);
-	    cur_col = count_spaces(cur_col, s_code);
+	    output_range(s_code, e_code);
+	    cur_col = 1 + indentation_after(cur_col - 1, s_code);
 	}
 	if (s_com != e_com) {		/* print comment, if any */
-	    int target = ps.com_col;
+	    int target_col = ps.com_col;
 	    char *com_st = s_com;
 
-	    target += ps.comment_delta;
+	    target_col += ps.comment_delta;
 	    while (*com_st == '\t')	/* consider original indentation in
 				     * case this is a box comment */
-		com_st++, target += opt.tabsize;
-	    while (target <= 0)
+		com_st++, target_col += opt.tabsize;
+	    while (target_col <= 0)
 		if (*com_st == ' ')
-		    target++, com_st++;
+		    target_col++, com_st++;
 		else if (*com_st == '\t') {
-		    target = opt.tabsize * (1 + (target - 1) / opt.tabsize) + 1;
+		    target_col = opt.tabsize * (1 + (target_col - 1) / opt.tabsize) + 1;
 		    com_st++;
 		} else
-		    target = 1;
-	    if (cur_col > target) {	/* if comment can't fit on this line,
+		    target_col = 1;
+	    if (cur_col > target_col) {	/* if comment can't fit on this line,
 				     * put it on next line */
 		output_char('\n');
 		cur_col = 1;
@@ -240,7 +241,7 @@ dump_line(void)
 	    }
 	    while (e_com > com_st && isspace((unsigned char)e_com[-1]))
 		e_com--;
-	    (void)output_indent(cur_col - 1, target - 1);
+	    (void)output_indent(cur_col - 1, target_col - 1);
 	    output_range(com_st, e_com);
 	    ps.comment_delta = ps.n_comment_delta;
 	    ++ps.com_lines;	/* count lines with comments */
@@ -277,46 +278,55 @@ dump_line(void)
     *(e_com = s_com = combuf + 1) = '\0';
     ps.ind_level = ps.i_l_follow;
     ps.paren_level = ps.p_l_follow;
-    if (ps.paren_level > 0)
+    if (ps.paren_level > 0) {
+        /* TODO: explain what negative indentation means */
 	paren_indent = -ps.paren_indents[ps.paren_level - 1];
+	debug_println("paren_indent is now %d", paren_indent);
+    }
     not_first_line = 1;
 }
 
 int
-compute_code_column(void)
+compute_code_indent(void)
 {
-    int target_col = opt.ind_size * ps.ind_level + 1;
+    int target_ind = opt.indent_size * ps.ind_level;
 
-    if (ps.paren_level) {
+    if (ps.paren_level != 0) {
 	if (!opt.lineup_to_parens)
-	    target_col += opt.continuation_indent *
-		(2 * opt.continuation_indent == opt.ind_size ? 1 : ps.paren_level);
+	    target_ind += opt.continuation_indent *
+		(2 * opt.continuation_indent == opt.indent_size ? 1 : ps.paren_level);
 	else if (opt.lineup_to_parens_always)
-	    target_col = paren_indent;
+	    /*
+	     * XXX: where does this '- 1' come from?  It looks strange but is
+	     * nevertheless needed for proper indentation, as demonstrated in
+	     * the test opt-lpl.0.
+	     */
+	    target_ind = paren_indent - 1;
 	else {
 	    int w;
 	    int t = paren_indent;
 
-	    if ((w = count_spaces(t, s_code) - opt.max_col) > 0
-		    && count_spaces(target_col, s_code) <= opt.max_col) {
+	    if ((w = 1 + indentation_after(t - 1, s_code) - opt.max_line_length) > 0
+		&& 1 + indentation_after(target_ind, s_code) <= opt.max_line_length) {
 		t -= w + 1;
-		if (t > target_col)
-		    target_col = t;
+		if (t > target_ind + 1)
+		    target_ind = t - 1;
 	    } else
-		target_col = t;
+		target_ind = t - 1;
 	}
     } else if (ps.ind_stmt)
-	target_col += opt.continuation_indent;
-    return target_col;
+	target_ind += opt.continuation_indent;
+    return target_ind;
 }
 
 int
-compute_label_column(void)
+compute_label_indent(void)
 {
-    return
-	ps.pcase ? (int) (case_ind * opt.ind_size) + 1
-	: *s_lab == '#' ? 1
-	: opt.ind_size * (ps.ind_level - label_offset) + 1;
+    if (ps.pcase)
+	return (int) (case_ind * opt.indent_size);
+    if (s_lab[0] == '#')
+        return 0;
+    return opt.indent_size * (ps.ind_level - label_offset);
 }
 
 
@@ -353,15 +363,15 @@ fill_buffer(void)
 	    in_buffer_limit = in_buffer + size - 2;
 	}
 	if ((i = getc(f)) == EOF) {
-		*p++ = ' ';
-		*p++ = '\n';
-		had_eof = true;
-		break;
+	    *p++ = ' ';
+	    *p++ = '\n';
+	    had_eof = true;
+	    break;
 	}
 	if (i != '\0')
 	    *p++ = i;
 	if (i == '\n')
-		break;
+	    break;
     }
     buf_ptr = in_buffer;
     buf_end = p;
@@ -369,7 +379,7 @@ fill_buffer(void)
 	if (in_buffer[3] == 'I' && strncmp(in_buffer, "/**INDENT**", 11) == 0)
 	    fill_buffer();	/* flush indent error message */
 	else {
-	    int         com = 0;
+	    int com = 0;
 
 	    p = in_buffer;
 	    while (*p == ' ' || *p == '\t')
@@ -415,42 +425,26 @@ fill_buffer(void)
     }
 }
 
-/*
- * Copyright (C) 1976 by the Board of Trustees of the University of Illinois
- *
- * All rights reserved
- */
 int
-count_spaces_until(int col, const char *buffer, const char *end)
+indentation_after_range(int ind, const char *start, const char *end)
 {
-    for (const char *p = buffer; *p != '\0' && p != end; ++p) {
-	switch (*p) {
-
-	case '\n':
-	case 014:		/* form feed */
-	    col = 1;
-	    break;
-
-	case '\t':
-	    col = 1 + opt.tabsize * ((col - 1) / opt.tabsize + 1);
-	    break;
-
-	case 010:		/* backspace */
-	    --col;
-	    break;
-
-	default:
-	    ++col;
-	    break;
-	}			/* end of switch */
-    }				/* end of for loop */
-    return col;
+    for (const char *p = start; *p != '\0' && p != end; ++p) {
+	if (*p == '\n' || *p == '\f')
+	    ind = 0;
+	else if (*p == '\t')
+	    ind = opt.tabsize * (ind / opt.tabsize + 1);
+	else if (*p == '\b')
+	    --ind;
+	else
+	    ++ind;
+    }
+    return ind;
 }
 
 int
-count_spaces(int col, const char *buffer)
+indentation_after(int ind, const char *s)
 {
-    return count_spaces_until(col, buffer, NULL);
+    return indentation_after_range(ind, s, NULL);
 }
 
 void
