@@ -67,7 +67,7 @@ struct vioscsi_softc {
 	kmutex_t		 sc_mutex;
 };
 
-/*      
+/*
  * Each block request uses at least two segments - one for the header
  * and one for the status.
 */
@@ -184,7 +184,7 @@ vioscsi_attach(device_t parent, device_t self, void *aux)
 	adapt->adapt_max_periph = adapt->adapt_openings;
 	adapt->adapt_request = vioscsi_scsipi_request;
 	adapt->adapt_minphys = minphys;
-
+	adapt->adapt_flags = SCSIPI_ADAPT_MPSAFE;
 	/*
 	 * Fill in the scsipi_channel.
 	 */
@@ -279,7 +279,7 @@ vioscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	struct vioscsi_softc *sc =
 	    device_private(chan->chan_adapter->adapt_dev);
 	struct virtio_softc *vsc = device_private(device_parent(sc->sc_dev));
-	struct scsipi_xfer *xs; 
+	struct scsipi_xfer *xs;
 	struct scsipi_periph *periph;
 	struct vioscsi_req *vr;
 	struct virtio_scsi_req_hdr *req;
@@ -305,7 +305,7 @@ vioscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		DPRINTF(("%s: unhandled %d\n", __func__, request));
 		return;
 	}
-	
+
 	xs = arg;
 	periph = xs->xs_periph;
 
@@ -619,7 +619,7 @@ vioscsi_alloc_reqs(struct vioscsi_softc *sc, struct virtio_softc *vsc,
 	sc->sc_reqs = vaddr;
 	sc->sc_nreqs = qsize;
 
-	/* Prepare maps for the requests */ 
+	/* Prepare maps for the requests */
 	for (slot=0; slot < qsize; slot++) {
 		vr = &sc->sc_reqs[slot];
 
@@ -689,7 +689,7 @@ vioscsi_free_reqs(struct vioscsi_softc *sc, struct virtio_softc *vsc)
 		return;
 	}
 
-	/* Free request maps */ 
+	/* Free request maps */
 	for (slot=0; slot < sc->sc_nreqs; slot++) {
 		vr = &sc->sc_reqs[slot];
 
