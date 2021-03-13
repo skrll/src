@@ -1,4 +1,4 @@
-/*	$NetBSD: indent.h,v 1.8 2021/03/13 00:26:56 rillig Exp $	*/
+/*	$NetBSD: indent.h,v 1.14 2021/03/13 13:25:23 rillig Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
@@ -30,7 +30,7 @@
 
 #if 0
 #if defined(__NetBSD__)
-__RCSID("$NetBSD: indent.h,v 1.8 2021/03/13 00:26:56 rillig Exp $");
+__RCSID("$NetBSD: indent.h,v 1.14 2021/03/13 13:25:23 rillig Exp $");
 #elif defined(__FreeBSD__)
 __FBSDID("$FreeBSD: head/usr.bin/indent/indent.h 336333 2018-07-16 05:46:50Z pstef $");
 #endif
@@ -45,20 +45,27 @@ __FBSDID("$FreeBSD: head/usr.bin/indent/indent.h 336333 2018-07-16 05:46:50Z pst
 
 void	add_typename(const char *);
 void	alloc_typenames(void);
-int	compute_code_column(void);
-int	compute_label_column(void);
-int	count_spaces(int, const char *);
-int	count_spaces_until(int, const char *, const char *);
+int	compute_code_indent(void);
+int	compute_label_indent(void);
+int	indentation_after_range(int, const char *, const char *);
+int	indentation_after(int, const char *);
 void	init_constant_tt(void);
 #ifdef debug
+void	debug_vis_range(const char *, const char *, const char *, const char *);
+void	debug_printf(const char *, ...) __printflike(1, 2);
+void	debug_println(const char *, ...) __printflike(1, 2);
 const char *token_type_name(token_type);
+#else
+#define debug_printf(fmt, ...) do { } while (false)
+#define debug_println(fmt, ...) do { } while (false)
+#define debug_vis_range(prefix, s, e, suffix) do { } while (false)
 #endif
 token_type lexi(struct parser_state *);
 void	diag(int, const char *, ...) __printflike(2, 3);
 void	dump_line(void);
 void	fill_buffer(void);
 void	parse(token_type);
-void	pr_comment(void);
+void	process_comment(void);
 void	set_defaults(void);
 void	set_option(char *);
 void	set_profile(const char *);
