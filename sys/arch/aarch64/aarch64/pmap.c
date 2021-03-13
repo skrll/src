@@ -32,7 +32,6 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.103 2021/03/09 16:40:59 ryo Exp $");
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
 #include "opt_modular.h"
-#include "opt_kasan.h"
 #include "opt_multiprocessor.h"
 #include "opt_pmap.h"
 #include "opt_uvmhist.h"
@@ -1869,12 +1868,6 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 
 	opte = atomic_swap_64(ptep, 0);
 	need_sync_icache = (prot & VM_PROT_EXECUTE);
-
-#ifdef KASAN
-	if (!user) {
-		kasan_shadow_map((void *)va, PAGE_SIZE);
-	}
-#endif
 
 	/* for lock ordering for old page and new page */
 	pps[0] = pp;
