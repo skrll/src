@@ -1458,7 +1458,7 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 // 		goto finish_xs;
 // 	}
 
-	const rridx = s->req_prod_idx & MASK(req_num_entries_log2);
+	const size_t rridx = s->req_prod_idx & MASK(req_num_entries_log2);
 	e = ring + rridx;
 
 	memset(e, 0, sizeof(*e));
@@ -1576,8 +1576,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 // 	}
 
 	//membar_producer();
-	const bus_dmamap_t rsmap = sc->rings_state_dma.map;
-	const bus_size_t rssize = rsmap->dm_mapsize;
 
 	bus_dmamap_sync(sc->sc_dmat, rsmap, 0,
 	    rssize, BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
