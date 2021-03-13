@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.kmodule.mk,v 1.72 2020/10/18 19:57:44 christos Exp $
+#	$NetBSD: bsd.kmodule.mk,v 1.74 2021/03/07 07:37:35 rin Exp $
 
 # We are not building this with PIE
 MKPIE=no
@@ -78,15 +78,17 @@ PPC_INTR_IMPL=\"powerpc/intr.h\"
 . ifndef PPC_PCI_MACHDEP_IMPL
 PPC_PCI_MACHDEP_IMPL=\"powerpc/pci_machdep.h\"
 . endif
-CPPFLAGS+=      -DPPC_INTR_IMPL=${PPC_INTR_IMPL}
-CPPFLAGS+=      -DPPC_PCI_MACHDEP_IMPL=${DPPC_PCI_MACHDEP_IMPL}
+CPPFLAGS+=	-DPPC_INTR_IMPL=${PPC_INTR_IMPL}
+CPPFLAGS+=	-DPPC_PCI_MACHDEP_IMPL=${DPPC_PCI_MACHDEP_IMPL}
 
 . ifdef PPC_IBM4XX
-CPPFLAGS+=      -DPPC_IBM4XX
+CPPFLAGS+=	-DPPC_IBM4XX
 . elifdef PPC_BOOKE
-CPPFLAGS+=      -DPPC_BOOKE
+CPPFLAGS+=	-DPPC_BOOKE
+. elif ${MACHINE_ARCH} == "powerpc64"
+CPPFLAGS+=	-DPPC_OEA64
 . else
-CPPFLAGS+=      -DPPC_OEA
+CPPFLAGS+=	-DPPC_OEA
 . endif
 
 .endif
