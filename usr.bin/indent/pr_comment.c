@@ -1,4 +1,4 @@
-/*	$NetBSD: pr_comment.c,v 1.11 2019/04/04 15:22:13 kamil Exp $	*/
+/*	$NetBSD: pr_comment.c,v 1.21 2021/03/13 00:26:56 rillig Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-4-Clause
@@ -46,7 +46,7 @@ static char sccsid[] = "@(#)pr_comment.c	8.1 (Berkeley) 6/6/93";
 #include <sys/cdefs.h>
 #ifndef lint
 #if defined(__NetBSD__)
-__RCSID("$NetBSD: pr_comment.c,v 1.11 2019/04/04 15:22:13 kamil Exp $");
+__RCSID("$NetBSD: pr_comment.c,v 1.21 2021/03/13 00:26:56 rillig Exp $");
 #elif defined(__FreeBSD__)
 __FBSDID("$FreeBSD: head/usr.bin/indent/pr_comment.c 334927 2018-06-10 16:44:18Z pstef $");
 #endif
@@ -56,9 +56,28 @@ __FBSDID("$FreeBSD: head/usr.bin/indent/pr_comment.c 334927 2018-06-10 16:44:18Z
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "indent_globs.h"
-#include "indent_codes.h"
+
 #include "indent.h"
+
+static void
+check_size_comment(size_t desired_size, char **last_bl_ptr)
+{
+    if (e_com + (desired_size) < l_com)
+        return;
+
+    size_t nsize = l_com - s_com + 400 + desired_size;
+    size_t com_len = e_com - s_com;
+    ssize_t blank_pos = *last_bl_ptr != NULL ? *last_bl_ptr - combuf : -1;
+    combuf = realloc(combuf, nsize);
+    if (combuf == NULL)
+	err(1, NULL);
+    e_com = combuf + com_len + 1;
+    if (blank_pos > 0)
+	*last_bl_ptr = combuf + blank_pos;
+    l_com = combuf + nsize - 5;
+    s_com = combuf + 1;
+}
+
 /*
  * NAME:
  *	pr_comment
@@ -106,8 +125,8 @@ pr_comment(void)
     ps.just_saw_decl = 0;
     last_bl = NULL;		/* no blanks found so far */
     ps.box_com = false;		/* at first, assume that we are not in
-					 * a boxed comment or some other
-					 * comment that should not be touched */
+				 * a boxed comment or some other
+				 * comment that should not be touched */
     ++ps.out_coms;		/* keep track of number of comments */
 
     /* Figure where to align and how to treat the comment */
@@ -117,9 +136,8 @@ pr_comment(void)
 	ps.box_com = true;
 	break_delim = false;
 	ps.com_col = 1;
-    }
-    else {
-	if (*buf_ptr == '-' || *buf_ptr == '*' ||
+    } else {
+	if (*buf_ptr == '-' || *buf_ptr == '*' || e_token[-1] == '/' ||
 	    (*buf_ptr == '\n' && !opt.format_block_comments)) {
 	    ps.box_com = true;	/* A comment with a '-' or '*' immediately
 				 * after the /+* is assumed to be a boxed
@@ -140,16 +158,15 @@ pr_comment(void)
 	    adj_max_col = opt.block_comment_max_col;
 	    if (ps.com_col <= 1)
 		ps.com_col = 1 + !opt.format_col1_comments;
-	}
-	else {
+	} else {
 	    int target_col;
 	    break_delim = false;
 	    if (s_code != e_code)
-		target_col = count_spaces(compute_code_target(), s_code);
+		target_col = count_spaces(compute_code_column(), s_code);
 	    else {
 		target_col = 1;
 		if (s_lab != e_lab)
-		    target_col = count_spaces(compute_label_target(), s_lab);
+		    target_col = count_spaces(compute_label_column(), s_lab);
 	    }
 	    ps.com_col = ps.decl_on_line || ps.ind_level == 0 ? opt.decl_com_ind : opt.com_ind;
 	    if (ps.com_col <= target_col)
@@ -172,15 +189,14 @@ pr_comment(void)
 	start = buf_ptr >= save_com && buf_ptr < save_com + sc_size ?
 	    sc_buf : in_buffer;
 	ps.n_comment_delta = 1 - count_spaces_until(1, start, buf_ptr - 2);
-    }
-    else {
+    } else {
 	ps.n_comment_delta = 0;
 	while (*buf_ptr == ' ' || *buf_ptr == '\t')
 	    buf_ptr++;
     }
     ps.comment_delta = 0;
-    *e_com++ = '/';		/* put '/' followed by '*' into buffer */
-    *e_com++ = '*';
+    *e_com++ = '/';
+    *e_com++ = e_token[-1];
     if (*buf_ptr != ' ' && !ps.box_com)
 	*e_com++ = ' ';
 
@@ -216,7 +232,7 @@ pr_comment(void)
 				 * copied */
 	switch (*buf_ptr) {	/* this checks for various spcl cases */
 	case 014:		/* check for a form feed */
-	    CHECK_SIZE_COM(3);
+	    check_size_comment(3, &last_bl);
 	    if (!ps.box_com) {	/* in a text comment, break the line here */
 		ps.use_ff = true;
 		/* fix so dump_line uses a form feed */
@@ -226,8 +242,7 @@ pr_comment(void)
 		    *e_com++ = ' ', *e_com++ = '*', *e_com++ = ' ';
 		while (*++buf_ptr == ' ' || *buf_ptr == '\t')
 		    ;
-	    }
-	    else {
+	    } else {
 		if (++buf_ptr >= buf_end)
 		    fill_buffer();
 		*e_com++ = 014;
@@ -235,13 +250,17 @@ pr_comment(void)
 	    break;
 
 	case '\n':
+	    if (e_token[-1] == '/') {
+		++line_no;
+		goto end_of_comment;
+	    }
 	    if (had_eof) {	/* check for unexpected eof */
 		printf("Unterminated comment\n");
 		dump_line();
 		return;
 	    }
 	    last_bl = NULL;
-	    CHECK_SIZE_COM(4);
+	    check_size_comment(4, &last_bl);
 	    if (ps.box_com || ps.last_nl) {	/* if this is a boxed comment,
 						 * we dont ignore the newline */
 		if (s_com == e_com)
@@ -254,10 +273,9 @@ pr_comment(void)
 		dump_line();
 		if (!ps.box_com && opt.star_comment_cont)
 		    *e_com++ = ' ', *e_com++ = '*', *e_com++ = ' ';
-	    }
-	    else {
+	    } else {
 		ps.last_nl = 1;
-		if (*(e_com - 1) == ' ' || *(e_com - 1) == '\t')
+		if (e_com[-1] == ' ' || e_com[-1] == '\t')
 		    last_bl = e_com - 1;
 		/*
 		 * if there was a space at the end of the last line, remember
@@ -282,8 +300,7 @@ pr_comment(void)
 			    goto end_of_comment;
 		    }
 		} while (*buf_ptr == ' ' || *buf_ptr == '\t');
-	    }
-	    else if (++buf_ptr >= buf_end)
+	    } else if (++buf_ptr >= buf_end)
 		fill_buffer();
 	    break;		/* end of case for newline */
 
@@ -291,32 +308,33 @@ pr_comment(void)
 				 * of comment */
 	    if (++buf_ptr >= buf_end)	/* get to next char after * */
 		fill_buffer();
-	    CHECK_SIZE_COM(4);
+	    check_size_comment(4, &last_bl);
 	    if (*buf_ptr == '/') {	/* it is the end!!! */
 	end_of_comment:
 		if (++buf_ptr >= buf_end)
 		    fill_buffer();
 		if (break_delim) {
-		    if (e_com > s_com + 3) {
+		    if (e_com > s_com + 3)
 			dump_line();
-		    }
 		    else
 			s_com = e_com;
 		    *e_com++ = ' ';
 		}
 		if (e_com[-1] != ' ' && e_com[-1] != '\t' && !ps.box_com)
 		    *e_com++ = ' ';	/* ensure blank before end */
-		*e_com++ = '*', *e_com++ = '/', *e_com = '\0';
+		if (e_token[-1] == '/')
+		    *e_com++ = '\n', *e_com = '\0';
+		else
+		    *e_com++ = '*', *e_com++ = '/', *e_com = '\0';
 		ps.just_saw_decl = l_just_saw_decl;
 		return;
-	    }
-	    else		/* handle isolated '*' */
+	    } else		/* handle isolated '*' */
 		*e_com++ = '*';
 	    break;
 	default:		/* we have a random char */
 	    now_col = count_spaces_until(ps.com_col, s_com, e_com);
 	    do {
-		CHECK_SIZE_COM(1);
+		check_size_comment(1, &last_bl);
 		*e_com = *buf_ptr++;
 		if (buf_ptr >= buf_end)
 		    fill_buffer();
@@ -349,7 +367,7 @@ pr_comment(void)
 		/*
 		 * t_ptr will be somewhere between e_com (dump_line() reset)
 		 * and l_com. So it's safe to copy byte by byte from t_ptr
-		 * to e_com without any CHECK_SIZE_COM().
+		 * to e_com without any check_size_comment().
 		 */
 		while (*t_ptr != '\0') {
 		    if (*t_ptr == ' ' || *t_ptr == '\t')

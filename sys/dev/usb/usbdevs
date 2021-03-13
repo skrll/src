@@ -1,4 +1,4 @@
-$NetBSD: usbdevs,v 1.790 2021/02/03 23:23:42 thorpej Exp $
+$NetBSD: usbdevs,v 1.792 2021/03/09 16:38:49 ryo Exp $
 
 /*-
  * Copyright (c) 1998-2004 The NetBSD Foundation, Inc.
@@ -580,6 +580,7 @@ vendor ARDUINO		0x2341	Arduino SA
 vendor TPLINK		0x2357	TP-Link
 vendor WMR		0x2405	West Mountain Radio
 vendor TRIPPLITE	0x2478	Tripp-Lite
+vendor COOLERMASTER	0x2516	Cooler Master Technology Inc.
 vendor HAILUCK		0x258a	HAILUCK Co., Ltd
 vendor HIROSE		0x2631	Hirose Electric
 vendor NHJ		0x2770	NHJ
@@ -960,6 +961,7 @@ product ASUSTEK RTL8192CU	0x17ab	RTL8192CU
 product ASUSTEK USBN66		0x17ad	USB-N66
 product ASUSTEK USBN10NANO	0x17ba	USB-N10 Nano
 product ASUSTEK RTL8192CU_3	0x17c0	RTL8192CU_3
+product ASUSTEK AURALED		0x18f3	AURA LED
 product ASUSTEK MYPAL_A730	0x4202	MyPal A730
 product ASUSTEK2 USBN11		0x0b05	USB-N11
 
@@ -1252,6 +1254,9 @@ product CONCORDCAMERA EYE_Q_3X	0x0100	Eye Q 3x
 
 /* Connectix products */
 product CONNECTIX QUICKCAM	0x0001	QuickCam
+
+/* Cooler Master Technology Inc. */
+product	COOLERMASTER AMD_SR4_LAMPLIGHT	0x0051	AMD SR4 lamplight Control
 
 /* Corega products */
 product COREGA ETHER_USB_T	0x0001	Ether USB-T

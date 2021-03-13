@@ -1,4 +1,4 @@
-#	$NetBSD: t_basic.sh,v 1.2 2020/10/16 16:17:23 roy Exp $
+#	$NetBSD: t_basic.sh,v 1.4 2021/03/02 07:16:24 simonb Exp $
 #
 # Copyright (c) 2018 Ryota Ozaki <ozaki.ryota@gmail.com>
 # All rights reserved.
