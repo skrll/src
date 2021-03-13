@@ -25,15 +25,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
 
-#if 0
-#include <cam/cam.h>
-#include <cam/cam_ccb.h>
-#include <cam/cam_debug.h>
-#include <cam/cam_sim.h>
-#include <cam/cam_xpt_sim.h>
-#include <cam/scsi/scsi_message.h>
-#endif
-
 #include <dev/scsipi/scsi_all.h>
 #include <dev/scsipi/scsi_message.h>
 #include <dev/scsipi/scsiconf.h>
@@ -58,11 +49,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #else
 #define DEBUG_PRINTF(level, dev, fmt, ...)
 #endif /* PVSCSI_DEBUG_LOGGING */
-
-#if 0
-#define	ccb_pvscsi_hcb	spriv_ptr0
-#define	ccb_pvscsi_sc	spriv_ptr1
-#endif
 
 struct pvscsi_softc;
 struct pvscsi_hcb;
@@ -140,7 +126,6 @@ static void pvscsi_free_all(struct pvscsi_softc *sc);
 static void pvscsi_attach(device_t, device_t, void *);
 static int pvscsi_detach(device_t, int);
 static int pvscsi_probe(device_t, cfdata_t, void *);
-// static int pvscsi_get_tunable(struct pvscsi_softc *sc, const char *name, int value);
 
 #define pvscsi_get_tunable(_sc, _name, _value)	(_value)
 
@@ -210,13 +195,12 @@ struct pvscsi_hcb {
 	struct scsipi_xfer 		*xs;
 	struct pvscsi_softc		*sc;	// XXX needed?
 
-	bus_dmamap_t		 	dma_map;
-//	union ccb			*ccb;
 	struct pvscsi_ring_req_desc	*e;
 	int				 recovery;
 	SLIST_ENTRY(pvscsi_hcb)		 links;
 
 //	struct callout			 callout;
+	bus_dmamap_t			 dma_map;
 	bus_addr_t			 dma_map_offset;
 	bus_size_t			 dma_map_size;
 	void				*sense_buffer;
@@ -229,7 +213,6 @@ struct pvscsi_hcb {
 };
 
 struct pvscsi_dma {
-//	bus_dma_tag_t	 tag;
 	bus_dmamap_t	 map;
 	void		*vaddr;
 	bus_addr_t	 paddr;
@@ -240,16 +223,12 @@ struct pvscsi_dma {
 
 struct pvscsi_softc {
 	device_t		 dev;
-	kmutex_t		lock;
+	kmutex_t		 lock;
 
 	device_t		 sc_scsibus_dv;
 	struct scsipi_adapter	 sc_adapter;
 	struct scsipi_channel 	 sc_channel;
 
-#if 0
-	struct cam_sim		*sim;
-	struct cam_path		*bus_path;
-#endif
 	int			 frozen;
 	struct pvscsi_rings_state	*rings_state;
 	struct pvscsi_ring_req_desc	*req_ring;
@@ -257,10 +236,7 @@ struct pvscsi_softc {
 	struct pvscsi_ring_msg_desc	*msg_ring;
 	uint32_t		 hcb_cnt;
 	struct pvscsi_hcb	*hcbs;
-	SLIST_HEAD(, pvscsi_hcb)	free_list;
-
-// 	bus_dma_tag_t		parent_dmat;
-// 	bus_dma_tag_t		buffer_dmat;
+	SLIST_HEAD(, pvscsi_hcb) free_list;
 
 	bus_dma_tag_t		sc_dmat;
 	bus_space_tag_t		sc_memt;
@@ -270,7 +246,6 @@ struct pvscsi_softc {
 	bool		 use_msg;
 	uint32_t	 max_targets;
 	int		 mm_rid;
-//	struct resource	*mm_res;
 	int		 irq_id;
 //	struct resource	*irq_res;
 // 	void		*irq_handler;
@@ -278,10 +253,10 @@ struct pvscsi_softc {
 //	int		 use_msi_or_msix;
 
 
-	pci_chipset_tag_t	sc_pc;
-	pci_intr_handle_t *	sc_pihp;
-// 	int			sc_nintr;
-	void **			sc_ih;
+	pci_chipset_tag_t	 sc_pc;
+	pci_intr_handle_t *	 sc_pihp;
+// 	int			 sc_nintr;
+	void			*sc_ih;
 
 
 
@@ -498,7 +473,7 @@ pvscsi_dma_free(struct pvscsi_softc *sc, struct pvscsi_dma *dma)
 	bus_dmamap_destroy(sc->sc_dmat, dma->map);
 	bus_dmamem_free(sc->sc_dmat, dma->seg, __arraycount(dma->seg));
 
-	bzero(dma, sizeof(*dma));
+	memset(dma, 0, sizeof(*dma));
 }
 
 static int
@@ -533,7 +508,7 @@ pvscsi_dma_alloc(struct pvscsi_softc *sc, struct pvscsi_dma *dma,
 	}
 
 	error = bus_dmamap_load(sc->sc_dmat, dma->map, dma->vaddr, size,
-	    NULL, BUS_DMA_NOWAIT);
+	    NULL, BUS_DMA_WAITOK);
 	if (error) {
 		aprint_normal_dev(sc->dev, "error mapping dma mam, error %d\n",
 		    error);
@@ -796,7 +771,7 @@ pvscsi_setup_msg_ring(struct pvscsi_softc *sc)
 
 	KASSERTMSG(sc->use_msg, "msg is not being used");
 
-	bzero(&cmd, sizeof(cmd));
+	memset(&cmd, 0, sizeof(cmd));
 
 	cmd.num_pages = sc->msg_ring_num_pages;
 	for (i = 0; i < sc->msg_ring_num_pages; ++i) {
@@ -1121,14 +1096,30 @@ pvscsi_process_cmp_ring(struct pvscsi_softc *sc)
 	s = sc->rings_state;
 	ring = sc->cmp_ring;
 	mask = MASK(s->cmp_num_entries_log2);
+	const bus_dmamap_t rsmap = sc->rings_state_dma.map;
+	const bus_dmamap_t crmap = sc->cmp_ring_dma.map;
+	const bus_size_t rssize = rsmap->dm_mapsize;
 
-	while (s->cmp_cons_idx != s->cmp_prod_idx) {
-		e = ring + (s->cmp_cons_idx & mask);
+	while (true) {
+		bus_dmamap_sync(sc->sc_dmat, rsmap, 0, rssize,
+		    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
+		if (s->cmp_cons_idx == s->cmp_prod_idx)
+			break;
+
+		size_t cridx = s->cmp_cons_idx & mask;
+
+		e = ring + cridx;
+
+		bus_dmamap_sync(sc->sc_dmat, crmap, cridx * sizeof(*e),
+		    sizeof(*e), BUS_DMASYNC_POSTREAD);
 		pvscsi_process_completion(sc, e);
+		bus_dmamap_sync(sc->sc_dmat, crmap, cridx * sizeof(*e),
+		    sizeof(*e), BUS_DMASYNC_PREREAD);
 
-		// XXXNH bus_dma
 		s->cmp_cons_idx++;
+		bus_dmamap_sync(sc->sc_dmat, rsmap, 0, rssize,
+		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 	}
 }
 
@@ -1187,14 +1178,30 @@ pvscsi_process_msg_ring(struct pvscsi_softc *sc)
 	ring = sc->msg_ring;
 	mask = MASK(s->msg_num_entries_log2);
 
-	while (s->msg_cons_idx != s->msg_prod_idx) {
-		e = ring + (s->msg_cons_idx & mask);
+	const bus_dmamap_t rsmap = sc->rings_state_dma.map;
+	const bus_dmamap_t mrmap = sc->msg_ring_dma.map;
+	const bus_size_t rssize = rsmap->dm_mapsize;
 
+	while (true) {
+		bus_dmamap_sync(sc->sc_dmat, rsmap, 0, rssize,
+		    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
+
+		if (s->msg_cons_idx == s->msg_prod_idx)
+			break;
+
+		size_t mridx = s->msg_cons_idx & mask;
+
+		e = ring + mridx;
+
+		bus_dmamap_sync(sc->sc_dmat, mrmap, mridx * sizeof(*e),
+		    sizeof(*e), BUS_DMASYNC_POSTREAD);
 		pvscsi_process_msg(sc, e);
+		bus_dmamap_sync(sc->sc_dmat, mrmap, mridx * sizeof(*e),
+		    sizeof(*e), BUS_DMASYNC_PREREAD);
 
-		//XXXNH bus_dma
 		s->msg_cons_idx++;
-		membar_producer();
+		bus_dmamap_sync(sc->sc_dmat, rsmap, 0, rssize,
+		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 	}
 }
 
@@ -1342,15 +1349,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 {
 	struct pvscsi_softc *sc = device_private(chan->chan_adapter->adapt_dev);
 
-#if 0
-//	struct ccb_hdr *ccb_h;
-
-//	sc = cam_sim_softc(sim);
-//	ccb_h = &ccb->ccb_h;
-
-//	KASSERT(mutex_owned(&sc->lock));
-#endif
-
 	if (request == ADAPTER_REQ_SET_XFER_MODE) {
 		struct scsipi_xfer_mode *xm = arg;
 
@@ -1394,9 +1392,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		break;
 	}
 #endif
-
-
-
 	uint32_t req_num_entries_log2;
 	struct pvscsi_ring_req_desc *ring;
 	struct pvscsi_ring_req_desc *e;
@@ -1412,12 +1407,19 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		return;
 	}
 
-//	csio = &ccb->csio;
 	ring = sc->req_ring;
 	s = sc->rings_state;
 
 	hcb = NULL;
 	req_num_entries_log2 = s->req_num_entries_log2;
+
+	/* Protect against multiple senders */
+	mutex_enter(&sc->lock);
+
+	const bus_dmamap_t rsmap = sc->rings_state_dma.map;
+	const bus_size_t rssize = rsmap->dm_mapsize;
+	bus_dmamap_sync(sc->sc_dmat, rsmap, 0, rssize,
+	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
 	if (s->req_prod_idx - s->cmp_cons_idx >=
 	    (1 << req_num_entries_log2)) {
@@ -1440,28 +1442,24 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 
 
 	hcb->xs = xs;
-// 		hcb->ccb = ccb;
-// 		ccb_h->ccb_pvscsi_hcb = hcb;
-// 		ccb_h->ccb_pvscsi_sc = sc;
 
 	if (xs->cmdlen > sizeof(e->cdb)) {
 		DEBUG_PRINTF(2, sc->dev, "cdb length %u too large\n",
 		    xs->cmdlen);
 		xs->error = XS_DRIVER_STUFFUP;
-//			ccb_h->status = CAM_REQ_INVALID;
+//		ccb_h->status = CAM_REQ_INVALID;
 		goto finish_xs;
 	}
 
-// 		if (ccb_h->flags & CAM_CDB_PHYS) {
-// 			DEBUG_PRINTF(2, sc->dev,
-// 			    "CAM_CDB_PHYS not implemented\n");
-// 			ccb_h->status = CAM_REQ_INVALID;
-// 			goto finish_xs;
-// 		}
-//
-//
+// 	if (ccb_h->flags & CAM_CDB_PHYS) {
+// 		DEBUG_PRINTF(2, sc->dev,
+// 		    "CAM_CDB_PHYS not implemented\n");
+// 		ccb_h->status = CAM_REQ_INVALID;
+// 		goto finish_xs;
+// 	}
 
-	e = ring + (s->req_prod_idx & MASK(req_num_entries_log2));
+	const rridx = s->req_prod_idx & MASK(req_num_entries_log2);
+	e = ring + rridx;
 
 	memset(e, 0, sizeof(*e));
 	e->bus = 0;				/* From OpenBSD */
@@ -1478,7 +1476,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	e->flags = 0;
 
 	e->cdb_len = xs->cmdlen;
-//	memset(e->cdb, 0, sizeof(e->cdb));
 	memcpy(e->cdb, xs->cmd, xs->cmdlen);
 
 	e->sense_addr = 0;
@@ -1487,6 +1484,9 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		e->sense_addr = hcb->sense_buffer_paddr;
 	}
 
+// 	if (ccb_h->flags & CAM_TAG_ACTION_VALID) {
+// 		e->tag = csio->tag_action;
+// 	}
 	e->tag = MSG_SIMPLE_Q_TAG;
 
 	switch (xs->xs_control & (XS_CTL_DATA_IN | XS_CTL_DATA_OUT)) {
@@ -1500,10 +1500,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		e->flags |= PVSCSI_FLAG_CMD_DIR_NONE;
 		break;
 	}
-
-// 	if (ccb_h->flags & CAM_TAG_ACTION_VALID) {
-// 		e->tag = csio->tag_action;
-// 	}
 
 	e->context = pvscsi_hcb_to_context(sc, hcb);
 	hcb->e = e;
@@ -1521,16 +1517,12 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 
 	if (error) {
 		if (error == ENOMEM || error == EAGAIN) {
-			/*
-			 * Map is allocated with ALLOCNOW, so this should
-			 * actually never ever happen.
-			 */
 			xs->error = XS_RESOURCE_SHORTAGE;
 		} else {
 			xs->error = XS_DRIVER_STUFFUP;
-			// XXXNH do something
+			// XXXNH do something?
 		}
-		scsipi_done(xs);
+		goto finish_xs;
 		return;
 	}
 
@@ -1540,7 +1532,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	bus_dma_segment_t *segs = hcb->dma_map->dm_segs;
 	if (nseg != 0) {
 		if (nseg > 1) {
-			int i;
 			struct pvscsi_sg_element *sge;
 
 			KASSERTMSG(nseg <= PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT,
@@ -1549,7 +1540,7 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 			sge = hcb->sg_list->sge;
 			e->flags |= PVSCSI_FLAG_CMD_WITH_SG_LIST;
 
-			for (i = 0; i < nseg; ++i) {
+			for (size_t i = 0; i < nseg; ++i) {
 				sge[i].addr = segs[i].ds_addr;
 				sge[i].length = segs[i].ds_len;
 				sge[i].flags = 0;
@@ -1572,6 +1563,10 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		e->data_addr = 0;
 	}
 
+	const bus_dmamap_t rrmap = sc->req_ring_dma.map;
+	bus_dmamap_sync(sc->sc_dmat, rrmap, rridx * sizeof(*e),
+	    sizeof(*e), BUS_DMASYNC_PREWRITE);
+
 	uint8_t cdb0 = e->cdb[0];
 //	ccb->ccb_h.status |= CAM_SIM_QUEUED;
 
@@ -1581,8 +1576,11 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 // 	}
 
 	//membar_producer();
-	bus_dmamap_sync(sc->sc_dmat, sc->rings_state_dma.map, 0,
-	    PAGE_SIZE, BUS_DMASYNC_PREWRITE);
+	const bus_dmamap_t rsmap = sc->rings_state_dma.map;
+	const bus_size_t rssize = rsmap->dm_mapsize;
+
+	bus_dmamap_sync(sc->sc_dmat, rsmap, 0,
+	    rssize, BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
 	s->req_prod_idx++;
 	bus_dmamap_sync(sc->sc_dmat, sc->rings_state_dma.map, 0,
@@ -1591,11 +1589,13 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	//membar_producer();
 
 	pvscsi_kick_io(sc, cdb0);
+	mutex_exit(&sc->lock);
 
 	return;
 
 
 finish_xs:
+	mutex_exit(&sc->lock);
 	scsipi_done(xs);
 
 // 		if (hcb != NULL) {
