@@ -1,4 +1,4 @@
-/*	$NetBSD: ofw_subr.S,v 1.17 2021/02/19 18:03:21 thorpej Exp $	*/
+/*	$NetBSD: ofw_subr.S,v 1.20 2021/02/28 19:01:11 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -47,12 +47,12 @@
 	/* Entry trampoline used by openfirmware(). */
 	.lcomm	oftramp,4,4
 
-	/* OpenFirmware SR save area */
-	.lcomm	ofwsrsave,64,4
+	/* Client SR save area */
+	.lcomm	clsrsave,64,4
 
-	/* MSR and SPRG[0-3] used in OpenFirmware */
+	/* MSR used in OpenFirmware */
 	.globl	ofwmsr
-	.comm	ofwmsr,20,4
+	.comm	ofwmsr,4,4
 
 #ifdef FIRMWORKSBUGS
 	.lcomm	ofwreal_incharge,4,4
@@ -101,16 +101,7 @@ ENTRY_NOPROFILE(ofwinit)
 	/* Save the MSR that OpenFirmware is using. */
 	mfmsr	%r0
 	lis	%r9,ofwmsr@ha
-	stwu	%r0,ofwmsr@l(%r9)
-
-	mfsprg0	%r0				/* save SPRGs */
-	stw	%r0,4(%r9)
-	mfsprg1	%r0
-	stw	%r0,8(%r9)
-	mfsprg2	%r0
-	stw	%r0,12(%r9)
-	mfsprg3	%r0
-	stw	%r0,16(%r9)
+	stw	%r0,ofwmsr@l(%r9)
 
 	lis	%r8,OF_buffer@ha
 	addi	%r8,%r8,OF_buffer@l
@@ -157,19 +148,6 @@ ENTRY_NOPROFILE(openfirmware_trampoline)
 	 */
 	stwu	%r1,-48(%r1)
 
-	lis	%r4,ofentry@ha		/* get firmware entry point */
-	lwz	%r4,ofentry@l(%r4)
-	mtlr	%r4
-
-	mfsprg0	%r5			/* save current sprg0 (curcpu) */
-	stw	%r5,16(%r1)
-	mfsprg1	%r5			/* save current sprg1 */
-	stw	%r5,20(%r1)
-	mfsprg2	%r5			/* save current sprg1 */
-	stw	%r5,24(%r1)
-	mfsprg3	%r5			/* save current sprg3 */
-	stw	%r5,28(%r1)
-
 #ifdef FIRMWORKSBUGS
 	lis	%r4,ofwreal_incharge@ha
 	lwz	%r4,ofwreal_incharge@l(%r4)
@@ -182,17 +160,20 @@ ENTRY_NOPROFILE(openfirmware_trampoline)
 	mfmsr	%r4			/* save msr */
 	stw	%r4,8(%r1)
 
-	li	%r0,0			/* clear battable translations */
+	li	%r0,0			/* disable MMU */
 	mtmsr	%r0
+	isync
+
 #if defined (PPC_OEA) || defined (PPC_OEA64_BRIDGE)
+	/* clear BAT translations */
 	mtdbatu	2,%r0
 	mtdbatu	3,%r0
 	mtibatu	2,%r0
 	mtibatu	3,%r0
 #endif /* PPC_OEA */
 
-	lis	%r4,ofwsrsave@ha		/* save current SRs */
-	addi	%r4,%r4,ofwsrsave@l
+	lis	%r4,clsrsave@ha		/* save current SRs */
+	addi	%r4,%r4,clsrsave@l
 	li	%r5,0
 1:	mfsrin	%r0,%r5
 	stw	%r0,0(%r4)
@@ -214,23 +195,35 @@ ENTRY_NOPROFILE(openfirmware_trampoline)
 	cmpwi	%r5,0
 	bne	1b
 2:
-	lis	%r4,ofwmsr+16@ha	/* Open Firmware msr + sprg[0-3] */
-	lwzu	%r5,ofwmsr+16@l(%r4)
-	mtsprg3	%r5
-	lwz	%r5,-4(%r4)
-	mtsprg2	%r5
-	lwz	%r5,-8(%r4)
-	mtsprg1	%r5
-	lwz	%r5,-12(%r4)
-	mtsprg0	%r5
-	lwz	%r5,-16(%r4)
+	/* curcpu()->ci_battable = &ofw_battable */
+	GET_CPUINFO(%r4)
+	lis	%r5,_C_LABEL(ofw_battable)@ha
+	addi	%r5,%r5,_C_LABEL(ofw_battable)@l
+	stw	%r5,CI_BATTABLE(%r4)
+
+	lis	%r4,ofentry@ha		/* get firmware entry point */
+	lwz	%r4,ofentry@l(%r4)
+	mtlr	%r4
+
+	lis	%r4,ofwmsr@ha		/* load Open Firmware MSR */
+	lwz	%r5,ofwmsr@l(%r4)
 	mtmsr	%r5
 	isync
 
 	blrl				/* call Open Firmware */
 
-	lis	%r4,ofwsrsave@ha	/* restore saved SRs */
-	addi	%r4,%r4,ofwsrsave@l
+	li	%r0,0			/* ensure disable MMU is disabled */
+	mtmsr	%r0
+	isync
+
+	/* curcpu()->ci_battable = &battable */
+	GET_CPUINFO(%r4)
+	lis	%r5,_C_LABEL(battable)@ha
+	addi	%r5,%r5,_C_LABEL(battable)@l
+	stw	%r5,CI_BATTABLE(%r4)
+
+	lis	%r4,clsrsave@ha		/* restore saved SRs */
+	addi	%r4,%r4,clsrsave@l
 	li	%r5,0
 1:	lwz	%r0,0(%r4)
 	mtsrin	%r0,%r5
@@ -243,15 +236,6 @@ ENTRY_NOPROFILE(openfirmware_trampoline)
 	mtmsr	%r4
 	isync
 4:	
-	lwz	%r5,16(%r1)		/* restore saved sprgs (curcpu) */
-	mtsprg0	%r5
-	lwz	%r5,20(%r1)
-	mtsprg1	%r5
-	lwz	%r5,24(%r1)
-	mtsprg2	%r5
-	lwz	%r5,28(%r1)
-	mtsprg3	%r5
-
 	addi	%r1,%r1,48		/* pop stack frame and save area */
 	lwz	%r0,4(%r1)		/* return address */
 	mtlr	%r0

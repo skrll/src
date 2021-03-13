@@ -1,7 +1,22 @@
-/*	$NetBSD: msg_153.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_153.c,v 1.5 2021/02/28 01:20:54 rillig Exp $	*/
 # 3 "msg_153.c"
 
-// Test for message: argument has incompatible pointer type, arg #%d (%s != %s) [153]
+// Test for message: converting '%s' to incompatible '%s' for argument %d [153]
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+
+typedef double (*unary_operator)(double);
+
+void sink_function_pointer(unary_operator);
+void sink_int_pointer(int *);
+
+void
+to_function_pointer(int *x)
+{
+	sink_function_pointer(x);	/* expect: 153 */
+}
+
+void
+to_int_pointer(unary_operator op)
+{
+	sink_int_pointer(op);		/* expect: 153 */
+}

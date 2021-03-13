@@ -1,4 +1,4 @@
-/*	$NetBSD: arm_machdep.c,v 1.65 2020/12/01 02:43:13 rin Exp $	*/
+/*	$NetBSD: arm_machdep.c,v 1.67 2021/02/21 08:47:13 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -80,7 +80,7 @@
 
 #include <sys/param.h>
 
-__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.65 2020/12/01 02:43:13 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.67 2021/02/21 08:47:13 skrll Exp $");
 
 #include <sys/atomic.h>
 #include <sys/cpu.h>
@@ -222,6 +222,8 @@ startlwp(void *arg)
 void
 cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 {
+	KASSERT(kpreempt_disabled());
+
 	KASSERT(kpreempt_disabled());
 
 	if (flags & RESCHED_IDLE) {

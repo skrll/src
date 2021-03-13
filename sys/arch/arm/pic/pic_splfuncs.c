@@ -1,4 +1,4 @@
-/*	$NetBSD: pic_splfuncs.c,v 1.16 2021/02/20 22:53:31 jmcneill Exp $	*/
+/*	$NetBSD: pic_splfuncs.c,v 1.19 2021/03/01 11:29:14 jmcneill Exp $	*/
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -28,7 +28,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.16 2021/02/20 22:53:31 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.19 2021/03/01 11:29:14 jmcneill Exp $");
 
 #define _INTR_PRIVATE
 #include <sys/param.h>
@@ -46,30 +46,42 @@ __KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.16 2021/02/20 22:53:31 jmcneill E
 
 #include <arm/pic/picvar.h>
 
+#if defined(__HAVE_CPU_DOSOFTINTS_CI)
+#define	CPU_DOSOFTINTS(ci)	cpu_dosoftints_ci((ci))
+#else
+#define	CPU_DOSOFTINTS(ci)	cpu_dosoftints()
+#endif
+
+#if defined(__HAVE_PIC_PENDING_INTRS)
+static void	splx_dopendingints(struct cpu_info *, const int);
+#endif
+
 int
 _splraise(int newipl)
 {
 	struct cpu_info * const ci = curcpu();
 	const int oldipl = ci->ci_cpl;
-	KASSERT(newipl < NIPL);
+	KDASSERT(newipl < NIPL);
 	if (newipl > ci->ci_cpl) {
 		pic_set_priority(ci, newipl);
 	}
 	return oldipl;
 }
+
 int
 _spllower(int newipl)
 {
 	struct cpu_info * const ci = curcpu();
 	const int oldipl = ci->ci_cpl;
-	KASSERT(panicstr || newipl <= ci->ci_cpl);
+	KDASSERT(panicstr || newipl <= ci->ci_cpl);
 	if (newipl < ci->ci_cpl) {
-		register_t psw = cpsid(I32_bit);
+		register_t psw = DISABLE_INTERRUPT_SAVE();
 		ci->ci_intr_depth++;
 		pic_do_pending_ints(psw, newipl, NULL);
 		ci->ci_intr_depth--;
-		if ((psw & I32_bit) == 0 || newipl == IPL_NONE)
-			cpsie(I32_bit);
+		if ((psw & I32_bit) == 0 || newipl == IPL_NONE) {
+			ENABLE_INTERRUPT();
+		}
 		cpu_dosoftints();
 	}
 	return oldipl;
@@ -79,18 +91,30 @@ void
 splx(int savedipl)
 {
 	struct cpu_info * const ci = curcpu();
-	KASSERT(savedipl < NIPL);
+	KDASSERT(savedipl < NIPL);
 
 	if (__predict_false(savedipl == ci->ci_cpl)) {
 		return;
 	}
 
 #if defined(__HAVE_PIC_PENDING_INTRS)
-	if (__predict_true(ci->ci_pending_ipls == 0)) {
-		goto skip_pending;
+	if (__predict_false(ci->ci_pending_ipls != 0)) {
+		splx_dopendingints(ci, savedipl);
 	}
+#endif
 
-	const register_t psw = cpsid(I32_bit);
+	pic_set_priority(ci, savedipl);
+	CPU_DOSOFTINTS(ci);
+
+	KDASSERTMSG(ci->ci_cpl == savedipl, "cpl %d savedipl %d",
+	    ci->ci_cpl, savedipl);
+}
+
+#if defined(__HAVE_PIC_PENDING_INTRS)
+static void __noinline
+splx_dopendingints(struct cpu_info *ci, const int savedipl)
+{
+	const register_t psw = DISABLE_INTERRUPT_SAVE();
 	ci->ci_intr_depth++;
 	while ((ci->ci_pending_ipls & ~__BIT(savedipl)) > __BIT(savedipl)) {
 		KASSERT(ci->ci_pending_ipls < __BIT(NIPL));
@@ -101,24 +125,14 @@ splx(int savedipl)
 				break;
 			}
 
-			pic_set_priority_psw(ci, psw, ipl);
+			pic_set_priority(ci, ipl);
 			pic_list_deliver_irqs(ci, psw, ipl, NULL);
 			pic_list_unblock_irqs(ci);
 		}
 	}
 	ci->ci_intr_depth--;
 	if ((psw & I32_bit) == 0) {
-		cpsie(I32_bit);
+		ENABLE_INTERRUPT();
 	}
-skip_pending:
-#endif
-
-	ci->ci_cpl = savedipl;
-	if (__predict_true(pic_list[0] != NULL)) {
-		(pic_list[0]->pic_ops->pic_set_priority)(pic_list[0], savedipl);
-	}
-	cpu_dosoftints();
-
-	KASSERTMSG(ci->ci_cpl == savedipl, "cpl %d savedipl %d",
-	    ci->ci_cpl, savedipl);
 }
+#endif
