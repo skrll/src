@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.71 2021/02/19 22:27:49 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.76 2021/03/10 00:02:00 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.71 2021/02/19 22:27:49 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.76 2021/03/10 00:02:00 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -337,6 +337,22 @@ funcdef(sym_t *fsym)
 	reached = true;
 }
 
+static void
+check_missing_return_value(void)
+{
+	if (funcsym->s_type->t_subt->t_tspec == VOID)
+		return;
+	if (funcsym->s_return_type_implicit_int)
+		return;
+
+	/* C99 5.1.2.2.3 "Program termination" p1 */
+	if (Sflag && strcmp(funcsym->s_name, "main") == 0)
+		return;
+
+	/* function %s falls off bottom without returning value */
+	warning(217, funcsym->s_name);
+}
+
 /*
  * Called at the end of a function definition.
  */
@@ -348,11 +364,7 @@ funcend(void)
 
 	if (reached) {
 		cstmt->c_had_return_noval = true;
-		if (funcsym->s_type->t_subt->t_tspec != VOID &&
-		    !funcsym->s_return_type_implicit_int) {
-			/* func. %s falls off bottom without returning value */
-			warning(217, funcsym->s_name);
-		}
+		check_missing_return_value();
 	}
 
 	/*
@@ -415,6 +427,24 @@ named_label(sym_t *sym)
 }
 
 static void
+check_case_label_enum(const tnode_t *tn, const cstk_t *ci)
+{
+	/* similar to typeok_enum in tree.c */
+
+	if (!(tn->tn_type->t_is_enum || ci->c_swtype->t_is_enum))
+		return;
+	if (tn->tn_type->t_is_enum && ci->c_swtype->t_is_enum &&
+	    tn->tn_type->t_enum == ci->c_swtype->t_enum)
+		return;
+
+#if 0 /* not yet ready, see msg_130.c */
+	/* enum type mismatch: '%s' '%s' '%s' */
+	warning(130, type_name(ci->c_swtype), getopname(EQ),
+	    type_name(tn->tn_type));
+#endif
+}
+
+static void
 check_case_label(tnode_t *tn, cstk_t *ci)
 {
 	clst_t	*cl;
@@ -439,6 +469,8 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 		error(198);
 		return;
 	}
+
+	check_case_label_enum(tn, ci);
 
 	lint_assert(ci->c_swtype != NULL);
 
@@ -728,7 +760,7 @@ while1(tnode_t *tn)
 	pushctrl(T_WHILE);
 	cstmt->c_loop = true;
 	if (tn != NULL && tn->tn_op == CON)
-		cstmt->c_infinite = is_nonzero(tn);
+		cstmt->c_infinite = constant_is_nonzero(tn);
 
 	check_getopt_begin_while(tn);
 	expr(tn, false, true, true, false);
@@ -789,7 +821,7 @@ do2(tnode_t *tn)
 		tn = check_controlling_expression(tn);
 
 	if (tn != NULL && tn->tn_op == CON) {
-		cstmt->c_infinite = is_nonzero(tn);
+		cstmt->c_infinite = constant_is_nonzero(tn);
 		if (!cstmt->c_infinite && cstmt->c_cont)
 			/* continue in 'do ... while (0)' loop */
 			error(323);
@@ -815,7 +847,7 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 {
 
 	/*
-	 * If there is no initialisation expression it is possible that
+	 * If there is no initialization expression it is possible that
 	 * it is intended not to enter the loop at top.
 	 */
 	if (tn1 != NULL && !reached) {
@@ -828,7 +860,7 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 	cstmt->c_loop = true;
 
 	/*
-	 * Store the tree memory for the reinitialisation expression.
+	 * Store the tree memory for the reinitialization expression.
 	 * Also remember this expression itself. We must check it at
 	 * the end of the loop to get "used but not set" warnings correct.
 	 */
@@ -846,9 +878,9 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 		expr(tn2, false, true, true, false);
 
 	cstmt->c_infinite =
-	    tn2 == NULL || (tn2->tn_op == CON && is_nonzero(tn2));
+	    tn2 == NULL || (tn2->tn_op == CON && constant_is_nonzero(tn2));
 
-	/* Checking the reinitialisation expression is done in for2() */
+	/* Checking the reinitialization expression is done in for2() */
 
 	reached = true;
 }
@@ -869,7 +901,7 @@ for2(void)
 	cpos = curr_pos;
 	cspos = csrc_pos;
 
-	/* Restore the tree memory for the reinitialisation expression */
+	/* Restore the tree memory for the reinitialization expression */
 	trestor(cstmt->c_fexprm);
 	tn3 = cstmt->c_f3expr;
 	curr_pos = cstmt->c_fpos;
