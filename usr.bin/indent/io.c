@@ -1,4 +1,4 @@
-/*	$NetBSD: io.c,v 1.45 2021/03/13 13:55:42 rillig Exp $	*/
+/*	$NetBSD: io.c,v 1.49 2021/03/14 01:44:37 rillig Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-4-Clause
@@ -46,7 +46,7 @@ static char sccsid[] = "@(#)io.c	8.1 (Berkeley) 6/6/93";
 #include <sys/cdefs.h>
 #ifndef lint
 #if defined(__NetBSD__)
-__RCSID("$NetBSD: io.c,v 1.45 2021/03/13 13:55:42 rillig Exp $");
+__RCSID("$NetBSD: io.c,v 1.49 2021/03/14 01:44:37 rillig Exp $");
 #elif defined(__FreeBSD__)
 __FBSDID("$FreeBSD: head/usr.bin/indent/io.c 334927 2018-06-10 16:44:18Z pstef $");
 #endif
@@ -223,7 +223,7 @@ dump_line(void)
 
 	    target_col += ps.comment_delta;
 	    while (*com_st == '\t')	/* consider original indentation in
-				     * case this is a box comment */
+				 * case this is a box comment */
 		com_st++, target_col += opt.tabsize;
 	    while (target_col <= 0)
 		if (*com_st == ' ')
@@ -234,7 +234,7 @@ dump_line(void)
 		} else
 		    target_col = 1;
 	    if (cur_col > target_col) {	/* if comment can't fit on this line,
-				     * put it on next line */
+				 * put it on next line */
 		output_char('\n');
 		cur_col = 1;
 		++ps.out_lines;
@@ -263,14 +263,12 @@ dump_line(void)
     if (e_com - s_com > 1 && s_com[1] == '/')
 	output_range(s_token, e_token);
 
-    ps.decl_on_line = ps.in_decl;	/* if we are in the middle of a
-					 * declaration, remember that fact for
-					 * proper comment indentation */
-    ps.ind_stmt = ps.in_stmt & ~ps.in_decl;	/* next line should be
-						 * indented if we have not
-						 * completed this stmt and if
-						 * we are not in the middle of
-						 * a declaration */
+    ps.decl_on_line = ps.in_decl; /* if we are in the middle of a declaration,
+				 * remember that fact for proper comment
+				 * indentation */
+    ps.ind_stmt = ps.in_stmt & ~ps.in_decl; /* next line should be indented if
+				 * we have not completed this stmt and if we
+				 * are not in the middle of a declaration */
     ps.use_ff = false;
     ps.dumped_decl_indent = 0;
     *(e_lab = s_lab) = '\0';	/* reset buffers */
@@ -293,8 +291,10 @@ compute_code_indent(void)
 
     if (ps.paren_level != 0) {
 	if (!opt.lineup_to_parens)
-	    target_ind += opt.continuation_indent *
-		(2 * opt.continuation_indent == opt.indent_size ? 1 : ps.paren_level);
+	    if (2 * opt.continuation_indent == opt.indent_size)
+		target_ind += opt.continuation_indent;
+	    else
+		target_ind += opt.continuation_indent * ps.paren_level;
 	else if (opt.lineup_to_parens_always)
 	    /*
 	     * XXX: where does this '- 1' come from?  It looks strange but is
@@ -348,14 +348,15 @@ fill_buffer(void)
 	buf_ptr = bp_save;	/* do not read anything, just switch buffers */
 	buf_end = be_save;
 	bp_save = be_save = NULL;
+	debug_println("switched buf_ptr back to bp_save");
 	if (buf_ptr < buf_end)
 	    return;		/* only return if there is really something in
 				 * this buffer */
     }
     for (p = in_buffer;;) {
 	if (p >= in_buffer_limit) {
-	    int size = (in_buffer_limit - in_buffer) * 2 + 10;
-	    int offset = p - in_buffer;
+	    size_t size = (in_buffer_limit - in_buffer) * 2 + 10;
+	    size_t offset = p - in_buffer;
 	    in_buffer = realloc(in_buffer, size);
 	    if (in_buffer == NULL)
 		errx(1, "input line too long");
