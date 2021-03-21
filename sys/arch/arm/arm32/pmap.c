@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.425 2021/02/01 19:02:28 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.426 2021/03/14 10:36:46 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -192,7 +192,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.425 2021/02/01 19:02:28 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.426 2021/03/14 10:36:46 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -2853,6 +2853,7 @@ pmap_page_remove(struct vm_page_md *md, paddr_t pa)
 #endif
 		pmap_release_page_lock(md);
 		kpreempt_enable();
+
 		return;
 	}
 #if defined(PMAP_CACHE_VIPT) && !defined(ARM_MMU_EXTENDED)
@@ -3008,7 +3009,6 @@ pmap_page_remove(struct vm_page_md *md, paddr_t pa)
 #endif /* ARM_MMU_EXTENDED */
 
 	kpreempt_enable();
-
 }
 
 /*
@@ -3132,6 +3132,7 @@ pmap_enter(pmap_t pm, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 		if (flags & PMAP_CANFAIL) {
 			pmap_release_pmap_lock(pm);
 			kpreempt_enable();
+
 			error = ENOMEM;
 			goto free_pv;
 		}
@@ -3647,6 +3648,7 @@ pmap_remove(pmap_t pm, vaddr_t sva, vaddr_t eva)
 
 	pmap_release_pmap_lock(pm);
 	kpreempt_enable();
+
 	SLIST_FOREACH_SAFE(pv, &opv_list, pv_link, npv) {
 		pool_put(&pmap_pv_pool, pv);
 	}
@@ -4387,6 +4389,7 @@ pmap_prefetchabt_fixup(void *v)
 
   out:
 	kpreempt_enable();
+
 	return rv;
 }
 #endif

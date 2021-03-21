@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.76 2021/03/10 00:02:00 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.78 2021/03/20 16:16:32 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.76 2021/03/10 00:02:00 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.78 2021/03/20 16:16:32 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -67,13 +67,13 @@ bool	rchflg;
  * Reset by each statement and set by FALLTHROUGH, switch (switch1())
  * and case (label()).
  *
- * Control statements if, for, while and switch do not reset ftflg because
- * this must be done by the controlled statement. At least for if this is
- * important because ** FALLTHROUGH ** after "if (expr) statement" is
+ * Control statements if, for, while and switch do not reset seen_fallthrough
+ * because this must be done by the controlled statement. At least for if this
+ * is important because ** FALLTHROUGH ** after "if (expr) statement" is
  * evaluated before the following token, which causes reduction of above.
  * This means that ** FALLTHROUGH ** after "if ..." would always be ignored.
  */
-bool	ftflg;
+bool	seen_fallthrough;
 
 /* The innermost control statement */
 cstk_t	*cstmt;
@@ -224,8 +224,8 @@ funcdef(sym_t *fsym)
 	 * symbol table.
 	 */
 	for (sym = dcs->d_fpsyms; sym != NULL; sym = sym->s_dlnxt) {
-		if (sym->s_blklev != -1) {
-			lint_assert(sym->s_blklev == 1);
+		if (sym->s_block_level != -1) {
+			lint_assert(sym->s_block_level == 1);
 			inssym(1, sym);
 		}
 	}
@@ -474,7 +474,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 
 	lint_assert(ci->c_swtype != NULL);
 
-	if (reached && !ftflg) {
+	if (reached && !seen_fallthrough) {
 		if (hflag)
 			/* fallthrough on case statement */
 			warning(220);
@@ -554,7 +554,7 @@ default_label(void)
 		/* duplicate default in switch */
 		error(202);
 	} else {
-		if (reached && !ftflg) {
+		if (reached && !seen_fallthrough) {
 			if (hflag)
 				/* fallthrough on default statement */
 				warning(284);
@@ -683,7 +683,7 @@ switch1(tnode_t *tn)
 	cstmt->c_swtype = tp;
 
 	reached = rchflg = false;
-	ftflg = true;
+	seen_fallthrough = true;
 }
 
 /*
@@ -1236,7 +1236,7 @@ void
 fallthru(int n)
 {
 
-	ftflg = true;
+	seen_fallthrough = true;
 }
 
 /*

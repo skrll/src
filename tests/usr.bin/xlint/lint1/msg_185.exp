@@ -1,1 +1,1 @@
-msg_185.c(6): syntax error ':' [249]
+msg_185.c(15): cannot initialize 'pointer to const void' from 'double' [185]
