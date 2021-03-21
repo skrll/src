@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.72 2021/02/28 00:23:55 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.80 2021/03/20 16:16:32 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -58,8 +58,8 @@ extern	void	norecover(void);
 /*
  * cgram.y
  */
-extern	int	blklev;
-extern	int	mblklev;
+extern	int	block_level;
+extern	int	mem_block_level;
 extern	int	yydebug;
 
 extern	int	yyerror(const char *);
@@ -171,6 +171,7 @@ extern	const	char *storage_class_name(scl_t);
 extern	type_t	*complete_tag_struct_or_union(type_t *, sym_t *);
 extern	type_t	*complete_tag_enum(type_t *, sym_t *);
 extern	sym_t	*enumeration_constant(sym_t *, int, bool);
+extern	void	declare(sym_t *, bool, sbuf_t *);
 extern	void	decl1ext(sym_t *, bool);
 extern	void	copy_usage_info(sym_t *, sym_t *);
 extern	bool	check_redeclaration(sym_t *, bool *);
@@ -192,6 +193,7 @@ extern	void	check_usage(dinfo_t *);
 extern	void	check_usage_sym(bool, sym_t *);
 extern	void	check_global_symbols(void);
 extern	void	print_previous_declaration(int, const sym_t *);
+extern	int	to_int_constant(tnode_t *, bool);
 
 /*
  * tree.c
@@ -221,11 +223,11 @@ extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
 		    bool, bool, bool);
 extern	bool	constant_addr(const tnode_t *, sym_t **, ptrdiff_t *);
 extern	strg_t	*cat_strings(strg_t *, strg_t *);
-extern  int64_t tsize(type_t *);
+extern  int64_t type_size_in_bits(type_t *);
 #ifdef DEBUG
 extern	void	debug_node(const tnode_t *, int);
 #else
-#define debug_node(tn, indent) (void)0
+#define debug_node(tn, indent) do { } while (false)
 #endif
 
 /*
@@ -234,7 +236,7 @@ extern	void	debug_node(const tnode_t *, int);
 extern	sym_t	*funcsym;
 extern	bool	reached;
 extern	bool	rchflg;
-extern	bool	ftflg;
+extern	bool	seen_fallthrough;
 extern	int	nargusg;
 extern	pos_t	argsused_pos;
 extern	int	nvararg;
@@ -297,7 +299,8 @@ extern	void	initstack_init(void);
 extern	void	init_rbrace(void);
 extern	void	init_lbrace(void);
 extern	void	init_using_expr(tnode_t *);
-extern	void	push_member(sbuf_t *);
+extern	void	designator_push_name(sbuf_t *);
+extern	void	designator_push_subscript(range_t);
 
 /*
  * emit.c

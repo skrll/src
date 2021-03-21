@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.70 2021/03/07 18:02:45 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.76 2021/03/20 13:00:43 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -126,8 +126,8 @@ typedef struct {
  * the structure type in pass 2.
  */
 typedef	struct {
-	u_int	sou_size_in_bit;
-	u_int	sou_align_in_bit : 15;
+	u_int	sou_size_in_bits;
+	u_int	sou_align_in_bits : 15;
 	bool	sou_incomplete : 1;
 	struct	sym *sou_first_member;
 	struct	sym *sou_tag;
@@ -160,7 +160,7 @@ struct type {
 	bool	t_is_enum : 1;	/* type is (or was) enum (t_enum valid) */
 	bool	t_packed : 1;
 	union {
-		int	_t_dim;		/* dimension */
+		int	_t_dim;		/* dimension (if ARRAY) */
 		struct_or_union	*_t_str;
 		enumeration	*_t_enum;
 		struct	sym *_t_args;	/* arguments (if t_proto) */
@@ -241,7 +241,7 @@ typedef	struct sym {
 				   to external symbol with same name */
 	def_t	s_def;		/* declared, tentative defined, defined */
 	scl_t	s_scl;		/* storage class */
-	int	s_blklev;	/* level of declaration, -1 if not in symbol
+	int	s_block_level;	/* level of declaration, -1 if not in symbol
 				   table */
 	type_t	*s_type;
 	val_t	s_value;	/* value (if enum or bool constant) */
@@ -309,15 +309,15 @@ typedef	struct tnode {
 
 /*
  * For nested declarations a stack exists, which holds all information
- * needed for the current level. dcs points to the top element of this
+ * needed for the current level. dcs points to the innermost element of this
  * stack.
  *
- * ctx describes the context of the current declaration. Its value is
+ * d_ctx describes the context of the current declaration. Its value is
  * one of
  *	EXTERN		global declarations
  *	MOS or MOU	declarations of struct or union members
- *	CTCONST		declarations of enums
- *	ARG		declaration of arguments in old style function
+ *	CTCONST		declarations of enums or boolean constants
+ *	ARG		declaration of arguments in old-style function
  *			definitions
  *	PROTO_ARG	declaration of arguments in function prototypes
  *	AUTO		declaration of local symbols
@@ -325,10 +325,10 @@ typedef	struct tnode {
  *
  */
 typedef	struct dinfo {
-	tspec_t	d_atyp;		/* VOID, CHAR, INT, or COMPLEX */
-	tspec_t	d_cmod;		/* FLOAT, or DOUBLE */
-	tspec_t	d_smod;		/* SIGNED or UNSIGN */
-	tspec_t	d_lmod;		/* SHORT, LONG or QUAD */
+	tspec_t	d_abstract_type;/* VOID, BOOL, CHAR, INT or COMPLEX */
+	tspec_t	d_complex_mod;	/* FLOAT or DOUBLE */
+	tspec_t	d_sign_mod;	/* SIGNED or UNSIGN */
+	tspec_t	d_rank_mod;	/* SHORT, LONG or QUAD */
 	scl_t	d_scl;		/* storage class */
 	type_t	*d_type;	/* after deftyp() pointer to the type used
 				   for all declarators */
@@ -342,7 +342,7 @@ typedef	struct dinfo {
 	bool	d_mscl : 1;	/* multiple storage classes */
 	bool	d_terr : 1;	/* invalid type combination */
 	bool	d_nedecl : 1;	/* if at least one tag is declared */
-	bool	d_vararg : 1;	/* ... in in current function decl. */
+	bool	d_vararg : 1;	/* ... in the current function decl. */
 	bool	d_proto : 1;	/* current function decl. is prototype */
 	bool	d_notyp : 1;	/* set if no type specifier was present */
 	bool	d_asm : 1;	/* set if d_ctx == AUTO and asm() present */
