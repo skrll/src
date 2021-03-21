@@ -1,4 +1,4 @@
-/* $NetBSD: efi_machdep.c,v 1.8 2020/10/22 07:31:15 skrll Exp $ */
+/* $NetBSD: efi_machdep.c,v 1.9 2021/03/20 06:48:23 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: efi_machdep.c,v 1.8 2020/10/22 07:31:15 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: efi_machdep.c,v 1.9 2021/03/20 06:48:23 skrll Exp $");
 
 #include <sys/param.h>
 #include <uvm/uvm_extern.h>

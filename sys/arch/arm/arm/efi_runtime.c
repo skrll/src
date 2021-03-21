@@ -75,6 +75,19 @@ arm_efirt_init(paddr_t efi_system_table)
 	RT = ST->st_rt;
 	mutex_init(&efi_lock, MUTEX_DEFAULT, IPL_HIGH);
 
+#define DPRINTF(v)	aprint_debug("EFI: rt_%s %p\n", #v, RT->rt_##v);
+
+	DPRINTF(gettime);
+	DPRINTF(settime);
+	DPRINTF(getwaketime);
+	DPRINTF(setwaketime);
+	DPRINTF(setvirtual);
+	DPRINTF(cvtptr);
+	DPRINTF(getvar);
+	DPRINTF(scanvar);
+	DPRINTF(setvar);
+	DPRINTF(gethicnt);
+
 	return 0;
 #else
 	/* EFI runtime not supported in big endian mode */
