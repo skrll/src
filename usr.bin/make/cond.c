@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.257 2021/02/22 23:21:33 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.259 2021/03/15 12:15:03 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -95,7 +95,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.257 2021/02/22 23:21:33 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.259 2021/03/15 12:15:03 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -265,8 +265,8 @@ ParseFuncArg(CondParser *par, const char **pp, Boolean doEval, const char *func,
 			 * error, though perhaps we should.
 			 */
 			VarEvalFlags eflags = doEval
-			    ? VARE_WANTRES | VARE_UNDEFERR
-			    : VARE_NONE;
+			    ? VARE_UNDEFERR
+			    : VARE_PARSE_ONLY;
 			FStr nestedVal;
 			(void)Var_Parse(&p, SCOPE_CMDLINE, eflags, &nestedVal);
 			/* TODO: handle errors */
@@ -420,9 +420,9 @@ CondParser_StringExpr(CondParser *par, const char *start,
 	VarParseResult parseResult;
 
 	/* if we are in quotes, an undefined variable is ok */
-	eflags = doEval && !quoted ? VARE_WANTRES | VARE_UNDEFERR
+	eflags = doEval && !quoted ? VARE_UNDEFERR
 	    : doEval ? VARE_WANTRES
-	    : VARE_NONE;
+	    : VARE_PARSE_ONLY;
 
 	nested_p = par->p;
 	atStart = nested_p == start;
@@ -740,8 +740,8 @@ ParseEmptyArg(CondParser *par MAKE_ATTR_UNUSED, const char **pp,
 	*out_arg = NULL;
 
 	(*pp)--;		/* Make (*pp)[1] point to the '('. */
-	(void)Var_Parse(pp, SCOPE_CMDLINE, doEval ? VARE_WANTRES : VARE_NONE,
-	    &val);
+	(void)Var_Parse(pp, SCOPE_CMDLINE,
+	    doEval ? VARE_WANTRES : VARE_PARSE_ONLY, &val);
 	/* TODO: handle errors */
 	/* If successful, *pp points beyond the closing ')' now. */
 

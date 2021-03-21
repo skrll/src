@@ -1,4 +1,4 @@
-/*	$NetBSD: indent_globs.h,v 1.17 2021/03/08 20:20:11 rillig Exp $	*/
+/*	$NetBSD: indent_globs.h,v 1.21 2021/03/13 23:36:10 rillig Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-4-Clause
@@ -93,11 +93,11 @@ extern char       *be_save;		/* similarly saved value of buf_end */
 extern struct options {
     int         blanklines_around_conditional_compilation;
     int         blanklines_after_declarations_at_proctop; /* this is vaguely
-				 * similar to blanklines_after_decla except
-				 * that in only applies to the first set of
-				 * declarations in a procedure (just after
-				 * the first '{') and it causes a blank line
-				 * to be generated even if there are no
+				 * similar to blanklines_after_declarations
+				 * except that it only applies to the first
+				 * set of declarations in a procedure (just
+				 * after the first '{') and it causes a blank
+				 * line to be generated even if there are no
 				 * declarations */
     int         blanklines_after_declarations;
     int         blanklines_after_procs;
@@ -109,16 +109,17 @@ extern struct options {
     int         Bill_Shannon;	/* true iff a blank should always be
 				 * inserted after sizeof */
     int         comment_delimiter_on_blankline;
-    int         decl_com_ind;	/* the column in which comments after
+    int         decl_comment_column; /* the column in which comments after
 				 * declarations should be put */
-    int         cuddle_else;	/* true if else should cuddle up to '}' */
+    int         cuddle_else;	/* true if 'else' should cuddle up to '}' */
     int         continuation_indent; /* set to the indentation between the
 				 * edge of code and continuation lines */
-    float       case_indent;	/* The distance to indent case labels from the
-				 * switch statement */
-    int         com_ind;	/* the column in which comments to the right
+    float       case_indent;	/* The distance (measured in tabsize) to
+				 * indent case labels from the switch
+				 * statement */
+    int         comment_column;	/* the column in which comments to the right
 				 * of code should start */
-    int         decl_indent;	/* column to indent declared identifiers to */
+    int         decl_indent;	/* indentation of identifier in declaration */
     int         ljust_decl;	/* true if declarations should be left
 				 * justified */
     int         unindent_displace; /* comments not to the right of code
@@ -138,10 +139,10 @@ extern struct options {
 				 * are to be magically reformatted (just
 				 * like comments that begin in later columns) */
     int         format_block_comments; /* true if comments beginning with
-				 * `/ * \n' are to be reformatted */
+				 * '/ * \n' are to be reformatted */
     int         indent_parameters;
-    int         ind_size;	/* the size of one indentation level */
-    int         block_comment_max_col;
+    int         indent_size;	/* the size of one indentation level */
+    int         block_comment_max_line_length;
     int         local_decl_indent; /* like decl_indent but for locals */
     int         lineup_to_parens_always; /* if true, do not attempt to keep
 				 * lined-up code within the margin */
@@ -161,7 +162,7 @@ extern struct options {
     int         auto_typedefs;	/* set true to recognize identifiers
 				 * ending in "_t" like typedefs */
     int         tabsize;	/* the size of a tab */
-    int         max_col;	/* the maximum allowable line length */
+    int         max_line_length;
     int         use_tabs;	/* set true to use tabs for spacing, false
 				 * uses all spaces */
     int         verbose;	/* when true, non-essential error messages
@@ -253,14 +254,16 @@ extern struct parser_state {
     int         last_u_d;	/* set to true after scanning a token which
 				 * forces a following operator to be unary */
     int         out_coms;	/* the number of comments processed, set by
-				 * pr_comment */
+				 * process_comment */
     int         out_lines;	/* the number of lines written, set by
 				 * dump_line */
     int         p_l_follow;	/* used to remember how to indent following
 				 * statement */
     int         paren_level;	/* parenthesization level. used to indent
 				 * within statements */
-    short       paren_indents[20];	/* column positions of each paren */
+    short       paren_indents[20]; /* indentation of the operand/argument of
+				 * each level of parentheses or brackets,
+				 * relative to the enclosing statement */
     int         pcase;		/* set to 1 if the current line label is a
 				 * case.  It is printed differently from a
 				 * regular label */

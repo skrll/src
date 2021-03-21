@@ -1,4 +1,4 @@
-/*	$NetBSD: d_c99_bool_strict.c,v 1.22 2021/02/27 17:16:48 rillig Exp $	*/
+/*	$NetBSD: d_c99_bool_strict.c,v 1.24 2021/03/20 17:18:50 rillig Exp $	*/
 # 3 "d_c99_bool_strict.c"
 
 /*
@@ -218,7 +218,7 @@ strict_bool_bit_fields_operand_conversion(void)
 		bool bit_field: 1;
 	};
 
-	struct s s = { 0 };
+	struct s s = { 0 > 0 };
 
 	s.ordinary = s.ordinary | s.ordinary;
 	s.bit_field = s.bit_field | s.bit_field;
@@ -755,4 +755,17 @@ do_while_true(void)
 	do {
 
 	} while (__lint_true);	/* expect: 161 */
+}
+
+void
+initialization(void)
+{
+	struct {
+		_Bool b;
+	} var[] = {
+	    { __lint_false },
+	    { __lint_true },
+	    { 0 },		/* expect: 107 */
+	    { 1 },		/* expect: 107 */
+	};
 }
