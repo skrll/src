@@ -1,4 +1,4 @@
-/*	$NetBSD: msg_217.c,v 1.4 2021/02/21 09:17:55 rillig Exp $	*/
+/*	$NetBSD: msg_217.c,v 1.9 2021/03/21 15:24:56 rillig Exp $	*/
 # 3 "msg_217.c"
 
 // Test for message: function %s falls off bottom without returning value [217]
@@ -19,17 +19,21 @@ random(int n)
  * Seen in external/bsd/libevent/dist/event_tagging.c, function
  * encode_int_internal.
  *
- * As of 2021-01-31, lint wrongly reports that the function would fall off
- * the bottom, but it cannot reach the bottom since every path contains the
- * 'return i'.
+ * Before tree.c 1.243 from 2021-03-21, lint wrongly reported that the
+ * 'while 0' was unreachable.  This has been fixed by allowing the 'while 0'
+ * in a do-while-false loop to be unreachable.  The same could be useful for a
+ * do-while-true.
+ *
+ * Before func.c 1.83 from 2021-03-21, lint wrongly reported that the function
+ * would fall off the bottom.
  */
 int
 do_while_return(int i)
 {
 	do {
 		return i;
-	} while (/*CONSTCOND*/0);	/*FIXME*//* expect: 193 */
-}					/*FIXME*//* expect: 217 */
+	} while (0);
+}
 
 /*
  * C99 5.1.2.2.3 "Program termination" p1 defines that as a special exception,
@@ -42,3 +46,23 @@ int
 main(void)
 {
 }
+
+int
+reachable_continue_leads_to_endless_loop(void)
+{
+	for (;;) {
+		if (1)
+			continue;
+		break;
+	}
+}
+
+int
+unreachable_continue_falls_through(void)
+{
+	for (;;) {
+		if (0)
+			continue; /* expect: statement not reached */
+		break;
+	}
+}				/* expect: 217 */
