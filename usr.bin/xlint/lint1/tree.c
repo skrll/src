@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.242 2021/03/20 21:08:09 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.245 2021/03/21 19:08:10 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tree.c,v 1.242 2021/03/20 21:08:09 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.245 2021/03/21 19:08:10 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -3777,7 +3777,8 @@ expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk, bool constcond_false_ok)
 	}
 
 	/* expr() is also called in global initializations */
-	if (dcs->d_ctx != EXTERN)
+	/* TODO: rename constcond_false_ok */
+	if (dcs->d_ctx != EXTERN && !constcond_false_ok)
 		check_statement_reachable();
 
 	check_expr_misc(tn, vctx, tctx, !tctx, false, false, false);
@@ -3926,7 +3927,8 @@ check_expr_misc(const tnode_t *tn, bool vctx, bool tctx,
 
 	switch (op) {
 	case ADDR:
-		if (ln->tn_op == NAME && (reached || rchflg)) {
+		/* XXX: Taking warn_about_unreachable into account here feels wrong. */
+		if (ln->tn_op == NAME && (reached || !warn_about_unreachable)) {
 			if (!szof)
 				mark_as_set(ln->tn_sym);
 			mark_as_used(ln->tn_sym, fcall, szof);
@@ -3957,7 +3959,8 @@ check_expr_misc(const tnode_t *tn, bool vctx, bool tctx,
 	case SHRASS:
 	case REAL:
 	case IMAG:
-		if (ln->tn_op == NAME && (reached || rchflg)) {
+		/* XXX: Taking warn_about_unreachable into account here feels wrong. */
+		if (ln->tn_op == NAME && (reached || !warn_about_unreachable)) {
 			sc = ln->tn_sym->s_scl;
 			/*
 			 * Look if there was a asm statement in one of the
@@ -3978,7 +3981,8 @@ check_expr_misc(const tnode_t *tn, bool vctx, bool tctx,
 		}
 		break;
 	case ASSIGN:
-		if (ln->tn_op == NAME && !szof && (reached || rchflg)) {
+		/* XXX: Taking warn_about_unreachable into account here feels wrong. */
+		if (ln->tn_op == NAME && !szof && (reached || !warn_about_unreachable)) {
 			mark_as_set(ln->tn_sym);
 			if (ln->tn_sym->s_scl == EXTERN)
 				outusg(ln->tn_sym);
