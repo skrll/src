@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.89 2021/03/20 14:17:56 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.91 2021/03/21 20:44:59 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.89 2021/03/20 14:17:56 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.91 2021/03/21 20:44:59 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -51,11 +51,6 @@ int	nerr;
 
 /* number of syntax errors */
 int	sytxerr;
-
-
-static	const	char *lbasename(const char *);
-static	void	verror(int, va_list);
-static	void	vwarning(int, va_list);
 
 
 const	char *msgs[] = {
@@ -445,7 +440,7 @@ verror(int n, va_list ap)
 		return;
 
 	fn = lbasename(curr_pos.p_file);
-	(void)printf("%s(%d): ", fn, curr_pos.p_line);
+	(void)printf("%s(%d): error: ", fn, curr_pos.p_line);
 	(void)vprintf(msgs[n], ap);
 	(void)printf(" [%d]\n", n);
 	nerr++;
