@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.80 2021/03/20 16:16:32 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.82 2021/03/21 19:08:10 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -235,7 +235,7 @@ extern	void	debug_node(const tnode_t *, int);
  */
 extern	sym_t	*funcsym;
 extern	bool	reached;
-extern	bool	rchflg;
+extern	bool	warn_about_unreachable;
 extern	bool	seen_fallthrough;
 extern	int	nargusg;
 extern	pos_t	argsused_pos;
@@ -271,15 +271,15 @@ extern	void	do1(void);
 extern	void	do2(tnode_t *);
 extern	void	for1(tnode_t *, tnode_t *, tnode_t *);
 extern	void	for2(void);
-extern	void	dogoto(sym_t *);
-extern	void	docont(void);
-extern	void	dobreak(void);
-extern	void	doreturn(tnode_t *);
+extern	void	do_goto(sym_t *);
+extern	void	do_continue(void);
+extern	void	do_break(void);
+extern	void	do_return(tnode_t *);
 extern	void	global_clean_up_decl(bool);
 extern	void	argsused(int);
 extern	void	constcond(int);
 extern	void	fallthru(int);
-extern	void	notreach(int);
+extern	void	not_reached(int);
 extern	void	lintlib(int);
 extern	void	linted(int);
 extern	void	varargs(int);

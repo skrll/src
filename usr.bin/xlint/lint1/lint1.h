@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.76 2021/03/20 13:00:43 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.87 2021/03/21 15:34:13 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -289,7 +289,7 @@ typedef	struct tnode {
 	bool	tn_cast : 1;	/* if tn_op == CVT, it's an explicit cast */
 	bool	tn_parenthesized : 1;
 	bool	tn_from_system_header : 1;
-	bool	tn_system_dependent : 1;
+	bool	tn_system_dependent : 1; /* depends on sizeof or offsetof */
 	union {
 		struct {
 			struct	tnode *_tn_left;	/* (left) operand */
@@ -332,7 +332,7 @@ typedef	struct dinfo {
 	scl_t	d_scl;		/* storage class */
 	type_t	*d_type;	/* after deftyp() pointer to the type used
 				   for all declarators */
-	sym_t	*d_rdcsym;	/* redeclared symbol */
+	sym_t	*d_redeclared_symbol;
 	int	d_offset;	/* offset of next structure member */
 	int	d_stralign;	/* alignment required for current structure */
 	scl_t	d_ctx;		/* context of declaration */
@@ -341,20 +341,21 @@ typedef	struct dinfo {
 	bool	d_inline : 1;	/* inline in declaration specifiers */
 	bool	d_mscl : 1;	/* multiple storage classes */
 	bool	d_terr : 1;	/* invalid type combination */
-	bool	d_nedecl : 1;	/* if at least one tag is declared */
-	bool	d_vararg : 1;	/* ... in the current function decl. */
+	bool	d_nonempty_decl : 1; /* if at least one tag is declared
+				 * ... in the current function decl. */
+	bool	d_vararg : 1;
 	bool	d_proto : 1;	/* current function decl. is prototype */
 	bool	d_notyp : 1;	/* set if no type specifier was present */
 	bool	d_asm : 1;	/* set if d_ctx == AUTO and asm() present */
 	bool	d_packed : 1;
 	bool	d_used : 1;
 	type_t	*d_tagtyp;	/* tag during member declaration */
-	sym_t	*d_fargs;	/* list of arguments during function def. */
-	pos_t	d_fdpos;	/* position of function definition */
+	sym_t	*d_func_args;	/* list of arguments during function def. */
+	pos_t	d_func_def_pos;	/* position of function definition */
 	sym_t	*d_dlsyms;	/* first symbol declared at this level */
 	sym_t	**d_ldlsym;	/* points to s_dlnxt in last symbol decl.
 				   at this level */
-	sym_t	*d_fpsyms;	/* symbols defined in prototype */
+	sym_t	*d_func_proto_syms; /* symbols defined in prototype */
 	struct	dinfo *d_next;	/* next level */
 } dinfo_t;
 
@@ -370,12 +371,12 @@ typedef	struct pqinf {
 } pqinf_t;
 
 /*
- * Case values are stored in a list of type clst_t.
+ * Case values are stored in a list of type case_label_t.
  */
-typedef	struct clst {
+typedef	struct case_label {
 	val_t	cl_val;
-	struct	clst *cl_next;
-} clst_t;
+	struct case_label *cl_next;
+} case_label_t;
 
 /*
  * Used to keep information about nested control statements.
@@ -384,16 +385,20 @@ typedef struct control_statement {
 	int	c_env;			/* type of statement (T_IF, ...) */
 	bool	c_loop : 1;		/* continue && break are valid */
 	bool	c_switch : 1;		/* case && break are valid */
-	bool	c_break : 1;		/* loop/switch has break */
-	bool	c_cont : 1;		/* loop has continue */
+	bool	c_break : 1;		/* the loop/switch has a reachable
+					 * break statement */
+	bool	c_continue : 1;		/* loop has continue */
 	bool	c_default : 1;		/* switch has default */
-	bool	c_infinite : 1;		/* break condition always false
-					   (for (;;), while (1)) */
-	bool	c_rchif : 1;		/* end of if-branch reached */
+	bool	c_maybe_endless : 1;	/* the controlling expression is
+					 * always true (as in 'for (;;)' or
+					 * 'while (1)'), there may be break
+					 * statements though */
+	bool	c_always_then : 1;
+	bool	c_reached_end_of_then : 1;
 	bool	c_had_return_noval : 1;	/* had "return;" */
 	bool	c_had_return_value : 1;	/* had "return (e);" */
 	type_t	*c_swtype;		/* type of switch expression */
-	clst_t	*c_clst;		/* list of case values */
+	case_label_t *c_case_labels;	/* list of case values */
 	struct	mbl *c_fexprm;		/* saved memory for end of loop
 					   expression in for() */
 	tnode_t	*c_f3expr;		/* end of loop expr in for() */
@@ -477,4 +482,16 @@ constant_is_nonzero(const tnode_t *tn)
 	lint_assert(tn->tn_op == CON);
 	lint_assert(tn->tn_type->t_tspec == tn->tn_val->v_tspec);
 	return is_nonzero_val(tn->tn_val);
+}
+
+static inline bool
+is_zero(const tnode_t *tn)
+{
+	return tn != NULL && tn->tn_op == CON && !is_nonzero_val(tn->tn_val);
+}
+
+static inline bool
+is_nonzero(const tnode_t *tn)
+{
+	return tn != NULL && tn->tn_op == CON && is_nonzero_val(tn->tn_val);
 }

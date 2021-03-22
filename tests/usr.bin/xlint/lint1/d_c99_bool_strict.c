@@ -1,4 +1,4 @@
-/*	$NetBSD: d_c99_bool_strict.c,v 1.24 2021/03/20 17:18:50 rillig Exp $	*/
+/*	$NetBSD: d_c99_bool_strict.c,v 1.26 2021/03/21 14:36:59 rillig Exp $	*/
 # 3 "d_c99_bool_strict.c"
 
 /*
@@ -31,8 +31,9 @@
  *
  * strict-bool-operand-unary:
  *	Operator	bool?	scalar?
- *	!		yes	no
- *	The other binary operators do not accept bool operands.
+ *	!		yes	-
+ *	&		yes	yes
+ *	The other unary operators do not accept bool operands.
  *
  * strict-bool-operand-binary:
  *	Operator	left:	bool?	other?	right:	bool?	other?
@@ -364,7 +365,7 @@ void
 strict_bool_controlling_expression(bool b, int i, double d, const void *p)
 {
 	if (__lint_false)	/* expect: 161 */
-		do_nothing();
+		do_nothing();	/* expect: statement not reached */
 
 	if (__lint_true)	/* expect: 161 */
 		do_nothing();
@@ -405,7 +406,7 @@ strict_bool_controlling_expression(bool b, int i, double d, const void *p)
  *	Operator	bool?	scalar?
  *	!		yes	-
  *	&		yes	yes
- *	The other binary operators do not accept bool operands.
+ *	The other unary operators do not accept bool operands.
  */
 
 void
