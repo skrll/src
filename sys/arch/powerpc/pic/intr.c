@@ -619,7 +619,8 @@ splraise(int ncpl)
 	struct cpu_info *ci = curcpu();
 	int ocpl;
 
-	if (ncpl == ci->ci_cpl) return ncpl;
+	if (ncpl == ci->ci_cpl)
+		return ncpl;
 	REORDER_PROTECT();
 	ocpl = ci->ci_cpl;
 	KASSERT(ncpl < NIPL);
