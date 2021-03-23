@@ -224,8 +224,6 @@ cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 {
 	KASSERT(kpreempt_disabled());
 
-	KASSERT(kpreempt_disabled());
-
 	if (flags & RESCHED_IDLE) {
 #ifdef MULTIPROCESSOR
 		/*
