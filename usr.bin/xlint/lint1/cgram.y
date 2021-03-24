@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.196 2021/03/21 14:49:21 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.199 2021/03/23 20:57:40 christos Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.196 2021/03/21 14:49:21 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.199 2021/03/23 20:57:40 christos Exp $");
 #endif
 
 #include <limits.h>
@@ -123,7 +123,7 @@ anonymize(sym_t *s)
 }
 %}
 
-%expect 134
+%expect 165
 
 %union {
 	val_t	*y_val;
@@ -149,6 +149,7 @@ anonymize(sym_t *s)
 %token			T_BUILTIN_OFFSETOF
 %token			T_TYPEOF
 %token			T_EXTENSION
+%token			T_ALIGNAS
 %token			T_ALIGNOF
 %token			T_ASTERISK
 %token	<y_op>		T_MULTIPLICATIVE
@@ -605,12 +606,19 @@ type_attribute_spec_list:
 	| type_attribute_spec_list T_COMMA type_attribute_spec
 	;
 
+align_as:
+	  typespec
+	| constant_expr
+	;
+
 type_attribute:
 	  T_ATTRIBUTE T_LPAREN T_LPAREN {
 	    attron = true;
 	  } type_attribute_spec_list {
 	    attron = false;
 	  } T_RPAREN T_RPAREN
+	| T_ALIGNAS T_LPAREN align_as T_RPAREN {
+	  }
 	| T_PACKED {
 		addpacked();
 	  }
@@ -1015,9 +1023,11 @@ notype_init_decl:
 		check_size($1);
 	  }
 	| notype_decl opt_asm_or_symbolrename {
+		begin_initialization($1);
 		cgram_declare($1, true, $2);
-	  } T_ASSIGN outermost_initializer {
+	  } T_ASSIGN initializer {
 		check_size($1);
+		end_initialization();
 	  }
 	;
 
@@ -1027,9 +1037,11 @@ type_init_decl:
 		check_size($1);
 	  }
 	| type_decl opt_asm_or_symbolrename {
+		begin_initialization($1);
 		cgram_declare($1, true, $2);
-	  } T_ASSIGN outermost_initializer {
+	  } T_ASSIGN initializer {
 		check_size($1);
+		end_initialization();
 	  }
 	;
 
@@ -1328,14 +1340,6 @@ opt_asm_or_symbolrename:		/* expect only one */
 	  }
 	| T_SYMBOLRENAME T_LPAREN T_NAME T_RPAREN {
 		$$ = $3;
-	  }
-	;
-
-outermost_initializer:
-	  {
-		cgram_debug("begin initialization");
-	  } initializer {
-		cgram_debug("end initialization");
 	  }
 	;
 
@@ -1885,24 +1889,28 @@ term:
 	    expr_statement_list {
 		block_level--;
 		mem_block_level--;
-		initsym = mktempsym(duptyp($4->tn_type));
+		/* XXX: probably does not need the full initialization code */
+		begin_initialization(mktempsym(duptyp($4->tn_type)));
 		mem_block_level++;
 		block_level++;
 		/* ({ }) is a GCC extension */
 		gnuism(320);
 	 } compound_statement_rbrace T_RPAREN {
-		$$ = new_name_node(initsym, 0);
+		$$ = new_name_node(*current_initsym(), 0);
+		end_initialization();
 	 }
 	| T_LPAREN compound_statement_lbrace expr_statement_list {
 		block_level--;
 		mem_block_level--;
-		initsym = mktempsym($3->tn_type);
+		/* XXX: probably does not need the full initialization code */
+		begin_initialization(mktempsym($3->tn_type));
 		mem_block_level++;
 		block_level++;
 		/* ({ }) is a GCC extension */
 		gnuism(320);
 	 } compound_statement_rbrace T_RPAREN {
-		$$ = new_name_node(initsym, 0);
+		$$ = new_name_node(*current_initsym(), 0);
+		end_initialization();
 	 }
 	| term T_INCDEC {
 		$$ = build($2 == INC ? INCAFT : DECAFT, $1, NULL);
@@ -1990,12 +1998,14 @@ term:
 	  }
 	| T_LPAREN type_name T_RPAREN			%prec T_UNARY {
 		sym_t *tmp = mktempsym($2);
+		begin_initialization(tmp);
 		cgram_declare(tmp, true, NULL);
 	  } init_lbrace initializer_list comma_opt init_rbrace {
 		if (!Sflag)
 			 /* compound literals are a C9X/GCC extension */
 			 gnuism(319);
-		$$ = new_name_node(initsym, 0);
+		$$ = new_name_node(*current_initsym(), 0);
+		end_initialization();
 	  }
 	;
 

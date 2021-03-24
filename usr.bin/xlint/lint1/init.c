@@ -1,4 +1,4 @@
-/*	$NetBSD: init.c,v 1.108 2021/03/20 08:54:27 rillig Exp $	*/
+/*	$NetBSD: init.c,v 1.115 2021/03/23 22:58:08 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: init.c,v 1.108 2021/03/20 08:54:27 rillig Exp $");
+__RCSID("$NetBSD: init.c,v 1.115 2021/03/23 22:58:08 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -61,10 +61,10 @@ __RCSID("$NetBSD: init.c,v 1.108 2021/03/20 08:54:27 rillig Exp $");
  *	struct { int x, y; } point = { 3, 4 };
  *	struct { int x, y; } point = { .y = 3, .x = 4 };
  *
- * The initializer that follows the '=' may be surrounded by an extra pair of
- * braces, like in the example 'number_with_braces'.  For multi-dimensional
- * arrays, the inner braces may be omitted like in array_flat or spelled out
- * like in array_nested.
+ * Any scalar expression in the initializer may be surrounded by an extra pair
+ * of braces, like in the example 'number_with_braces' (C99 6.7.8p11).  For
+ * multi-dimensional arrays, the inner braces may be omitted like in
+ * array_flat or spelled out like in array_nested.
  *
  * For the initializer, the grammar parser calls these functions:
  *
@@ -199,25 +199,64 @@ typedef struct namlist {
 	struct namlist *n_next;
 } namlist_t;
 
+struct initialization {
+	/*
+	 * is set as soon as a fatal error occurred in the initialization.
+	 * The effect is that the rest of the initialization is ignored
+	 * (parsed by yacc, expression trees built, but no initialization
+	 * takes place).
+	 */
+	bool	initerr;
 
-/*
- * initerr is set as soon as a fatal error occurred in an initialization.
- * The effect is that the rest of the initialization is ignored (parsed
- * by yacc, expression trees built, but no initialization takes place).
- */
-bool	initerr;
+	/* Pointer to the symbol which is to be initialized. */
+	sym_t	*initsym;
 
-/* Pointer to the symbol which is to be initialized. */
-sym_t	*initsym;
+	/* Points to the top element of the initialization stack. */
+	initstack_element *initstk;
 
-/* Points to the top element of the initialization stack. */
-initstack_element *initstk;
+	/* Points to a c9x named member. */
+	namlist_t *namedmem;
 
-/* Points to a c9x named member; */
-namlist_t	*namedmem = NULL;
+	struct initialization *next;
+};
+
+static struct initialization *init;
 
 
 static	bool	init_array_using_string(tnode_t *);
+
+bool *
+current_initerr(void)
+{
+	lint_assert(init != NULL);
+	return &init->initerr;
+}
+
+sym_t **
+current_initsym(void)
+{
+	lint_assert(init != NULL);
+	return &init->initsym;
+}
+
+static namlist_t **
+current_namedmem(void)
+{
+	lint_assert(init != NULL);
+	return &init->namedmem;
+}
+
+static initstack_element **
+current_initstk(void)
+{
+	lint_assert(init != NULL);
+	return &init->initstk;
+}
+
+#define initerr (*current_initerr())
+#define initsym (*current_initsym())
+#define initstk (*current_initstk())
+#define namedmem (*current_namedmem())
 
 #ifndef DEBUG
 
@@ -336,6 +375,30 @@ debug_initstack(void)
 #define debug_leave() debug_leave(__func__)
 
 #endif
+
+
+void
+begin_initialization(sym_t *sym)
+{
+	struct initialization *curr_init;
+
+	debug_step("begin initialization");
+	curr_init = xcalloc(1, sizeof *curr_init);
+	curr_init->next = init;
+	init = curr_init;
+	initsym = sym;
+}
+
+void
+end_initialization(void)
+{
+	struct initialization *curr_init;
+
+	curr_init = init;
+	init = init->next;
+	free(curr_init);
+	debug_step("end initialization");
+}
 
 void
 designator_push_name(sbuf_t *sb)
@@ -903,6 +966,30 @@ check_non_constant_initializer(const tnode_t *tn, scl_t sclass)
 	}
 }
 
+/*
+ * Local initialization of non-array-types with only one expression without
+ * braces is done by ASSIGN.
+ */
+static bool
+init_using_assign(tnode_t *rn)
+{
+	tnode_t *ln, *tn;
+
+	if (initsym->s_type->t_tspec == ARRAY)
+		return false;
+	if (initstk->i_enclosing != NULL)
+		return false;
+
+	debug_step("handing over to ASSIGN");
+	ln = new_name_node(initsym, 0);
+	ln->tn_type = tduptyp(ln->tn_type);
+	ln->tn_type->t_const = false;
+	tn = build(ASSIGN, ln, rn);
+	expr(tn, false, false, false, false);
+	/* XXX: why not clean up the initstack here already? */
+	return true;
+}
+
 void
 init_using_expr(tnode_t *tn)
 {
@@ -917,10 +1004,8 @@ init_using_expr(tnode_t *tn)
 	debug_step("expr:");
 	debug_node(tn, debug_ind + 1);
 
-	if (initerr || tn == NULL) {
-		debug_leave();
-		return;
-	}
+	if (initerr || tn == NULL)
+		goto done;
 
 	sclass = initsym->s_scl;
 
@@ -931,39 +1016,20 @@ init_using_expr(tnode_t *tn)
 	 * be enclosed by braces.
 	 */
 
-	/*
-	 * Local initialization of non-array-types with only one expression
-	 * without braces is done by ASSIGN
-	 */
-	if ((sclass == AUTO || sclass == REG) &&
-	    initsym->s_type->t_tspec != ARRAY && initstk->i_enclosing == NULL) {
-		debug_step("handing over to ASSIGN");
-		ln = new_name_node(initsym, 0);
-		ln->tn_type = tduptyp(ln->tn_type);
-		ln->tn_type->t_const = false;
-		tn = build(ASSIGN, ln, tn);
-		expr(tn, false, false, false, false);
-		/* XXX: why not clean up the initstack here already? */
-		debug_leave();
-		return;
-	}
+	if ((sclass == AUTO || sclass == REG) && init_using_assign(tn))
+		goto done;
 
 	initstack_pop_nobrace();
 
 	if (init_array_using_string(tn)) {
 		debug_step("after initializing the string:");
 		/* XXX: why not clean up the initstack here already? */
-		debug_initstack();
-		debug_leave();
-		return;
+		goto done_initstack;
 	}
 
 	initstack_next_nobrace();
-	if (initerr || tn == NULL) {
-		debug_initstack();
-		debug_leave();
-		return;
-	}
+	if (initerr || tn == NULL)
+		goto done_initstack;
 
 	initstk->i_remaining--;
 	debug_step("%d elements remaining", initstk->i_remaining);
@@ -985,11 +1051,8 @@ init_using_expr(tnode_t *tn)
 
 	debug_step("typeok '%s', '%s'",
 	    type_name(ln->tn_type), type_name(tn->tn_type));
-	if (!typeok(INIT, 0, ln, tn)) {
-		debug_initstack();
-		debug_leave();
-		return;
-	}
+	if (!typeok(INIT, 0, ln, tn))
+		goto done_initstack;
 
 	/*
 	 * Store the tree memory. This is necessary because otherwise
@@ -1009,7 +1072,9 @@ init_using_expr(tnode_t *tn)
 
 	check_non_constant_initializer(tn, sclass);
 
+done_initstack:
 	debug_initstack();
+done:
 	debug_leave();
 }
 
@@ -1063,9 +1128,10 @@ init_array_using_string(tnode_t *tn)
 		 * If the array is already partly initialized, we are
 		 * wrong here.
 		 */
-		if (istk->i_remaining != istk->i_type->t_dim)
+		if (istk->i_remaining != istk->i_type->t_dim) {
 			debug_leave();
 			return false;
+		}
 	} else {
 		debug_leave();
 		return false;
