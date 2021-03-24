@@ -38,6 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define PVSCSI_MAXPHYS				MAXPHYS
 #define PVSCSI_MAXPHYS_SEGS			(PVSCSI_MAXPHYS / PAGE_SIZE)
 
+#define PVSCSI_DEBUG_LOGGING
 
 #ifdef PVSCSI_DEBUG_LOGGING
 #define	DEBUG_PRINTF(level, dev, fmt, ...)				\
@@ -130,7 +131,7 @@ static int pvscsi_probe(device_t, cfdata_t, void *);
 #define pvscsi_get_tunable(_sc, _name, _value)	(_value)
 
 #ifdef PVSCSI_DEBUG_LOGGING
-static int pvscsi_log_level = 0;
+static int pvscsi_log_level = 10;
 #endif
 
 #define TUNABLE_INT(__x, __d)					\
@@ -515,6 +516,7 @@ pvscsi_dma_alloc(struct pvscsi_softc *sc, struct pvscsi_dma *dma,
 		goto dmamapload_fail;
 	}
 
+	dma->paddr = dma->map->dm_segs[0].ds_addr;
 	dma->size = size;
 
 	return 0;
@@ -994,7 +996,7 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 				break;
 			default:
 				DEBUG_PRINTF(1, sc->dev,
-				    "ccb: %p sdstat=0x%x\n", ccb, sdstat);
+				    "xs: %p sdstat=0x%x\n", xs, sdstat);
 //				status = CAM_SCSI_STATUS_ERROR;
 				error = XS_DRIVER_STUFFUP;
 				break;
@@ -1367,8 +1369,8 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	struct scsipi_periph *periph = xs->xs_periph;
 
 	//XXXNH
-	KASSERT(XS_CTL_TAGTYPE(xs) == 1);
-
+	//KASSERT(XS_CTL_TAGTYPE(xs) == 1);
+printf("%s: XS_CTL_TAGTYPE(xs) = %d\n", __func__, XS_CTL_TAGTYPE(xs));
 #if 0
 	/* tag */
 	switch (XS_CTL_TAGTYPE(xs)) {
@@ -1439,7 +1441,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 //		ccb_h->status = XS_NOERROR;
 		goto finish_xs;
 	}
-
 
 	hcb->xs = xs;
 
@@ -1924,31 +1925,6 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 		sc->sc_dmat = pa->pa_dmat;
 	}
 
-#if 0
-	error = bus_dma_tag_create(bus_get_dma_tag(dev), 1, 0,
-	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL, NULL, BUS_SPACE_MAXSIZE,
-	    BUS_SPACE_UNRESTRICTED, BUS_SPACE_MAXSIZE, 0, NULL, NULL,
-	    &sc->parent_dmat);
-	if (error) {
-		aprint_normal_dev(dev, "parent dma tag create failure, error %d\n",
-		    error);
-		pvscsi_free_all(sc);
-		return (ENXIO);
-	}
-
-	error = bus_dma_tag_create(sc->parent_dmat, 1, 0,
-	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL, NULL,
-	    PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT * PAGE_SIZE,
-	    PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT, PAGE_SIZE, BUS_DMA_ALLOCNOW,
-	    NULL, NULL, &sc->buffer_dmat);
-	if (error) {
-		aprint_normal_dev(dev, "parent dma tag create failure, error %d\n",
-		    error);
-		pvscsi_free_all(sc);
-		return (ENXIO);
-	}
-#endif
-
 	error = pvscsi_setup_interrupts(sc, pa);
 	if (error) {
 		aprint_normal_dev(dev, "Interrupt setup failed\n");
@@ -2095,7 +2071,7 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 
 	pvscsi_intr_enable(sc);
 
-	mutex_exit(&sc->lock);
+//	mutex_exit(&sc->lock);
 
 	sc->sc_scsibus_dv = config_found(sc->dev, &sc->sc_channel, scsiprint);
 
