@@ -5,7 +5,6 @@
  */
 
 #include <sys/cdefs.h>
-//__FBSDID("$FreeBSD$");
 __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
@@ -96,12 +95,6 @@ static int pvscsi_intr(void *xsc);
 
 static void pvscsi_scsipi_request(struct scsipi_channel *,
     scsipi_adapter_req_t, void *);
-
-#if 0
-static void pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg,
-    int error);
-static void pvscsi_action(struct cam_sim *sim, union ccb *ccb);
-#endif
 
 static inline uint64_t pvscsi_hcb_to_context(struct pvscsi_softc *sc,
     struct pvscsi_hcb *hcb);
@@ -248,18 +241,11 @@ struct pvscsi_softc {
 	uint32_t	 max_targets;
 	int		 mm_rid;
 	int		 irq_id;
-//	struct resource	*irq_res;
-// 	void		*irq_handler;
 	int		 use_req_call_threshold;
-//	int		 use_msi_or_msix;
-
 
 	pci_chipset_tag_t	 sc_pc;
 	pci_intr_handle_t *	 sc_pihp;
-// 	int			 sc_nintr;
 	void			*sc_ih;
-
-
 
 	uint64_t	rings_state_ppn;
 	uint32_t	req_ring_num_pages;
@@ -345,18 +331,28 @@ pvscsi_kick_io(struct pvscsi_softc *sc, uint8_t cdb0)
 {
 	struct pvscsi_rings_state *s;
 
+	DEBUG_PRINTF(1, sc->dev, "%s: cdb0 %#x\n", __func__, cdb0);
 	if (/*cdb0 == READ_6 ||*/ cdb0 == READ_10  ||
 	    cdb0 == READ_12  || cdb0 == READ_16  ||
 	    /*cdb0 == WRITE_6  ||*/ cdb0 == WRITE_10 ||
 	    cdb0 == WRITE_12 || cdb0 == WRITE_16) {
 		s = sc->rings_state;
 
+		DEBUG_PRINTF(1, sc->dev, "%s req prod %d cons %d ", __func__,
+		    s->req_prod_idx, s->req_cons_idx);
 		if (!sc->use_req_call_threshold ||
 		    (s->req_prod_idx - s->req_cons_idx) >=
 		     s->req_call_threshold) {
 			pvscsi_reg_write(sc, PVSCSI_REG_OFFSET_KICK_RW_IO, 0);
+			DEBUG_PRINTF(1, sc->dev, "kicked\n");
+		} else {
+			DEBUG_PRINTF(1, sc->dev, "wtf\n");
 		}
 	} else {
+		s = sc->rings_state;
+		DEBUG_PRINTF(1, sc->dev, "%s req prod %d cons %d not checked\n", __func__,
+		    s->req_prod_idx, s->req_cons_idx);
+
 		pvscsi_reg_write(sc, PVSCSI_REG_OFFSET_KICK_NON_RW_IO, 0);
 	}
 }
@@ -808,7 +804,9 @@ pvscsi_bus_reset(struct pvscsi_softc *sc)
 
 	DEBUG_PRINTF(2, sc->dev, "bus reset done\n");
 }
+#endif
 
+#if 0
 static void
 pvscsi_device_reset(struct pvscsi_softc *sc, uint32_t target)
 {
@@ -961,7 +959,6 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 		    (unsigned long long)e->context);
 		xs->resid = 0;
 	} else {
-
 		switch (btstat) {
 		case BTSTAT_SUCCESS:
 		case BTSTAT_LINKED_COMMAND_COMPLETED:
@@ -997,7 +994,6 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 			default:
 				DEBUG_PRINTF(1, sc->dev,
 				    "xs: %p sdstat=0x%x\n", xs, sdstat);
-//				status = CAM_SCSI_STATUS_ERROR;
 				error = XS_DRIVER_STUFFUP;
 				break;
 			}
@@ -1064,25 +1060,6 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 // 	mutex_exit(&sc->sc_mutex);
 	scsipi_done(xs);
 // 	mutex_enter(&sc->sc_mutex);
-
-
-
-
-
-
-// 	ccb->ccb_h.status =
-// 	    status | (ccb->ccb_h.status & ~(CAM_STATUS_MASK | CAM_SIM_QUEUED));
-//
-// 	if (sc->frozen) {
-// 		ccb->ccb_h.status |= CAM_RELEASE_SIMQ;
-// 		sc->frozen = 0;
-// 	}
-//
-// 	if (status != XS_NOERROR) {
-// 		ccb->ccb_h.status |= CAM_DEV_QFRZN;
-// 		xpt_freeze_devq(ccb->ccb_h.path, /*count*/ 1);
-// 	}
-// 	xpt_done(ccb);
 }
 
 static void
@@ -1158,8 +1135,6 @@ pvscsi_process_msg(struct pvscsi_softc *sc, struct pvscsi_ring_msg_desc *e)
 			};
 
 		}
-//
-//		xpt_rescan(ccb);
 	} break;
 	default:
 		aprint_normal_dev(sc->dev, "Unknown msg type 0x%x\n", e->type);
@@ -1250,99 +1225,6 @@ pvscsi_intr(void *xsc)
 // 	pvscsi_intr_locked(sc);
 // }
 
-#if 0
-static void
-pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
-{
-	struct pvscsi_hcb *hcb;
-	struct pvscsi_ring_req_desc *e;
-	union ccb *ccb;
-	struct pvscsi_softc *sc;
-	struct pvscsi_rings_state *s;
-	uint8_t cdb0;
-	int op;
-
-	hcb = arg;
-	ccb = hcb->ccb;
-	e = hcb->e;
-	sc = ccb->ccb_h.ccb_pvscsi_sc;
-	s = sc->rings_state;
-
-	KASSERT(mutex_owned(&sc->lock));
-
-	if (error) {
-		aprint_normal_dev(sc->dev, "pvscsi_execute_ccb error %d\n", error);
-
-		if (error == EFBIG) {
-			ccb->ccb_h.status = CAM_REQ_TOO_BIG;
-		} else {
-			ccb->ccb_h.status = XS_NOERROR_ERR;
-		}
-
-		pvscsi_hcb_put(sc, hcb);
-		xpt_done(ccb);
-		return;
-	}
-
-	e->flags = 0;
-	op = 0;
-	switch (ccb->ccb_h.flags & CAM_DIR_MASK) {
-	case CAM_DIR_NONE:
-		e->flags |= PVSCSI_FLAG_CMD_DIR_NONE;
-		break;
-	case CAM_DIR_IN:
-		e->flags |= PVSCSI_FLAG_CMD_DIR_TOHOST;
-		op = BUS_DMASYNC_PREREAD;
-		break;
-	case CAM_DIR_OUT:
-		e->flags |= PVSCSI_FLAG_CMD_DIR_TODEVICE;
-		op = BUS_DMASYNC_PREWRITE;
-		break;
-	case CAM_DIR_BOTH:
-		/* TODO: does this need handling? */
-		break;
-	}
-
-	if (nseg != 0) {
-		if (nseg > 1) {
-			int i;
-			struct pvscsi_sg_element *sge;
-
-			KASSERTMSG(nseg <= PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT,
-			    "too many sg segments");
-
-			sge = hcb->sg_list->sge;
-			e->flags |= PVSCSI_FLAG_CMD_WITH_SG_LIST;
-
-			for (i = 0; i < nseg; ++i) {
-				sge[i].addr = segs[i].ds_addr;
-				sge[i].length = segs[i].ds_len;
-				sge[i].flags = 0;
-			}
-
-			e->data_addr = hcb->sg_list_paddr;
-		} else {
-			e->data_addr = segs->ds_addr;
-		}
-
-		bus_dmamap_sync(sc->sc_dmat, hcb->dma_map, op);
-	} else {
-		e->data_addr = 0;
-	}
-
-	cdb0 = e->cdb[0];
-	ccb->ccb_h.status |= CAM_SIM_QUEUED;
-
-	if (ccb->ccb_h.timeout != CAM_TIME_INFINITY) {
-		callout_reset_sbt(&hcb->callout, ccb->ccb_h.timeout * SBT_1MS,
-		    0, pvscsi_timeout, hcb, 0);
-	}
-
-	membar_produer();
-	s->req_prod_idx++;
-	pvscsi_kick_io(sc, cdb0);
-}
-#endif
 
 
 static void
@@ -1370,7 +1252,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 
 	//XXXNH
 	//KASSERT(XS_CTL_TAGTYPE(xs) == 1);
-printf("%s: XS_CTL_TAGTYPE(xs) = %d\n", __func__, XS_CTL_TAGTYPE(xs));
 #if 0
 	/* tag */
 	switch (XS_CTL_TAGTYPE(xs)) {
@@ -1465,12 +1346,7 @@ printf("%s: XS_CTL_TAGTYPE(xs) = %d\n", __func__, XS_CTL_TAGTYPE(xs));
 	memset(e, 0, sizeof(*e));
 	e->bus = 0;				/* From OpenBSD */
 	e->target = periph->periph_target;
-	//memset(e->lun, 0, sizeof(e->lun));
 	e->lun[0] = periph->periph_lun;
-//	e->lun[0] = 1;                                    	/* from vioscsi */
-//	e->lun[1] = periph->periph_target;                      /* from vioscsi */
-//	e->lun[2] = 0x40 | ((periph->periph_lun >> 8) & 0x3F);  /* from vioscsi */
-//	e->lun[3] = periph->periph_lun & 0xFF;                  /* from vioscsi */
 	e->data_addr = 0;
 	e->data_len = xs->datalen;
 	e->vcpu_hint = cpu_index(curcpu());
@@ -1484,11 +1360,7 @@ printf("%s: XS_CTL_TAGTYPE(xs) = %d\n", __func__, XS_CTL_TAGTYPE(xs));
 	if (e->sense_len > 0) {
 		e->sense_addr = hcb->sense_buffer_paddr;
 	}
-
-// 	if (ccb_h->flags & CAM_TAG_ACTION_VALID) {
-// 		e->tag = csio->tag_action;
-// 	}
-	e->tag = MSG_SIMPLE_Q_TAG;
+	e->tag = xs->xs_tag_type;
 
 	switch (xs->xs_control & (XS_CTL_DATA_IN | XS_CTL_DATA_OUT)) {
 	case XS_CTL_DATA_IN:
@@ -1564,17 +1436,28 @@ printf("%s: XS_CTL_TAGTYPE(xs) = %d\n", __func__, XS_CTL_TAGTYPE(xs));
 		e->data_addr = 0;
 	}
 
+	DEBUG_PRINTF(1, sc->dev, "e->data_addr  %#lx\n", e->data_addr);
+	DEBUG_PRINTF(1, sc->dev, "e->data_len   %#lx\n", e->data_len);
+	DEBUG_PRINTF(1, sc->dev, "e->sense_addr %#lx\n", e->sense_addr);
+	DEBUG_PRINTF(1, sc->dev, "e->sense_len  %#x\n", e->sense_len);
+	DEBUG_PRINTF(1, sc->dev, "e->flags      %#x\n", e->flags);
+	DEBUG_PRINTF(1, sc->dev, "e->cdb_len    %#x\n", e->cdb_len);
+	DEBUG_PRINTF(1, sc->dev, "e->cdb[0]     %#x\n", e->cdb[0]);
+
+	DEBUG_PRINTF(1, sc->dev, "e->tag        %d\n", e->tag);
+	DEBUG_PRINTF(1, sc->dev, "e->bus        %d\n", e->bus);
+	DEBUG_PRINTF(1, sc->dev, "e->target     %d\n", e->target);
+	DEBUG_PRINTF(1, sc->dev, "e->lun[0]     %d\n", e->lun[0]);
+	DEBUG_PRINTF(1, sc->dev, "e->lun[1]     %d\n", e->lun[1]);
+	DEBUG_PRINTF(1, sc->dev, "e->lun[2]     %d\n", e->lun[2]);
+	DEBUG_PRINTF(1, sc->dev, "e->lun[3]     %d\n", e->lun[3]);
+
+
 	const bus_dmamap_t rrmap = sc->req_ring_dma.map;
 	bus_dmamap_sync(sc->sc_dmat, rrmap, rridx * sizeof(*e),
 	    sizeof(*e), BUS_DMASYNC_PREWRITE);
 
 	uint8_t cdb0 = e->cdb[0];
-//	ccb->ccb_h.status |= CAM_SIM_QUEUED;
-
-// 	if (ccb->ccb_h.timeout != CAM_TIME_INFINITY) {
-// 		callout_reset_sbt(&hcb->callout, ccb->ccb_h.timeout * SBT_1MS,
-// 		    0, pvscsi_timeout, hcb, 0);
-// 	}
 
 	//membar_producer();
 
@@ -1596,11 +1479,6 @@ printf("%s: XS_CTL_TAGTYPE(xs) = %d\n", __func__, XS_CTL_TAGTYPE(xs));
 finish_xs:
 	mutex_exit(&sc->lock);
 	scsipi_done(xs);
-
-// 		if (hcb != NULL) {
-// 			pvscsi_hcb_put(sc, hcb);
-// 		}
-// 		xpt_done(ccb);
 }
 
 #if 0
@@ -1714,31 +1592,16 @@ pvscsi_free_interrupts(struct pvscsi_softc *sc)
 		pci_intr_release(sc->sc_pc, sc->sc_pihp, 1);
 		sc->sc_pihp = NULL;
 	}
-// 	if (sc->irq_handler != NULL) {
-// 		bus_teardown_intr(sc->dev, sc->irq_res, sc->irq_handler);
-// 	}
-// 	if (sc->irq_res != NULL) {
-// 		bus_release_resource(sc->dev, SYS_RES_IRQ, sc->irq_id,
-// 		    sc->irq_res);
-// 	}
-// 	if (sc->use_msi_or_msix) {
-// 		pci_release_msi(sc->dev);
-// 	}
 }
 
 static int
 pvscsi_setup_interrupts(struct pvscsi_softc *sc, const struct pci_attach_args *pa)
 {
-// 	int error;
-// 	int flags;
 	int use_msix;
 	int use_msi;
-// 	int count;
-
-// 	sc->use_msi_or_msix = 0;
-//
 	int counts[PCI_INTR_TYPE_SIZE];
-	for (int i = 0; i < PCI_INTR_TYPE_SIZE; i++) {
+
+	for (size_t i = 0; i < PCI_INTR_TYPE_SIZE; i++) {
 		counts[i] = 1;
 	}
 
@@ -1801,22 +1664,6 @@ static void
 pvscsi_free_all(struct pvscsi_softc *sc)
 {
 
-// 	if (sc->sim) {
-// 		int32_t status;
-//
-// 		if (sc->bus_path) {
-// 			xpt_free_path(sc->bus_path);
-// 		}
-//
-// 		status = xpt_bus_deregister(cam_sim_path(sc->sim));
-// 		if (status != XS_NOERROR) {
-// 			aprint_normal_dev(sc->dev,
-// 			    "Error deregistering bus, status=%d\n", status);
-// 		}
-//
-// 		cam_sim_free(sc->sim, TRUE);
-// 	}
-//
 	pvscsi_dma_free_per_hcb(sc, sc->hcb_cnt);
 
 	if (sc->hcbs) {
@@ -1826,19 +1673,6 @@ pvscsi_free_all(struct pvscsi_softc *sc)
 	pvscsi_free_rings(sc);
 
 	pvscsi_free_interrupts(sc);
-
-// 	if (sc->buffer_dmat != NULL) {
-// 		bus_dma_tag_destroy(sc->buffer_dmat);
-// 	}
-
-// 	if (sc->parent_dmat != NULL) {
-// 		bus_dma_tag_destroy(sc->parent_dmat);
-// 	}
-
-// 	if (sc->mm_res != NULL) {
-// 		bus_release_resource(sc->dev, SYS_RES_MEMORY, sc->mm_rid,
-// 		    sc->mm_res);
-// 	}
 
 	if (sc->sc_mems) {
 		bus_space_unmap(sc->sc_memt, sc->sc_memh, sc->sc_mems);
@@ -1867,7 +1701,6 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	const struct pci_attach_args *pa = aux;
 	struct pvscsi_softc *sc;
 	int rid;
-// 	int barid;
 	int error;
 	int max_queue_depth;
 	int adapter_queue_size;
@@ -1969,11 +1802,6 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	aprint_normal_dev(sc->dev, "MSG num pages: %d\n", sc->msg_ring_num_pages);
 	aprint_normal_dev(sc->dev, "Queue size: %d\n", adapter_queue_size);
 
-// 	aprint_normal_dev(sc->dev,
-// 	    "cmd_per_lun %u qsize %d seg_max %u max_target %hu"
-// 	    " max_lun %u\n",
-// 	    cmd_per_lun, qsize, seg_max, max_target, max_lun);
-
 	if (pvscsi_allocate_rings(sc)) {
 		aprint_normal_dev(dev, "ring allocation failed\n");
 		pvscsi_free_all(sc);
@@ -1991,16 +1819,6 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 
 	pvscsi_adapter_reset(sc);
 
-#if 0
-
-	devq = cam_simq_alloc(adapter_queue_size);
-	if (devq == NULL) {
-		aprint_normal_dev(dev, "cam devq alloc failed\n");
-		pvscsi_free_all(sc);
-		return;
-	}
-#endif
-
 #define cmd_per_lun 64		/* XXXNH linux driver??? */
 #define max_lun 8		/* XXXNH openbsd driver??? */
 #define max_target 16		/* XXXNH mirror MIN(..., 16) below :S */
@@ -2017,7 +1835,6 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	adapt->adapt_minphys = minphys;
 
 
-
 	/*
 	 * Fill in the scsipi_channel.
 	 */
@@ -2029,38 +1846,8 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	chan->chan_nluns = MIN(max_lun, 1024);		/* cap reasonably */
 	chan->chan_id = max_target;
 	chan->chan_flags = SCSIPI_CHAN_NOSETTLE;
-	/*
-	 * XXX Remove this when scsipi is REPORT LUNS-aware.
-	 * scsipi(4) insists that LUNs must be contiguous starting from 0.
-	 * This is not true on Linode (circa 2020).
-	 *
-	 * Also if explicitly selecting the 'Virtio SCSI Single'
-	 * controller (which is not the default SCSI controller) on
-	 * Proxmox hosts, each disk will be on its own scsi bus at
-	 * target 0 but unexpectedly on a LUN matching the drive number
-	 * on the system (i.e. drive 0 will be bus 0, target 0, lun
-	 * 0; drive 1 will be bus 1, target 0, lun 1, drive 2 will be
-	 * bus 2, target 0, lun 2 -- which is where the gaps start
-	 * happening). https://bugzilla.proxmox.com/show_bug.cgi?id=2985
-	 */
-	chan->chan_defquirks = PQUIRK_FORCELUNS;
 
-
-
-
-#if 0
-	sc->sim = cam_sim_alloc(pvscsi_action, pvscsi_poll, "pvscsi", sc,
-	    device_get_unit(dev), &sc->lock, 1, adapter_queue_size, devq);
-	if (sc->sim == NULL) {
-		aprint_normal_dev(dev, "cam sim alloc failed\n");
-		cam_simq_free(devq);
-		pvscsi_free_all(sc);
-		return;
-	}
-
-#endif
-
-
+	//chan->chan_defquirks = PQUIRK_FORCELUNS;
 
 	pvscsi_setup_rings(sc);
 	if (sc->use_msg) {
@@ -2070,8 +1857,6 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	sc->use_req_call_threshold = pvscsi_setup_req_call(sc, 1);
 
 	pvscsi_intr_enable(sc);
-
-//	mutex_exit(&sc->lock);
 
 	sc->sc_scsibus_dv = config_found(sc->dev, &sc->sc_channel, scsiprint);
 
@@ -2088,10 +1873,6 @@ pvscsi_detach(device_t dev, int flags)
 	pvscsi_intr_disable(sc);
 	pvscsi_adapter_reset(sc);
 
-// 	if (sc->irq_handler != NULL) {
-// 		bus_teardown_intr(dev, sc->irq_res, sc->irq_handler);
-// 	}
-
 	mutex_enter(&sc->lock);
 	pvscsi_free_all(sc);
 	mutex_exit(&sc->lock);
@@ -2100,23 +1881,3 @@ pvscsi_detach(device_t dev, int flags)
 
 	return (0);
 }
-
-#if 0
-static device_method_t pvscsi_methods[] = {
-	DEVMETHOD(device_probe, pvscsi_probe),
-	DEVMETHOD(device_shutdown, pvscsi_shutdown),
-	DEVMETHOD(device_attach, pvscsi_attach),
-	DEVMETHOD(device_detach, pvscsi_detach),
-	DEVMETHOD_END
-};
-
-static driver_t pvscsi_driver = {
-	"pvscsi", pvscsi_methods, sizeof(struct pvscsi_softc)
-};
-
-static devclass_t pvscsi_devclass;
-DRIVER_MODULE(pvscsi, pci, pvscsi_driver, pvscsi_devclass, 0, 0);
-
-MODULE_DEPEND(pvscsi, pci, 1, 1, 1);
-MODULE_DEPEND(pvscsi, cam, 1, 1, 1);
-#endif
