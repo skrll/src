@@ -28,6 +28,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/scsipi/scsi_message.h>
 #include <dev/scsipi/scsiconf.h>
 #include <dev/scsipi/scsipi_disk.h>
+#include <dev/scsipi/scsi_disk.h>
 
 #include "pvscsi.h"
 
@@ -187,7 +188,7 @@ struct pvscsi_sg_list {
 
 struct pvscsi_hcb {
 	struct scsipi_xfer 		*xs;
-	struct pvscsi_softc		*sc;	// XXX needed?
+	struct pvscsi_softc		*sc;	// XXX needed? depends on callout
 
 	struct pvscsi_ring_req_desc	*e;
 	int				 recovery;
@@ -332,9 +333,9 @@ pvscsi_kick_io(struct pvscsi_softc *sc, uint8_t cdb0)
 	struct pvscsi_rings_state *s;
 
 	DEBUG_PRINTF(1, sc->dev, "%s: cdb0 %#x\n", __func__, cdb0);
-	if (/*cdb0 == READ_6 ||*/ cdb0 == READ_10  ||
+	if (cdb0 == SCSI_READ_6_COMMAND || cdb0 == READ_10  ||
 	    cdb0 == READ_12  || cdb0 == READ_16  ||
-	    /*cdb0 == WRITE_6  ||*/ cdb0 == WRITE_10 ||
+	    cdb0 == SCSI_WRITE_6_COMMAND  || cdb0 == WRITE_10 ||
 	    cdb0 == WRITE_12 || cdb0 == WRITE_16) {
 		s = sc->rings_state;
 
@@ -746,6 +747,17 @@ pvscsi_setup_rings(struct pvscsi_softc *sc)
 
 	pvscsi_write_cmd(sc, PVSCSI_CMD_SETUP_RINGS, &cmd, sizeof(cmd));
 
+	struct pvscsi_rings_state *s = sc->rings_state;
+
+	aprint_verbose_dev(sc->dev, "req ring size %d\n",
+	    1U << s->req_num_entries_log2);
+	aprint_verbose_dev(sc->dev, "cmp ring size %d\n",
+	    1U << s->req_num_entries_log2);
+	aprint_verbose_dev(sc->dev, "msg ring size %d\n",
+	    1U << s->req_num_entries_log2);
+	aprint_verbose_dev(sc->dev, "req threshold %d\n",
+	    1U << s->req_call_threshold);
+
 	//bus_dma clean the setup page
 }
 
@@ -941,15 +953,18 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 	btstat = e->host_status;
 	sdstat = e->scsi_status;
 
-	xs->status = sdstat;		// XXXNH check this
+	xs->status = sdstat;
 	xs->resid = xs->datalen - e->data_len;
+
+	DEBUG_PRINTF(3, sc->dev,
+	    "command context %llx btstat %d (%#x) sdstat %d (%#x)\n",
+	    (unsigned long long)e->context, btstat, btstat, sdstat, sdstat);
 
 	if ((xs->xs_control & XS_CTL_DATA_IN) == XS_CTL_DATA_IN) {
 		op = BUS_DMASYNC_POSTREAD;
 	} else {
 		op = BUS_DMASYNC_POSTWRITE;
 	}
-	//XXXNH sense buffer? Apparently so...
 	bus_dmamap_sync(sc->sc_dmat, sc->sense_buffer_dma.map,
 	    hcb->dma_map_offset, hcb->dma_map_size, op);
 
@@ -969,19 +984,12 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 				error = XS_NOERROR;
 				break;
 			case SCSI_CHECK:
-	//			status = CAM_SCSI_STATUS_ERROR;
-	#if 0
-				if (ccb->csio.sense_len != 0) {
-					status |= CAM_AUTOSNS_VALID;
+				error = XS_SENSE;
+				xs->resid = 0;
 
-					memset(&ccb->csio.sense_data, 0,
-					    sizeof(ccb->csio.sense_data));
-					memcpy(&ccb->csio.sense_data,
-					    hcb->sense_buffer,
-					    MIN(ccb->csio.sense_len,
-						e->sense_len));
-				}
-	#endif
+				memset(&xs->sense, 0, sizeof(xs->sense));
+				memcpy(&xs->sense, hcb->sense_buffer,
+				    MIN(sizeof(xs->sense), e->sense_len));
 				break;
 			case SCSI_BUSY:
 			case SCSI_QUEUE_FULL:
@@ -1053,13 +1061,9 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 	}
 
 	xs->error = error;
-//	ccb->ccb_h.ccb_pvscsi_hcb = NULL;
-//	ccb->ccb_h.ccb_pvscsi_sc = NULL;
 	pvscsi_hcb_put(sc, hcb);
 
-// 	mutex_exit(&sc->sc_mutex);
 	scsipi_done(xs);
-// 	mutex_enter(&sc->sc_mutex);
 }
 
 static void
@@ -1122,7 +1126,6 @@ pvscsi_process_msg(struct pvscsi_softc *sc, struct pvscsi_ring_msg_desc *e)
 			    desc->target, desc->lun[1]) != 0) {
 				aprint_normal_dev(sc->dev,
 				    "Error creating path for dev change.\n");
-//				xpt_free_ccb(ccb);
 				break;
 			}
 		} else {
@@ -1249,32 +1252,10 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	/* request is ADAPTER_REQ_RUN_XFER */
 	struct scsipi_xfer *xs = arg;
 	struct scsipi_periph *periph = xs->xs_periph;
-
-	//XXXNH
-	//KASSERT(XS_CTL_TAGTYPE(xs) == 1);
-#if 0
-	/* tag */
-	switch (XS_CTL_TAGTYPE(xs)) {
-	case XS_CTL_HEAD_TAG:
-		req->task_attr = VIRTIO_SCSI_S_HEAD;
-		break;
-
-#if 0	/* XXX */
-	case XS_CTL_ACA_TAG:
-		req->task_attr = VIRTIO_SCSI_S_ACA;
-		break;
+#ifdef SCSIPI_DEBUG
+	periph->periph_dbflags |= SCSIPI_DEBUG_FLAGS;
 #endif
 
-	case XS_CTL_ORDERED_TAG:
-		req->task_attr = VIRTIO_SCSI_S_ORDERED;
-		break;
-
-	case XS_CTL_SIMPLE_TAG:
-	default:
-		req->task_attr = VIRTIO_SCSI_S_SIMPLE;
-		break;
-	}
-#endif
 	uint32_t req_num_entries_log2;
 	struct pvscsi_ring_req_desc *ring;
 	struct pvscsi_ring_req_desc *e;
@@ -1310,7 +1291,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		    "Not enough room on completion ring.\n");
 		pvscsi_freeze(sc);
 		xs->error = XS_RESOURCE_SHORTAGE;
-//		ccb_h->status = XS_NOERROR;
 		goto finish_xs;
 	}
 
@@ -1319,7 +1299,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		aprint_normal_dev(sc->dev, "No free hcbs.\n");
 		xs->error = XS_RESOURCE_SHORTAGE;
 		pvscsi_freeze(sc);
-//		ccb_h->status = XS_NOERROR;
 		goto finish_xs;
 	}
 
@@ -1329,24 +1308,16 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		DEBUG_PRINTF(2, sc->dev, "cdb length %u too large\n",
 		    xs->cmdlen);
 		xs->error = XS_DRIVER_STUFFUP;
-//		ccb_h->status = CAM_REQ_INVALID;
 		goto finish_xs;
 	}
-
-// 	if (ccb_h->flags & CAM_CDB_PHYS) {
-// 		DEBUG_PRINTF(2, sc->dev,
-// 		    "CAM_CDB_PHYS not implemented\n");
-// 		ccb_h->status = CAM_REQ_INVALID;
-// 		goto finish_xs;
-// 	}
 
 	const size_t rridx = s->req_prod_idx & MASK(req_num_entries_log2);
 	e = ring + rridx;
 
 	memset(e, 0, sizeof(*e));
-	e->bus = 0;				/* From OpenBSD */
+	e->bus = 0;
 	e->target = periph->periph_target;
-	e->lun[0] = periph->periph_lun;
+	e->lun[1] = periph->periph_lun;
 	e->data_addr = 0;
 	e->data_len = xs->datalen;
 	e->vcpu_hint = cpu_index(curcpu());
@@ -1356,11 +1327,12 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	memcpy(e->cdb, xs->cmd, xs->cmdlen);
 
 	e->sense_addr = 0;
-	e->sense_len = sizeof(xs->sense);;
+	e->sense_len = sizeof(xs->sense);
 	if (e->sense_len > 0) {
 		e->sense_addr = hcb->sense_buffer_paddr;
 	}
-	e->tag = xs->xs_tag_type;
+	//e->tag = xs->xs_tag_type;
+	e->tag = MSG_SIMPLE_Q_TAG;
 
 	switch (xs->xs_control & (XS_CTL_DATA_IN | XS_CTL_DATA_OUT)) {
 	case XS_CTL_DATA_IN:
@@ -1419,8 +1391,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 				sge[i].flags = 0;
 			}
 
-			//XXXNH
-		//	bus_dmamap_t *dmap = hcb->sg_list_dma->dma_map;
 			e->data_addr = hcb->sg_list_paddr;
 
 			bus_dmamap_sync(sc->sc_dmat,
@@ -1443,6 +1413,11 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	DEBUG_PRINTF(1, sc->dev, "e->flags      %#x\n", e->flags);
 	DEBUG_PRINTF(1, sc->dev, "e->cdb_len    %#x\n", e->cdb_len);
 	DEBUG_PRINTF(1, sc->dev, "e->cdb[0]     %#x\n", e->cdb[0]);
+	DEBUG_PRINTF(1, sc->dev, "e->cdb[1]     %#x\n", e->cdb[1]);
+	DEBUG_PRINTF(1, sc->dev, "e->cdb[2]     %#x\n", e->cdb[2]);
+	DEBUG_PRINTF(1, sc->dev, "e->cdb[3]     %#x\n", e->cdb[3]);
+	DEBUG_PRINTF(1, sc->dev, "e->cdb[4]     %#x\n", e->cdb[4]);
+	DEBUG_PRINTF(1, sc->dev, "e->cdb[5]     %#x\n", e->cdb[5]);
 
 	DEBUG_PRINTF(1, sc->dev, "e->tag        %d\n", e->tag);
 	DEBUG_PRINTF(1, sc->dev, "e->bus        %d\n", e->bus);
@@ -1451,7 +1426,6 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	DEBUG_PRINTF(1, sc->dev, "e->lun[1]     %d\n", e->lun[1]);
 	DEBUG_PRINTF(1, sc->dev, "e->lun[2]     %d\n", e->lun[2]);
 	DEBUG_PRINTF(1, sc->dev, "e->lun[3]     %d\n", e->lun[3]);
-
 
 	const bus_dmamap_t rrmap = sc->req_ring_dma.map;
 	bus_dmamap_sync(sc->sc_dmat, rrmap, rridx * sizeof(*e),
@@ -1740,7 +1714,7 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	}
 
 	memh_valid = (pci_mapreg_map(pa, rid, regt, 0, &memt, &memh,
-	    /*&membase*/ NULL, &mems) == 0);
+	    NULL, &mems) == 0);
 	if (!memh_valid) {
 		aprint_error_dev(dev,
 		    "unable to map device registers\n");
@@ -1834,7 +1808,6 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	adapt->adapt_request = pvscsi_scsipi_request;
 	adapt->adapt_minphys = minphys;
 
-
 	/*
 	 * Fill in the scsipi_channel.
 	 */
@@ -1846,8 +1819,6 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 	chan->chan_nluns = MIN(max_lun, 1024);		/* cap reasonably */
 	chan->chan_id = max_target;
 	chan->chan_flags = SCSIPI_CHAN_NOSETTLE;
-
-	//chan->chan_defquirks = PQUIRK_FORCELUNS;
 
 	pvscsi_setup_rings(sc);
 	if (sc->use_msg) {
