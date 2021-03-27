@@ -1,4 +1,4 @@
-/* $NetBSD: dwcmmc_fdt.c,v 1.17 2021/03/23 22:27:38 jmcneill Exp $ */
+/* $NetBSD: dwcmmc_fdt.c,v 1.18 2021/03/24 18:19:31 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015-2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dwcmmc_fdt.c,v 1.17 2021/03/23 22:27:38 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dwcmmc_fdt.c,v 1.18 2021/03/24 18:19:31 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

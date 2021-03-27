@@ -1,4 +1,4 @@
-/* $NetBSD: aarch64_machdep.c,v 1.58 2021/03/21 07:32:44 skrll Exp $ */
+/* $NetBSD: aarch64_machdep.c,v 1.60 2021/03/25 07:31:56 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.58 2021/03/21 07:32:44 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.60 2021/03/25 07:31:56 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cpuoptions.h"
@@ -215,12 +215,14 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
  *               0xffff_ffff_ffe0_0000  End of KVA
  *                                      = VM_MAX_KERNEL_ADDRESS
  *
+ *               0xffff_c000_4000_0000  Start of KVA
+ *
  *               0xffff_c000_0???_????  End of kernel
  *                                      = _end[]
  *               0xffff_c000_00??_????  Start of kernel
  *                                      = __kernel_text[]
  *
- *               0xffff_c000_0000_0000  Kernel base address & start of KVA
+ *               0xffff_c000_0000_0000  Kernel base address
  *                                      = VM_MIN_KERNEL_ADDRESS
  *
  *               0xffff_bfff_ffff_ffff  End of direct mapped
@@ -249,7 +251,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	vaddr_t kernstart, kernend;
 	vaddr_t kernstart_l2 __unused, kernend_l2;	/* L2 table 2MB aligned */
 	vaddr_t kernelvmstart;
-	int i;
+	size_t i;
 
 	cputype = cpu_idnum();	/* for compatible arm */
 
@@ -380,6 +382,10 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		end = start + bootconfig.dram[i].pages;
 
 		int vm_freelist = VM_FREELIST_DEFAULT;
+
+		VPRINTF("block %2zu start %08lx  end %08lx\n", i, ptoa(start),
+		    ptoa(end));
+
 		/*
 		 * This assumes the bp list is sorted in ascending
 		 * order.
@@ -401,6 +407,10 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 					segend = bp_end;
 				}
 				vm_freelist = bp[j].bp_freelist;
+
+				VPRINTF("         start %08lx  end %08lx"
+				    "... loading in freelist %d\n", ptoa(start),
+				    ptoa(segend), vm_freelist);
 
 				uvm_page_physload(start, segend, start, segend,
 				    vm_freelist);

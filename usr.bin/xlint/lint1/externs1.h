@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.84 2021/03/23 18:40:50 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.91 2021/03/27 12:42:22 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -93,11 +93,10 @@ extern	int	yylex(void);
 /*
  * mem1.c
  */
-extern	const	char *fnalloc(const char *);
-extern	const	char *fnnalloc(const char *, size_t);
-extern	int	getfnid(const char *);
-extern	void	fnaddreplsrcdir(char *);
-extern	const char *fnxform(const char *, size_t);
+extern	const	char *record_filename(const char *, size_t);
+extern	int	get_filename_id(const char *);
+extern	void	add_directory_replacement(char *);
+extern	const char *transform_filename(const char *, size_t);
 
 extern	void	initmem(void);
 
@@ -125,7 +124,7 @@ extern	void	warning(int, ...);
 extern	void	message(int, ...);
 extern	void	gnuism(int, ...);
 extern	void	c99ism(int, ...);
-extern	void	lerror(const char *, int, const char *, ...)
+extern	void	internal_error(const char *, int, const char *, ...)
      __attribute__((__noreturn__,__format__(__printf__, 3, 4)));
 extern	void	assert_failed(const char *, int, const char *, const char *)
 		__attribute__((__noreturn__));
@@ -148,8 +147,8 @@ extern	void	add_type(type_t *);
 extern	void	add_qualifier(tqual_t);
 extern	void	addpacked(void);
 extern	void	add_attr_used(void);
-extern	void	pushdecl(scl_t);
-extern	void	popdecl(void);
+extern	void	begin_declaration_level(scl_t);
+extern	void	end_declaration_level(void);
 extern	void	setasm(void);
 extern	void	clrtyp(void);
 extern	void	deftyp(void);
@@ -252,8 +251,8 @@ extern	bool	bitfieldtype_ok;
 extern	bool	plibflg;
 extern	bool	quadflg;
 
-extern	void	pushctrl(int);
-extern	void	popctrl(int);
+extern	void	begin_control_statement(control_statement_kind);
+extern	void	end_control_statement(control_statement_kind);
 extern	void	check_statement_reachable(void);
 extern	void	funcdef(sym_t *);
 extern	void	funcend(void);
@@ -301,8 +300,8 @@ extern	void	initstack_init(void);
 extern	void	init_rbrace(void);
 extern	void	init_lbrace(void);
 extern	void	init_using_expr(tnode_t *);
-extern	void	designator_push_name(sbuf_t *);
-extern	void	designator_push_subscript(range_t);
+extern	void	designation_add_name(sbuf_t *);
+extern	void	designation_add_subscript(range_t);
 
 /*
  * emit.c

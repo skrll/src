@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.159 2021/03/23 18:40:50 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.164 2021/03/27 12:42:22 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.159 2021/03/23 18:40:50 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.164 2021/03/27 12:42:22 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -91,7 +91,7 @@ initdecl(void)
 	int i;
 
 	/* declaration stack */
-	dcs = xcalloc(1, sizeof (dinfo_t));
+	dcs = xcalloc(1, sizeof *dcs);
 	dcs->d_ctx = EXTERN;
 	dcs->d_ldlsym = &dcs->d_dlsyms;
 
@@ -99,7 +99,7 @@ initdecl(void)
 	inittyp();
 
 	/* shared type structures */
-	typetab = xcalloc(NTSPEC, sizeof (type_t));
+	typetab = xcalloc(NTSPEC, sizeof *typetab);
 	for (i = 0; i < NTSPEC; i++)
 		typetab[i].t_tspec = NOTSPEC;
 	typetab[BOOL].t_tspec = BOOL;
@@ -148,7 +148,7 @@ duptyp(const type_t *tp)
 {
 	type_t	*ntp;
 
-	ntp = getblk(sizeof (type_t));
+	ntp = getblk(sizeof(*ntp));
 	*ntp = *tp;
 	return ntp;
 }
@@ -162,7 +162,7 @@ tduptyp(const type_t *tp)
 {
 	type_t	*ntp;
 
-	ntp = tgetblk(sizeof (type_t));
+	ntp = tgetblk(sizeof *ntp);
 	*ntp = *tp;
 	return ntp;
 }
@@ -588,18 +588,18 @@ add_qualifier(tqual_t q)
  * argument declaration lists ...)
  */
 void
-pushdecl(scl_t sc)
+begin_declaration_level(scl_t sc)
 {
 	dinfo_t	*di;
 
 	/* put a new element on the declaration stack */
-	di = xcalloc(1, sizeof (dinfo_t));
+	di = xcalloc(1, sizeof *di);
 	di->d_next = dcs;
 	dcs = di;
 	di->d_ctx = sc;
 	di->d_ldlsym = &di->d_dlsyms;
 	if (dflag)
-		(void)printf("pushdecl(%p %d)\n", dcs, (int)sc);
+		(void)printf("%s(%p %d)\n", __func__, dcs, (int)sc);
 
 }
 
@@ -607,12 +607,12 @@ pushdecl(scl_t sc)
  * Go back to previous declaration level
  */
 void
-popdecl(void)
+end_declaration_level(void)
 {
 	dinfo_t	*di;
 
 	if (dflag)
-		(void)printf("popdecl(%p %d)\n", dcs, (int)dcs->d_ctx);
+		(void)printf("%s(%p %d)\n", __func__, dcs, (int)dcs->d_ctx);
 
 	lint_assert(dcs->d_next != NULL);
 	di = dcs;
@@ -823,7 +823,7 @@ deftyp(void)
 		case LCOMPLEX:
 			break;
 		default:
-			LERROR("deftyp(%s)", tspec_name(t));
+			INTERNAL_ERROR("deftyp(%s)", tspec_name(t));
 		}
 		if (t != INT && t != CHAR && (s != NOTSPEC || l != NOTSPEC)) {
 			dcs->d_terr = true;
@@ -909,7 +909,7 @@ length(const type_t *tp, const char *name)
 	switch (tp->t_tspec) {
 	case FUNC:
 		/* compiler takes size of function */
-		LERROR("%s", msgs[12]);
+		INTERNAL_ERROR("%s", msgs[12]);
 		/* NOTREACHED */
 	case STRUCT:
 	case UNION:
@@ -928,7 +928,7 @@ length(const type_t *tp, const char *name)
 	default:
 		elsz = size_in_bits(tp->t_tspec);
 		if (elsz <= 0)
-			LERROR("length(%d)", elsz);
+			INTERNAL_ERROR("length(%d)", elsz);
 		break;
 	}
 	return elem * elsz;
@@ -1260,7 +1260,7 @@ bitfield(sym_t *dsym, int len)
 {
 
 	if (dsym == NULL) {
-		dsym = getblk(sizeof (sym_t));
+		dsym = getblk(sizeof *dsym);
 		dsym->s_name = unnamed;
 		dsym->s_kind = FMEMBER;
 		dsym->s_scl = MOS;
@@ -1332,7 +1332,7 @@ add_pointer(sym_t *decl, pqinf_t *pi)
 		return decl;
 
 	while (pi != NULL) {
-		*tpp = tp = getblk(sizeof (type_t));
+		*tpp = tp = getblk(sizeof *tp);
 		tp->t_tspec = PTR;
 		tp->t_const = pi->p_const;
 		tp->t_volatile = pi->p_volatile;
@@ -1359,7 +1359,7 @@ add_array(sym_t *decl, bool dim, int n)
 	if (*tpp == NULL)
 	    return decl;
 
-	*tpp = tp = getblk(sizeof (type_t));
+	*tpp = tp = getblk(sizeof *tp);
 	tp->t_tspec = ARRAY;
 	tp->t_subt = dcs->d_type;
 	tp->t_dim = n;
@@ -1393,14 +1393,14 @@ add_function(sym_t *decl, sym_t *args)
 	}
 
 	/*
-	 * The symbols are removed from the symbol table by popdecl() after
-	 * add_function(). To be able to restore them if this is a function
-	 * definition, a pointer to the list of all symbols is stored in
-	 * dcs->d_next->d_func_proto_syms. Also a list of the arguments
-	 * (concatenated by s_next) is stored in dcs->d_next->d_func_args.
-	 * (dcs->d_next must be used because *dcs is the declaration stack
-	 * element created for the list of params and is removed after
-	 * add_function())
+	 * The symbols are removed from the symbol table by
+	 * end_declaration_level after add_function. To be able to restore
+	 * them if this is a function definition, a pointer to the list of all
+	 * symbols is stored in dcs->d_next->d_func_proto_syms. Also a list of
+	 * the arguments (concatenated by s_next) is stored in
+	 * dcs->d_next->d_func_args. (dcs->d_next must be used because *dcs is
+	 * the declaration stack element created for the list of params and is
+	 * removed after add_function.)
 	 */
 	if (dcs->d_next->d_ctx == EXTERN &&
 	    decl->s_type == dcs->d_next->d_type) {
@@ -1414,7 +1414,7 @@ add_function(sym_t *decl, sym_t *args)
 	if (*tpp == NULL)
 	    return decl;
 
-	*tpp = tp = getblk(sizeof (type_t));
+	*tpp = tp = getblk(sizeof *tp);
 	tp->t_tspec = FUNC;
 	tp->t_subt = dcs->d_next->d_type;
 	if ((tp->t_proto = dcs->d_proto) != false)
@@ -1668,19 +1668,19 @@ mktag(sym_t *tag, tspec_t kind, bool decl, bool semi)
 		}
 		if (tag->s_scl == NOSCL) {
 			tag->s_scl = scl;
-			tag->s_type = tp = getblk(sizeof (type_t));
+			tag->s_type = tp = getblk(sizeof *tp);
 			tp->t_packed = dcs->d_packed;
 		} else {
 			tp = tag->s_type;
 		}
 	} else {
-		tag = getblk(sizeof (sym_t));
+		tag = getblk(sizeof *tag);
 		tag->s_name = unnamed;
 		UNIQUE_CURR_POS(tag->s_def_pos);
 		tag->s_kind = FTAG;
 		tag->s_scl = scl;
 		tag->s_block_level = -1;
-		tag->s_type = tp = getblk(sizeof (type_t));
+		tag->s_type = tp = getblk(sizeof *tp);
 		tp->t_packed = dcs->d_packed;
 		dcs->d_next->d_nonempty_decl = true;
 	}
@@ -1688,12 +1688,12 @@ mktag(sym_t *tag, tspec_t kind, bool decl, bool semi)
 	if (tp->t_tspec == NOTSPEC) {
 		tp->t_tspec = kind;
 		if (kind != ENUM) {
-			tp->t_str = getblk(sizeof (struct_or_union));
+			tp->t_str = getblk(sizeof *tp->t_str);
 			tp->t_str->sou_align_in_bits = CHAR_SIZE;
 			tp->t_str->sou_tag = tag;
 		} else {
 			tp->t_is_enum = true;
-			tp->t_enum = getblk(sizeof(*tp->t_enum));
+			tp->t_enum = getblk(sizeof *tp->t_enum);
 			tp->t_enum->en_tag = tag;
 		}
 		setcomplete(tp, false);
@@ -2870,7 +2870,7 @@ abstract_name(void)
 
 	lint_assert(dcs->d_ctx == ABSTRACT || dcs->d_ctx == PROTO_ARG);
 
-	sym = getblk(sizeof (sym_t));
+	sym = getblk(sizeof *sym);
 
 	sym->s_name = unnamed;
 	sym->s_def = DEF;
@@ -2895,7 +2895,7 @@ global_clean_up(void)
 {
 
 	while (dcs->d_next != NULL)
-		popdecl();
+		end_declaration_level();
 
 	cleanup();
 	block_level = 0;

@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.246 2021/03/22 15:29:43 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.252 2021/03/27 11:08:00 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tree.c,v 1.246 2021/03/22 15:29:43 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.252 2021/03/27 11:08:00 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -153,7 +153,7 @@ incref(type_t *tp, tspec_t t)
 {
 	type_t	*tp2;
 
-	tp2 = getblk(sizeof (type_t));
+	tp2 = getblk(sizeof *tp2);
 	tp2->t_tspec = t;
 	tp2->t_subt = tp;
 	return tp2;
@@ -167,7 +167,7 @@ tincref(type_t *tp, tspec_t t)
 {
 	type_t	*tp2;
 
-	tp2 = tgetblk(sizeof (type_t));
+	tp2 = tgetblk(sizeof *tp2);
 	tp2->t_tspec = t;
 	tp2->t_subt = tp;
 	return tp2;
@@ -184,7 +184,7 @@ new_constant_node(type_t *tp, val_t *v)
 	n = getnode();
 	n->tn_op = CON;
 	n->tn_type = tp;
-	n->tn_val = tgetblk(sizeof (val_t));
+	n->tn_val = tgetblk(sizeof *n->tn_val);
 	n->tn_val->v_tspec = tp->t_tspec;
 	n->tn_val->v_ansiu = v->v_ansiu;
 	n->tn_val->v_u = v->v_u;
@@ -200,7 +200,7 @@ new_integer_constant_node(tspec_t t, int64_t q)
 	n = getnode();
 	n->tn_op = CON;
 	n->tn_type = gettyp(t);
-	n->tn_val = tgetblk(sizeof (val_t));
+	n->tn_val = tgetblk(sizeof *n->tn_val);
 	n->tn_val->v_tspec = t;
 	n->tn_val->v_quad = q;
 	return n;
@@ -246,7 +246,7 @@ fallback_symbol(sym_t *sym)
 		return;
 	}
 
-	/* %s undefined */
+	/* '%s' undefined */
 	error(99, sym->s_name);
 }
 
@@ -288,7 +288,7 @@ new_name_node(sym_t *sym, int follow_token)
 			n->tn_lvalue = true;
 	} else {
 		n->tn_op = CON;
-		n->tn_val = tgetblk(sizeof (val_t));
+		n->tn_val = tgetblk(sizeof *n->tn_val);
 		*n->tn_val = sym->s_value;
 	}
 
@@ -310,7 +310,7 @@ new_string_node(strg_t *strg)
 	n->tn_type->t_dim = len + 1;
 	n->tn_lvalue = true;
 
-	n->tn_string = tgetblk(sizeof (strg_t));
+	n->tn_string = tgetblk(sizeof *n->tn_string);
 	n->tn_string->st_tspec = strg->st_tspec;
 	n->tn_string->st_len = len;
 
@@ -319,9 +319,9 @@ new_string_node(strg_t *strg)
 		(void)memcpy(n->tn_string->st_cp, strg->st_cp, len + 1);
 		free(strg->st_cp);
 	} else {
-		n->tn_string->st_wcp = tgetblk((len + 1) * sizeof (wchar_t));
-		(void)memcpy(n->tn_string->st_wcp, strg->st_wcp,
-			     (len + 1) * sizeof (wchar_t));
+		size_t size = (len + 1) * sizeof *n->tn_string->st_wcp;
+		n->tn_string->st_wcp = tgetblk(size);
+		(void)memcpy(n->tn_string->st_wcp, strg->st_wcp, size);
 		free(strg->st_wcp);
 	}
 	free(strg);
@@ -352,8 +352,8 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 		rmsym(msym);
 		msym->s_kind = FMEMBER;
 		msym->s_scl = MOS;
-		msym->s_styp = tgetblk(sizeof (struct_or_union));
-		msym->s_styp->sou_tag = tgetblk(sizeof (sym_t));
+		msym->s_styp = tgetblk(sizeof *msym->s_styp);
+		msym->s_styp->sou_tag = tgetblk(sizeof *msym->s_styp->sou_tag);
 		msym->s_styp->sou_tag->s_name = unnamed;
 		msym->s_value.v_tspec = INT;
 		return msym;
@@ -2066,7 +2066,7 @@ convert(op_t op, int arg, type_t *tp, tnode_t *tn)
 		ntn->tn_left = tn;
 	} else {
 		ntn->tn_op = CON;
-		ntn->tn_val = tgetblk(sizeof (val_t));
+		ntn->tn_val = tgetblk(sizeof *ntn->tn_val);
 		convert_constant(op, arg, ntn->tn_type, ntn->tn_val,
 		    tn->tn_val);
 	}
@@ -2174,7 +2174,7 @@ check_integer_conversion(op_t op, int arg, tspec_t nt, tspec_t ot, type_t *tp,
 		case SHL:
 			/* suggest cast from '%s' to '%s' on op %s to ... */
 			warning(324, type_name(gettyp(ot)), type_name(tp),
-			    print_tnode(opbuf, sizeof(opbuf), tn));
+			    print_tnode(opbuf, sizeof opbuf, tn));
 			break;
 		default:
 			break;
@@ -2222,14 +2222,32 @@ check_pointer_integer_conversion(op_t op, tspec_t nt, type_t *tp, tnode_t *tn)
 	}
 }
 
+static bool
+should_warn_about_pointer_cast(const type_t *tp, tspec_t nst,
+			       const tnode_t *tn, tspec_t ost)
+{
+	if (nst == STRUCT || nst == UNION)
+		if (tp->t_subt->t_str != tn->tn_type->t_subt->t_str)
+			return true;
+
+	if (nst == CHAR || nst == UCHAR)
+		return false;	/* for the sake of traditional C code */
+
+	/*
+	 * XXX: Why should it be ok to cast between arbitrary structs that
+	 * just happen to be of the same size?
+	 */
+	return portable_size_in_bits(nst) != portable_size_in_bits(ost);
+}
+
 /*
- * Print warnings for questionable pointer conversions.
+ * Warn about questionable pointer conversions.
  */
 static void
 check_pointer_conversion(op_t op, tnode_t *tn, type_t *tp)
 {
-	tspec_t nt, ot;
-	const	char *nts, *ots;
+	tspec_t nst, ost;
+	const char *nts, *ots;
 
 	/*
 	 * We got already an error (pointers of different types
@@ -2238,21 +2256,21 @@ check_pointer_conversion(op_t op, tnode_t *tn, type_t *tp)
 	if (op != CVT)
 		return;
 
-	nt = tp->t_subt->t_tspec;
-	ot = tn->tn_type->t_subt->t_tspec;
+	nst = tp->t_subt->t_tspec;
+	ost = tn->tn_type->t_subt->t_tspec;
 
-	if (nt == VOID || ot == VOID) {
-		if (sflag && (nt == FUNC || ot == FUNC)) {
-			/* (void *)0 already handled in convert() */
-			*(nt == FUNC ? &nts : &ots) = "function pointer";
-			*(nt == VOID ? &nts : &ots) = "'void *'";
+	if (nst == VOID || ost == VOID) {
+		if (sflag && (nst == FUNC || ost == FUNC)) {
+			/* null pointers are already handled in convert() */
+			*(nst == FUNC ? &nts : &ots) = "function pointer";
+			*(nst == VOID ? &nts : &ots) = "'void *'";
 			/* ANSI C forbids conversion of %s to %s */
 			warning(303, ots, nts);
 		}
 		return;
-	} else if (nt == FUNC && ot == FUNC) {
+	} else if (nst == FUNC && ost == FUNC) {
 		return;
-	} else if (nt == FUNC || ot == FUNC) {
+	} else if (nst == FUNC || ost == FUNC) {
 		/* converting '%s' to '%s' is questionable */
 		warning(229, type_name(tn->tn_type), type_name(tp));
 		return;
@@ -2264,13 +2282,9 @@ check_pointer_conversion(op_t op, tnode_t *tn, type_t *tp)
 		warning(135, type_name(tn->tn_type), type_name(tp));
 	}
 
-	if (((nt == STRUCT || nt == UNION) &&
-	     tp->t_subt->t_str != tn->tn_type->t_subt->t_str) ||
-	    portable_size_in_bits(nt) != portable_size_in_bits(ot)) {
-		if (cflag) {
-			/* pointer cast from '%s' to '%s' may be troublesome */
-			warning(247, type_name(tn->tn_type), type_name(tp));
-		}
+	if (cflag && should_warn_about_pointer_cast(tp, nst, tn, ost)) {
+		/* pointer cast from '%s' to '%s' may be troublesome */
+		warning(247, type_name(tn->tn_type), type_name(tp));
 	}
 }
 
@@ -3051,7 +3065,7 @@ fold(tnode_t *tn)
 	uint64_t ul, ur = 0;
 	tnode_t	*cn;
 
-	v = xcalloc(1, sizeof (val_t));
+	v = xcalloc(1, sizeof *v);
 	v->v_tspec = t = tn->tn_type->t_tspec;
 
 	utyp = t == PTR || is_uinteger(t);
@@ -3196,7 +3210,7 @@ fold_test(tnode_t *tn)
 	bool	l, r;
 	val_t	*v;
 
-	v = xcalloc(1, sizeof (val_t));
+	v = xcalloc(1, sizeof *v);
 	v->v_tspec = tn->tn_type->t_tspec;
 	lint_assert(v->v_tspec == INT || (Tflag && v->v_tspec == BOOL));
 
@@ -3234,7 +3248,7 @@ fold_float(tnode_t *tn)
 	ldbl_t	l, r = 0;
 
 	fpe = 0;
-	v = xcalloc(1, sizeof (val_t));
+	v = xcalloc(1, sizeof *v);
 	v->v_tspec = t = tn->tn_type->t_tspec;
 
 	lint_assert(is_floating(t));
@@ -3691,7 +3705,7 @@ check_prototype_argument(
 	tnode_t	*ln;
 	bool	dowarn;
 
-	ln = xcalloc(1, sizeof (tnode_t));
+	ln = xcalloc(1, sizeof *ln);
 	ln->tn_type = tduptyp(tp);
 	ln->tn_type->t_const = false;
 	ln->tn_lvalue = true;
@@ -3719,7 +3733,7 @@ constant(tnode_t *tn, bool required)
 	if (tn != NULL)
 		tn = promote(NOOP, false, tn);
 
-	v = xcalloc(1, sizeof (val_t));
+	v = xcalloc(1, sizeof *v);
 
 	if (tn == NULL) {
 		lint_assert(nerr != 0);
@@ -3882,7 +3896,7 @@ display_expression(const tnode_t *tn, int offs)
 		    (long)uq & 0xffffffffl);
 	} else if (tn->tn_op == CON) {
 		lint_assert(tn->tn_type->t_tspec == PTR);
-		(void)printf("0x%0*lx ", (int)(sizeof (void *) * CHAR_BIT / 4),
+		(void)printf("0x%0*lx ", (int)(sizeof(void *) * CHAR_BIT / 4),
 			     (u_long)tn->tn_val->v_quad);
 	} else if (tn->tn_op == STRING) {
 		if (tn->tn_string->st_tspec == CHAR) {

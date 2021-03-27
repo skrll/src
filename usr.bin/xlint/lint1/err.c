@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.92 2021/03/22 15:29:43 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.96 2021/03/27 12:42:22 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.92 2021/03/22 15:29:43 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.96 2021/03/27 12:42:22 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -153,7 +153,7 @@ const	char *msgs[] = {
 	"cannot dereference non-pointer type",			      /* 96 */
 	"suffix U is illegal in traditional C",			      /* 97 */
 	"suffixes F and L are illegal in traditional C",	      /* 98 */
-	"%s undefined",						      /* 99 */
+	"'%s' undefined",					      /* 99 */
 	"unary + is illegal in traditional C",			      /* 100 */
 	"undefined struct/union member: %s",			      /* 101 */
 	"illegal member use: %s",				      /* 102 */
@@ -405,7 +405,7 @@ msglist(void)
 {
 	size_t i;
 
-	for (i = 0; i < sizeof(msgs) / sizeof(msgs[0]); i++)
+	for (i = 0; i < sizeof msgs / sizeof msgs[0]; i++)
 		printf("%zu\t%s\n", i, msgs[i]);
 }
 
@@ -480,18 +480,18 @@ void
 }
 
 void
-lerror(const char *file, int line, const char *msg, ...)
+internal_error(const char *file, int line, const char *msg, ...)
 {
 	va_list	ap;
 	const	char *fn;
 
-	va_start(ap, msg);
 	fn = lbasename(curr_pos.p_file);
-	(void)fprintf(stderr, "%s(%d): lint error: %s, %d: ",
-	    fn, curr_pos.p_line, file, line);
+	(void)fprintf(stderr, "lint: internal error in %s:%d near %s:%d: ",
+	    file, line, fn, curr_pos.p_line);
+	va_start(ap, msg);
 	(void)vfprintf(stderr, msg, ap);
-	(void)fprintf(stderr, "\n");
 	va_end(ap);
+	(void)fprintf(stderr, "\n");
 	abort();
 }
 

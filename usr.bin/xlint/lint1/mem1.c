@@ -1,4 +1,4 @@
-/*	$NetBSD: mem1.c,v 1.27 2021/03/17 01:15:31 rillig Exp $	*/
+/*	$NetBSD: mem1.c,v 1.37 2021/03/27 12:32:19 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: mem1.c,v 1.27 2021/03/17 01:15:31 rillig Exp $");
+__RCSID("$NetBSD: mem1.c,v 1.37 2021/03/27 12:32:19 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -49,117 +49,116 @@ __RCSID("$NetBSD: mem1.c,v 1.27 2021/03/17 01:15:31 rillig Exp $");
 #include "lint1.h"
 
 /*
- * Filenames allocated by fnalloc() and fnnalloc() are shared.
+ * Filenames allocated by record_filename are shared.
  */
-typedef struct fn {
+struct filename {
 	char	*fn_name;
 	size_t	fn_len;
 	int	fn_id;
-	struct	fn *fn_next;
-} fn_t;
+	struct	filename *fn_next;
+};
 
-static	fn_t	*fnames;
-
-static	fn_t	*srchfn(const char *, size_t);
+static struct filename *filenames;	/* null-terminated array */
 
 /* Find the given filename, or return NULL. */
-static fn_t *
-srchfn(const char *s, size_t len)
+static const struct filename *
+search_filename(const char *s, size_t len)
 {
-	fn_t	*fn;
+	const struct filename *fn;
 
-	for (fn = fnames; fn != NULL; fn = fn->fn_next) {
+	for (fn = filenames; fn != NULL; fn = fn->fn_next) {
 		if (fn->fn_len == len && memcmp(fn->fn_name, s, len) == 0)
 			break;
 	}
 	return fn;
 }
 
-/* Return a copy of the filename s with unlimited lifetime. */
-const char *
-fnalloc(const char *s)
-{
-
-	return s != NULL ? fnnalloc(s, strlen(s)) : NULL;
-}
-
-struct repl {
+struct filename_replacement {
 	char *orig;
+	size_t orig_len;
 	char *repl;
-	size_t len;
-	struct repl *next;
+	struct filename_replacement *next;
 };
 
-struct repl *replist;
+static struct filename_replacement *filename_replacements;
 
 void
-fnaddreplsrcdir(char *arg)
+add_directory_replacement(char *arg)
 {
-	struct repl *r = xmalloc(sizeof(*r));
+	struct filename_replacement *r = xmalloc(sizeof *r);
+
+	char *sep = strchr(arg, '=');
+	if (sep == NULL)
+		err(1, "Bad replacement directory spec `%s'", arg);
+	*sep = '\0';
 
 	r->orig = arg;
-	if ((r->repl = strchr(arg, '=')) == NULL)
-		err(1, "Bad replacement directory spec `%s'", arg);
-	r->len = r->repl - r->orig;
-	*(r->repl)++ = '\0';
-	if (replist == NULL) {
-		r->next = NULL;
-	} else
-		r->next = replist;
-	replist = r;
+	r->orig_len = sep - arg;
+	r->repl = sep + 1;
+	r->next = filename_replacements;
+	filename_replacements = r;
 }
 
 const char *
-fnxform(const char *name, size_t len)
+transform_filename(const char *name, size_t len)
 {
 	static char buf[MAXPATHLEN];
-	struct repl *r;
+	const struct filename_replacement *r;
 
-	for (r = replist; r != NULL; r = r->next)
-		if (r->len < len && memcmp(name, r->orig, r->len) == 0)
+	for (r = filename_replacements; r != NULL; r = r->next)
+		if (r->orig_len < len &&
+		    memcmp(name, r->orig, r->orig_len) == 0)
 			break;
 	if (r == NULL)
 		return name;
-	snprintf(buf, sizeof(buf), "%s%s", r->repl, name + r->len);
+	snprintf(buf, sizeof buf, "%s%s", r->repl, name + r->orig_len);
 	return buf;
 }
 
+/*
+ * Return a copy of the filename s with unlimited lifetime.
+ * If the filename is new, write it to the output file.
+ */
 const char *
-fnnalloc(const char *s, size_t len)
+record_filename(const char *s, size_t slen)
 {
-	fn_t	*fn;
+	const struct filename *existing_fn;
+	struct filename *fn;
 
 	static	int	nxt_id = 0;
 
 	if (s == NULL)
 		return NULL;
 
-	if ((fn = srchfn(s, len)) == NULL) {
-		fn = xmalloc(sizeof (fn_t));
-		/* Do not use strdup() because s is not NUL-terminated.*/
-		fn->fn_name = xmalloc(len + 1);
-		(void)memcpy(fn->fn_name, s, len);
-		fn->fn_name[len] = '\0';
-		fn->fn_len = len;
-		fn->fn_id = nxt_id++;
-		fn->fn_next = fnames;
-		fnames = fn;
-		/* Write id of this filename to the output file. */
-		outclr();
-		outint(fn->fn_id);
-		outchar('s');
-		outstrg(fnxform(fn->fn_name, fn->fn_len));
-	}
+	if ((existing_fn = search_filename(s, slen)) != NULL)
+		return existing_fn->fn_name;
+
+	fn = xmalloc(sizeof(*fn));
+	/* Do not use strdup() because s is not NUL-terminated.*/
+	fn->fn_name = xmalloc(slen + 1);
+	(void)memcpy(fn->fn_name, s, slen);
+	fn->fn_name[slen] = '\0';
+	fn->fn_len = slen;
+	fn->fn_id = nxt_id++;
+	fn->fn_next = filenames;
+	filenames = fn;
+
+	/* Write the ID of this filename to the output file. */
+	outclr();
+	outint(fn->fn_id);
+	outchar('s');
+	outstrg(transform_filename(fn->fn_name, fn->fn_len));
+
 	return fn->fn_name;
 }
 
 /* Get the ID of a filename. */
 int
-getfnid(const char *s)
+get_filename_id(const char *s)
 {
-	fn_t	*fn;
+	const struct filename *fn;
 
-	if (s == NULL || (fn = srchfn(s, strlen(s))) == NULL)
+	if (s == NULL || (fn = search_filename(s, strlen(s))) == NULL)
 		return -1;
 	return fn->fn_id;
 }
@@ -203,7 +202,7 @@ static	mbl_t	*xnewblk(void);
 static mbl_t *
 xnewblk(void)
 {
-	mbl_t	*mb = xmalloc(sizeof (mbl_t));
+	mbl_t	*mb = xmalloc(sizeof *mb);
 
 	/* use mmap instead of malloc to avoid malloc's size overhead */
 	mb->blk = xmapalloc(mblklen);
@@ -285,7 +284,7 @@ initmem(void)
 	pgsz = getpagesize();
 	mblklen = ((MBLKSIZ + pgsz - 1) / pgsz) * pgsz;
 
-	mblks = xcalloc(nmblks = ML_INC, sizeof (mbl_t *));
+	mblks = xcalloc(nmblks = ML_INC, sizeof *mblks);
 }
 
 
@@ -295,8 +294,8 @@ getlblk(size_t l, size_t s)
 {
 
 	while (l >= nmblks) {
-		mblks = xrealloc(mblks, (nmblks + ML_INC) * sizeof (mbl_t *));
-		(void)memset(&mblks[nmblks], 0, ML_INC * sizeof (mbl_t *));
+		mblks = xrealloc(mblks, (nmblks + ML_INC) * sizeof *mblks);
+		(void)memset(&mblks[nmblks], 0, ML_INC * sizeof *mblks);
 		nmblks += ML_INC;
 	}
 	return xgetblk(&mblks[l], s);
