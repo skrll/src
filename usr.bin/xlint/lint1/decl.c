@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.152 2021/03/20 13:25:31 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.164 2021/03/27 12:42:22 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.152 2021/03/20 13:25:31 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.164 2021/03/27 12:42:22 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -91,7 +91,7 @@ initdecl(void)
 	int i;
 
 	/* declaration stack */
-	dcs = xcalloc(1, sizeof (dinfo_t));
+	dcs = xcalloc(1, sizeof *dcs);
 	dcs->d_ctx = EXTERN;
 	dcs->d_ldlsym = &dcs->d_dlsyms;
 
@@ -99,7 +99,7 @@ initdecl(void)
 	inittyp();
 
 	/* shared type structures */
-	typetab = xcalloc(NTSPEC, sizeof (type_t));
+	typetab = xcalloc(NTSPEC, sizeof *typetab);
 	for (i = 0; i < NTSPEC; i++)
 		typetab[i].t_tspec = NOTSPEC;
 	typetab[BOOL].t_tspec = BOOL;
@@ -148,7 +148,7 @@ duptyp(const type_t *tp)
 {
 	type_t	*ntp;
 
-	ntp = getblk(sizeof (type_t));
+	ntp = getblk(sizeof(*ntp));
 	*ntp = *tp;
 	return ntp;
 }
@@ -162,7 +162,7 @@ tduptyp(const type_t *tp)
 {
 	type_t	*ntp;
 
-	ntp = tgetblk(sizeof (type_t));
+	ntp = tgetblk(sizeof *ntp);
 	*ntp = *tp;
 	return ntp;
 }
@@ -588,18 +588,18 @@ add_qualifier(tqual_t q)
  * argument declaration lists ...)
  */
 void
-pushdecl(scl_t sc)
+begin_declaration_level(scl_t sc)
 {
 	dinfo_t	*di;
 
 	/* put a new element on the declaration stack */
-	di = xcalloc(1, sizeof (dinfo_t));
+	di = xcalloc(1, sizeof *di);
 	di->d_next = dcs;
 	dcs = di;
 	di->d_ctx = sc;
 	di->d_ldlsym = &di->d_dlsyms;
 	if (dflag)
-		(void)printf("pushdecl(%p %d)\n", dcs, (int)sc);
+		(void)printf("%s(%p %d)\n", __func__, dcs, (int)sc);
 
 }
 
@@ -607,12 +607,12 @@ pushdecl(scl_t sc)
  * Go back to previous declaration level
  */
 void
-popdecl(void)
+end_declaration_level(void)
 {
 	dinfo_t	*di;
 
 	if (dflag)
-		(void)printf("popdecl(%p %d)\n", dcs, (int)dcs->d_ctx);
+		(void)printf("%s(%p %d)\n", __func__, dcs, (int)dcs->d_ctx);
 
 	lint_assert(dcs->d_next != NULL);
 	di = dcs;
@@ -639,8 +639,8 @@ popdecl(void)
 		 * parameter type list.
 		 */
 		if (di->d_dlsyms != NULL) {
-			*di->d_ldlsym = dcs->d_fpsyms;
-			dcs->d_fpsyms = di->d_dlsyms;
+			*di->d_ldlsym = dcs->d_func_proto_syms;
+			dcs->d_func_proto_syms = di->d_dlsyms;
 		}
 		break;
 	case ABSTRACT:
@@ -717,7 +717,7 @@ clrtyp(void)
 	dcs->d_inline = false;
 	dcs->d_mscl = false;
 	dcs->d_terr = false;
-	dcs->d_nedecl = false;
+	dcs->d_nonempty_decl = false;
 	dcs->d_notyp = false;
 }
 
@@ -823,7 +823,7 @@ deftyp(void)
 		case LCOMPLEX:
 			break;
 		default:
-			LERROR("deftyp(%s)", tspec_name(t));
+			INTERNAL_ERROR("deftyp(%s)", tspec_name(t));
 		}
 		if (t != INT && t != CHAR && (s != NOTSPEC || l != NOTSPEC)) {
 			dcs->d_terr = true;
@@ -909,7 +909,7 @@ length(const type_t *tp, const char *name)
 	switch (tp->t_tspec) {
 	case FUNC:
 		/* compiler takes size of function */
-		LERROR("%s", msgs[12]);
+		INTERNAL_ERROR("%s", msgs[12]);
 		/* NOTREACHED */
 	case STRUCT:
 	case UNION:
@@ -928,7 +928,7 @@ length(const type_t *tp, const char *name)
 	default:
 		elsz = size_in_bits(tp->t_tspec);
 		if (elsz <= 0)
-			LERROR("length(%d)", elsz);
+			INTERNAL_ERROR("length(%d)", elsz);
 		break;
 	}
 	return elem * elsz;
@@ -1159,17 +1159,18 @@ declarator_1_struct_union(sym_t *dsym)
 	tspec_t	t;
 	int	sz;
 	int	o = 0;	/* Appease GCC */
-	scl_t	sc;
 
-	lint_assert((sc = dsym->s_scl) == MOS || sc == MOU);
+	lint_assert(dsym->s_scl == MOS || dsym->s_scl == MOU);
 
-	if (dcs->d_rdcsym != NULL) {
+	if (dcs->d_redeclared_symbol != NULL) {
 		/* should be ensured by storesym() */
-		lint_assert((sc = dcs->d_rdcsym->s_scl) == MOS || sc == MOU);
-		if (dsym->s_styp == dcs->d_rdcsym->s_styp) {
+		lint_assert(dcs->d_redeclared_symbol->s_scl == MOS ||
+		    dcs->d_redeclared_symbol->s_scl == MOU);
+
+		if (dsym->s_styp == dcs->d_redeclared_symbol->s_styp) {
 			/* duplicate member name: %s */
 			error(33, dsym->s_name);
-			rmsym(dcs->d_rdcsym);
+			rmsym(dcs->d_redeclared_symbol);
 		}
 	}
 
@@ -1259,7 +1260,7 @@ bitfield(sym_t *dsym, int len)
 {
 
 	if (dsym == NULL) {
-		dsym = getblk(sizeof (sym_t));
+		dsym = getblk(sizeof *dsym);
 		dsym->s_name = unnamed;
 		dsym->s_kind = FMEMBER;
 		dsym->s_scl = MOS;
@@ -1331,7 +1332,7 @@ add_pointer(sym_t *decl, pqinf_t *pi)
 		return decl;
 
 	while (pi != NULL) {
-		*tpp = tp = getblk(sizeof (type_t));
+		*tpp = tp = getblk(sizeof *tp);
 		tp->t_tspec = PTR;
 		tp->t_const = pi->p_const;
 		tp->t_volatile = pi->p_volatile;
@@ -1344,7 +1345,7 @@ add_pointer(sym_t *decl, pqinf_t *pi)
 }
 
 /*
- * If a dimension was specified, dim is 1, otherwise 0
+ * If a dimension was specified, dim is true, otherwise false
  * n is the specified dimension
  */
 sym_t *
@@ -1358,7 +1359,7 @@ add_array(sym_t *decl, bool dim, int n)
 	if (*tpp == NULL)
 	    return decl;
 
-	*tpp = tp = getblk(sizeof (type_t));
+	*tpp = tp = getblk(sizeof *tp);
 	tp->t_tspec = ARRAY;
 	tp->t_subt = dcs->d_type;
 	tp->t_dim = n;
@@ -1392,19 +1393,19 @@ add_function(sym_t *decl, sym_t *args)
 	}
 
 	/*
-	 * The symbols are removed from the symbol table by popdecl() after
-	 * add_function(). To be able to restore them if this is a function
-	 * definition, a pointer to the list of all symbols is stored in
-	 * dcs->d_next->d_fpsyms. Also a list of the arguments (concatenated
-	 * by s_next) is stored in dcs->d_next->d_fargs.
-	 * (dcs->d_next must be used because *dcs is the declaration stack
-	 * element created for the list of params and is removed after
-	 * add_function())
+	 * The symbols are removed from the symbol table by
+	 * end_declaration_level after add_function. To be able to restore
+	 * them if this is a function definition, a pointer to the list of all
+	 * symbols is stored in dcs->d_next->d_func_proto_syms. Also a list of
+	 * the arguments (concatenated by s_next) is stored in
+	 * dcs->d_next->d_func_args. (dcs->d_next must be used because *dcs is
+	 * the declaration stack element created for the list of params and is
+	 * removed after add_function.)
 	 */
 	if (dcs->d_next->d_ctx == EXTERN &&
 	    decl->s_type == dcs->d_next->d_type) {
-		dcs->d_next->d_fpsyms = dcs->d_dlsyms;
-		dcs->d_next->d_fargs = args;
+		dcs->d_next->d_func_proto_syms = dcs->d_dlsyms;
+		dcs->d_next->d_func_args = args;
 	}
 
 	tpp = &decl->s_type;
@@ -1413,7 +1414,7 @@ add_function(sym_t *decl, sym_t *args)
 	if (*tpp == NULL)
 	    return decl;
 
-	*tpp = tp = getblk(sizeof (type_t));
+	*tpp = tp = getblk(sizeof *tp);
 	tp->t_tspec = FUNC;
 	tp->t_subt = dcs->d_next->d_type;
 	if ((tp->t_proto = dcs->d_proto) != false)
@@ -1521,12 +1522,12 @@ declarator_name(sym_t *sym)
 	scl_t	sc = NOSCL;
 
 	if (sym->s_scl == NOSCL) {
-		dcs->d_rdcsym = NULL;
+		dcs->d_redeclared_symbol = NULL;
 	} else if (sym->s_defarg) {
 		sym->s_defarg = false;
-		dcs->d_rdcsym = NULL;
+		dcs->d_redeclared_symbol = NULL;
 	} else {
-		dcs->d_rdcsym = sym;
+		dcs->d_redeclared_symbol = sym;
 		sym = pushdown(sym);
 	}
 
@@ -1601,7 +1602,7 @@ declarator_name(sym_t *sym)
 
 	sym->s_type = dcs->d_type;
 
-	dcs->d_fpsyms = NULL;
+	dcs->d_func_proto_syms = NULL;
 
 	return sym;
 }
@@ -1658,7 +1659,7 @@ mktag(sym_t *tag, tspec_t kind, bool decl, bool semi)
 			tag = newtag(tag, scl, decl, semi);
 		} else {
 			/* a new tag, no empty declaration */
-			dcs->d_next->d_nedecl = true;
+			dcs->d_next->d_nonempty_decl = true;
 			if (scl == ENUM_TAG && !decl) {
 				if (!tflag && (sflag || pflag))
 					/* forward reference to enum type */
@@ -1667,32 +1668,32 @@ mktag(sym_t *tag, tspec_t kind, bool decl, bool semi)
 		}
 		if (tag->s_scl == NOSCL) {
 			tag->s_scl = scl;
-			tag->s_type = tp = getblk(sizeof (type_t));
+			tag->s_type = tp = getblk(sizeof *tp);
 			tp->t_packed = dcs->d_packed;
 		} else {
 			tp = tag->s_type;
 		}
 	} else {
-		tag = getblk(sizeof (sym_t));
+		tag = getblk(sizeof *tag);
 		tag->s_name = unnamed;
 		UNIQUE_CURR_POS(tag->s_def_pos);
 		tag->s_kind = FTAG;
 		tag->s_scl = scl;
 		tag->s_block_level = -1;
-		tag->s_type = tp = getblk(sizeof (type_t));
+		tag->s_type = tp = getblk(sizeof *tp);
 		tp->t_packed = dcs->d_packed;
-		dcs->d_next->d_nedecl = true;
+		dcs->d_next->d_nonempty_decl = true;
 	}
 
 	if (tp->t_tspec == NOTSPEC) {
 		tp->t_tspec = kind;
 		if (kind != ENUM) {
-			tp->t_str = getblk(sizeof (struct_or_union));
+			tp->t_str = getblk(sizeof *tp->t_str);
 			tp->t_str->sou_align_in_bits = CHAR_SIZE;
 			tp->t_str->sou_tag = tag;
 		} else {
 			tp->t_is_enum = true;
-			tp->t_enum = getblk(sizeof(*tp->t_enum));
+			tp->t_enum = getblk(sizeof *tp->t_enum);
 			tp->t_enum->en_tag = tag;
 		}
 		setcomplete(tp, false);
@@ -1723,14 +1724,14 @@ newtag(sym_t *tag, scl_t scl, bool decl, bool semi)
 				warning(45, storage_class_name(tag->s_scl),
 				    tag->s_name);
 			}
-			dcs->d_next->d_nedecl = true;
+			dcs->d_next->d_nonempty_decl = true;
 		} else if (decl) {
 			/* "struct a { ... } " */
 			if (hflag)
 				/* redefinition hides earlier one: %s */
 				warning(43, tag->s_name);
 			tag = pushdown(tag);
-			dcs->d_next->d_nedecl = true;
+			dcs->d_next->d_nonempty_decl = true;
 		} else if (tag->s_scl != scl) {
 			/* base type is really '%s %s' */
 			warning(45, storage_class_name(tag->s_scl),
@@ -1742,7 +1743,7 @@ newtag(sym_t *tag, scl_t scl, bool decl, bool semi)
 				    tag->s_name);
 			}
 			tag = pushdown(tag);
-			dcs->d_next->d_nedecl = true;
+			dcs->d_next->d_nonempty_decl = true;
 		}
 	} else {
 		if (tag->s_scl != scl) {
@@ -1750,15 +1751,15 @@ newtag(sym_t *tag, scl_t scl, bool decl, bool semi)
 			error(46, storage_class_name(tag->s_scl));
 			print_previous_declaration(-1, tag);
 			tag = pushdown(tag);
-			dcs->d_next->d_nedecl = true;
+			dcs->d_next->d_nonempty_decl = true;
 		} else if (decl && !is_incomplete(tag->s_type)) {
 			/* (%s) tag redeclared */
 			error(46, storage_class_name(tag->s_scl));
 			print_previous_declaration(-1, tag);
 			tag = pushdown(tag);
-			dcs->d_next->d_nedecl = true;
+			dcs->d_next->d_nonempty_decl = true;
 		} else if (semi || decl) {
-			dcs->d_next->d_nedecl = true;
+			dcs->d_next->d_nonempty_decl = true;
 		}
 	}
 	return tag;
@@ -1895,9 +1896,6 @@ declare(sym_t *decl, bool initflg, sbuf_t *renaming)
 {
 	char *s;
 
-	initerr = false;
-	initsym = decl;
-
 	switch (dcs->d_ctx) {
 	case EXTERN:
 		if (renaming != NULL) {
@@ -1928,7 +1926,7 @@ declare(sym_t *decl, bool initflg, sbuf_t *renaming)
 		break;
 	}
 
-	if (initflg && !initerr)
+	if (initflg && !*current_initerr())
 		initstack_init();
 }
 
@@ -1945,7 +1943,7 @@ decl1ext(sym_t *dsym, bool initflg)
 
 	check_type(dsym);
 
-	if (initflg && !(initerr = check_init(dsym)))
+	if (initflg && !(*current_initerr() = check_init(dsym)))
 		dsym->s_def = DEF;
 
 	/*
@@ -1978,7 +1976,7 @@ decl1ext(sym_t *dsym, bool initflg)
 		outsym(dsym, dsym->s_scl, dsym->s_def);
 	}
 
-	if ((rdsym = dcs->d_rdcsym) != NULL) {
+	if ((rdsym = dcs->d_redeclared_symbol) != NULL) {
 
 		/*
 		 * If the old symbol stems from an old style function
@@ -2079,7 +2077,7 @@ check_redeclaration(sym_t *dsym, bool *dowarn)
 {
 	sym_t	*rsym;
 
-	if ((rsym = dcs->d_rdcsym)->s_scl == CTCONST) {
+	if ((rsym = dcs->d_redeclared_symbol)->s_scl == CTCONST) {
 		/* redeclaration of %s */
 		error(27, dsym->s_name);
 		print_previous_declaration(-1, rsym);
@@ -2406,11 +2404,11 @@ declare_argument(sym_t *sym, bool initflg)
 
 	check_type(sym);
 
-	if (dcs->d_rdcsym != NULL &&
-	    dcs->d_rdcsym->s_block_level == block_level) {
+	if (dcs->d_redeclared_symbol != NULL &&
+	    dcs->d_redeclared_symbol->s_block_level == block_level) {
 		/* redeclaration of formal parameter %s */
 		error(237, sym->s_name);
-		rmsym(dcs->d_rdcsym);
+		rmsym(dcs->d_redeclared_symbol);
 		sym->s_arg = true;
 	}
 
@@ -2423,7 +2421,7 @@ declare_argument(sym_t *sym, bool initflg)
 	if (initflg) {
 		/* cannot initialize parameter: %s */
 		error(52, sym->s_name);
-		initerr = true;
+		*current_initerr() = true;
 	}
 
 	if ((t = sym->s_type->t_tspec) == ARRAY) {
@@ -2482,7 +2480,7 @@ check_func_lint_directives(void)
 	 * number of arguments.
 	 */
 	narg = 0;
-	for (arg = dcs->d_fargs; arg != NULL; arg = arg->s_next)
+	for (arg = dcs->d_func_args; arg != NULL; arg = arg->s_next)
 		narg++;
 	if (nargusg > narg) {
 		/* argument number mismatch with directive: ** %s ** */
@@ -2511,7 +2509,7 @@ check_func_lint_directives(void)
 	if (printflike_argnum != -1 || scanflike_argnum != -1) {
 		narg = printflike_argnum != -1
 		    ? printflike_argnum : scanflike_argnum;
-		arg = dcs->d_fargs;
+		arg = dcs->d_func_args;
 		for (n = 1; n < narg; n++)
 			arg = arg->s_next;
 		if (arg->s_type->t_tspec != PTR ||
@@ -2582,7 +2580,8 @@ check_func_old_style_arguments(void)
 		}
 		if (msg)
 			/* prototype declaration */
-			print_previous_declaration(285, dcs->d_rdcsym);
+			print_previous_declaration(285,
+			    dcs->d_redeclared_symbol);
 
 		/* from now on the prototype is valid */
 		funcsym->s_osdef = false;
@@ -2676,7 +2675,7 @@ declare_local(sym_t *dsym, bool initflg)
 
 	check_type(dsym);
 
-	if (dcs->d_rdcsym != NULL && dsym->s_scl == EXTERN)
+	if (dcs->d_redeclared_symbol != NULL && dsym->s_scl == EXTERN)
 		declare_external_in_block(dsym);
 
 	if (dsym->s_scl == EXTERN) {
@@ -2691,9 +2690,9 @@ declare_local(sym_t *dsym, bool initflg)
 		}
 	}
 
-	if (dcs->d_rdcsym != NULL) {
+	if (dcs->d_redeclared_symbol != NULL) {
 
-		if (dcs->d_rdcsym->s_block_level == 0) {
+		if (dcs->d_redeclared_symbol->s_block_level == 0) {
 
 			switch (dsym->s_scl) {
 			case AUTO:
@@ -2721,10 +2720,11 @@ declare_local(sym_t *dsym, bool initflg)
 				lint_assert(/*CONSTCOND*/false);
 			}
 
-		} else if (dcs->d_rdcsym->s_block_level == block_level) {
+		} else if (dcs->d_redeclared_symbol->s_block_level ==
+			   block_level) {
 
 			/* no hflag, because it's illegal! */
-			if (dcs->d_rdcsym->s_arg) {
+			if (dcs->d_redeclared_symbol->s_arg) {
 				/*
 				 * if !tflag, a "redeclaration of %s" error
 				 * is produced below
@@ -2733,11 +2733,12 @@ declare_local(sym_t *dsym, bool initflg)
 					if (hflag)
 						/* decl. hides parameter: %s */
 						warning(91, dsym->s_name);
-					rmsym(dcs->d_rdcsym);
+					rmsym(dcs->d_redeclared_symbol);
 				}
 			}
 
-		} else if (dcs->d_rdcsym->s_block_level < block_level) {
+		} else if (dcs->d_redeclared_symbol->s_block_level <
+			   block_level) {
 
 			if (hflag)
 				/* declaration hides earlier one: %s */
@@ -2745,17 +2746,17 @@ declare_local(sym_t *dsym, bool initflg)
 
 		}
 
-		if (dcs->d_rdcsym->s_block_level == block_level) {
+		if (dcs->d_redeclared_symbol->s_block_level == block_level) {
 
 			/* redeclaration of %s */
 			error(27, dsym->s_name);
-			rmsym(dcs->d_rdcsym);
+			rmsym(dcs->d_redeclared_symbol);
 
 		}
 
 	}
 
-	if (initflg && !(initerr = check_init(dsym))) {
+	if (initflg && !(*current_initerr() = check_init(dsym))) {
 		dsym->s_def = DEF;
 		mark_as_set(dsym);
 	}
@@ -2782,7 +2783,7 @@ declare_external_in_block(sym_t *dsym)
 	sym_t	*esym;
 
 	/* look for a symbol with the same name */
-	esym = dcs->d_rdcsym;
+	esym = dcs->d_redeclared_symbol;
 	while (esym != NULL && esym->s_block_level != 0) {
 		while ((esym = esym->s_link) != NULL) {
 			if (esym->s_kind != FVFT)
@@ -2869,7 +2870,7 @@ abstract_name(void)
 
 	lint_assert(dcs->d_ctx == ABSTRACT || dcs->d_ctx == PROTO_ARG);
 
-	sym = getblk(sizeof (sym_t));
+	sym = getblk(sizeof *sym);
 
 	sym->s_name = unnamed;
 	sym->s_def = DEF;
@@ -2880,7 +2881,7 @@ abstract_name(void)
 		sym->s_arg = true;
 
 	sym->s_type = dcs->d_type;
-	dcs->d_rdcsym = NULL;
+	dcs->d_redeclared_symbol = NULL;
 	dcs->d_vararg = false;
 
 	return sym;
@@ -2894,7 +2895,7 @@ global_clean_up(void)
 {
 
 	while (dcs->d_next != NULL)
-		popdecl();
+		end_declaration_level();
 
 	cleanup();
 	block_level = 0;

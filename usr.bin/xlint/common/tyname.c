@@ -1,4 +1,4 @@
-/*	$NetBSD: tyname.c,v 1.34 2021/03/07 17:12:41 rillig Exp $	*/
+/*	$NetBSD: tyname.c,v 1.36 2021/03/27 12:42:22 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2005 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tyname.c,v 1.34 2021/03/07 17:12:41 rillig Exp $");
+__RCSID("$NetBSD: tyname.c,v 1.36 2021/03/27 12:42:22 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -45,8 +45,8 @@ __RCSID("$NetBSD: tyname.c,v 1.34 2021/03/07 17:12:41 rillig Exp $");
 
 #include PASS
 
-#ifndef LERROR
-#define LERROR(fmt, args...) \
+#ifndef INTERNAL_ERROR
+#define INTERNAL_ERROR(fmt, args...) \
 	do { \
 		(void)warnx("%s, %d: " fmt, __FILE__, __LINE__, ##args); \
 		abort(); \
@@ -74,7 +74,7 @@ new_name_tree_node(const char *name)
 {
 	name_tree_node *n;
 
-	n = xmalloc(sizeof(*n));
+	n = xmalloc(sizeof *n);
 	n->ntn_name = xstrdup(name);
 	n->ntn_less = NULL;
 	n->ntn_greater = NULL;
@@ -137,7 +137,7 @@ buf_add(buffer *buf, const char *s)
 static void
 buf_add_int(buffer *buf, int n)
 {
-	char num[1 + sizeof(n) * CHAR_BIT + 1];
+	char num[1 + sizeof n * CHAR_BIT + 1];
 
 	snprintf(num, sizeof num, "%d", n);
 	buf_add(buf, num);
@@ -180,7 +180,7 @@ tspec_name(tspec_t t)
 	case DCOMPLEX:	return "double _Complex";
 	case LCOMPLEX:	return "long double _Complex";
 	default:
-		LERROR("tspec_name(%d)", t);
+		INTERNAL_ERROR("tspec_name(%d)", t);
 		return NULL;
 	}
 }
@@ -244,7 +244,7 @@ sametype(const type_t *t1, const type_t *t2)
 		return true;
 #endif
 	default:
-		LERROR("tyname(%d)", t);
+		INTERNAL_ERROR("tyname(%d)", t);
 		return false;
 	}
 }
@@ -402,7 +402,7 @@ type_name(const type_t *tp)
 		type_name_of_function(&buf, tp);
 		break;
 	default:
-		LERROR("type_name(%d)", t);
+		INTERNAL_ERROR("type_name(%d)", t);
 	}
 
 	name = intern(buf.data);

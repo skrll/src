@@ -1,4 +1,4 @@
-/*	$NetBSD: pktqueue.c,v 1.12 2020/09/11 14:29:00 riastradh Exp $	*/
+/*	$NetBSD: pktqueue.c,v 1.13 2021/03/25 08:18:03 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pktqueue.c,v 1.12 2020/09/11 14:29:00 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pktqueue.c,v 1.13 2021/03/25 08:18:03 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -52,10 +52,6 @@ __KERNEL_RCSID(0, "$NetBSD: pktqueue.c,v 1.12 2020/09/11 14:29:00 riastradh Exp 
 
 #include <net/pktqueue.h>
 
-/*
- * WARNING: update this if struct pktqueue changes.
- */
-
 struct pktqueue {
 	/*
 	 * The lock used for a barrier mechanism.  The barrier counter,
@@ -67,7 +63,7 @@ struct pktqueue {
 			kmutex_t	pq_lock;
 			volatile u_int	pq_barrier;
 		};
-		uint8_t		_pad[COHERENCY_UNIT];
+		uint8_t	 _pad[COHERENCY_UNIT];
 	};
 
 	/* The size of the queue, counters and the interrupt handler. */

@@ -1,4 +1,4 @@
-/*	$NetBSD: d_c99_bool_strict.c,v 1.24 2021/03/20 17:18:50 rillig Exp $	*/
+/*	$NetBSD: d_c99_bool_strict.c,v 1.27 2021/03/23 23:12:21 rillig Exp $	*/
 # 3 "d_c99_bool_strict.c"
 
 /*
@@ -31,8 +31,9 @@
  *
  * strict-bool-operand-unary:
  *	Operator	bool?	scalar?
- *	!		yes	no
- *	The other binary operators do not accept bool operands.
+ *	!		yes	-
+ *	&		yes	yes
+ *	The other unary operators do not accept bool operands.
  *
  * strict-bool-operand-binary:
  *	Operator	left:	bool?	other?	right:	bool?	other?
@@ -150,10 +151,10 @@ enum strict_bool_constant_expressions {
 	/*
 	 * Without strict bool mode, these two variants of an expression can
 	 * occur when a preprocessor macro is either defined to 1 or left
-	 * empty, as in lint1/ops.def.
+	 * empty (since C99), as in lint1/ops.def.
 	 *
-	 * TODO: figure out an elegant way to achieve the same effect in
-	 *  strict bool mode.
+	 * In strict bool mode, the resulting expression can be compared
+	 * against 0 to achieve the same effect (so +0 != 0 or 1 + 0 != 0).
 	 */
 	BINARY_PLUS = (1 + 0) ? 100 : 101, /* expect: 331 */
 	UNARY_PLUS = (+0) ? 100 : 101,	/* expect: 331 */
@@ -364,7 +365,7 @@ void
 strict_bool_controlling_expression(bool b, int i, double d, const void *p)
 {
 	if (__lint_false)	/* expect: 161 */
-		do_nothing();
+		do_nothing();	/* expect: statement not reached */
 
 	if (__lint_true)	/* expect: 161 */
 		do_nothing();
@@ -405,7 +406,7 @@ strict_bool_controlling_expression(bool b, int i, double d, const void *p)
  *	Operator	bool?	scalar?
  *	!		yes	-
  *	&		yes	yes
- *	The other binary operators do not accept bool operands.
+ *	The other unary operators do not accept bool operands.
  */
 
 void
