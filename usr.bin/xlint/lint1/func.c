@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.95 2021/03/21 19:14:40 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.98 2021/03/26 20:31:07 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.95 2021/03/21 19:14:40 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.98 2021/03/26 20:31:07 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -153,12 +153,12 @@ bool	quadflg;
  * Puts a new element at the top of the stack used for control statements.
  */
 void
-pushctrl(int env)
+begin_control_statement(control_statement_kind kind)
 {
 	cstk_t	*ci;
 
-	ci = xcalloc(1, sizeof (cstk_t));
-	ci->c_env = env;
+	ci = xcalloc(1, sizeof *ci);
+	ci->c_kind = kind;
 	ci->c_surrounding = cstmt;
 	cstmt = ci;
 }
@@ -167,13 +167,13 @@ pushctrl(int env)
  * Removes the top element of the stack used for control statements.
  */
 void
-popctrl(int env)
+end_control_statement(control_statement_kind kind)
 {
 	cstk_t	*ci;
 	case_label_t *cl, *next;
 
 	lint_assert(cstmt != NULL);
-	lint_assert(cstmt->c_env == env);
+	lint_assert(cstmt->c_kind == kind);
 
 	ci = cstmt;
 	cstmt = ci->c_surrounding;
@@ -183,7 +183,7 @@ popctrl(int env)
 		free(cl);
 	}
 
-	free(ci->c_swtype);
+	free(ci->c_switch_type);
 	free(ci);
 }
 
@@ -439,15 +439,15 @@ check_case_label_enum(const tnode_t *tn, const cstk_t *ci)
 {
 	/* similar to typeok_enum in tree.c */
 
-	if (!(tn->tn_type->t_is_enum || ci->c_swtype->t_is_enum))
+	if (!(tn->tn_type->t_is_enum || ci->c_switch_type->t_is_enum))
 		return;
-	if (tn->tn_type->t_is_enum && ci->c_swtype->t_is_enum &&
-	    tn->tn_type->t_enum == ci->c_swtype->t_enum)
+	if (tn->tn_type->t_is_enum && ci->c_switch_type->t_is_enum &&
+	    tn->tn_type->t_enum == ci->c_switch_type->t_enum)
 		return;
 
 #if 0 /* not yet ready, see msg_130.c */
 	/* enum type mismatch: '%s' '%s' '%s' */
-	warning(130, type_name(ci->c_swtype), getopname(EQ),
+	warning(130, type_name(ci->c_switch_type), getopname(EQ),
 	    type_name(tn->tn_type));
 #endif
 }
@@ -480,7 +480,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 
 	check_case_label_enum(tn, ci);
 
-	lint_assert(ci->c_swtype != NULL);
+	lint_assert(ci->c_switch_type != NULL);
 
 	if (reached && !seen_fallthrough) {
 		if (hflag)
@@ -502,7 +502,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 	 */
 	v = constant(tn, true);
 	(void)memset(&nv, 0, sizeof nv);
-	convert_constant(CASE, 0, ci->c_swtype, &nv, v);
+	convert_constant(CASE, 0, ci->c_switch_type, &nv, v);
 	free(v);
 
 	/* look if we had this value already */
@@ -611,7 +611,7 @@ if1(tnode_t *tn)
 		tn = check_controlling_expression(tn);
 	if (tn != NULL)
 		expr(tn, false, true, false, false);
-	pushctrl(T_IF);
+	begin_control_statement(CS_IF);
 
 	if (tn != NULL && tn->tn_op == CON && !tn->tn_system_dependent) {
 		/* XXX: what if inside 'if (0)'? */
@@ -648,7 +648,7 @@ if3(bool els)
 	else if (!els)
 		set_reached(true);
 
-	popctrl(T_IF);
+	end_control_statement(CS_IF);
 }
 
 /*
@@ -683,7 +683,7 @@ switch1(tnode_t *tn)
 	 * duplicated. This is not too complicated because it is
 	 * only an integer type.
 	 */
-	tp = xcalloc(1, sizeof (type_t));
+	tp = xcalloc(1, sizeof *tp);
 	if (tn != NULL) {
 		tp->t_tspec = tn->tn_type->t_tspec;
 		if ((tp->t_is_enum = tn->tn_type->t_is_enum) != false)
@@ -695,9 +695,9 @@ switch1(tnode_t *tn)
 	check_getopt_begin_switch();
 	expr(tn, true, false, true, false);
 
-	pushctrl(T_SWITCH);
+	begin_control_statement(CS_SWITCH);
 	cstmt->c_switch = true;
-	cstmt->c_swtype = tp;
+	cstmt->c_switch_type = tp;
 
 	set_reached(false);
 	seen_fallthrough = true;
@@ -713,17 +713,17 @@ switch2(void)
 	sym_t	*esym;
 	case_label_t *cl;
 
-	lint_assert(cstmt->c_swtype != NULL);
+	lint_assert(cstmt->c_switch_type != NULL);
 
 	/*
 	 * If the switch expression was of type enumeration, count the case
 	 * labels and the number of enumerators. If both counts are not
 	 * equal print a warning.
 	 */
-	if (cstmt->c_swtype->t_is_enum) {
+	if (cstmt->c_switch_type->t_is_enum) {
 		nenum = nclab = 0;
-		lint_assert(cstmt->c_swtype->t_enum != NULL);
-		for (esym = cstmt->c_swtype->t_enum->en_first_enumerator;
+		lint_assert(cstmt->c_switch_type->t_enum != NULL);
+		for (esym = cstmt->c_switch_type->t_enum->en_first_enumerator;
 		     esym != NULL; esym = esym->s_next) {
 			nenum++;
 		}
@@ -744,7 +744,8 @@ switch2(void)
 		 */
 		set_reached(true);
 	} else if (!cstmt->c_default &&
-		   (!hflag || !cstmt->c_swtype->t_is_enum || nenum != nclab)) {
+		   (!hflag || !cstmt->c_switch_type->t_is_enum ||
+		    nenum != nclab)) {
 		/*
 		 * there are possible values which are not handled in
 		 * switch
@@ -755,7 +756,7 @@ switch2(void)
 		 * if the end of the last statement inside it is reached.
 		 */
 
-	popctrl(T_SWITCH);
+	end_control_statement(CS_SWITCH);
 }
 
 /*
@@ -776,7 +777,7 @@ while1(tnode_t *tn)
 	if (tn != NULL)
 		tn = check_controlling_expression(tn);
 
-	pushctrl(T_WHILE);
+	begin_control_statement(CS_WHILE);
 	cstmt->c_loop = true;
 	cstmt->c_maybe_endless = is_nonzero(tn);
 	body_reached = !is_zero(tn);
@@ -802,7 +803,7 @@ while2(void)
 	set_reached(!cstmt->c_maybe_endless || cstmt->c_break);
 
 	check_getopt_end_while();
-	popctrl(T_WHILE);
+	end_control_statement(CS_WHILE);
 }
 
 /*
@@ -818,7 +819,7 @@ do1(void)
 		set_reached(true);
 	}
 
-	pushctrl(T_DO);
+	begin_control_statement(CS_DO_WHILE);
 	cstmt->c_loop = true;
 }
 
@@ -854,7 +855,7 @@ do2(tnode_t *tn)
 	if (cstmt->c_break)
 		set_reached(true);
 
-	popctrl(T_DO);
+	end_control_statement(CS_DO_WHILE);
 }
 
 /*
@@ -874,7 +875,7 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 		set_reached(true);
 	}
 
-	pushctrl(T_FOR);
+	begin_control_statement(CS_FOR);
 	cstmt->c_loop = true;
 
 	/*
@@ -882,10 +883,10 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 	 * Also remember this expression itself. We must check it at
 	 * the end of the loop to get "used but not set" warnings correct.
 	 */
-	cstmt->c_fexprm = tsave();
-	cstmt->c_f3expr = tn3;
-	cstmt->c_fpos = curr_pos;
-	cstmt->c_cfpos = csrc_pos;
+	cstmt->c_for_expr3_mem = tsave();
+	cstmt->c_for_expr3 = tn3;
+	cstmt->c_for_expr3_pos = curr_pos;
+	cstmt->c_for_expr3_csrc_pos = csrc_pos;
 
 	if (tn1 != NULL)
 		expr(tn1, false, false, true, false);
@@ -919,10 +920,10 @@ for2(void)
 	cspos = csrc_pos;
 
 	/* Restore the tree memory for the reinitialization expression */
-	trestor(cstmt->c_fexprm);
-	tn3 = cstmt->c_f3expr;
-	curr_pos = cstmt->c_fpos;
-	csrc_pos = cstmt->c_cfpos;
+	trestor(cstmt->c_for_expr3_mem);
+	tn3 = cstmt->c_for_expr3;
+	curr_pos = cstmt->c_for_expr3_pos;
+	csrc_pos = cstmt->c_for_expr3_csrc_pos;
 
 	/* simply "statement not reached" would be confusing */
 	if (!reached && warn_about_unreachable) {
@@ -944,7 +945,7 @@ for2(void)
 	/* TODO: What if the loop contains a 'return'? */
 	set_reached(cstmt->c_break || !cstmt->c_maybe_endless);
 
-	popctrl(T_FOR);
+	end_control_statement(CS_FOR);
 }
 
 /*
@@ -1048,7 +1049,7 @@ do_return(tnode_t *tn)
 	if (tn != NULL) {
 
 		/* Create a temporary node for the left side */
-		ln = tgetblk(sizeof (tnode_t));
+		ln = tgetblk(sizeof *ln);
 		ln->tn_op = NAME;
 		ln->tn_type = tduptyp(funcsym->s_type->t_subt);
 		ln->tn_type->t_const = false;

@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.c,v 1.32 2021/03/22 01:36:10 rin Exp $ */
+/*	$NetBSD: intr.c,v 1.33 2021/03/23 08:07:23 skrll Exp $ */
 
 /*-
  * Copyright (c) 2007 Michael Lorenz
@@ -29,7 +29,7 @@
 #define __INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.32 2021/03/22 01:36:10 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.33 2021/03/23 08:07:23 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_interrupt.h"
