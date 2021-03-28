@@ -2872,38 +2872,6 @@ pmap_page_remove(struct vm_page_md *md, paddr_t pa)
 			flush = true;
 #endif
 
-#ifdef PMAP_CACHE_VIPT
-		if (pm == pmap_kernel() && PV_IS_KENTRY_P(pv->pv_flags)) {
-			/* If this was unmanaged mapping, it must be ignored. */
-			pvp = &SLIST_NEXT(pv, pv_link);
-			pv = *pvp;
-			continue;
-		}
-#endif
-
-		/*
-		 * Try to get a hold on the pmap's lock.  We must do this
-		 * while still holding the page locked, to know that the
-		 * page is still associated with the pmap and the mapping is
-		 * in place.  If a hold can't be had, unlock and wait for
-		 * the pmap's lock to become available and retry.  The pmap
-		 * must be ref'd over this dance to stop it disappearing
-		 * behind us.
-		 */
-		if (!mutex_tryenter(&pm->pm_lock)) {
-			pmap_reference(pm);
-			pmap_release_page_lock(md);
-			pmap_acquire_pmap_lock(pm);
-			/* nothing, just wait for it */
-			pmap_release_pmap_lock(pm);
-			pmap_destroy(pm);
-			/* Restart from the beginning. */
-			pmap_acquire_page_lock(md);
-			pvp = &SLIST_FIRST(&md->pvh_list);
-			pv = *pvp;
-			continue;
-		}
-
 		if (pm == pmap_kernel()) {
 			/*
 			 * If this was unmanaged mapping, it must be preserved.
