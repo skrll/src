@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.699 2021/02/17 08:15:43 knakahara Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.702 2021/03/11 01:23:33 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.699 2021/02/17 08:15:43 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.702 2021/03/11 01:23:33 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -270,7 +270,7 @@ typedef union txdescs {
 
 typedef union rxdescs {
 	wiseman_rxdesc_t sctxu_rxdescs[WM_NRXDESC];
-	ext_rxdesc_t	  sctxu_ext_rxdescs[WM_NRXDESC]; /* 82574 only */
+	ext_rxdesc_t	 sctxu_ext_rxdescs[WM_NRXDESC]; /* 82574 only */
 	nq_rxdesc_t	 sctxu_nq_rxdescs[WM_NRXDESC]; /* 82575 and newer */
 } rxdescs_t;
 
@@ -399,8 +399,8 @@ struct wm_txqueue {
 	time_t txq_lastsent;
 
 	/* Checksum flags used for previous packet */
-	uint32_t 	txq_last_hw_cmd;
-	uint8_t 	txq_last_hw_fields;
+	uint32_t	txq_last_hw_cmd;
+	uint8_t		txq_last_hw_fields;
 	uint16_t	txq_last_hw_ipcs;
 	uint16_t	txq_last_hw_tucs;
 
@@ -3505,7 +3505,7 @@ static bool
 wm_phy_need_linkdown_discard(struct wm_softc *sc)
 {
 
-	switch(sc->sc_phytype) {
+	switch (sc->sc_phytype) {
 	case WMPHY_82577: /* ihphy */
 	case WMPHY_82578: /* atphy */
 	case WMPHY_82579: /* ihphy */
@@ -7570,9 +7570,9 @@ wm_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 
 	default:
 		/* Don't support this protocol or encapsulation. */
- 		txq->txq_last_hw_cmd = txq->txq_last_hw_fields = 0;
- 		txq->txq_last_hw_ipcs = 0;
- 		txq->txq_last_hw_tucs = 0;
+		txq->txq_last_hw_cmd = txq->txq_last_hw_fields = 0;
+		txq->txq_last_hw_ipcs = 0;
+		txq->txq_last_hw_tucs = 0;
 		*fieldsp = 0;
 		*cmdp = 0;
 		return;
@@ -7728,8 +7728,7 @@ wm_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 	 */
 	if (sc->sc_nqueues < 2) {
 		/*
-	 	 *
-	  	 * Setting up new checksum offload context for every
+		 * Setting up new checksum offload context for every
 		 * frames takes a lot of processing time for hardware.
 		 * This also reduces performance a lot for small sized
 		 * frames so avoid it if driver can use previously
@@ -7739,7 +7738,7 @@ wm_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 		 * checking whether a frame has the same IP/TCP structure is
 		 * hard thing so just ignore that and always restablish a
 		 * new TSO context.
-	  	 */
+		 */
 		if ((m0->m_pkthdr.csum_flags & (M_CSUM_TSOv4 | M_CSUM_TSOv6))
 		    == 0) {
 			if (txq->txq_last_hw_cmd == cmd &&
@@ -7751,9 +7750,9 @@ wm_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 			}
 		}
 
-	 	txq->txq_last_hw_cmd = cmd;
- 		txq->txq_last_hw_fields = fields;
- 		txq->txq_last_hw_ipcs = (ipcs & 0xffff);
+		txq->txq_last_hw_cmd = cmd;
+		txq->txq_last_hw_fields = fields;
+		txq->txq_last_hw_ipcs = (ipcs & 0xffff);
 		txq->txq_last_hw_tucs = (tucs & 0xffff);
 	}
 
@@ -8073,8 +8072,8 @@ retry:
 		    M_CSUM_TCPv6 | M_CSUM_UDPv6)) {
 			wm_tx_offload(sc, txq, txs, &cksumcmd, &cksumfields);
 		} else {
- 			txq->txq_last_hw_cmd = txq->txq_last_hw_fields = 0;
- 			txq->txq_last_hw_ipcs = txq->txq_last_hw_tucs = 0;
+			txq->txq_last_hw_cmd = txq->txq_last_hw_fields = 0;
+			txq->txq_last_hw_ipcs = txq->txq_last_hw_tucs = 0;
 			cksumcmd = 0;
 			cksumfields = 0;
 		}
@@ -9177,7 +9176,6 @@ wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 
 	for (i = rxq->rxq_ptr;; i = WM_NEXTRX(i)) {
 		if (limit-- == 0) {
-			rxq->rxq_ptr = i;
 			more = true;
 			DPRINTF(sc, WM_DEBUG_RX,
 			    ("%s: RX: loop limited, descriptor %d is not processed\n",
@@ -9203,11 +9201,6 @@ wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 #endif
 
 		if (!wm_rxdesc_dd(rxq, i, status)) {
-			/*
-			 * Update the receive pointer holding rxq_lock
-			 * consistent with increment counter.
-			 */
-			rxq->rxq_ptr = i;
 			break;
 		}
 
@@ -9332,23 +9325,16 @@ wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 
 		/* Set up checksum info for this packet. */
 		wm_rxdesc_ensure_checksum(rxq, status, errors, m);
-		/*
-		 * Update the receive pointer holding rxq_lock consistent with
-		 * increment counter.
-		 */
-		rxq->rxq_ptr = i;
+
 		rxq->rxq_packets++;
 		rxq->rxq_bytes += len;
-		mutex_exit(rxq->rxq_lock);
-
 		/* Pass it on. */
 		if_percpuq_enqueue(sc->sc_ipq, m);
-
-		mutex_enter(rxq->rxq_lock);
 
 		if (rxq->rxq_stopping)
 			break;
 	}
+	rxq->rxq_ptr = i;
 
 	if (count != 0)
 		rnd_add_uint32(&sc->rnd_source, count);

@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.68 2021/02/20 16:34:57 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.91 2021/03/27 12:42:22 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -58,8 +58,8 @@ extern	void	norecover(void);
 /*
  * cgram.y
  */
-extern	int	blklev;
-extern	int	mblklev;
+extern	int	block_level;
+extern	int	mem_block_level;
 extern	int	yydebug;
 
 extern	int	yyerror(const char *);
@@ -93,11 +93,10 @@ extern	int	yylex(void);
 /*
  * mem1.c
  */
-extern	const	char *fnalloc(const char *);
-extern	const	char *fnnalloc(const char *, size_t);
-extern	int	getfnid(const char *);
-extern	void	fnaddreplsrcdir(char *);
-extern	const char *fnxform(const char *, size_t);
+extern	const	char *record_filename(const char *, size_t);
+extern	int	get_filename_id(const char *);
+extern	void	add_directory_replacement(char *);
+extern	const char *transform_filename(const char *, size_t);
 
 extern	void	initmem(void);
 
@@ -125,7 +124,7 @@ extern	void	warning(int, ...);
 extern	void	message(int, ...);
 extern	void	gnuism(int, ...);
 extern	void	c99ism(int, ...);
-extern	void	lerror(const char *, int, const char *, ...)
+extern	void	internal_error(const char *, int, const char *, ...)
      __attribute__((__noreturn__,__format__(__printf__, 3, 4)));
 extern	void	assert_failed(const char *, int, const char *, const char *)
 		__attribute__((__noreturn__));
@@ -148,13 +147,13 @@ extern	void	add_type(type_t *);
 extern	void	add_qualifier(tqual_t);
 extern	void	addpacked(void);
 extern	void	add_attr_used(void);
-extern	void	pushdecl(scl_t);
-extern	void	popdecl(void);
+extern	void	begin_declaration_level(scl_t);
+extern	void	end_declaration_level(void);
 extern	void	setasm(void);
 extern	void	clrtyp(void);
 extern	void	deftyp(void);
 extern	int	length(const type_t *, const char *);
-extern	int	getbound(const type_t *);
+extern	int	alignment_in_bits(const type_t *);
 extern	sym_t	*lnklst(sym_t *, sym_t *);
 extern	void	check_type(sym_t *);
 extern	sym_t	*declarator_1_struct_union(sym_t *);
@@ -171,6 +170,7 @@ extern	const	char *storage_class_name(scl_t);
 extern	type_t	*complete_tag_struct_or_union(type_t *, sym_t *);
 extern	type_t	*complete_tag_enum(type_t *, sym_t *);
 extern	sym_t	*enumeration_constant(sym_t *, int, bool);
+extern	void	declare(sym_t *, bool, sbuf_t *);
 extern	void	decl1ext(sym_t *, bool);
 extern	void	copy_usage_info(sym_t *, sym_t *);
 extern	bool	check_redeclaration(sym_t *, bool *);
@@ -192,6 +192,7 @@ extern	void	check_usage(dinfo_t *);
 extern	void	check_usage_sym(bool, sym_t *);
 extern	void	check_global_symbols(void);
 extern	void	print_previous_declaration(int, const sym_t *);
+extern	int	to_int_constant(tnode_t *, bool);
 
 /*
  * tree.c
@@ -219,13 +220,13 @@ extern	val_t	*constant(tnode_t *, bool);
 extern	void	expr(tnode_t *, bool, bool, bool, bool);
 extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
 		    bool, bool, bool);
-extern	bool	constant_addr(tnode_t *, sym_t **, ptrdiff_t *);
+extern	bool	constant_addr(const tnode_t *, sym_t **, ptrdiff_t *);
 extern	strg_t	*cat_strings(strg_t *, strg_t *);
-extern  int64_t tsize(type_t *);
+extern  int64_t type_size_in_bits(type_t *);
 #ifdef DEBUG
-extern	void	debug_node(const tnode_t *);
+extern	void	debug_node(const tnode_t *, int);
 #else
-#define debug_node(tn) (void)0
+#define debug_node(tn, indent) do { } while (false)
 #endif
 
 /*
@@ -233,8 +234,8 @@ extern	void	debug_node(const tnode_t *);
  */
 extern	sym_t	*funcsym;
 extern	bool	reached;
-extern	bool	rchflg;
-extern	bool	ftflg;
+extern	bool	warn_about_unreachable;
+extern	bool	seen_fallthrough;
 extern	int	nargusg;
 extern	pos_t	argsused_pos;
 extern	int	nvararg;
@@ -250,8 +251,8 @@ extern	bool	bitfieldtype_ok;
 extern	bool	plibflg;
 extern	bool	quadflg;
 
-extern	void	pushctrl(int);
-extern	void	popctrl(int);
+extern	void	begin_control_statement(control_statement_kind);
+extern	void	end_control_statement(control_statement_kind);
 extern	void	check_statement_reachable(void);
 extern	void	funcdef(sym_t *);
 extern	void	funcend(void);
@@ -269,15 +270,15 @@ extern	void	do1(void);
 extern	void	do2(tnode_t *);
 extern	void	for1(tnode_t *, tnode_t *, tnode_t *);
 extern	void	for2(void);
-extern	void	dogoto(sym_t *);
-extern	void	docont(void);
-extern	void	dobreak(void);
-extern	void	doreturn(tnode_t *);
+extern	void	do_goto(sym_t *);
+extern	void	do_continue(void);
+extern	void	do_break(void);
+extern	void	do_return(tnode_t *);
 extern	void	global_clean_up_decl(bool);
 extern	void	argsused(int);
 extern	void	constcond(int);
 extern	void	fallthru(int);
-extern	void	notreach(int);
+extern	void	not_reached(int);
 extern	void	lintlib(int);
 extern	void	linted(int);
 extern	void	varargs(int);
@@ -290,14 +291,17 @@ extern	void	bitfieldtype(int);
 /*
  * init.c
  */
-extern	bool	initerr;
-extern	sym_t	*initsym;
+extern	void	begin_initialization(sym_t *);
+extern	void	end_initialization(void);
+extern	bool	*current_initerr(void);
+extern	sym_t	**current_initsym(void);
 
 extern	void	initstack_init(void);
 extern	void	init_rbrace(void);
 extern	void	init_lbrace(void);
 extern	void	init_using_expr(tnode_t *);
-extern	void	push_member(sbuf_t *);
+extern	void	designation_add_name(sbuf_t *);
+extern	void	designation_add_subscript(range_t);
 
 /*
  * emit.c

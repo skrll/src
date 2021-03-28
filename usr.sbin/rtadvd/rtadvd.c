@@ -1,4 +1,4 @@
-/*	$NetBSD: rtadvd.c,v 1.79 2020/08/28 00:19:37 rjs Exp $	*/
+/*	$NetBSD: rtadvd.c,v 1.82 2021/03/23 18:13:07 christos Exp $	*/
 /*	$KAME: rtadvd.c,v 1.92 2005/10/17 14:40:02 suz Exp $	*/
 
 /*
@@ -283,6 +283,7 @@ main(int argc, char *argv[])
 		set[1].fd = -1;
 
 	logit(LOG_INFO, "dropping privileges to %s", RTADVD_USER);
+	tzset();
 	if (prog_chroot(pw->pw_dir) == -1) {
 		logit(LOG_ERR, "chroot: %s: %m", pw->pw_dir);
 		return EXIT_FAILURE;
@@ -469,7 +470,7 @@ rtmsg_input(void)
 	char ifname[IF_NAMESIZE];
 	struct prefix *prefix;
 	struct rainfo *rai;
-	struct in6_addr *addr;
+	const struct in6_addr *addr;
 	char addrbuf[INET6_ADDRSTRLEN];
 	int prefixchange = 0, argc;
 
@@ -483,8 +484,8 @@ rtmsg_input(void)
 	msg = buffer.data;
 	if (dflag > 1) {
 		logit(LOG_DEBUG, "%s: received a routing message "
-		    "(type = %d, len = %d)", __func__, rtmsg_type(msg),
-		    rtmsg_len(msg));
+		    "(type = %d [%s], len = %d)", __func__, rtmsg_type(msg),
+		    rtmsg_typestr(msg), rtmsg_len(msg));
 	}
 	if (n > rtmsg_len(msg)) {
 		/*
@@ -1323,7 +1324,7 @@ prefix_check(struct nd_opt_prefix_info *pinfo,
 }
 
 struct prefix *
-find_prefix(struct rainfo *rai, struct in6_addr *prefix, int plen)
+find_prefix(struct rainfo *rai, const struct in6_addr *prefix, int plen)
 {
 	struct prefix *pp;
 	int bytelen, bitlen;
@@ -1615,7 +1616,7 @@ rtsock_open(void)
 	}
 #ifdef RO_MSGFILTER
 	if (prog_setsockopt(rtsock, PF_ROUTE, RO_MSGFILTER,
-	    &msgfilter, sizeof(msgfilter) == -1))
+	    &msgfilter, sizeof(msgfilter)) == -1)
 		logit(LOG_ERR, "%s: RO_MSGFILTER: %m", __func__);
 #endif
 }
@@ -1804,13 +1805,14 @@ logit(int level, const char *fmt, ...)
 	va_start(ap, fmt);
 	if (!Dflag && after_daemon) {
 		vsyslog(level, fmt, ap);
-		va_end(ap);
-		return;
+		goto out;
 	}
-	if (level >= LOG_INFO && !dflag)
-		return;
+	if (level >= LOG_INFO && !dflag) {
+		goto out;
+	}
 
-	vwarnx(expandm(fmt, "\n", &buf), ap);
+	vwarnx(expandm(fmt, "", &buf), ap);
 	free(buf);
+out:
 	va_end(ap);
 }

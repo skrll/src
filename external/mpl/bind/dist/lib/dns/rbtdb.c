@@ -1,4 +1,4 @@
-/*	$NetBSD: rbtdb.c,v 1.9 2021/02/19 16:42:16 christos Exp $	*/
+/*	$NetBSD: rbtdb.c,v 1.11 2021/03/23 18:46:07 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -892,13 +892,9 @@ update_rrsetstats(dns_rbtdb_t *rbtdb, const rbtdb_rdatatype_t htype,
 	dns_rdatastatstype_t statattributes = 0;
 	dns_rdatastatstype_t base = 0;
 	dns_rdatastatstype_t type;
-	rdatasetheader_t *header =
-#ifndef __lint__ // XXX: lint broken
-	&(rdatasetheader_t){
+	rdatasetheader_t *header = &(rdatasetheader_t){
 		.type = htype, .attributes = ATOMIC_VAR_INIT(hattributes)
-	}
-#endif
-	;
+	};
 
 	if (!do_stats(header)) {
 		return;

@@ -1,4 +1,4 @@
-/*	$NetBSD: d_struct_init_nested.c,v 1.3 2021/01/31 14:39:31 rillig Exp $	*/
+/*	$NetBSD: d_struct_init_nested.c,v 1.6 2021/03/25 01:42:53 rillig Exp $	*/
 # 3 "d_struct_init_nested.c"
 
 /*
@@ -62,6 +62,19 @@ funcOuter3Inner2(void)
 	    inner,
 	    O3C
 	};
-
 	return o3i2.o1;
 }
+
+/*
+ * For static storage duration, each initializer expression must be a constant
+ * expression.
+ */
+struct Inner2 inner = {
+    I1C,
+    I2C
+};
+struct Outer3Inner2 o3i2 = {
+    O1C,
+    inner,			/* expect: non-constant initializer */
+    O3C
+};
