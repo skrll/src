@@ -1,9 +1,9 @@
-# $NetBSD: DRACO,v 1.190 2019/05/26 23:03:31 sevan Exp $
+# $NetBSD: DRACO,v 1.198 2021/01/26 10:50:20 rin Exp $
 #
 # This file was automatically created.
 # Changes will be lost when make is run in this directory.
 #
-# Created from: # NetBSD: GENERIC.in,v 1.142 2019/05/26 23:00:57 sevan Exp $
+# Created from: # NetBSD: GENERIC.in,v 1.148 2021/01/21 06:51:54 nia Exp $
 #
 ##
 # GENERIC machine description file
@@ -29,9 +29,11 @@ include "arch/amiga/conf/std.amiga"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.190 $"
+#ident 		"GENERIC-$Revision: 1.198 $"
 
-makeoptions	COPTS="-O2 -fno-reorder-blocks"	# see share/mk/sys.mk
+makeoptions	COPTS="-O2 -fno-reorder-blocks -fno-omit-frame-pointer"
+	# See share/mk/sys.mk. -fno-omit-frame-pointer is necessary for
+	# backtraces in DDB.
 
 maxusers	8
 options 	RTC_OFFSET=0
@@ -97,7 +99,6 @@ file-system 	OVERLAY		# overlay filesystem
 file-system 	PROCFS		# /proc filesystem
 file-system 	UMAPFS		# NULLFS + uid and gid remapping
 file-system 	UNION		# union filesystem
-file-system	SMBFS		# experimental - CIFS; also needs nsmb (below)
 file-system	PTYFS		# /dev/pts/N support
 file-system	TMPFS		# Efficient memory file-system
 #file-system	UDF		# experimental - OSTA UDF CD/DVD file-system
@@ -127,6 +128,7 @@ include 	"conf/compat_netbsd09.config"
 options 	COMPAT_SUNOS	# Support to run Sun (m68k) executables
 options 	COMPAT_NOMID	# allow nonvalid machine id executables
 #options 	COMPAT_LINUX	# Support to run Linux/m68k executables
+#options 	COMPAT_OSSAUDIO	# Support to run Linux/m68k executables
 
 options 	EXEC_AOUT	# 32-bit aout executables (NetBSD-1.5.x)
 options 	COMPAT_AOUT_M68K # actually make some system calls work.
@@ -161,6 +163,7 @@ options 	DDB		# Kernel debugger
 #options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
 #options 	DIAGNOSTIC	# Extra kernel sanity checks
 #options 	DEBUG		# Enable misc. kernel debugging code
+makeoptions	DEBUG="-g"	# compile full symbol table
 #options 	SYSCALL_DEBUG	# debug all syscalls.
 #options 	SCSIDEBUG	# Add SCSI debugging statements
 #options 	PANICBUTTON	# Forced crash via keypress (?)
@@ -313,7 +316,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	fss			# file system snapshot device
 pseudo-device	putter			# for puffs and pud
@@ -344,7 +347,6 @@ options 	RAID_AUTOCONFIG		# auto-configuration of RAID components
 #options 	RND_COM			# use "com" randomness as well (BROKEN)
 
 pseudo-device	ksyms			# /dev/ksyms (kernel symbols)
-pseudo-device	nsmb			# experimental - SMB requester
 
 # Veriexec
 include "dev/veriexec.config"

@@ -1,12 +1,12 @@
 #!/bin/sh
 #
-# $NetBSD: npf,v 1.4 2019/04/19 18:36:25 leot Exp $
+# $NetBSD: npf,v 1.7 2020/09/08 12:52:18 martin Exp $
 #
 # Public Domain.
 #
 
 # PROVIDE: npf
-# REQUIRE: root bootconf mountcritlocal tty network
+# REQUIRE: root bootconf CRITLOCALMOUNTED tty network
 # BEFORE: NETWORKING
 
 $_rc_subr_loaded . /etc/rc.subr
@@ -27,7 +27,7 @@ npf_cfg_check()
 {
 	if [ ! -f ${config} ]; then
 		warn "${config} is not readable; failed."
-		exit 1	
+		exit 1
 	fi
 }
 

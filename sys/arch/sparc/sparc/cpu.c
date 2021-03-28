@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.255 2019/10/01 18:00:07 chs Exp $ */
+/*	$NetBSD: cpu.c,v 1.259 2021/01/24 07:36:54 mrg Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -52,7 +52,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.255 2019/10/01 18:00:07 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.259 2021/01/24 07:36:54 mrg Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_lockdebug.h"
@@ -68,6 +68,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.255 2019/10/01 18:00:07 chs Exp $");
 #include <sys/xcall.h>
 #include <sys/ipi.h>
 #include <sys/cpu.h>
+#include <sys/reboot.h>
 #include <sys/sysctl.h>
 #include <sys/kmem.h>
 
@@ -81,6 +82,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.255 2019/10/01 18:00:07 chs Exp $");
 #include <machine/trap.h>
 #include <machine/pcb.h>
 #include <machine/pmap.h>
+#include <machine/locore.h>
 
 #if defined(MULTIPROCESSOR) && defined(DDB)
 #include <ddb/db_output.h>
@@ -114,7 +116,6 @@ struct cpu_softc {
 char	machine[] = MACHINE;		/* from <machine/param.h> */
 char	machine_arch[] = MACHINE_ARCH;	/* from <machine/param.h> */
 int	cpu_arch;			/* sparc architecture version */
-extern char machine_model[];
 
 int	sparc_ncpus;			/* # of CPUs detected by PROM */
 struct cpu_info *cpus[_MAXNCPU+1];	/* we only support 4 CPUs. */
@@ -486,6 +487,11 @@ cpu_attach(struct cpu_softc *sc, int node, int mid)
 
 #if defined(MULTIPROCESSOR)
 	if (cpu_attach_count > 1) {
+		if ((boothowto & RB_MD1) != 0) {
+			aprint_naive("\n");
+			aprint_normal(": multiprocessor boot disabled\n");
+			return;
+		}
 		cpu_attach_non_boot(sc, cpi, node);
 		cpu_init_evcnt(cpi);
 		cpu_setup_sysctl(sc);
@@ -657,7 +663,6 @@ cpu_init_system(void)
 void
 cpu_spinup(struct cpu_info *cpi)
 {
-	extern void cpu_hatch(void); /* in locore.s */
 	struct openprom_addr oa;
 	void *pc;
 	int n;
@@ -1100,7 +1105,6 @@ int hypersparc_getmid(void);
 int viking_getmid(void);
 
 #if (defined(SUN4M) && !defined(MSIIEP)) || defined(SUN4D)
-extern int (*moduleerr_handler)(void);
 int viking_module_error(void);
 #endif
 
@@ -1500,12 +1504,6 @@ struct module_info module_ms1 = {
 void
 cpumatch_ms1(struct cpu_info *sc, struct module_info *mp, int node)
 {
-
-	/*
-	 * Turn off page zeroing in the idle loop; an unidentified
-	 * bug causes (very sporadic) user process corruption.
-	 */
-	vm_page_zero_enable = 0;
 }
 
 void

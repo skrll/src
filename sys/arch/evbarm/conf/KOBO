@@ -1,4 +1,4 @@
-#	$NetBSD: KOBO,v 1.10 2019/07/24 12:33:18 hkenken Exp $
+#	$NetBSD: KOBO,v 1.12 2020/09/29 19:58:50 jmcneill Exp $
 #
 #	KOBO -- http://kobo.com
 #
@@ -7,7 +7,7 @@ include	"arch/evbarm/conf/std.kobo"
 include	"arch/evbarm/conf/GENERIC.common"
 
 # CPU options
-options 	CPU_CORTEXA8	# Support the ARM-v7a core
+options 	CPU_CORTEX	# Support the ARM-v7a core
 options		IMX51
 options 	IMX50
 options 	IMX508
@@ -26,6 +26,7 @@ options 	CONSPEED=115200	# Console speed
 
 #options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	KGDB
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
@@ -34,7 +35,6 @@ makeoptions	COPY_SYMTAB=1
 #  single		Boot to single user only
 #  kndb			Give control to kernel debugger
 #  ask			Ask for file name to reboot from
-#  pmapdebug=<n>	If PMAP_DEBUG, set pmap_debug_level to <n>
 #  memorydisk=<n>	Set memorydisk size to <n> KB
 #  quiet		Show aprint_naive output
 #  verbose		Show aprint_normal and aprint_verbose output

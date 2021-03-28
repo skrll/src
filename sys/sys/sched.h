@@ -1,7 +1,7 @@
-/*	$NetBSD: sched.h,v 1.82 2019/12/21 11:54:04 ad Exp $	*/
+/*	$NetBSD: sched.h,v 1.90 2020/05/23 23:37:17 ad Exp $	*/
 
 /*-
- * Copyright (c) 1999, 2000, 2001, 2002, 2007, 2008, 2019
+ * Copyright (c) 1999, 2000, 2001, 2002, 2007, 2008, 2019, 2020
  *    The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -144,7 +144,7 @@ __END_DECLS
 
 #include <sys/mutex.h>
 #include <sys/time.h>
-#include <sys/evcnt.h>
+#include <sys/queue.h>
 
 /*
  * Per-CPU scheduler state.  Field markings and the corresponding locks: 
@@ -158,6 +158,7 @@ struct schedstate_percpu {
 	kmutex_t	*spc_mutex;	/* (: lock on below, runnable LWPs */
 	kmutex_t	*spc_lwplock;	/* (: general purpose lock for LWPs */
 	struct lwp	*spc_migrating;	/* (: migrating LWP */
+	struct cpu_info *spc_nextpkg;	/* (: next package 1st for RR */
 	psetid_t	spc_psid;	/* c: processor-set ID */
 	time_t		spc_lastmod;	/* c: time of last cpu state change */
 	volatile int	spc_flags;	/* s: flags; see below */
@@ -166,18 +167,14 @@ struct schedstate_percpu {
 	int		spc_ticks;	/* s: ticks until sched_tick() */
 	int		spc_pscnt;	/* s: prof/stat counter */
 	int		spc_psdiv;	/* s: prof/stat divisor */
+	int		spc_nextskim;	/* s: next time to skim other queues */
 	/* Run queue */
 	volatile pri_t	spc_curpriority;/* s: usrpri of curlwp */
 	pri_t		spc_maxpriority;/* m: highest priority queued */
 	u_int		spc_count;	/* m: count of the threads */
-	u_int		spc_avgcount;	/* m: average count of threads (* 256) */
 	u_int		spc_mcount;	/* m: count of migratable threads */
 	uint32_t	spc_bitmap[8];	/* m: bitmap of active queues */
 	TAILQ_HEAD(,lwp) *spc_queue;	/* m: queue for each priority */
-	struct evcnt	spc_ev_pull;	/* m: event counters */
-	struct evcnt	spc_ev_push;
-	struct evcnt	spc_ev_stay;
-	struct evcnt	spc_ev_localize;
 };
 
 /* spc_flags */
@@ -186,8 +183,10 @@ struct schedstate_percpu {
 #define	SPCF_OFFLINE		0x0004	/* CPU marked offline */
 #define	SPCF_RUNNING		0x0008	/* CPU is running */
 #define	SPCF_NOINTR		0x0010	/* shielded from interrupts */
-#define	SPCF_SMTPRIMARY		0x0020	/* CPU is first thread in core */
-#define	SPCF_IDLE		0x0040	/* CPU is currently idle */
+#define	SPCF_IDLE		0x0020	/* CPU is currently idle */
+#define	SPCF_1STCLASS		0x0040	/* first class scheduling entity */
+#define	SPCF_CORE1ST		0x0100	/* first CPU in core */
+#define	SPCF_PACKAGE1ST		0x0200	/* first CPU in package */
 
 #define	SPCF_SWITCHCLEAR	(SPCF_SEENRR|SPCF_SHOULDYIELD)
 
@@ -201,7 +200,6 @@ struct schedstate_percpu {
 #define	CLONE_FS		0x00000200	/* share "file system" info */
 #define	CLONE_FILES		0x00000400	/* share file descriptors */
 #define	CLONE_SIGHAND		0x00000800	/* share signal actions */
-#define	CLONE_PID		0x00001000	/* share process ID */
 #define	CLONE_PTRACE		0x00002000	/* ptrace(2) continues on
 						   child */
 #define	CLONE_VFORK		0x00004000	/* parent blocks until child
@@ -212,6 +210,7 @@ struct schedstate_percpu {
 #ifdef _KERNEL
 
 extern int schedhz;			/* ideally: 16 */
+extern u_int sched_rrticks;
 
 struct proc;
 struct cpu_info;
@@ -239,11 +238,13 @@ void		sched_pstats_hook(struct lwp *, int);
 bool		sched_curcpu_runnable_p(void);
 void		sched_dequeue(struct lwp *);
 void		sched_enqueue(struct lwp *);
+void		sched_preempted(struct lwp *);
 void		sched_resched_cpu(struct cpu_info *, pri_t, bool);
 void		sched_resched_lwp(struct lwp *, bool);
 struct lwp *	sched_nextlwp(void);
 void		sched_oncpu(struct lwp *);
 void		sched_newts(struct lwp *);
+void		sched_vforkexec(struct lwp *, bool);
 
 /* Priority adjustment */
 void		sched_nice(struct proc *, int);
@@ -267,6 +268,8 @@ void		sched_print_runqueue(void (*pr)(const char *, ...)
 /* Dispatching */
 bool		kpreempt(uintptr_t);
 void		preempt(void);
+bool		preempt_needed(void);
+void		preempt_point(void);
 void		yield(void);
 void		mi_switch(struct lwp *);
 void		updatertime(lwp_t *, const struct bintime *);

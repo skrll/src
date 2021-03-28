@@ -1,4 +1,4 @@
-$NetBSD: TODO.smpnet,v 1.29 2019/03/27 06:56:37 ozaki-r Exp $
+$NetBSD: TODO.smpnet,v 1.40 2021/01/20 10:26:43 nia Exp $
 
 MP-safe components
 ==================
@@ -7,10 +7,12 @@ They work without the big kernel lock (KERNEL_LOCK), i.e., with NET_MPSAFE
 kernel option.  Some components scale up and some don't.
 
  - Device drivers
+   - aq(4)
    - vioif(4)
    - vmx(4)
    - wm(4)
    - ixg(4)
+   - ixl(4)
    - ixv(4)
  - Layer 2
    - Ethernet (if_ethersubr.c)
@@ -25,6 +27,7 @@ kernel option.  Some components scale up and some don't.
    - l2tp(4)
    - pppoe(4)
      - if_spppsubr.c
+   - tap(4)
    - tun(4)
    - vlan(4)
  - Packet filters
@@ -59,12 +62,8 @@ Unprotected ones
 
  - Layer 2
    - ARCNET (if_arcsubr.c)
-   - BRIDGE_IPF
-   - FDDI (if_fddisubr.c)
-   - HIPPI (if_hippisubr.c)
    - IEEE 1394 (if_ieee1394subr.c)
    - IEEE 802.11 (ieee80211(4))
-   - Token ring (if_tokensubr.c)
  - Layer 3
    - IPSELSRC
    - MROUTING
@@ -79,9 +78,7 @@ Unprotected ones
    - ppp(4)
    - sl(4)
    - stf(4)
-   - strip(4)
    - if_srt
-   - tap(4)
  - Packet filters
    - ipf(4)
    - pf(4)
@@ -89,7 +86,6 @@ Unprotected ones
    - AppleTalk (sys/netatalk/)
    - Bluetooth (sys/netbt/)
    - altq(4)
-   - CIFS (sys/netsmb/)
    - kttcp(4)
    - NFS
 
@@ -121,6 +117,17 @@ actual devices, no time (or interest/love) to work on the task, so instead we
 provide a deferred bpf_mtap mechanism that forcibly runs bpf_mtap in softint
 context.  It's a workaround and once the functions run in softint, we should use
 the original bpf_mtap again.
+
+if_mcast_op() - SIOCADDMULTI/SIOCDELMULTI
+-----------------------------------------
+Helper function is called to add or remove multicast addresses for
+interface.  When called via ioctl it takes IFNET_LOCK(), when called
+via sosetopt() it doesn't.
+
+Various network drivers can't assert IFNET_LOCKED() in their if_ioctl
+because of this. Generally drivers still take care to splnet() even
+with NET_MPSAFE before calling ether_ioctl(), but they do not take
+KERNEL_LOCK(), so this is actually unsafe.
 
 Lingering obsolete variables
 -----------------------------
@@ -172,15 +179,6 @@ Scalability
    is O(n)
  - opencrypto(9)'s crypto_newsession()/crypto_freesession() aren't scalable
    as they are serialized by one mutex
-
-ec_multi* of ethercom
----------------------
-
-ec_multiaddrs and ec_multicnt of struct ethercom and items listed in
-ec_multiaddrs must be protected by ec_lock.  The core of ethernet subsystem is
-already MP-safe, however, device drivers that use the data should also be fixed.
-A typical change should be to protect manipulations of the data via ETHER_*
-macros such as ETHER_FIRST_MULTI by ETHER_LOCK and ETHER_UNLOCK.
 
 ALTQ
 ----

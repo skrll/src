@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.40 2019/11/20 06:23:31 martin Exp $
+# $NetBSD: Makefile,v 1.45 2021/02/23 15:16:43 joerg Exp $
 
 # Link the gallium mega driver.
 
@@ -25,7 +25,6 @@ CPPFLAGS+=	-I${DESTDIR}${X11INCDIR}/libdrm \
 
 CFLAGS+=	-pthread
 LDFLAGS+=	-pthread
-LIBDPLIBS+=	pthread		${.CURDIR}/../../../../../lib/libpthread
 
 GALLIUM_SUBDIRS= \
 	auxiliary \
@@ -94,12 +93,12 @@ BUILD_LLVMPIPE=0
 BUILD_I915=0
 .if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64"
 BUILD_I915=1
-. if ${MKLLVMRT} != "no"
-BUILD_RADEON=1
-. endif
 .endif
 .if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64" || ${MACHINE} == "evbarm"
 BUILD_NOUVEAU=1
+. if ${MKLLVMRT} != "no"
+BUILD_RADEON=1
+. endif
 BUILD_VDPAU=1
 .endif
 
@@ -118,7 +117,7 @@ BUILD_LLVMPIPE=1
 
 DRIVERS=		kms_swrast swrast
 .if ${BUILD_RADEON} == 1
-DRIVERS+=		r600 r300
+DRIVERS+=		r600 r300 radeonsi
 GALLIUM_SUBDIRS+=	${GALLIUM_SUBDIRS_ATI}
 .endif
 .if ${BUILD_NOUVEAU} == 1
@@ -953,10 +952,11 @@ CPPFLAGS.${_s}+= -I${X11SRCDIR.Mesa}/src/gallium/${_d}
 .if ${BUILD_RADEON} == 1
 CFLAGS+=	-pthread
 LDFLAGS+=	-pthread
-LIBDPLIBS+=	pthread		${.CURDIR}/../../../../../lib/libpthread
 .endif
 
-LIBDPLIBS+=	m		${.CURDIR}/../../../../../lib/libm
+LIBDPLIBS+=	X11-xcb         ${.CURDIR}/../libX11/libX11-xcb
+LIBDPLIBS+=	xcb-dri2        ${.CURDIR}/../libxcb/dri2
+LIBDPLIBS+=	xcb		${.CURDIR}/../libxcb/libxcb
 .if ${BUILD_RADEON} == 1 || ${BUILD_NOUVEAU} == 1
 LIBDPLIBS+= 	drm		${.CURDIR}/../libdrm
 .if ${BUILD_I915} == 1
@@ -973,10 +973,11 @@ LIBDPLIBS+= 	drm_nouveau	${.CURDIR}/../libdrm_nouveau
 LIBDPLIBS+= 	glapi		${.CURDIR}/../libglapi
 LIBDPLIBS+=	expat		${.CURDIR}/../../../../../external/mit/expat/lib/libexpat
 LIBDPLIBS+=	terminfo	${.CURDIR}/../../../../../lib/libterminfo
-LIBDPLIBS+=	z		${.CURDIR}/../../../../../lib/libz
 LIBDPLIBS+=	execinfo	${.CURDIR}/../../../../../lib/libexecinfo
-LIBDPLIBS+=	X11-xcb         ${.CURDIR}/../libX11/libX11-xcb
-LIBDPLIBS+=	xcb-dri2        ${.CURDIR}/../libxcb/dri2
+
+LIBDPLIBS+=	elf		${NETBSDSRCDIR}/external/bsd/elftoolchain/lib/libelf
+LIBDPLIBS+=	z		${.CURDIR}/../../../../../lib/libz
+LIBDPLIBS+=	m		${.CURDIR}/../../../../../lib/libm
 
 # gallium drivers requiring LLVM
 .if ${BUILD_LLVMPIPE} == 1 || ${BUILD_RADEON} == 1
@@ -1113,8 +1114,8 @@ CPPFLAGS.streaming-load-memcpy.c+= -msse4.1
 CPPFLAGS.i386+= -march=i586
 CPPFLAGS+=	${CPPFLAGS.${XORG_MACHINE_ARCH:U${MACHINE_ARCH}}}
 
-CPPFLAGS.r600_pipe_common.c+=	-DMESA_LLVM_VERSION_STRING=\"7.0.0\"
-CPPFLAGS.si_get.c+=	-DMESA_LLVM_VERSION_STRING=\"7.0.0\"
+CPPFLAGS.r600_pipe_common.c+=	-DMESA_LLVM_VERSION_STRING=\"${LLVM_VERSION}\"
+CPPFLAGS.si_get.c+=	-DMESA_LLVM_VERSION_STRING=\"${LLVM_VERSION}\"
 
 .include "../driver.mk"
 

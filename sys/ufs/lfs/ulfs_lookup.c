@@ -1,4 +1,4 @@
-/*	$NetBSD: ulfs_lookup.c,v 1.41 2017/06/10 05:29:36 maya Exp $	*/
+/*	$NetBSD: ulfs_lookup.c,v 1.46 2020/09/05 02:55:38 riastradh Exp $	*/
 /*  from NetBSD: ufs_lookup.c,v 1.135 2015/07/11 11:04:48 mlelstv  */
 
 /*
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ulfs_lookup.c,v 1.41 2017/06/10 05:29:36 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ulfs_lookup.c,v 1.46 2020/09/05 02:55:38 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_lfs.h"
@@ -162,14 +162,6 @@ ulfs_lookup(void *v)
 	endsearch = 0; /* silence compiler warning */
 
 	/*
-	 * Produce the auxiliary lookup results into i_crap. Increment
-	 * its serial number so elsewhere we can tell if we're using
-	 * stale results. This should not be done this way. XXX.
-	 */
-	results = &dp->i_crap;
-	dp->i_crapcounter++;
-
-	/*
 	 * Check accessiblity of directory.
 	 */
 	if ((error = VOP_ACCESS(vdp, VEXEC, cred)) != 0)
@@ -193,6 +185,19 @@ ulfs_lookup(void *v)
 		}
 		return *vpp == NULLVP ? ENOENT : 0;
 	}
+
+	/* May need to restart the lookup with an exclusive lock. */
+	if (VOP_ISLOCKED(vdp) != LK_EXCLUSIVE)
+		return ENOLCK;
+
+	/*
+	 * Produce the auxiliary lookup results into i_crap. Increment
+	 * its serial number so elsewhere we can tell if we're using
+	 * stale results. This should not be done this way. XXX.
+	 */
+	results = &dp->i_crap;
+	dp->i_crapcounter++;
+
 	if (iswhiteout) {
 		/*
 		 * The namecache set iswhiteout without finding a
@@ -292,8 +297,8 @@ ulfs_lookup(void *v)
 
 searchloop:
 	while (results->ulr_offset < endsearch) {
-		if (curcpu()->ci_schedstate.spc_flags & SPCF_SHOULDYIELD)
-			preempt();
+		preempt_point();
+
 		/*
 		 * If necessary, get the next directory block.
 		 */
@@ -569,7 +574,7 @@ found:
 		 */
 		if (dp->i_mode & ISVTX) {
 			error = kauth_authorize_vnode(cred, KAUTH_VNODE_DELETE,
-			    tdp, vdp, genfs_can_sticky(cred, dp->i_uid,
+			    tdp, vdp, genfs_can_sticky(vdp, cred, dp->i_uid,
 			    VTOI(tdp)->i_uid));
 			if (error) {
 				vrele(tdp);

@@ -1,4 +1,4 @@
-.\" $NetBSD: tap.4,v 1.12 2018/08/14 06:21:36 maxv Exp $
+.\" $NetBSD: tap.4,v 1.15 2020/09/27 19:36:54 roy Exp $
 .\"
 .\"  Copyright (c) 2004, 2005 The NetBSD Foundation.
 .\"  All rights reserved.
@@ -24,12 +24,12 @@
 .\"  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\"  POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd August 14, 2018
+.Dd September 27, 2020
 .Dt TAP 4
 .Os
 .Sh NAME
 .Nm tap
-.Nd virtual Ethernet device
+.Nd Ethernet tunnel software network interface
 .Sh SYNOPSIS
 .Cd pseudo-device tap
 .Sh DESCRIPTION
@@ -159,6 +159,14 @@ ioctl on a
 .Dv PF_LINK
 socket, as it is not available on
 the ioctl handler of the character device interface.
+.Ss LINK STATE
+When an application has opened the
+.Nm
+character device the link is considered up, otherwise down.
+As such, it is best to open the character device once connectivity has
+been established so that Duplicate Address Detection, if applicable,
+can be performed.
+If connectivity is lost, the character device should be closed.
 .Sh FILES
 .Bl -tag -compact -width /dev/tap[0-9]*
 .It Pa /dev/tap
@@ -170,9 +178,21 @@ individual character device nodes
 .Xr bridge 4 ,
 .Xr l2tp 4 ,
 .Xr tun 4 ,
+.Xr vether 4 ,
 .Xr ifconfig 8
 .Sh HISTORY
 The
 .Nm
 driver first appeared in
 .Nx 3.0 .
+.Sh CAVEATS
+Starting from
+.Nx 10.0 ,
+the
+.Nm
+driver can no longer be used as a
+.Xr bridge 4
+endpoint because it supports a link state based on if it has been opened or not.
+Use the
+.Xr vether 4
+driver instead as it's been explicitly designed for this purpose.

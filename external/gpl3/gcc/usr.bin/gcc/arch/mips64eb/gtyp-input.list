@@ -1,13 +1,12 @@
 SRCDIR/gcc/../libcpp/include/line-map.h
 SRCDIR/gcc/../libcpp/include/cpplib.h
-SRCDIR/gcc/../libcpp/include/cpp-id-data.h
 SRCDIR/gcc/input.h
 SRCDIR/gcc/coretypes.h
 auto-host.h
 SRCDIR/gcc/../include/ansidecl.h
 options.h
-SRCDIR/gcc/config/elfos.h
 SRCDIR/gcc/config/vxworks-dummy.h
+SRCDIR/gcc/config/elfos.h
 SRCDIR/gcc/config/mips/mips.h
 SRCDIR/gcc/config/mips/elf.h
 SRCDIR/gcc/config/netbsd.h
@@ -86,7 +85,6 @@ SRCDIR/gcc/tree.c
 SRCDIR/gcc/varasm.c
 SRCDIR/gcc/gimple.h
 SRCDIR/gcc/gimple-ssa.h
-SRCDIR/gcc/tree-chkp.c
 SRCDIR/gcc/tree-ssanames.c
 SRCDIR/gcc/tree-eh.c
 SRCDIR/gcc/tree-ssa-address.c
@@ -129,6 +127,7 @@ SRCDIR/gcc/ipa-devirt.c
 SRCDIR/gcc/internal-fn.h
 SRCDIR/gcc/hsa-common.c
 SRCDIR/gcc/calls.c
+SRCDIR/gcc/omp-general.h
 [brig]
 SRCDIR/gcc/brig/brig-lang.c
 SRCDIR/gcc/brig/brig-c.h
@@ -157,7 +156,7 @@ SRCDIR/gcc/cp/decl.h
 SRCDIR/gcc/cp/parser.h
 SRCDIR/gcc/c-family/c-common.c
 SRCDIR/gcc/c-family/c-format.c
-SRCDIR/gcc/c-family/c-lex.c
+SRCDIR/gcc/c-family/c-cppbuiltin.c
 SRCDIR/gcc/c-family/c-pragma.c
 SRCDIR/gcc/cp/call.c
 SRCDIR/gcc/cp/class.c
@@ -184,6 +183,22 @@ SRCDIR/gcc/cp/tree.c
 SRCDIR/gcc/cp/typeck2.c
 SRCDIR/gcc/cp/vtable-class-hierarchy.c
 
+[d]
+SRCDIR/gcc/d/d-tree.h
+SRCDIR/gcc/d/d-builtins.cc
+SRCDIR/gcc/d/d-lang.cc
+SRCDIR/gcc/d/modules.cc
+SRCDIR/gcc/d/typeinfo.cc
+[fortran]
+SRCDIR/gcc/fortran/f95-lang.c
+SRCDIR/gcc/fortran/trans-decl.c
+SRCDIR/gcc/fortran/trans-intrinsic.c
+SRCDIR/gcc/fortran/trans-io.c
+SRCDIR/gcc/fortran/trans-stmt.c
+SRCDIR/gcc/fortran/trans-types.c
+SRCDIR/gcc/fortran/trans-types.h
+SRCDIR/gcc/fortran/trans.h
+SRCDIR/gcc/fortran/trans-const.h
 [jit]
 SRCDIR/gcc/jit/dummy-frontend.c
 [lto]
@@ -211,6 +226,7 @@ SRCDIR/gcc/c-family/c-common.h
 SRCDIR/gcc/c-family/c-cppbuiltin.c
 SRCDIR/gcc/c-family/c-pragma.h
 SRCDIR/gcc/c-family/c-pragma.c
+SRCDIR/gcc/c-family/c-format.c
 [objcp]
 SRCDIR/gcc/cp/name-lookup.h
 SRCDIR/gcc/cp/cp-tree.h
@@ -221,7 +237,7 @@ SRCDIR/gcc/cp/decl.h
 SRCDIR/gcc/cp/parser.h
 SRCDIR/gcc/c-family/c-common.c
 SRCDIR/gcc/c-family/c-format.c
-SRCDIR/gcc/c-family/c-lex.c
+SRCDIR/gcc/c-family/c-cppbuiltin.c
 SRCDIR/gcc/c-family/c-pragma.c
 SRCDIR/gcc/cp/call.c
 SRCDIR/gcc/cp/class.c
@@ -249,7 +265,6 @@ SRCDIR/gcc/cp/typeck2.c
 SRCDIR/gcc/cp/vtable-class-hierarchy.c
 SRCDIR/gcc/objc/objc-act.h
 SRCDIR/gcc/objc/objc-map.h
-SRCDIR/gcc/c-family/c-cppbuiltin.c
 SRCDIR/gcc/objc/objc-act.c
 SRCDIR/gcc/objc/objc-gnu-runtime-abi-01.c
 SRCDIR/gcc/objc/objc-next-runtime-abi-01.c

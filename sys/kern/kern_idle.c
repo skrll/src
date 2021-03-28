@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_idle.c,v 1.28 2019/12/06 21:36:10 ad Exp $	*/
+/*	$NetBSD: kern_idle.c,v 1.34 2020/09/05 16:30:12 riastradh Exp $	*/
 
 /*-
  * Copyright (c)2002, 2006, 2007 YAMAMOTO Takashi,
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: kern_idle.c,v 1.28 2019/12/06 21:36:10 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_idle.c,v 1.34 2020/09/05 16:30:12 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -39,8 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_idle.c,v 1.28 2019/12/06 21:36:10 ad Exp $");
 #include <sys/proc.h>
 #include <sys/atomic.h>
 
-#include <uvm/uvm.h>	/* uvm_pageidlezero */
-#include <uvm/uvm_extern.h>
+#include <uvm/uvm.h>	/* uvm_idle */
 
 void
 idle_loop(void *dummy)
@@ -49,17 +48,15 @@ idle_loop(void *dummy)
 	struct schedstate_percpu *spc;
 	struct lwp *l = curlwp;
 
-	kcpuset_atomic_set(kcpuset_running, cpu_index(ci));
-	spc = &ci->ci_schedstate;
-	ci->ci_onproc = l;
-
-	/* Update start time for this thread. */
 	lwp_lock(l);
+	spc = &ci->ci_schedstate;
 	KASSERT(lwp_locked(l, spc->spc_lwplock));
+	kcpuset_atomic_set(kcpuset_running, cpu_index(ci));
+	/* Update start time for this thread. */
 	binuptime(&l->l_stime);
 	spc->spc_flags |= SPCF_RUNNING;
-	l->l_stat = LSONPROC;
-	l->l_pflag |= LP_RUNNING;
+	KASSERT((l->l_pflag & LP_RUNNING) != 0);
+	l->l_stat = LSIDL;
 	lwp_unlock(l);
 
 	/*
@@ -81,7 +78,7 @@ idle_loop(void *dummy)
 		sched_idle();
 		if (!sched_curcpu_runnable_p()) {
 			if ((spc->spc_flags & SPCF_OFFLINE) == 0) {
-				uvm_pageidlezero();
+				uvm_idle();
 			}
 			if (!sched_curcpu_runnable_p()) {
 				cpu_idle();
@@ -93,11 +90,10 @@ idle_loop(void *dummy)
 		}
 		KASSERT(l->l_mutex == l->l_cpu->ci_schedstate.spc_lwplock);
 		lwp_lock(l);
-		l->l_stat = LSIDL;
 		spc_lock(l->l_cpu);
 		mi_switch(l);
 		KASSERT(curlwp == l);
-		KASSERT(l->l_stat == LSONPROC);
+		KASSERT(l->l_stat == LSIDL);
 	}
 }
 
@@ -114,6 +110,17 @@ create_idle_lwp(struct cpu_info *ci)
 		panic("create_idle_lwp: error %d", error);
 	lwp_lock(l);
 	l->l_flag |= LW_IDLE;
+	if (ci != lwp0.l_cpu) {
+		/*
+		 * For secondary CPUs, the idle LWP is the first to run, and
+		 * it's directly entered from MD code without a trip through
+		 * mi_switch().  Make the picture look good in case the CPU
+		 * takes an interrupt before it calls idle_loop().
+		 */
+		l->l_stat = LSIDL;
+		l->l_pflag |= LP_RUNNING;
+		ci->ci_onproc = l;
+	}
 	lwp_unlock(l);
 	ci->ci_data.cpu_idlelwp = l;
 

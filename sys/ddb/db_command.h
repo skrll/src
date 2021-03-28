@@ -1,4 +1,4 @@
-/*	$NetBSD: db_command.h,v 1.35 2009/03/07 22:02:17 ad Exp $	*/
+/*	$NetBSD: db_command.h,v 1.41 2021/02/23 07:13:53 mrg Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 1999, 2002 The NetBSD Foundation, Inc.
@@ -88,7 +88,9 @@ struct db_command;
 #define DDB_ADD_CMD(name,funct,type,cmd_descr,cmd_arg,arg_desc)\
  name,funct,type
 #endif
-   
+
+/* End of list for ddb command arrays. */
+#define DDB_END_CMD DDB_ADD_CMD(NULL, NULL, 0, NULL, NULL, NULL)
 
 
 /*
@@ -109,7 +111,7 @@ int db_unregister_tbl(uint8_t, const struct db_command *);
  */
 struct db_command {
 	const char	*name;		/* command name */
-  
+
 	/* function to call */
 	void		(*fcn)(db_expr_t, bool, db_expr_t, const char *);
 	/*
@@ -126,20 +128,20 @@ struct db_command {
 	 * CS_SET_DOT specify if this command is put to last added command memory.
 	 * CS_NOREPEAT this command does not repeat
 	 */
-	uint16_t		flag;		/* extra info: */
-#define	CS_OWN		0x1			/* non-standard syntax */
-#define	CS_MORE		0x2			/* standard syntax, but may have other
-					   				words at end */
-#define CS_COMPAT	0x4			/* is set for compatibilty with old 
-									ddb versions*/
-#define CS_SHOW		0x8			/* select show list */
+	uint16_t	flag;		/* extra info: */
+#define	CS_OWN		0x1		/* non-standard syntax */
+#define	CS_MORE		0x2		/* standard syntax, but may have other
+								words at end */
+#define CS_COMPAT	0x4		/* is set for compatibilty with old
+								ddb versions */
+#define CS_SHOW		0x8		/* select show list */
 #define CS_MACH		0x10		/* select machine dependent list */
 
 #define	CS_SET_DOT	0x100		/* set dot after command */
 #define	CS_NOREPEAT	0x200		/* don't set last_command */
 #ifdef DDB_VERBOSE_HELP
-	const char *cmd_descr; /* description of command */
-	const char *cmd_arg;   /* command arguments */
+	const char *cmd_descr;		/* description of command */
+	const char *cmd_arg;		/* command arguments */
 	const char *cmd_arg_help;	/* arguments description */
 #endif
 };
@@ -147,5 +149,10 @@ struct db_command {
 void	*db_alloc(size_t);
 void	*db_zalloc(size_t);
 void	db_free(void *, size_t);
+
+#ifndef _KERNEL
+#define db_kernelonly() \
+    db_printf("%s: can only be used in-kernel.\n", __func__)
+#endif
 
 #endif /*_DDB_COMMAND_*/

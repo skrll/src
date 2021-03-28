@@ -1,7 +1,7 @@
-/*	$NetBSD: proc.h,v 1.357 2019/10/12 19:38:57 kamil Exp $	*/
+/*	$NetBSD: proc.h,v 1.368 2020/12/05 18:17:01 thorpej Exp $	*/
 
 /*-
- * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -87,6 +87,7 @@
 #include <sys/mutex.h>
 #include <sys/condvar.h>
 #include <sys/queue.h>
+#include <sys/radixtree.h>
 #include <sys/signalvar.h>
 #include <sys/siginfo.h>
 #include <sys/event.h>
@@ -229,11 +230,7 @@ struct vmspace;
 
 struct proc {
 	LIST_ENTRY(proc) p_list;	/* l: List of all processes */
-
-	kmutex_t	p_auxlock;	/* :: secondary, longer term lock */
 	kmutex_t	*p_lock;	/* :: general mutex */
-	kmutex_t	p_stmutex;	/* :: mutex on profiling state */
-	krwlock_t	p_reflock;	/* p: lock for debugger, procfs */
 	kcondvar_t	p_waitcv;	/* p: wait, stop CV on children */
 	kcondvar_t	p_lwpcv;	/* p: wait, stop CV on LWPs */
 
@@ -253,7 +250,7 @@ struct proc {
 	int		p_exitsig;	/* l: signal to send to parent on exit */
 	int		p_flag;		/* p: PK_* flags */
 	int		p_sflag;	/* p: PS_* flags */
-	int		p_slflag;	/* s, l: PSL_* flags */
+	int		p_slflag;	/* p, l: PSL_* flags */
 	int		p_lflag;	/* l: PL_* flags */
 	int		p_stflag;	/* t: PST_* flags */
 	char		p_stat;		/* p: S* process status. */
@@ -276,7 +273,6 @@ struct proc {
 	int		p_nrlwps;	/* p: Number running/sleeping LWPs */
 	int		p_nlwpwait;	/* p: Number of LWPs in lwp_wait1() */
 	int		p_ndlwps;	/* p: Number of detached LWPs */
-	int 		p_nlwpid;	/* p: Next LWP ID */
 	u_int		p_nstopchild;	/* l: Count of stopped/dead children */
 	u_int		p_waited;	/* l: parent has waited on child */
 	struct lwp	*p_zomblwp;	/* p: detached LWP to be reaped */
@@ -311,6 +307,7 @@ struct proc {
 	sigpend_t	p_sigpend;	/* p: pending signals */
 	struct lcproc	*p_lwpctl;	/* p, a: _lwp_ctl() information */
 	pid_t		p_ppid;		/* :: cached parent pid */
+	pid_t		p_oppid;	/* :: cached original parent pid */
 	char		*p_path;	/* :: full pathname of executable */
 
 /*
@@ -342,6 +339,13 @@ struct proc {
 	struct mdproc	p_md;		/* p: Any machine-dependent fields */
 	vaddr_t		p_stackbase;	/* :: ASLR randomized stack base */
 	struct kdtrace_proc *p_dtrace;	/* :: DTrace-specific data. */
+/*
+ * Locks in their own cache line towards the end.
+ */
+	kmutex_t	p_auxlock	/* :: secondary, longer term lock */
+	    __aligned(COHERENCY_UNIT);
+	kmutex_t	p_stmutex;	/* :: mutex on profiling state */
+	krwlock_t	p_reflock;	/* :: lock for debugger, procfs */
 };
 
 #define	p_rlimit	p_limit->pl_rlimit
@@ -409,6 +413,7 @@ struct proc {
 			0x00000020 /* traced process wants posix_spawn events */
 
 #define	PSL_TRACED	0x00000800 /* Debugged process being traced */
+#define	PSL_TRACEDCHILD 0x00001000 /* Report process birth */
 #define	PSL_CHTRACED	0x00400000 /* Child has been traced & reparented */
 #define	PSL_SYSCALL	0x04000000 /* process has PT_SYSCALL enabled */
 #define	PSL_SYSCALLEMU	0x08000000 /* cancel in-progress syscall */
@@ -480,7 +485,7 @@ extern u_int		nprocs;		/* Current number of procs */
 extern int		maxproc;	/* Max number of procs */
 #define	vmspace_kernel()	(proc0.p_vmspace)
 
-extern kmutex_t		*proc_lock;
+extern kmutex_t		proc_lock;
 extern struct proclist	allproc;	/* List of all processes */
 extern struct proclist	zombproc;	/* List of zombie processes */
 
@@ -488,11 +493,14 @@ extern struct proc	*initproc;	/* Process slots for init, pager */
 
 extern const struct proclist_desc proclists[];
 
-extern struct pool	ptimer_pool;	/* Memory pool for ptimers */
-
 int		proc_find_locked(struct lwp *, struct proc **, pid_t);
 proc_t *	proc_find_raw(pid_t);
 proc_t *	proc_find(pid_t);		/* Find process by ID */
+proc_t *	proc_find_lwpid(pid_t);		/* Find process by LWP ID */
+struct lwp *	proc_find_lwp(proc_t *, pid_t);	/* Find LWP in proc by ID */
+struct lwp *	proc_find_lwp_unlocked(proc_t *, pid_t);
+						/* Find LWP, acquire proc */
+struct lwp *	proc_find_lwp_acquire_proc(pid_t, proc_t **);
 struct pgrp *	pgrp_find(pid_t);		/* Find process group by ID */
 
 void	procinit(void);
@@ -517,6 +525,8 @@ struct proc *proc_alloc(void);
 void	proc0_init(void);
 pid_t	proc_alloc_pid(struct proc *);
 void	proc_free_pid(pid_t);
+pid_t	proc_alloc_lwpid(struct proc *, struct lwp *);
+void	proc_free_lwpid(struct proc *, pid_t);
 void	proc_free_mem(struct proc *);
 void	exit_lwps(struct lwp *l);
 int	fork1(struct lwp *, int, int, void *, size_t,

@@ -1,4 +1,4 @@
-/*      $NetBSD: rumpuser_sp.c,v 1.72 2016/09/06 07:45:41 martin Exp $	*/
+/*      $NetBSD: rumpuser_sp.c,v 1.77 2020/05/06 12:44:36 christos Exp $	*/
 
 /*
  * Copyright (c) 2010, 2011 Antti Kantee.  All Rights Reserved.
@@ -37,7 +37,7 @@
 #include "rumpuser_port.h"
 
 #if !defined(lint)
-__RCSID("$NetBSD: rumpuser_sp.c,v 1.72 2016/09/06 07:45:41 martin Exp $");
+__RCSID("$NetBSD: rumpuser_sp.c,v 1.77 2020/05/06 12:44:36 christos Exp $");
 #endif /* !lint */
 
 #include <sys/types.h>
@@ -699,10 +699,8 @@ serv_handlesyscall(struct spclient *spc, struct rsp_hdr *rhdr, uint8_t *data)
 }
 
 static void
-serv_handleexec(struct spclient *spc, struct rsp_hdr *rhdr, char *comm)
+serv_handleexec(struct spclient *spc, struct rsp_hdr *rhdr, const char *comm)
 {
-	size_t commlen = rhdr->rsp_len - HDRSZ;
-
 	pthread_mutex_lock(&spc->spc_mtx);
 	/* one for the connection and one for us */
 	while (spc->spc_refcnt > 2)
@@ -714,10 +712,6 @@ serv_handleexec(struct spclient *spc, struct rsp_hdr *rhdr, char *comm)
 	 * the connection is dead, in which case this doesn't matter
 	 * very much).  proceed with exec.
 	 */
-
-	/* ensure comm is 0-terminated */
-	/* TODO: make sure it contains sensible chars? */
-	comm[commlen] = '\0';
 
 	lwproc_switch(spc->spc_mainlwp);
 	lwproc_execnotify(comm);
@@ -912,7 +906,7 @@ schedulework(struct spclient *spc, enum sbatype sba_type)
 
 	reqno = spc->spc_hdr.rsp_reqno;
 	while ((sba = malloc(sizeof(*sba))) == NULL) {
-		if (nworker == 0 || retries > 10) {
+		if (nworker == 0 || retries++ > 10) {
 			send_error_resp(spc, reqno, RUMPSP_ERR_TRYAGAIN);
 			spcfreebuf(spc);
 			return;
@@ -976,18 +970,11 @@ handlereq(struct spclient *spc)
 		}
 
 		if (spc->spc_hdr.rsp_handshake == HANDSHAKE_GUEST) {
-			char *comm = (char *)spc->spc_buf;
-			size_t commlen = spc->spc_hdr.rsp_len - HDRSZ;
-
-			/* ensure it's 0-terminated */
-			/* XXX make sure it contains sensible chars? */
-			comm[commlen] = '\0';
-
 			/* make sure we fork off of proc1 */
 			_DIAGASSERT(lwproc_curlwp() == NULL);
 
-			if ((error = lwproc_rfork(spc,
-			    RUMP_RFFD_CLEAR, comm)) != 0) {
+			if ((error = lwproc_rfork(spc, RUMP_RFFD_CLEAR,
+			    (const char *)spc->spc_buf)) != 0) {
 				shutdown(spc->spc_fd, SHUT_RDWR);
 			}
 

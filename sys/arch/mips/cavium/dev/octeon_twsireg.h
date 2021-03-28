@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_twsireg.h,v 1.1 2015/04/29 08:32:01 hikaru Exp $	*/
+/*	$NetBSD: octeon_twsireg.h,v 1.3 2020/06/22 03:05:07 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -46,30 +46,26 @@
 #define	MIO_TWS_SW_TWSI_SLONLY			UINT64_C(0x4000000000000000)
 #define	MIO_TWS_SW_TWSI_EIA			UINT64_C(0x2000000000000000)
 #define	MIO_TWS_SW_TWSI_OP			UINT64_C(0x1e00000000000000)
-#define	 MIO_TWS_SW_TWSI_OP_SHIFT		57
-#define	  MIO_TWS_SW_TWSI_OP_ONE		(0x0 << MIO_TWS_SW_TWSI_OP_SHIFT)
-#define	  MIO_TWS_SW_TWSI_OP_MCLK		(0x4 << MIO_TWS_SW_TWSI_OP_SHIFT)
-#define	  MIO_TWS_SW_TWSI_OP_EXTEND		(0x6 << MIO_TWS_SW_TWSI_OP_SHIFT)
-#define	  MIO_TWS_SW_TWSI_OP_FOUR		(0x8 << MIO_TWS_SW_TWSI_OP_SHIFT)
-#define	  MIO_TWS_SW_TWSI_OP_COMBR		(0x1 << MIO_TWS_SW_TWSI_OP_SHIFT)
-#define	  MIO_TWS_SW_TWSI_OP_10BIT		(0x2 << MIO_TWS_SW_TWSI_OP_SHIFT)
+#define	  MIO_TWS_SW_TWSI_OP_ONE		  0
+#define	  MIO_TWS_SW_TWSI_OP_MCLK		  4
+#define	  MIO_TWS_SW_TWSI_OP_EXTEND		  6
+#define	  MIO_TWS_SW_TWSI_OP_FOUR		  8
+#define	  MIO_TWS_SW_TWSI_OP_COMBR		  1
+#define	  MIO_TWS_SW_TWSI_OP_10BIT		  2
 #define	MIO_TWS_SW_TWSI_R			UINT64_C(0x0100000000000000)
 #define	MIO_TWS_SW_TWSI_SOVR			UINT64_C(0x0080000000000000)
 #define	MIO_TWS_SW_TWSI_SIZE			UINT64_C(0x0070000000000000)
 #define	MIO_TWS_SW_TWSI_SCR			UINT64_C(0x000c000000000000)
 #define	MIO_TWS_SW_TWSI_A			UINT64_C(0x0003ff0000000000)
-#define	 MIO_TWS_SW_TWSI_A_SHIFT		40
 #define	MIO_TWS_SW_TWSI_IA			UINT64_C(0x000000f800000000)
 #define	MIO_TWS_SW_TWSI_EOP_IA			UINT64_C(0x0000000700000000)
-#define	 MIO_TWS_SW_TWSI_EOP_IA_SHIFT		32
-#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_SLAVE_ADD	(0x0 << MIO_TWS_SW_TWSI_EOP_IA_SHIFT)
-#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_DATA	(0x1 << MIO_TWS_SW_TWSI_EOP_IA_SHIFT)
-#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_CTL	(0x2 << MIO_TWS_SW_TWSI_EOP_IA_SHIFT)
-#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_CLKCTL	(0x3 << MIO_TWS_SW_TWSI_EOP_IA_SHIFT)
-#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_STAT	(0x3 << MIO_TWS_SW_TWSI_EOP_IA_SHIFT)
-#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_SLAVE_ADD_EXT \
-						(0x4 << MIO_TWS_SW_TWSI_EOP_IA_SHIFT)
-#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_RST	(0x7 << MIO_TWS_SW_TWSI_EOP_IA_SHIFT)
+#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_SLAVE_ADD	  0
+#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_DATA	  1
+#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_CTL	  2
+#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_CLKCTL	  3
+#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_STAT	  3
+#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_SLAVE_ADD_EXT 4
+#define	  MIO_TWS_SW_TWSI_EOP_IA_TWSI_RST	  7
 #define	MIO_TWS_SW_TWSI_D			UINT64_C(0x00000000ffffffff)
 
 #define	MIO_TWS_TWSI_SW_V			UINT64_C(0xc000000000000000)
@@ -116,56 +112,6 @@
 #define	TWSI_CTL_IFLG				UINT8_C(0x08)
 #define	TWSI_CTL_AAK				UINT8_C(0x04)
 #define	TWSI_CTL_XXX_1_0			0x03
-
-/* TWSI Status Register */
-
-/* ---- snprintb */
-
-#define	MIO_TWS_SW_TWSI_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x3f"		"V\0" \
-	"b\x3e"		"SLONLY\0" \
-	"b\x3d"		"EIA\0" \
-	"f\x39\x04"	"OP\0" \
-	"b\x38"		"R\0" \
-	"b\x37"		"SOVR\0" \
-	"f\x34\x03"	"SIZE\0" \
-	"f\x32\x02"	"SCR\0" \
-	"f\x28\x0a"	"A\0" \
-	"f\x23\x05"	"IA\0" \
-	"f\x20\x03"	"EOP_IA\0" \
-	"f\x00\x20"	"D\0"
-
-#define	MIO_TWS_TWSI_SW_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x3e\x02"	"V\0" \
-	"f\x00\x20"	"D\0"
-
-#define	MIO_TWS_INT_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x0b"		"SCL\0" \
-	"b\x0a"		"SDA\0" \
-	"b\x09"		"SCL_OVR\0" \
-	"b\x08"		"SDA_OVR\0" \
-	"b\x06"		"CORE_EN\0" \
-	"b\x05"		"TS_EN\0" \
-	"b\x04"		"ST_EN\0" \
-	"b\x02"		"CORE_INT\0" \
-	"b\x01"		"TS_INT\0" \
-	"b\x00"		"ST_INT\0"
-
-#define	MIO_TWS_SW_TWSI_EXT_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x20\x08"	"IA\0" \
-	"f\x00\x20"	"D\0"
 
 /* ---- bus_space */
 

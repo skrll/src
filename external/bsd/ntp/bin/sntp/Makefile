@@ -1,6 +1,8 @@
-# $NetBSD: Makefile,v 1.7 2019/10/13 07:28:07 mrg Exp $
+# $NetBSD: Makefile,v 1.9 2020/10/11 07:07:32 rin Exp $
 
 USE_FORT?= yes	# network client/server
+
+.include <bsd.own.mk>
 
 PROG=	sntp
 MAN=	sntp.1
@@ -32,5 +34,7 @@ LDADD+= -L${LIBISC} -liscntp -levent -lm
 DPADD+=	${LIBM} ${LIBEVENT}
 
 COPTS.utilities.c+=	${GCC_NO_FORMAT_TRUNCATION}
+
+CLEANFILES+=${MAN}
 
 .include <bsd.prog.mk>

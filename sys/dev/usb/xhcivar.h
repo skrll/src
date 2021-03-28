@@ -1,4 +1,4 @@
-/*	$NetBSD: xhcivar.h,v 1.11 2019/01/07 03:00:39 jakllsch Exp $	*/
+/*	$NetBSD: xhcivar.h,v 1.17 2020/08/21 20:46:03 jakllsch Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -31,7 +31,7 @@
 
 #include <sys/pool.h>
 
-#define XHCI_XFER_NTRB	20
+#define XHCI_MAX_DCI	31
 
 struct xhci_soft_trb {
 	uint64_t trb_0;
@@ -41,7 +41,9 @@ struct xhci_soft_trb {
 
 struct xhci_xfer {
 	struct usbd_xfer xx_xfer;
-	struct xhci_soft_trb xx_trb[XHCI_XFER_NTRB];
+	struct xhci_soft_trb *xx_trb;
+	u_int xx_ntrb;
+	u_int xx_isoc_done;
 };
 
 #define XHCI_BUS2SC(bus)	((bus)->ub_hcpriv)
@@ -63,14 +65,11 @@ struct xhci_ring {
 	bool is_halted;
 };
 
-struct xhci_endpoint {
-	struct xhci_ring xe_tr;		/* transfer ring */
-};
-
 struct xhci_slot {
 	usb_dma_t xs_dc_dma;		/* device context page */
 	usb_dma_t xs_ic_dma;		/* input context page */
-	struct xhci_endpoint xs_ep[32]; /* endpoints */
+	struct xhci_ring *xs_xr[XHCI_MAX_DCI + 1];
+					/* transfer rings */
 	u_int xs_idx;			/* slot index */
 };
 
@@ -114,8 +113,8 @@ struct xhci_softc {
 
 	struct xhci_slot * sc_slots;
 
-	struct xhci_ring sc_cr;		/* command ring */
-	struct xhci_ring sc_er;		/* event ring */
+	struct xhci_ring *sc_cr;	/* command ring */
+	struct xhci_ring *sc_er;	/* event ring */
 
 	usb_dma_t sc_eventst_dma;
 	usb_dma_t sc_dcbaa_dma;
@@ -128,7 +127,6 @@ struct xhci_softc {
 	struct xhci_soft_trb sc_result_trb;
 	bool sc_resultpending;
 
-	bool sc_ac64;
 	bool sc_dying;
 
 	void (*sc_vendor_init)(struct xhci_softc *);
@@ -137,6 +135,8 @@ struct xhci_softc {
 	int sc_quirks;
 #define XHCI_QUIRK_INTEL	__BIT(0) /* Intel xhci chip */
 #define XHCI_DEFERRED_START	__BIT(1)
+	uint32_t sc_hcc;		/* copy of HCCPARAMS1 */
+	uint32_t sc_hcc2;		/* copy of HCCPARAMS2 */
 };
 
 int	xhci_init(struct xhci_softc *);

@@ -1,4 +1,4 @@
-/* $NetBSD: hdaudio.c,v 1.9 2019/07/26 11:13:46 jmcneill Exp $ */
+/* $NetBSD: hdaudio.c,v 1.13 2020/12/28 19:31:43 jmcneill Exp $ */
 
 /*
  * Copyright (c) 2009 Precedence Technologies Ltd <support@precedence.co.uk>
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hdaudio.c,v 1.9 2019/07/26 11:13:46 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hdaudio.c,v 1.13 2020/12/28 19:31:43 jmcneill Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -121,36 +121,21 @@ hdaudio_codec_init(struct hdaudio_softc *sc)
 static void
 hdaudio_init(struct hdaudio_softc *sc)
 {
-	uint16_t gcap;
-	int nos, nis, nbidir;
-#if defined(HDAUDIO_DEBUG)
-	uint8_t vmin, vmaj;
-	int nsdo, addr64;
-#endif
+	const uint8_t vmaj = hda_read1(sc, HDAUDIO_MMIO_VMAJ);
+	const uint8_t vmin = hda_read1(sc, HDAUDIO_MMIO_VMIN);
+	const uint16_t gcap = hda_read2(sc, HDAUDIO_MMIO_GCAP);
+	const int nis = HDAUDIO_GCAP_ISS(gcap);
+	const int nos = HDAUDIO_GCAP_OSS(gcap);
+	const int nbidir = HDAUDIO_GCAP_BSS(gcap);
+	const int nsdo = HDAUDIO_GCAP_NSDO(gcap);
+	const int addr64 = HDAUDIO_GCAP_64OK(gcap);
 
-#if defined(HDAUDIO_DEBUG)
-	vmaj = hda_read1(sc, HDAUDIO_MMIO_VMAJ);
-	vmin = hda_read1(sc, HDAUDIO_MMIO_VMIN);
-
-	hda_print(sc, "High Definition Audio version %d.%d\n", vmaj, vmin);
-#endif
-
-	gcap = hda_read2(sc, HDAUDIO_MMIO_GCAP);
-	nis = HDAUDIO_GCAP_ISS(gcap);
-	nos = HDAUDIO_GCAP_OSS(gcap);
-	nbidir = HDAUDIO_GCAP_BSS(gcap);
+	hda_print(sc, "HDA ver. %d.%d, OSS %d, ISS %d, BSS %d, SDO %d%s\n",
+	    vmaj, vmin, nos, nis, nbidir, nsdo, addr64 ? ", 64-bit" : "");
 
 	/* Initialize codecs and streams */
 	hdaudio_codec_init(sc);
 	hdaudio_stream_init(sc, nis, nos, nbidir);
-
-#if defined(HDAUDIO_DEBUG)
-	nsdo = HDAUDIO_GCAP_NSDO(gcap);
-	addr64 = HDAUDIO_GCAP_64OK(gcap);
-
-	hda_print(sc, "OSS %d ISS %d BSS %d SDO %d%s\n",
-	    nos, nis, nbidir, nsdo, addr64 ? " 64-bit" : "");
-#endif
 }
 
 static int
@@ -193,6 +178,10 @@ hdaudio_dma_alloc(struct hdaudio_softc *sc, struct hdaudio_dma *dma,
 	    dma->dma_size, NULL, BUS_DMA_WAITOK | flags);
 	if (err)
 		goto destroy;
+
+	memset(dma->dma_addr, 0, dma->dma_size);
+	bus_dmamap_sync(sc->sc_dmat, dma->dma_map, 0, dma->dma_size,
+	    BUS_DMASYNC_PREWRITE);
 
 	dma->dma_valid = true;
 	return 0;
@@ -709,6 +698,7 @@ hdaudio_attach_fg(struct hdaudio_function_group *fg, prop_array_t config)
 static void
 hdaudio_codec_attach(struct hdaudio_codec *co)
 {
+	struct hdaudio_softc *sc = co->co_host;
 	struct hdaudio_function_group *fg;
 	uint32_t vid, snc, fgrp;
 	int starting_node, num_nodes, nid;
@@ -725,7 +715,6 @@ hdaudio_codec_attach(struct hdaudio_codec *co)
 		return;
 
 #ifdef HDAUDIO_DEBUG
-	struct hdaudio_softc *sc = co->co_host;
 	uint32_t rid = hdaudio_command(co, 0, CORB_GET_PARAMETER,
 	    COP_REVISION_ID);
 	hda_print(sc, "Codec%02X: %04X:%04X HDA %d.%d rev %d stepping %d\n",
@@ -735,6 +724,16 @@ hdaudio_codec_attach(struct hdaudio_codec *co)
 #endif
 	starting_node = (snc >> 16) & 0xff;
 	num_nodes = snc & 0xff;
+
+	/*
+	 * If the total number of nodes is 0, there's nothing we can do.
+	 * This shouldn't happen, so complain about it.
+	 */
+	if (num_nodes == 0) {
+		hda_error(sc, "Codec%02X: No subordinate nodes found (%08x)\n",
+		    co->co_addr, snc);
+		return;
+	}
 
 	co->co_nfg = num_nodes;
 	co->co_fg = kmem_zalloc(co->co_nfg * sizeof(*co->co_fg), KM_SLEEP);
@@ -795,8 +794,6 @@ hdaudio_attach(device_t dev, struct hdaudio_softc *sc)
 	mutex_init(&sc->sc_corb_mtx, MUTEX_DEFAULT, IPL_AUDIO);
 	mutex_init(&sc->sc_stream_mtx, MUTEX_DEFAULT, IPL_AUDIO);
 
-	hdaudio_init(sc);
-
 	/*
 	 * Put the controller into a known state by entering and leaving
 	 * CRST as necessary.
@@ -814,6 +811,15 @@ hdaudio_attach(device_t dev, struct hdaudio_softc *sc)
 	 * In reality, we need to wait longer than this.
 	 */
 	hda_delay(HDAUDIO_CODEC_DELAY);
+
+	/*
+	 * Read device capabilities
+	 */
+	hdaudio_init(sc);
+
+	/*
+	 * Detect codecs
+	 */
 	if (hdaudio_codec_probe(sc) == 0) {
 		hda_error(sc, "no codecs found\n");
 		err = ENODEV;
@@ -1359,7 +1365,7 @@ hdaudioioctl_fgrp_info(struct hdaudio_softc *sc, prop_dictionary_t request,
 			dict = prop_dictionary_create();
 			if (dict == NULL)
 				return ENOMEM;
-			prop_dictionary_set_cstring_nocopy(dict,
+			prop_dictionary_set_string_nocopy(dict,
 			    "type", hdaudioioctl_fgrp_to_cstr(fg->fg_type));
 			prop_dictionary_set_int16(dict, "nid", fg->fg_nid);
 			prop_dictionary_set_int16(dict, "codecid", codecid);
@@ -1370,10 +1376,10 @@ hdaudioioctl_fgrp_info(struct hdaudio_softc *sc, prop_dictionary_t request,
 			prop_dictionary_set_uint32(dict, "subsystem-id",
 			    sc->sc_subsystem);
 			if (fg->fg_device)
-				prop_dictionary_set_cstring(dict, "device",
+				prop_dictionary_set_string(dict, "device",
 				    device_xname(fg->fg_device));
 			else
-				prop_dictionary_set_cstring_nocopy(dict,
+				prop_dictionary_set_string_nocopy(dict,
 				    "device", "<none>");
 			prop_array_add(array, dict);
 		}

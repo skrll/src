@@ -1,4 +1,4 @@
-/*	$NetBSD: via_pci.c,v 1.3 2018/08/27 14:12:44 riastradh Exp $	*/
+/*	$NetBSD: via_pci.c,v 1.5 2021/02/13 15:42:15 jakllsch Exp $	*/
 
 /*-
  * Copyright (c) 2015 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: via_pci.c,v 1.3 2018/08/27 14:12:44 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: via_pci.c,v 1.5 2021/02/13 15:42:15 jakllsch Exp $");
 
 #include <sys/types.h>
 #include <sys/device.h>
@@ -70,6 +70,9 @@ viadrm_lookup(const struct pci_attach_args *pa)
 	unsigned i;
 
 	for (i = 0; i < __arraycount(viadrm_pci_ids); i++) {
+		if (viadrm_pci_ids[i].vendor == 0 &&
+		    viadrm_pci_ids[i].device == 0)
+			break;
 		KASSERT(viadrm_pci_ids[i].subvendor == PCI_ANY_ID);
 		KASSERT(viadrm_pci_ids[i].subdevice == PCI_ANY_ID);
 		KASSERT(viadrm_pci_ids[i].class == 0);
@@ -112,6 +115,9 @@ viadrm_attach(device_t parent, device_t self, void *aux)
 	int error;
 
 	KASSERT(cookiep != NULL);
+
+	aprint_naive("\n");
+	aprint_normal("\n");
 
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");

@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.27 2019/06/19 09:53:39 skrll Exp $	*/
+/*	$NetBSD: param.h,v 1.33 2020/07/10 12:25:09 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994,1995 Mark Brinicombe.
@@ -36,7 +36,8 @@
 #define	_ARM_ARM32_PARAM_H_
 
 #ifdef _KERNEL_OPT
-# include "opt_arm32_pmap.h"
+#include "opt_arm32_pmap.h"
+#include "opt_kasan.h"
 #endif
 
 /*
@@ -46,11 +47,7 @@
  * this file. */
 
 #ifndef PGSHIFT
-#if defined(_ARM_ARCH_6)
-#define	PGSHIFT		13		/* LOG2(NBPG) */
-#else
 #define	PGSHIFT		12		/* LOG2(NBPG) */
-#endif
 #endif
 #define	NBPG		(1 << PGSHIFT)	/* bytes/page */
 #define	PGOFSET		(NBPG - 1)	/* byte offset into page */
@@ -58,8 +55,12 @@
 
 #define SSIZE		1		/* initial stack size/NBPG */
 #define SINCR		1		/* increment of stack/NBPG */
-#define USPACE		8192		/* total size of u-area */
-#define UPAGES		(USPACE / NBPG)	/* pages of u-area */
+#ifdef KASAN
+#define UPAGES		4
+#else
+#define UPAGES		2
+#endif
+#define USPACE		(UPAGES * NBPG)	/* total size of u-area */
 
 #ifndef MSGBUFSIZE
 #define MSGBUFSIZE	16384	 	/* default message buffer size */
@@ -70,7 +71,12 @@
  * logical pages.
  */
 #define	NKMEMPAGES_MIN_DEFAULT	((8 * 1024 * 1024) >> PAGE_SHIFT)
-#define	NKMEMPAGES_MAX_DEFAULT	((128 * 1024 * 1024) >> PAGE_SHIFT)
+
+#if defined(_ARM_ARCH_6) && !defined(KASAN)
+#define	NKMEMPAGES_MAX_DEFAULT	((768 * 1024 * 1024) >> PAGE_SHIFT)
+#else
+#define	NKMEMPAGES_MAX_DEFAULT	((256 * 1024 * 1024) >> PAGE_SHIFT)
+#endif
 
 /* Constants used to divide the USPACE area */
 
@@ -96,7 +102,6 @@
 
 #define arm_btop(x)			((unsigned)(x) >> PGSHIFT)
 #define arm_ptob(x)			((unsigned)(x) << PGSHIFT)
-#define arm_trunc_page(x)		((unsigned)(x) & ~PGOFSET)
 
 #ifdef _KERNEL
 #ifndef _LOCORE

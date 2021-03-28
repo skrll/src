@@ -1,4 +1,4 @@
-/* $NetBSD: efiacpi.c,v 1.5 2019/11/30 13:02:18 jmcneill Exp $ */
+/* $NetBSD: efiacpi.c,v 1.8 2020/10/10 19:17:39 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -34,6 +34,18 @@
 #include "efifdt.h"
 #include "smbios.h"
 
+struct acpi_rdsp {
+	char signature[8];
+	uint8_t checksum;
+	char oemid[6];
+	uint8_t revision;
+	uint32_t rsdtphys;
+	uint32_t length;
+	uint64_t xsdtphys;
+	uint8_t extcsum;
+	uint8_t reserved[3];
+};
+
 #include <libfdt.h>
 
 #define	ACPI_FDT_SIZE	(128 * 1024)
@@ -64,18 +76,6 @@ int
 efi_acpi_available(void)
 {
 	return acpi_root != NULL;
-}
-
-void
-efi_acpi_show(void)
-{
-	if (!efi_acpi_available())
-		return;
-
-	printf("ACPI: RSDP %p", acpi_root);
-	if (smbios3_table)
-		printf(", SMBIOS %p", smbios3_table);
-	printf("\n");
 }
 
 static char model_buf[128];
@@ -111,6 +111,22 @@ efi_acpi_get_model(void)
 	return model_buf;
 }
 
+void
+efi_acpi_show(void)
+{
+	struct acpi_rdsp *rsdp = acpi_root;
+
+	if (!efi_acpi_available())
+		return;
+
+	printf("ACPI: v%02d %c%c%c%c%c%c\n", rsdp->revision,
+	    rsdp->oemid[0], rsdp->oemid[1], rsdp->oemid[2],
+	    rsdp->oemid[3], rsdp->oemid[4], rsdp->oemid[5]);
+
+	if (smbios3_table)
+		printf("SMBIOS: %s\n", efi_acpi_get_model());
+}
+
 int
 efi_acpi_create_fdt(void)
 {
@@ -139,9 +155,6 @@ efi_acpi_create_fdt(void)
 	fdt_setprop_u64(fdt, fdt_path_offset(fdt, "/chosen"), "netbsd,acpi-root-table", (uint64_t)(uintptr_t)acpi_root);
 	if (smbios3_table)
 		fdt_setprop_u64(fdt, fdt_path_offset(fdt, "/chosen"), "netbsd,smbios-table", (uint64_t)(uintptr_t)smbios3_table);
-#ifdef EFIBOOT_RUNTIME_ADDRESS
-	fdt_setprop_u64(fdt, fdt_path_offset(fdt, "/chosen"), "netbsd,uefi-system-table", (uint64_t)(uintptr_t)ST);
-#endif
 
 	fdt_add_subnode(fdt, fdt_path_offset(fdt, "/"), "acpi");
 	fdt_setprop_string(fdt, fdt_path_offset(fdt, "/acpi"), "compatible", "netbsd,acpi");

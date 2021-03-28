@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.64 2019/11/14 16:23:52 maxv Exp $	*/
+/*	$NetBSD: types.h,v 1.70 2021/01/23 19:38:52 christos Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -100,6 +100,7 @@ typedef	unsigned char		__cpu_simple_lock_nv_t;
 #define	__HAVE_MM_MD_DIRECT_MAPPED_IO
 #define	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #define	__HAVE_UCAS_FULL
+#define	__HAVE_BUS_SPACE_8
 
 #ifdef _KERNEL_OPT
 #define	__HAVE_RAS
@@ -109,16 +110,13 @@ typedef	unsigned char		__cpu_simple_lock_nv_t;
 #include "opt_kmsan.h"
 #ifdef KASAN
 #define __HAVE_KASAN_INSTR_BUS
-#define __HAVE_KASAN_INSTR_DMA
 #endif
 #if defined(__x86_64__) && !defined(XENPV)
 #if !defined(KASAN) && !defined(KMSAN)
 #define	__HAVE_PCPU_AREA 1
 #define	__HAVE_DIRECT_MAP 1
 #endif
-#if !defined(NO_PCI_MSI_MSIX)
-#define	__HAVE_PCI_MSI_MSIX
-#endif
+#define	__HAVE_CPU_UAREA_ROUTINES 1
 #endif
 #endif
 

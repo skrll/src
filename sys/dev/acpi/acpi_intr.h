@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_intr.h,v 1.3 2018/11/16 23:05:50 jmcneill Exp $ */
+/* $NetBSD: acpi_intr.h,v 1.5 2020/10/23 10:59:37 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 The NetBSD Foundation, Inc.
@@ -28,7 +28,17 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
+#ifndef _DEV_ACPI_ACPI_INTR_H_
+#define	_DEV_ACPI_ACPI_INTR_H_
+
 void *		acpi_intr_establish(device_t, uint64_t, int, bool,
 		    int (*intr)(void *), void *, const char *);
+void *		acpi_intr_establish_irq(device_t, struct acpi_irq *, int,
+		    bool, int (*intr)(void *), void *, const char *);
+void		acpi_intr_mask(void *);
+void		acpi_intr_unmask(void *);
 void 		acpi_intr_disestablish(void *);
 const char * 	acpi_intr_string(void *, char *, size_t len);
+
+#endif /* _DEV_ACPI_ACPI_INTR_H_ */

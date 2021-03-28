@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.95 2018/01/27 23:07:36 chs Exp $	*/
+/*	$NetBSD: pmap.c,v 1.99 2021/03/01 01:53:46 thorpej Exp $	*/
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -63,14 +63,16 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.95 2018/01/27 23:07:36 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.99 2021/03/01 01:53:46 thorpej Exp $");
 
 #define	PMAP_NOOPNAMES
 
-#include "opt_ppcarch.h"
+#ifdef _KERNEL_OPT
 #include "opt_altivec.h"
 #include "opt_multiprocessor.h"
 #include "opt_pmap.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -991,6 +993,7 @@ pmap_pte_spill(struct pmap *pm, vaddr_t addr, bool exec)
 			}
 			source_pvo = pvo;
 			if (exec && !PVO_EXECUTABLE_P(source_pvo)) {
+				PMAP_UNLOCK();
 				return 0;
 			}
 			if (victim_pvo != NULL)
@@ -2162,6 +2165,7 @@ pmap_extract(pmap_t pm, vaddr_t va, paddr_t *pap)
 				return true;
 			}
 		}
+		PMAP_UNLOCK();
 		return false;
 #elif defined (PMAP_OEA64_BRIDGE)
 	if (va >= SEGMENT_LENGTH)
@@ -2653,20 +2657,20 @@ void
 pmap_print_mmuregs(void)
 {
 	int i;
-#if defined (PMAP_OEA) || defined (PMAP_OEA_BRIDGE)
+#if defined (PMAP_OEA) || defined (PMAP_OEA64_BRIDGE)
 	u_int cpuvers;
 #endif
 #ifndef PMAP_OEA64
 	vaddr_t addr;
 	register_t soft_sr[16];
 #endif
-#if defined (PMAP_OEA) || defined (PMAP_OEA_BRIDGE)
+#if defined (PMAP_OEA) || defined (PMAP_OEA64_BRIDGE)
 	struct bat soft_ibat[4];
 	struct bat soft_dbat[4];
 #endif
 	paddr_t sdr1;
 	
-#if defined (PMAP_OEA) || defined (PMAP_OEA_BRIDGE)
+#if defined (PMAP_OEA) || defined (PMAP_OEA64_BRIDGE)
 	cpuvers = MFPVR() >> 16;
 #endif
 	__asm volatile ("mfsdr1 %0" : "=r"(sdr1));
@@ -2678,7 +2682,7 @@ pmap_print_mmuregs(void)
 	}
 #endif
 
-#if defined (PMAP_OEA) || defined (PMAP_OEA_BRIDGE)
+#if defined (PMAP_OEA) || defined (PMAP_OEA64_BRIDGE)
 	/* read iBAT (601: uBAT) registers */
 	__asm volatile ("mfibatu %0,0" : "=r"(soft_ibat[0].batu));
 	__asm volatile ("mfibatl %0,0" : "=r"(soft_ibat[0].batl));
@@ -2720,7 +2724,7 @@ pmap_print_mmuregs(void)
 	printf("\n");
 #endif
 
-#if defined(PMAP_OEA) || defined(PMAP_OEA_BRIDGE)
+#if defined(PMAP_OEA) || defined(PMAP_OEA64_BRIDGE)
 	printf("%cBAT[]:\t", cpuvers == MPC601 ? 'u' : 'i');
 	for (i = 0; i < 4; i++) {
 		printf("0x%08lx 0x%08lx, ",
@@ -3141,12 +3145,11 @@ pmap_setup_segment0_map(int use_large_pages, ...)
 #endif /* PMAP_OEA64_BRIDGE */
 
 /*
- * This is not part of the defined PMAP interface and is specific to the
- * PowerPC architecture.  This is called during initppc, before the system
- * is really initialized.
+ * Set up the bottom level of the data structures necessary for the kernel
+ * to manage memory.  MMU hardware is programmed in pmap_bootstrap2().
  */
 void
-pmap_bootstrap(paddr_t kernelstart, paddr_t kernelend)
+pmap_bootstrap1(paddr_t kernelstart, paddr_t kernelend)
 {
 	struct mem_region *mp, tmp;
 	paddr_t s, e;
@@ -3409,34 +3412,20 @@ pmap_bootstrap(paddr_t kernelstart, paddr_t kernelend)
 		    continue;
 #endif
  		pmap_kernel()->pm_sr[i] = KERNELN_SEGMENT(i)|SR_PRKEY;
-		__asm volatile ("mtsrin %0,%1"
- 			      :: "r"(KERNELN_SEGMENT(i)|SR_PRKEY), "r"(i << ADDR_SR_SHFT));
 	}
 
 	pmap_kernel()->pm_sr[KERNEL_SR] = KERNEL_SEGMENT|SR_SUKEY|SR_PRKEY;
-	__asm volatile ("mtsr %0,%1"
-		      :: "n"(KERNEL_SR), "r"(KERNEL_SEGMENT));
 #ifdef KERNEL2_SR
 	pmap_kernel()->pm_sr[KERNEL2_SR] = KERNEL2_SEGMENT|SR_SUKEY|SR_PRKEY;
-	__asm volatile ("mtsr %0,%1"
-		      :: "n"(KERNEL2_SR), "r"(KERNEL2_SEGMENT));
 #endif
 #endif /* PMAP_OEA || PMAP_OEA64_BRIDGE */
 #if defined (PMAP_OEA)
 	for (i = 0; i < 16; i++) {
 		if (iosrtable[i] & SR601_T) {
 			pmap_kernel()->pm_sr[i] = iosrtable[i];
-			__asm volatile ("mtsrin %0,%1"
-			    :: "r"(iosrtable[i]), "r"(i << ADDR_SR_SHFT));
 		}
 	}
-	__asm volatile ("sync; mtsdr1 %0; isync"
-		      :: "r"((uintptr_t)pmap_pteg_table | (pmap_pteg_mask >> 10)));
-#elif defined (PMAP_OEA64) || defined (PMAP_OEA64_BRIDGE)
- 	__asm __volatile ("sync; mtsdr1 %0; isync"
- 		      :: "r"((uintptr_t)pmap_pteg_table | (32 - __builtin_clz(pmap_pteg_mask >> 11))));
 #endif
-	tlbia();
 
 #ifdef ALTIVEC
 	pmap_use_altivec = cpu_altivec;
@@ -3533,14 +3522,54 @@ pmap_bootstrap(paddr_t kernelstart, paddr_t kernelend)
 			pmap_pte_insert(ptegidx, &pt);
 		}
 #endif
-
-		__asm volatile ("mtsrin %0,%1"
- 			      :: "r"(sr), "r"(kernelstart));
 	}
 #endif
+}
+
+/*
+ * Using the data structures prepared in pmap_bootstrap1(), program
+ * the MMU hardware.
+ */
+void
+pmap_bootstrap2(void)
+{
+/* PMAP_OEA64_BRIDGE does support these instructions */
+#if defined (PMAP_OEA) || defined (PMAP_OEA64_BRIDGE)
+	for (int i = 0; i < 16; i++) {
+#if defined(PPC_OEA601)
+		/* XXX wedges for segment register 0xf , so set later */
+		if ((iosrtable[i] & SR601_T) && ((MFPVR() >> 16) == MPC601))
+			continue;
+#endif /* PPC_OEA601 */
+		__asm volatile("mtsrin %0,%1"
+			:: "r"(pmap_kernel()->pm_sr[i]),
+			   "r"(i << ADDR_SR_SHFT));
+	}
+#endif /* PMAP_OEA || PMAP_OEA64_BRIDGE */
+#if defined (PMAP_OEA)
+	 __asm volatile("sync; mtsdr1 %0; isync"
+		:: "r"((uintptr_t)pmap_pteg_table | (pmap_pteg_mask >> 10)));
+#elif defined (PMAP_OEA64) || defined (PMAP_OEA64_BRIDGE)
+	__asm __volatile("sync; mtsdr1 %0; isync"
+		:: "r"((uintptr_t)pmap_pteg_table |
+		       (32 - __builtin_clz(pmap_pteg_mask >> 11))));
+#endif
+	tlbia();
 
 #if defined(PMAPDEBUG)
 	if ( pmapdebug )
 	    pmap_print_mmuregs();
 #endif
+}
+
+/*
+ * This is not part of the defined PMAP interface and is specific to the
+ * PowerPC architecture.  This is called during initppc, before the system
+ * is really initialized.
+ */
+void
+pmap_bootstrap(paddr_t kernelstart, paddr_t kernelend)
+{
+	pmap_bootstrap1(kernelstart, kernelend);
+	pmap_bootstrap2();
 }

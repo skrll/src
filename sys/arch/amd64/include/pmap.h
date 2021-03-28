@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.64 2019/11/14 16:23:52 maxv Exp $	*/
+/*	$NetBSD: pmap.h,v 1.66 2020/05/15 22:17:45 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.

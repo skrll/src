@@ -1,5 +1,5 @@
-/*	$NetBSD: misc.h,v 1.17 2019/10/12 18:32:22 christos Exp $	*/
-/* $OpenBSD: misc.h,v 1.81 2019/09/03 08:32:11 djm Exp $ */
+/*	$NetBSD: misc.h,v 1.19 2020/12/04 18:42:50 christos Exp $	*/
+/* $OpenBSD: misc.h,v 1.87 2020/05/29 11:17:56 dtucker Exp $ */
 
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
@@ -67,13 +67,15 @@ int	 parse_user_host_path(const char *, char **, char **, const char **);
 int	 parse_user_host_port(const char *, char **, char **, int *);
 int	 parse_uri(const char *, const char *, char **, char **, int *, const char **);
 long	 convtime(const char *);
+const char *fmt_timeframe(time_t t);
 char	*tilde_expand_filename(const char *, uid_t);
-char	*percent_expand(const char *, ...)
-#if __GNUC_PREREQ__(4, 0)
-    __attribute__((__sentinel__))
-#endif
-    ;
+
+char	*dollar_expand(int *, const char *string, ...);
+char	*percent_expand(const char *, ...) __attribute__((__sentinel__));
+char	*percent_dollar_expand(const char *, ...) __attribute__((__sentinel__));
 char	*tohex(const void *, size_t);
+void	 xextendf(char **s, const char *sep, const char *fmt, ...)
+    __attribute__((__format__ (printf, 3, 4))) __attribute__((__nonnull__ (3)));
 void	 sanitise_stdfd(void);
 struct timeval;
 void	 ms_subtract_diff(struct timeval *, int *);
@@ -185,11 +187,18 @@ int	opt_match(const char **opts, const char *term);
 #define RP_ALLOW_EOF		0x0004
 #define RP_USE_ASKPASS		0x0008
 
+struct notifier_ctx;
+
 char	*read_passphrase(const char *, int);
 int	 ask_permission(const char *, ...) __attribute__((format(printf, 1, 2)));
+struct notifier_ctx *notify_start(int, const char *, ...)
+	__attribute__((format(printf, 2, 3)));
+void	notify_complete(struct notifier_ctx *);
 
 #define MINIMUM(a, b)	(((a) < (b)) ? (a) : (b))
 #define MAXIMUM(a, b)	(((a) > (b)) ? (a) : (b))
 #define ROUNDUP(x, y)   ((((x)+((y)-1))/(y))*(y))
 
+typedef void (*sshsig_t)(int);
+sshsig_t ssh_signal(int, sshsig_t);
 #endif /* _MISC_H */

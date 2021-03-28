@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_input.c,v 1.215 2019/11/12 08:11:55 maxv Exp $	*/
+/*	$NetBSD: ip6_input.c,v 1.224 2021/02/19 14:52:00 christos Exp $	*/
 /*	$KAME: ip6_input.c,v 1.188 2001/03/29 05:34:31 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.215 2019/11/12 08:11:55 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.224 2021/02/19 14:52:00 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_gateway.h"
@@ -135,8 +135,13 @@ percpu_t *ip6stat_percpu;
 percpu_t *ip6_forward_rt_percpu __cacheline_aligned;
 
 static void ip6intr(void *);
+static void ip6_input(struct mbuf *, struct ifnet *);
 static bool ip6_badaddr(struct ip6_hdr *);
 static struct m_tag *ip6_setdstifaddr(struct mbuf *, const struct in6_ifaddr *);
+
+static struct m_tag *ip6_addaux(struct mbuf *);
+static struct m_tag *ip6_findaux(struct mbuf *);
+static void ip6_delaux(struct mbuf *);
 
 static int ip6_process_hopopts(struct mbuf *, u_int8_t *, int, u_int32_t *,
     u_int32_t *);
@@ -150,6 +155,20 @@ static void sysctl_net_inet6_ip6_setup(struct sysctllog **);
 #define	SOFTNET_LOCK()		KASSERT(mutex_owned(softnet_lock))
 #define	SOFTNET_UNLOCK()	KASSERT(mutex_owned(softnet_lock))
 #endif
+
+/* Ensure that non packed structures are the desired size. */
+__CTASSERT(sizeof(struct ip6_hdr) == 40);
+__CTASSERT(sizeof(struct ip6_ext) == 2);
+__CTASSERT(sizeof(struct ip6_hbh) == 2);
+__CTASSERT(sizeof(struct ip6_dest) == 2);
+__CTASSERT(sizeof(struct ip6_opt) == 2);
+__CTASSERT(sizeof(struct ip6_opt_jumbo) == 6);
+__CTASSERT(sizeof(struct ip6_opt_nsap) == 4);
+__CTASSERT(sizeof(struct ip6_opt_tunnel) == 3);
+__CTASSERT(sizeof(struct ip6_opt_router) == 4);
+__CTASSERT(sizeof(struct ip6_rthdr) == 4);
+__CTASSERT(sizeof(struct ip6_rthdr0) == 8);
+__CTASSERT(sizeof(struct ip6_frag) == 8);
 
 /*
  * IP6 initialization: fill in IP6 protocol switch table.
@@ -182,9 +201,7 @@ ip6_init(void)
 	addrsel_policy_init();
 	nd6_init();
 	frag6_init();
-	ip6_desync_factor = cprng_fast32() % MAX_TEMP_DESYNC_FACTOR;
 
-	in6_tmpaddrtimer_init();
 #ifdef GATEWAY
 	ip6flow_init(ip6_hashsize);
 #endif
@@ -210,6 +227,7 @@ ip6intr(void *arg __unused)
 		struct ifnet *rcvif = m_get_rcvif_psref(m, &psref);
 
 		if (rcvif == NULL) {
+			IP6_STATINC(IP6_STAT_IFDROP);
 			m_freem(m);
 			continue;
 		}
@@ -218,6 +236,7 @@ ip6intr(void *arg __unused)
 		 */
 		if ((ND_IFINFO(rcvif)->flags & ND6_IFF_IFDISABLED)) {
 			m_put_rcvif_psref(rcvif, &psref);
+			IP6_STATINC(IP6_STAT_IFDROP);
 			m_freem(m);
 			continue;
 		}
@@ -227,7 +246,7 @@ ip6intr(void *arg __unused)
 	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 }
 
-void
+static void
 ip6_input(struct mbuf *m, struct ifnet *rcvif)
 {
 	struct ip6_hdr *ip6;
@@ -282,20 +301,11 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	 * it.  Otherwise, if it is aligned, make sure the entire base
 	 * IPv6 header is in the first mbuf of the chain.
 	 */
-	if (IP6_HDR_ALIGNED_P(mtod(m, void *)) == 0) {
-		if ((m = m_copyup(m, sizeof(struct ip6_hdr),
-		    (max_linkhdr + 3) & ~3)) == NULL) {
-			/* XXXJRT new stat, please */
-			IP6_STATINC(IP6_STAT_TOOSMALL);
-			in6_ifstat_inc(rcvif, ifs6_in_hdrerr);
-			return;
-		}
-	} else if (__predict_false(m->m_len < sizeof(struct ip6_hdr))) {
-		if ((m = m_pullup(m, sizeof(struct ip6_hdr))) == NULL) {
-			IP6_STATINC(IP6_STAT_TOOSMALL);
-			in6_ifstat_inc(rcvif, ifs6_in_hdrerr);
-			return;
-		}
+	if (M_GET_ALIGNED_HDR(&m, struct ip6_hdr, true) != 0) {
+		/* XXXJRT new stat, please */
+		IP6_STATINC(IP6_STAT_TOOSMALL);
+		in6_ifstat_inc(rcvif, ifs6_in_hdrerr);
+		return;
 	}
 
 	ip6 = mtod(m, struct ip6_hdr *);
@@ -379,8 +389,10 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	 * is not loopback.
 	 */
 	if (__predict_false(
-	    m_makewritable(&m, 0, sizeof(struct ip6_hdr), M_DONTWAIT)))
+	    m_makewritable(&m, 0, sizeof(struct ip6_hdr), M_DONTWAIT))) {
+		IP6_STATINC(IP6_STAT_IDROPPED);
 		goto bad;
+	}
 	ip6 = mtod(m, struct ip6_hdr *);
 	if (in6_clearscope(&ip6->ip6_src) || in6_clearscope(&ip6->ip6_dst)) {
 		IP6_STATINC(IP6_STAT_BADSCOPE);	/* XXX */
@@ -488,6 +500,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 			    IN6_PRINT(ip6bufs, &ip6->ip6_src),
 			    IN6_PRINT(ip6bufd, &ip6->ip6_dst));
 
+			IP6_STATINC(IP6_STAT_IDROPPED);
 			goto bad_unref;
 		}
 	}
@@ -589,7 +602,7 @@ hbhcheck:
 			rtcache_percpu_putref(ip6_forward_rt_percpu);
 			return;
 		}
-		KASSERT(IP6_HDR_ALIGNED_P(hbh));
+		KASSERT(ACCESSIBLE_POINTER(hbh, struct ip6_hdr));
 		nxt = hbh->ip6h_nxt;
 
 		/*
@@ -645,12 +658,14 @@ hbhcheck:
 				goto bad;
 			}
 		}
-		if (!ours)
+		if (!ours) {
+			IP6_STATINC(IP6_STAT_CANTFORWARD);
 			goto bad_unref;
+		}
 	} else if (!ours) {
 		rtcache_unref(rt, ro);
 		rtcache_percpu_putref(ip6_forward_rt_percpu);
-		ip6_forward(m, srcrt);
+		ip6_forward(m, srcrt, rcvif);
 		return;
 	}
 
@@ -738,9 +753,11 @@ hbhcheck:
 			    & PR_LASTHDR) != 0) {
 				int error;
 
-				error = ipsec_ip_input(m, false);
-				if (error)
+				error = ipsec_ip_input_checkpolicy(m, false);
+				if (error) {
+					IP6_STATINC(IP6_STAT_IPSECDROP_IN);
 					goto bad;
+				}
 			}
 		}
 #endif
@@ -858,7 +875,7 @@ ip6_hopopts_input(u_int32_t *plenp, u_int32_t *rtalertp,
 		IP6_STATINC(IP6_STAT_TOOSHORT);
 		return -1;
 	}
-	KASSERT(IP6_HDR_ALIGNED_P(hbh));
+	KASSERT(ACCESSIBLE_POINTER(hbh, struct ip6_hdr));
 	off += hbhlen;
 	hbhlen -= sizeof(struct ip6_hbh);
 
@@ -911,7 +928,7 @@ ip6_process_hopopts(struct mbuf *m, u_int8_t *opthead, int hbhlen,
 				goto bad;
 			}
 			if (*(opt + 1) != IP6OPT_RTALERT_LEN - 2) {
-				/* XXX stat */
+				IP6_STATINC(IP6_STAT_BADOPTIONS);
 				icmp6_error(m, ICMP6_PARAM_PROB,
 				    ICMP6_PARAMPROB_HEADER,
 				    erroff + opt + 1 - opthead);
@@ -928,7 +945,7 @@ ip6_process_hopopts(struct mbuf *m, u_int8_t *opthead, int hbhlen,
 				goto bad;
 			}
 			if (*(opt + 1) != IP6OPT_JUMBO_LEN - 2) {
-				/* XXX stat */
+				IP6_STATINC(IP6_STAT_BADOPTIONS);
 				icmp6_error(m, ICMP6_PARAM_PROB,
 				    ICMP6_PARAMPROB_HEADER,
 				    erroff + opt + 1 - opthead);
@@ -1198,7 +1215,7 @@ ip6_savecontrol(struct in6pcb *in6p, struct mbuf **mp,
 				IP6_STATINC(IP6_STAT_TOOSHORT);
 				return;
 			}
-			KASSERT(IP6_HDR_ALIGNED_P(ip6e));
+			KASSERT(ACCESSIBLE_POINTER(ip6e, struct ip6_hdr));
 
 			switch (nxt) {
 			case IPPROTO_DSTOPTS:
@@ -1481,7 +1498,7 @@ ip6_lasthdr(struct mbuf *m, int off, int proto, int *nxtp)
 	}
 }
 
-struct m_tag *
+static struct m_tag *
 ip6_addaux(struct mbuf *m)
 {
 	struct m_tag *mtag;
@@ -1498,7 +1515,7 @@ ip6_addaux(struct mbuf *m)
 	return mtag;
 }
 
-struct m_tag *
+static struct m_tag *
 ip6_findaux(struct mbuf *m)
 {
 	struct m_tag *mtag;
@@ -1507,7 +1524,7 @@ ip6_findaux(struct mbuf *m)
 	return mtag;
 }
 
-void
+static void
 ip6_delaux(struct mbuf *m)
 {
 	struct m_tag *mtag;
@@ -1537,30 +1554,6 @@ sysctl_net_inet6_ip6_stats(SYSCTLFN_ARGS)
 {
 
 	return (NETSTAT_SYSCTL(ip6stat_percpu, IP6_NSTATS));
-}
-
-static int
-sysctl_net_inet6_ip6_temppltime(SYSCTLFN_ARGS)
-{
-	int error;
-	uint32_t pltime;
-	struct sysctlnode node;
-
-	node = *rnode;
-	node.sysctl_data = &pltime;
-	pltime = ip6_temp_preferred_lifetime;
-	error = sysctl_lookup(SYSCTLFN_CALL(&node));
-	if (error || newp == NULL)
-		return error;
-
-	if (pltime <= (MAX_TEMP_DESYNC_FACTOR + TEMPADDR_REGEN_ADVANCE))
-		return EINVAL;
-
-	ip6_temp_preferred_lifetime = pltime;
-
-	in6_tmpaddrtimer_schedule();
-
-	return 0;
 }
 
 static void
@@ -1609,27 +1602,6 @@ sysctl_net_inet6_ip6_setup(struct sysctllog **clog)
 		       NULL, 0, &ip6_maxfragpackets, 0,
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       IPV6CTL_MAXFRAGPACKETS, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "accept_rtadv",
-		       SYSCTL_DESCR("Accept router advertisements"),
-		       NULL, 0, &ip6_accept_rtadv, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       IPV6CTL_ACCEPT_RTADV, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "rtadv_maxroutes",
-		       SYSCTL_DESCR("Maximum number of routes accepted via router advertisements"),
-		       NULL, 0, &ip6_rtadv_maxroutes, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       IPV6CTL_RTADV_MAXROUTES, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT,
-		       CTLTYPE_INT, "rtadv_numroutes",
-		       SYSCTL_DESCR("Current number of routes accepted via router advertisements"),
-		       NULL, 0, &nd6_numroutes, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       IPV6CTL_RTADV_NUMROUTES, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_INT, "keepfaith",
@@ -1689,12 +1661,6 @@ sysctl_net_inet6_ip6_setup(struct sysctllog **clog)
 		       NULL, 0, &ip6_use_deprecated, 0,
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       IPV6CTL_USE_DEPRECATED, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "rr_prune", NULL,
-		       NULL, 0, &ip6_rr_prune, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       IPV6CTL_RR_PRUNE, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT
 #ifndef INET6_BINDV6ONLY
@@ -1757,31 +1723,10 @@ sysctl_net_inet6_ip6_setup(struct sysctllog **clog)
 		       IPV6CTL_ADDRCTLPOLICY, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "use_tempaddr",
-		       SYSCTL_DESCR("Use temporary address"),
-		       NULL, 0, &ip6_use_tempaddr, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_INT, "prefer_tempaddr",
 		       SYSCTL_DESCR("Prefer temporary address as source "
 		                    "address"),
 		       NULL, 0, &ip6_prefer_tempaddr, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "temppltime",
-		       SYSCTL_DESCR("preferred lifetime of a temporary address"),
-		       sysctl_net_inet6_ip6_temppltime, 0, NULL, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "tempvltime",
-		       SYSCTL_DESCR("valid lifetime of a temporary address"),
-		       NULL, 0, &ip6_temp_valid_lifetime, 0,
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       CTL_CREATE, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
@@ -1844,22 +1789,6 @@ sysctl_net_inet6_ip6_setup(struct sysctllog **clog)
 		       SYSCTL_DESCR("Maximum number of entries in neighbor"
 			" cache"),
 		       NULL, 1, &ip6_neighborgcthresh, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "maxifprefixes",
-		       SYSCTL_DESCR("Maximum number of prefixes created by"
-			   " route advertisement per interface"),
-		       NULL, 1, &ip6_maxifprefixes, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "maxifdefrouters",
-		       SYSCTL_DESCR("Maximum number of default routers created"
-			   " by route advertisement per interface"),
-		       NULL, 1, &ip6_maxifdefrouters, 0,
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       CTL_CREATE, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,

@@ -1,4 +1,4 @@
-/*	$NetBSD: zynq_platform.c,v 1.1 2019/06/11 13:01:48 skrll Exp $	*/
+/*	$NetBSD: zynq_platform.c,v 1.4 2021/02/04 22:36:54 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 #include "arml2cc.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zynq_platform.c,v 1.1 2019/06/11 13:01:48 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zynq_platform.c,v 1.4 2021/02/04 22:36:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -76,7 +76,6 @@ __KERNEL_RCSID(0, "$NetBSD: zynq_platform.c,v 1.1 2019/06/11 13:01:48 skrll Exp 
 #define ZYNQ_ARMCORE_SIZE	0x00003000
 
 extern struct bus_space arm_generic_bs_tag;
-extern struct bus_space arm_generic_a4x_bs_tag;
 extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 
 void zynq_platform_early_putchar(char);
@@ -104,11 +103,10 @@ static void
 zynq_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &arm_generic_bs_tag;
-	faa->faa_a4x_bst = &arm_generic_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
-void
+void __noasan
 zynq_platform_early_putchar(char c)
 {
 #ifdef CONSADDR
@@ -130,6 +128,8 @@ static void
 zynq_platform_device_register(device_t dev, void *aux)
 {
 	prop_dictionary_t dict = device_properties(dev);
+
+	fdtbus_device_register(dev, aux);
 
 	if (device_is_a(dev, "arma9tmr")) {
 		prop_dictionary_set_uint32(dict, "frequency",

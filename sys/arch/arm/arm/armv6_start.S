@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.14 2019/06/12 06:53:21 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.34 2021/01/27 13:50:17 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -34,6 +34,7 @@
 #include "opt_cpuoptions.h"
 #include "opt_cputypes.h"
 #include "opt_fdt.h"
+#include "opt_kasan.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
@@ -41,9 +42,6 @@
 #include <arm/asm.h>
 #include <arm/armreg.h>
 #include "assym.h"
-
-#define INIT_ARM_STACK_SHIFT	9
-#define INIT_ARM_STACK_SIZE	(1 << INIT_ARM_STACK_SHIFT)
 
 #if defined(CONSADDR) && defined(CONADDR)
 #error Only one of CONSADDR and CONADDR should be defined
@@ -97,8 +95,12 @@
 
 ENTRY_NP(generic_start)
 
-	// ARMv7 only?!?
-#ifdef __ARMEB__
+#if defined(__ARMEB__)
+	/* Make sure sctlr.u = 1 when cpsr.e = 1. */
+	mrc	p15, 0, R_TMP1, c1, c0, 0
+	orr	R_TMP1, R_TMP1, #CPU_CONTROL_UNAL_ENABLE
+	mcr     p15, 0, R_TMP1, c1, c0, 0
+
 	setend	be			/* force big endian */
 #endif
 
@@ -142,7 +144,7 @@ ENTRY_NP(generic_start)
 	VPRINTX(r6)
 #endif
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	VPRINTF("\n\rmidr  : ")
 	mrc	p15, 0, r0, c0, c0, 0	// MIDR
 	VPRINTX(r0)
@@ -177,14 +179,6 @@ arm_bad_vtopdiff:
 	VPRINTF(")\n\r")
 1:	b	 1b
 ASEND(generic_start)
-
-generic_vstart:
-	VPRINTF("go\n\r")
-
-	/*
-	 * Jump to start in locore.S, which in turn will call initarm and main.
-	 */
-	b	start
 
 /*
  * Save the u-boot arguments (including FDT address) and the virtual to physical
@@ -232,11 +226,16 @@ generic_savevars:
 
 	.ltorg
 
-	/* Allocate some memory after the kernel image for stacks and bootstrap L1PT */
+	/*
+	 * Allocate some memory after the kernel image for stacks and
+	 * bootstrap L1PT
+	 */
 	.section "_init_memory", "aw", %nobits
 	.p2align INIT_ARM_STACK_SHIFT
+	.global start_stacks_bottom
+	.global start_stacks_top
 start_stacks_bottom:
-	.space	INIT_ARM_STACK_SIZE * MAXCPUS
+	.space	INIT_ARM_TOTAL_STACK
 start_stacks_top:
 
 	.section "_init_memory", "aw", %nobits
@@ -265,8 +264,8 @@ arm_build_translation_table:
 	ldr	r0, =(L1_S_SIZE - 1)
 	bic	R_PA, R_PA, r0
 
-	// attribute to map kernel - run without L1_S_CACHEABLE
-	ldr     R_ATTR, =(L1_S_PROTO | L1_S_AP_KRW)
+	// attribute to map kernel
+	ldr     R_ATTR, =(L1_S_PROTO | L1_S_AP_KRW | L1_S_NOCACHE)
 	bl	arm_boot_l1pt_init
 
 	/*
@@ -295,8 +294,8 @@ arm_build_translation_table:
 	adr	R_PA, generic_start	// PA of kernel
 	bic	R_PA, r2		// ...rounded down to L1_S boundary
 
-	// attribute to map kernel - run without L1_S_CACHEABLE
-	ldr     R_ATTR, =(L1_S_PROTO | L1_S_AP_KRW)
+	// attribute to map kernel
+	ldr     R_ATTR, =(L1_S_PROTO | L1_S_AP_KRW | L1_S_NOCACHE)
 	bl	arm_boot_l1pt_entry
 
 #if defined(FDTBASE)
@@ -464,9 +463,40 @@ generic_startv7:
 	sub	r0, R_VTOPDIFF
 
 	// Return to virtual addess after the call to armv7_mmuinit
-	movw	lr, #:lower16:generic_vstart
-	movt	lr, #:upper16:generic_vstart
+	movw	lr, #:lower16:generic_vstartv7
+	movt	lr, #:upper16:generic_vstartv7
 	b	armv7_mmuinit
+
+generic_vstartv7:
+	// Stack to KVA address
+	add	sp, sp, R_VTOPDIFF
+
+	VPRINTF("virtual\n\r")
+
+#if defined(KASAN)
+	ldr	r0, =start_stacks_bottom
+	bl	_C_LABEL(kasan_early_init)
+
+	VPRINTF("kasan\n\r")
+#endif
+
+	/* r0 = &cpu_info_store[0] */
+	movw	r0, #:lower16:cpu_info_store
+	movt	r0, #:upper16:cpu_info_store
+
+	mrc	p15, 0, r1, c0, c0, 0	// MIDR get
+	str	r1, [r0, #CI_MIDR]
+	mrc	p15, 0, r1, c0, c0, 5	// MPIDR get
+	str	r1, [r0, #CI_MPIDR]
+
+	bl	arm_cpu_topology_set
+
+	VPRINTF("go\n\r")
+
+	/*
+	 * Jump to start in locore.S, which in turn will call initarm and main.
+	 */
+	b	start
 
 	/* NOTREACHED */
 	.ltorg
@@ -477,7 +507,7 @@ generic_startv6:
 	bl	armv6_init
 	bl	generic_savevars
 
-#ifdef ARM_MMU_EXTENDED
+#if defined(ARM_MMU_EXTENDED)
 	mov	R_DEVATTR, #L1_S_V6_XN
 #else
 	mov	R_DEVATTR, #0
@@ -491,28 +521,46 @@ generic_startv6:
 	ldr	r0, =TEMP_L1_TABLE
 	sub	r0, R_VTOPDIFF
 
-	ldr	lr, =generic_vstart
+	ldr	lr, =generic_vstartv6
 	b	armv6_mmuinit
+
+generic_vstartv6:
+	// Stack to KVA address
+	add	sp, sp, R_VTOPDIFF
+
+	VPRINTF("virtual\n\r")
+
+#if defined(KASAN)
+	ldr	r0, =start_stacks_bottom
+	bl	_C_LABEL(kasan_early_init)
+
+	VPRINTF("kasan\n\r")
+#endif
+
+	VPRINTF("go\n\r")
+
+	/*
+	 * Jump to start in locore.S, which in turn will call initarm and main.
+	 */
+	b	start
 
 	/* NOTREACHED */
 	.ltorg
 
 #endif
 
-
-
 #if defined(_ARM_ARCH_7)
 
 //
 // SCTLR register initialization values
 //
-#ifdef __ARMEL__
+#if defined(__ARMEL__)
 #define CPU_CONTROL_EX_BEND_SET		0
 #else
 #define CPU_CONTROL_EX_BEND_SET		CPU_CONTROL_EX_BEND
 #endif
 
-#ifdef ARM32_DISABLE_ALIGNMENT_FAULTS
+#if defined(ARM32_DISABLE_ALIGNMENT_FAULTS)
 #define CPU_CONTROL_AFLT_ENABLE_CLR	CPU_CONTROL_AFLT_ENABLE
 #define CPU_CONTROL_AFLT_ENABLE_SET	0
 #else
@@ -520,7 +568,7 @@ generic_startv6:
 #define CPU_CONTROL_AFLT_ENABLE_SET	CPU_CONTROL_AFLT_ENABLE
 #endif
 
-#ifdef ARM_MMU_EXTENDED
+#if defined(ARM_MMU_EXTENDED)
 #define CPU_CONTROL_XP_ENABLE_CLR	0
 #define CPU_CONTROL_XP_ENABLE_SET	CPU_CONTROL_XP_ENABLE
 #else
@@ -528,6 +576,12 @@ generic_startv6:
 #define CPU_CONTROL_XP_ENABLE_SET	0
 #endif
 
+/* SWP is only usable on uni-processor ARMv7 systems. */
+#ifdef MULTIPROCESSOR
+#define CPU_CONTROL_XP_SWP_ENABLE 0
+#else
+#define CPU_CONTROL_XP_SWP_ENABLE CPU_CONTROL_SWP_ENABLE
+#endif
 
 // bits to set in the Control Register
 //
@@ -545,7 +599,6 @@ generic_startv6:
 	CPU_CONTROL_AFLT_ENABLE_CLR	|	\
 	CPU_CONTROL_XP_ENABLE_CLR	|	\
 	0)
-
 
 /*
  * Perform the initialization of the an ARMv7 core required by NetBSD.
@@ -618,8 +671,8 @@ armv7_init:
 
 #define ARMV7_SCTLR_SET	( 	\
     CPU_CONTROL_UNAL_ENABLE |	\
+    CPU_CONTROL_XP_SWP_ENABLE | \
     0)
-
 
 	mrc	p15, 0, r0, c1, c0, 0
 	movw	r1, #:lower16:ARMV7_SCTLR_CLEAR
@@ -640,7 +693,7 @@ armv7_init:
 	dsb
 	isb
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	XPUTC(#'B')
 
 	VPRINTF(" sctlr:")
@@ -672,7 +725,6 @@ armv7_mmuinit:
 	mov	r4, lr
 	mov	r5, r0			// save TTBR
 
-	// XXXNH dsb - Why?
 	XPUTC(#'F')
 	dsb				// Drain the write buffers.
 
@@ -706,14 +758,12 @@ armv7_mmuinit:
 	mov	r1, #0			// get KERNEL_PID
 	mcr	p15, 0, r1, c13, c0, 1	// CONTEXTIDR write
 
-	// XXXNH FreeBSD doesn't do this isb
 	isb
 
 	// Set the Domain Access register.  Very important!
 	XPUTC(#'K')
 	mov	r1, #DOMAIN_DEFAULT
 	mcr	p15, 0, r1, c3, c0, 0	// DACR write
-
 
 #if 0
 
@@ -773,7 +823,7 @@ ENTRY_NP(cpu_mpstart)
 3:	wfi
 	b	3b
 #else
-#ifdef __ARMEB__
+#if defined(__ARMEB__)
 	setend	be				// switch to BE now
 #endif
 
@@ -811,7 +861,7 @@ ENTRY_NP(cpu_mpstart)
 	lsl	r5, #INIT_ARM_STACK_SHIFT
 	sub	sp, sp, r5
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	VPRINTF("\n\rmidr  : ")
 	mrc	p15, 0, r0, c0, c0, 0		// MIDR
 	VPRINTX(r0)
@@ -841,30 +891,31 @@ ENTRY_NP(cpu_mpstart)
 	b	armv7_mmuinit
 ASEND(cpu_mpstart)
 
-
 /*
  * Now running with real kernel VA via bootstrap tables
  */
 armv7_mpcontinuation:
-	// Adjust stack back to KVA address
+	// Stack to KVA address
 	add	sp, sp, R_VTOPDIFF
 
-	VPRINTF("go\n\r")
+	VPRINTF("virtual\n\r")
 
-	mov	r0, R_INDEX			// index into cpu_mpidr[] or cpu_number if not found
+	// index into cpu_mpidr[] or cpu_number if not found
+	mov	r0, R_INDEX
 	bl	cpu_init_secondary_processor
 
 	/*
-	 * Wait for cpu_boot_secondary_processors when cpu_info has
-	 * been allocated, etc
+	 * Wait for cpu_boot_secondary_processors
 	 */
 
+	/* r6 = &arm_cpu_mbox[0] */
 	movw	r6, #:lower16:arm_cpu_mbox
 	movt	r6, #:upper16:arm_cpu_mbox
 
 	mov	r5, #1				// bitmask...
 	lsl	r5, R_INDEX			// ... for our cpu
 
+	/* wait for the mailbox start bit to become true */
 1:	dmb					// data memory barrier
 	ldr	r2, [r6]			// load mbox
 	tst	r2, r5				// is our bit set?
@@ -872,12 +923,12 @@ armv7_mpcontinuation:
 	beq	1b				//    no, and try again
 
 	movw	r0, #:lower16:cpu_info
-	movt	r0, #:upper16:cpu_info		// get pointer to cpu_infos
+	movt	r0, #:upper16:cpu_info		// get pointer to cpu_info
 	ldr	r5, [r0, R_INDEX, lsl #2]	// load our cpu_info
 	ldr	r6, [r5, #CI_IDLELWP]		// get the idlelwp
 	ldr	r7, [r6, #L_PCB]		// now get its pcb
 	ldr	sp, [r7, #PCB_KSP]		// finally, we can load our SP
-#ifdef TPIDRPRW_IS_CURCPU
+#if defined(TPIDRPRW_IS_CURCPU)
 	mcr	p15, 0, r5, c13, c0, 4		// squirrel away curcpu()
 #elif defined(TPIDRPRW_IS_CURLWP)
 	mcr	p15, 0, r6, c13, c0, 4		// squirrel away curlwp()
@@ -936,7 +987,7 @@ ENTRY_NP(armv6_init)
 
 	mcr	p15, 0, r0, c7, c10, 4	/* Drain the write buffers. */
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	XPUTC(#'B')
 
 	VPRINTF(" sctlr:")
@@ -991,7 +1042,7 @@ armv6_mmuinit:
 	 * Enable the MMU, etc.
 	 */
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	VPRINTF(" sctlr:")
 	mrc     p15, 0, r0, c1, c0, 0
 	VPRINTX(r0)
@@ -1032,13 +1083,17 @@ armv6_mmuinit:
 
 	.ltorg
 
-
 	/* bits to set in the Control Register */
 Lcontrol_set:
-#ifdef ARM_MMU_EXTENDED
+#if defined(ARM_MMU_EXTENDED)
 #define	CPU_CONTROL_EXTRA	CPU_CONTROL_XP_ENABLE
 #else
 #define	CPU_CONTROL_EXTRA	CPU_CONTROL_SYST_ENABLE
+#endif
+#if defined(__ARMEL__)
+#define	CPU_CONTROL_EX_BEND_SET	0
+#else
+#define	CPU_CONTROL_EX_BEND_SET	CPU_CONTROL_EX_BEND
 #endif
 	.word CPU_CONTROL_MMU_ENABLE  | \
 	      CPU_CONTROL_WBUF_ENABLE |    /* not defined in 1176 (SBO) */ \
@@ -1048,7 +1103,8 @@ Lcontrol_set:
 		(1 << 16) | 	/* SBO - Global enable for data tcm */ \
 		(1 << 18) |	/* SBO - Global enable for insn tcm */ \
 	      CPU_CONTROL_UNAL_ENABLE | \
-	      CPU_CONTROL_EXTRA
+	      CPU_CONTROL_EXTRA | \
+	      CPU_CONTROL_EX_BEND_SET
 
 	/* bits to clear in the Control Register */
 Lcontrol_clr:
@@ -1064,7 +1120,6 @@ Lcontrol_wax:
 		(1 << 17) | \
 	        (1 << 10)
 #endif
-
 
 ENTRY_NP(generic_vprint)
 	push	{r4, lr}

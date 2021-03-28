@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_target_error.c,v 1.27 2019/12/21 11:59:03 tkusumi Exp $      */
+/*        $NetBSD: dm_target_error.c,v 1.29 2020/01/21 16:27:53 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_target_error.c,v 1.27 2019/12/21 11:59:03 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_target_error.c,v 1.29 2020/01/21 16:27:53 tkusumi Exp $");
 
 /*
  * This file implements initial version of device-mapper error target.
@@ -71,10 +71,9 @@ dm_target_error_modcmd(modcmd_t cmd, void *arg)
 		dmt->version[1] = 0;
 		dmt->version[2] = 0;
 		dmt->init = &dm_target_error_init;
-		dmt->table = &dm_target_error_table;
 		dmt->strategy = &dm_target_error_strategy;
 		dmt->destroy = &dm_target_error_destroy;
-		dmt->upcall = &dm_target_error_upcall;
+		//dmt->upcall = &dm_target_error_upcall;
 
 		r = dm_target_insert(dmt);
 
@@ -112,14 +111,6 @@ dm_target_error_init(dm_table_entry_t *table_en, int argc, char **argv)
 	return 0;
 }
 
-/* Table routine called to get params string. */
-char *
-dm_target_error_table(void *target_config)
-{
-
-	return NULL;
-}
-
 /* Strategy routine called from dm_strategy. */
 int
 dm_target_error_strategy(dm_table_entry_t *table_en, struct buf *bp)
@@ -144,6 +135,7 @@ dm_target_error_destroy(dm_table_entry_t *table_en)
 	return 0;
 }
 
+#if 0
 /* Unsupported for this target. */
 int
 dm_target_error_upcall(dm_table_entry_t *table_en, struct buf *bp)
@@ -151,3 +143,4 @@ dm_target_error_upcall(dm_table_entry_t *table_en, struct buf *bp)
 
 	return 0;
 }
+#endif

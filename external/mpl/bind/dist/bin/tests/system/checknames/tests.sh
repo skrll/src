@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -127,7 +127,7 @@ if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 n=`expr $n + 1`
 
-echo_i "check that updates to 'check-names master ignore;' succeed and are not logged ($n)"
+echo_i "check that updates to 'check-names primary ignore;' succeed and are not logged ($n)"
 ret=0
 not=1
 $NSUPDATE -d <<END > nsupdate.out.test$n 2>&1 || ret=1

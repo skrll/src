@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.51 2019/02/11 14:59:32 cherry Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.54 2020/11/26 20:50:45 christos Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -63,6 +63,17 @@
 #define	PAGER_MAP_DEFAULT_SIZE (512 * 1024 * 1024)
 
 /*
+ * Defaults for Unified Buffer Cache parameters.
+ */
+
+#ifndef UBC_WINSHIFT
+#define	UBC_WINSHIFT	16	/* 64kB */
+#endif
+#ifndef UBC_NWINS
+#define	UBC_NWINS	4096	/* 256MB */
+#endif
+
+/*
  * USRSTACK is the top (end) of the user stack. Immediately above the
  * user stack resides the user structure, which is UPAGES long and contains
  * the kernel stack.
@@ -77,7 +88,7 @@
 /*
  * Virtual memory related constants, all in bytes
  */
-#define	MAXTSIZ		(256*1024*1024)		/* max text size */
+#define	MAXTSIZ		(8L*1024*1024*1024)	/* max text size */
 #ifndef DFLDSIZ
 #define	DFLDSIZ		(256*1024*1024)		/* initial data size limit */
 #endif
@@ -95,7 +106,6 @@
  * 32bit memory related constants.
  */
 
-#define MAXTSIZ32	(256*1024*1024)
 #ifndef DFLDSIZ32
 #define	DFLDSIZ32	(256*1024*1024)		/* initial data size limit */
 #endif

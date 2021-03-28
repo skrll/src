@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_defs.h,v 1.13 2018/11/19 10:45:47 jmcneill Exp $	*/
+/*	$NetBSD: bus_defs.h,v 1.15 2020/04/13 07:09:51 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2001 The NetBSD Foundation, Inc.
@@ -66,6 +66,7 @@
 
 #if defined(_KERNEL_OPT)
 #include "opt_arm_bus_space.h"
+#include "opt_kasan.h"
 #endif
 
 /*
@@ -96,6 +97,13 @@ typedef u_long bus_space_handle_t;
 #define	BUS_SPACE_MAP_CACHEABLE		0x01
 #define	BUS_SPACE_MAP_LINEAR		0x02
 #define	BUS_SPACE_MAP_PREFETCHABLE     	0x04
+
+#define	BUS_SPACE_MAP_BUS1		0x0100
+#define	BUS_SPACE_MAP_BUS2		0x0200
+#define	BUS_SPACE_MAP_BUS3		0x0400
+#define	BUS_SPACE_MAP_BUS4		0x0800
+
+#define	_ARM_BUS_SPACE_MAP_STRONGLY_ORDERED	BUS_SPACE_MAP_BUS1
 
 struct bus_space {
 	/* cookie */
@@ -477,6 +485,11 @@ struct arm32_bus_dmamap {
 	/*
 	 * PUBLIC MEMBERS: these are used by machine-independent code.
 	 */
+#if defined(KASAN)
+	void		*dm_buf;
+	bus_size_t	dm_buflen;
+	int		dm_buftype;
+#endif
 	bus_size_t	dm_maxsegsz;	/* largest possible segment */
 	bus_size_t	dm_mapsize;	/* size of the mapping */
 	int		dm_nsegs;	/* # valid segments in mapping */

@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -14,7 +14,7 @@ rm -f */core
 rm -f */example.bk
 rm -f */named.conf
 rm -f */named.memstats
-rm -f */named.run
+rm -f */named.run*
 rm -f */trusted.conf */private.conf
 rm -f activate-now-publish-1day.key
 rm -f active.key inact.key del.key delzsk.key unpub.key standby.key rev.key
@@ -42,6 +42,7 @@ rm -f ns3/inaczsk3.example.db
 rm -f ns3/jitter.nsec3.example.db
 rm -f ns3/kg.out ns3/s.out ns3/st.out
 rm -f ns3/kskonly.example.db
+rm -f ns3/named.ns3.prev
 rm -f ns3/nozsk.example.db ns3/inaczsk.example.db
 rm -f ns3/nsec.example.db
 rm -f ns3/nsec3-to-nsec.example.db
@@ -61,6 +62,7 @@ rm -f ns3/secure-to-insecure2.example.db
 rm -f ns3/secure.example.db
 rm -f ns3/secure.nsec3.example.db
 rm -f ns3/secure.optout.example.db
+rm -f ns3/settime.out.*
 rm -f ns3/sync.example.db
 rm -f ns3/ttl*.db
 rm -f nsupdate.out

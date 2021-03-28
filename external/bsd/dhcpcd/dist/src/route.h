@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - route management
- * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2020 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * rEDISTRIBUTION AND USE IN SOURCE AND BINARY FORMS, WITH OR WITHOUT
@@ -60,6 +60,13 @@
 # endif
 #endif
 
+#ifdef __linux__
+# include <linux/version.h> /* RTA_PREF is only an enum.... */
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
+#  define HAVE_ROUTE_PREF
+# endif
+#endif
+
 #if defined(__OpenBSD__) || defined (__sun)
 #  define ROUTE_PER_GATEWAY
 /* XXX dhcpcd doesn't really support this yet.
@@ -86,9 +93,27 @@ struct rt {
 #ifdef HAVE_ROUTE_METRIC
 	unsigned int		rt_metric;
 #endif
+/* Maximum interface index is generally USHORT_MAX or 65535.
+ * Add some padding for other stuff and we get offsets for the
+ * below that should work automatically.
+ * This is only an issue if the user defines higher metrics in
+ * their configuration, but then they might wish to override also. */
+#define	RTMETRIC_BASE		   1000U
+#define	RTMETRIC_WIRELESS	   2000U
+#define	RTMETRIC_IPV4LL		1000000U
+#define	RTMETRIC_ROAM		2000000U
+#ifdef HAVE_ROUTE_PREF
+	int			rt_pref;
+#endif
+#define RTPREF_HIGH	1
+#define RTPREF_MEDIUM	0	/* has to be zero */
+#define RTPREF_LOW	(-1)
+#define RTPREF_RESERVED	(-2)
+#define RTPREF_INVALID	(-3)	/* internal */
 	unsigned int		rt_dflags;
-#define	RTDF_IFA_ROUTE		0x02		/* Address generated route */
-#define	RTDF_FAKE		0x04		/* Maybe us on lease reboot  */
+#define	RTDF_IFA_ROUTE		0x01		/* Address generated route */
+#define	RTDF_FAKE		0x02		/* Maybe us on lease reboot */
+#define	RTDF_IPV4LL		0x04		/* IPv4LL route */
 #define	RTDF_RA			0x08		/* Router Advertisement */
 #define	RTDF_DHCP		0x10		/* DHCP route */
 #define	RTDF_STATIC		0x20		/* Configured in dhcpcd */

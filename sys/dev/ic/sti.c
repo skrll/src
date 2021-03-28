@@ -1,4 +1,4 @@
-/*	$NetBSD: sti.c,v 1.20 2019/11/10 21:16:35 chs Exp $	*/
+/*	$NetBSD: sti.c,v 1.25 2020/12/26 08:58:03 tsutsui Exp $	*/
 
 /*	$OpenBSD: sti.c,v 1.76 2015/04/05 23:25:57 miod Exp $	*/
 
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sti.c,v 1.20 2019/11/10 21:16:35 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sti.c,v 1.25 2020/12/26 08:58:03 tsutsui Exp $");
 
 #include "wsdisplay.h"
 
@@ -45,7 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: sti.c,v 1.20 2019/11/10 21:16:35 chs Exp $");
 #include <sys/device.h>
 #include <sys/malloc.h>
 
-#include <uvm/uvm.h>
+#include <uvm/uvm_extern.h>
 
 #include <sys/bus.h>
 
@@ -80,6 +80,18 @@ void sti_copyrows(void *, int, int, int);
 void sti_eraserows(void *, int, int, long);
 int  sti_alloc_attr(void *, int, int, int, long *);
 
+/* pseudo attribute ops for sti ROM putchar function */
+#define WSATTR_FG_SHIFT	24
+#define WSATTR_BG_SHIFT	16
+#define WSATTR_UNPACK_FG(attr)	(((attr) >> WSATTR_FG_SHIFT) & 0xff)
+#define WSATTR_UNPACK_BG(attr)	(((attr) >> WSATTR_BG_SHIFT) & 0xff)
+#define WSATTR_UNPACK_FLAG(attr) ((attr) & WSATTR_USERMASK)
+#define WSATTR_PACK_FG(fg)	((fg) << WSATTR_FG_SHIFT)
+#define WSATTR_PACK_BG(bg)	((bg) << WSATTR_BG_SHIFT)
+#define WSATTR_PACK_FLAG(flag)	((flag))
+#define WSATTR_PACK(fg, bg, flag)	\
+    (WSATTR_PACK_FG(fg) | WSATTR_PACK_BG(bg) | WSATTR_PACK_FLAG(flag))
+
 struct wsdisplay_emulops sti_emulops = {
 	.cursor = sti_cursor,
 	.mapchar = sti_mapchar,
@@ -113,10 +125,12 @@ enum sti_bmove_funcs {
 
 void	sti_bmove(struct sti_screen *, int, int, int, int, int, int,
 	    enum sti_bmove_funcs);
+#if 0
 int	sti_init(struct sti_screen *, int);
 #define	STI_TEXTMODE	0x01
 #define	STI_CLEARSCR	0x02
 #define	STI_FBMODE	0x04
+#endif
 int	sti_inqcfg(struct sti_screen *, struct sti_inqconfout *);
 int	sti_setcment(struct sti_screen *, u_int, u_char, u_char, u_char);
 
@@ -133,10 +147,13 @@ int	sti_screen_setup(struct sti_screen *, int);
 
 int	ngle_default_putcmap(struct sti_screen *, u_int, u_int);
 
+#ifndef SMALL_KERNEL
 void	ngle_artist_setupfb(struct sti_screen *);
 void	ngle_elk_setupfb(struct sti_screen *);
 void	ngle_timber_setupfb(struct sti_screen *);
 int	ngle_putcmap(struct sti_screen *, u_int, u_int);
+#endif
+
 #if NSTI_PCI > 0
 #define	STI_ENABLE_ROM(sc) \
 do { \
@@ -229,51 +246,52 @@ sti_rom_setup(struct sti_rom *rom, bus_space_tag_t iot, bus_space_tag_t memt,
 	/*
 	 * Get ROM header and code function pointers.
 	 */
+
 	dd = &rom->rom_dd;
 	rom->rom_devtype = bus_space_read_1(memt, romh, 3);
 	if (rom->rom_devtype == STI_DEVTYPE1) {
-		dd->dd_type  = bus_space_read_1(memt, romh, 0x03);
-		dd->dd_nmon  = bus_space_read_1(memt, romh, 0x07);
-		dd->dd_grrev = bus_space_read_1(memt, romh, 0x0b);
-		dd->dd_lrrev = bus_space_read_1(memt, romh, 0x0f);
-		dd->dd_grid[0] = parseword(0x10);
-		dd->dd_grid[1] = parseword(0x20);
-		dd->dd_fntaddr = parseword(0x30) & ~3;
-		dd->dd_maxst   = parseword(0x40);
-		dd->dd_romend  = parseword(0x50) & ~3;
-		dd->dd_reglst  = parseword(0x60) & ~3;
-		dd->dd_maxreent= parseshort(0x70);
-		dd->dd_maxtimo = parseshort(0x78);
-		dd->dd_montbl  = parseword(0x80) & ~3;
-		dd->dd_udaddr  = parseword(0x90) & ~3;
-		dd->dd_stimemreq=parseword(0xa0);
-		dd->dd_udsize  = parseword(0xb0);
-		dd->dd_pwruse  = parseshort(0xc0);
-		dd->dd_bussup  = bus_space_read_1(memt, romh, 0xcb);
-		dd->dd_ebussup = bus_space_read_1(memt, romh, 0xcf);
-		dd->dd_altcodet= bus_space_read_1(memt, romh, 0xd3);
-		dd->dd_eddst[0]= bus_space_read_1(memt, romh, 0xd7);
-		dd->dd_eddst[1]= bus_space_read_1(memt, romh, 0xdb);
-		dd->dd_eddst[2]= bus_space_read_1(memt, romh, 0xdf);
-		dd->dd_cfbaddr = parseword(0xe0) & ~3;
+		dd->dd_type      = bus_space_read_1(memt, romh, 0x03);
+		dd->dd_nmon      = bus_space_read_1(memt, romh, 0x07);
+		dd->dd_grrev     = bus_space_read_1(memt, romh, 0x0b);
+		dd->dd_lrrev     = bus_space_read_1(memt, romh, 0x0f);
+		dd->dd_grid[0]   = parseword(0x10);
+		dd->dd_grid[1]   = parseword(0x20);
+		dd->dd_fntaddr   = parseword(0x30) & ~3;
+		dd->dd_maxst     = parseword(0x40);
+		dd->dd_romend    = parseword(0x50) & ~3;
+		dd->dd_reglst    = parseword(0x60) & ~3;
+		dd->dd_maxreent  = parseshort(0x70);
+		dd->dd_maxtimo   = parseshort(0x78);
+		dd->dd_montbl    = parseword(0x80) & ~3;
+		dd->dd_udaddr    = parseword(0x90) & ~3;
+		dd->dd_stimemreq = parseword(0xa0);
+		dd->dd_udsize    = parseword(0xb0);
+		dd->dd_pwruse    = parseshort(0xc0);
+		dd->dd_bussup    = bus_space_read_1(memt, romh, 0xcb);
+		dd->dd_ebussup   = bus_space_read_1(memt, romh, 0xcf);
+		dd->dd_altcodet  = bus_space_read_1(memt, romh, 0xd3);
+		dd->dd_eddst[0]  = bus_space_read_1(memt, romh, 0xd7);
+		dd->dd_eddst[1]  = bus_space_read_1(memt, romh, 0xdb);
+		dd->dd_eddst[2]  = bus_space_read_1(memt, romh, 0xdf);
+		dd->dd_cfbaddr   = parseword(0xe0) & ~3;
 
 		codebase <<= 2;
-		dd->dd_pacode[0x0] = parseword(codebase + 0x00) & ~3;
-		dd->dd_pacode[0x1] = parseword(codebase + 0x10) & ~3;
-		dd->dd_pacode[0x2] = parseword(codebase + 0x20) & ~3;
-		dd->dd_pacode[0x3] = parseword(codebase + 0x30) & ~3;
-		dd->dd_pacode[0x4] = parseword(codebase + 0x40) & ~3;
-		dd->dd_pacode[0x5] = parseword(codebase + 0x50) & ~3;
-		dd->dd_pacode[0x6] = parseword(codebase + 0x60) & ~3;
-		dd->dd_pacode[0x7] = parseword(codebase + 0x70) & ~3;
-		dd->dd_pacode[0x8] = parseword(codebase + 0x80) & ~3;
-		dd->dd_pacode[0x9] = parseword(codebase + 0x90) & ~3;
-		dd->dd_pacode[0xa] = parseword(codebase + 0xa0) & ~3;
-		dd->dd_pacode[0xb] = parseword(codebase + 0xb0) & ~3;
-		dd->dd_pacode[0xc] = parseword(codebase + 0xc0) & ~3;
-		dd->dd_pacode[0xd] = parseword(codebase + 0xd0) & ~3;
-		dd->dd_pacode[0xe] = parseword(codebase + 0xe0) & ~3;
-		dd->dd_pacode[0xf] = parseword(codebase + 0xf0) & ~3;
+		dd->dd_pacode[0x0] = parseword(codebase + 0x000) & ~3;
+		dd->dd_pacode[0x1] = parseword(codebase + 0x010) & ~3;
+		dd->dd_pacode[0x2] = parseword(codebase + 0x020) & ~3;
+		dd->dd_pacode[0x3] = parseword(codebase + 0x030) & ~3;
+		dd->dd_pacode[0x4] = parseword(codebase + 0x040) & ~3;
+		dd->dd_pacode[0x5] = parseword(codebase + 0x050) & ~3;
+		dd->dd_pacode[0x6] = parseword(codebase + 0x060) & ~3;
+		dd->dd_pacode[0x7] = parseword(codebase + 0x070) & ~3;
+		dd->dd_pacode[0x8] = parseword(codebase + 0x080) & ~3;
+		dd->dd_pacode[0x9] = parseword(codebase + 0x090) & ~3;
+		dd->dd_pacode[0xa] = parseword(codebase + 0x0a0) & ~3;
+		dd->dd_pacode[0xb] = parseword(codebase + 0x0b0) & ~3;
+		dd->dd_pacode[0xc] = parseword(codebase + 0x0c0) & ~3;
+		dd->dd_pacode[0xd] = parseword(codebase + 0x0d0) & ~3;
+		dd->dd_pacode[0xe] = parseword(codebase + 0x0e0) & ~3;
+		dd->dd_pacode[0xf] = parseword(codebase + 0x0f0) & ~3;
 	} else {	/* STI_DEVTYPE4 */
 		bus_space_read_region_stream_4(memt, romh, 0, (uint32_t *)dd,
 		    sizeof(*dd) / 4);
@@ -307,7 +325,7 @@ sti_rom_setup(struct sti_rom *rom, bus_space_tag_t iot, bus_space_tag_t memt,
 	 * Note there could be fewer than STI_END pointer entries
 	 * populated, especially on older devices.
 	 */
-	for (i = STI_END; !dd->dd_pacode[i]; i--)
+	for (i = STI_END; dd->dd_pacode[i] == 0; i--)
 		;
 
 	size = dd->dd_pacode[i] - dd->dd_pacode[STI_BEGIN];
@@ -319,7 +337,6 @@ sti_rom_setup(struct sti_rom *rom, bus_space_tag_t iot, bus_space_tag_t memt,
 		return EINVAL;
 	}
 
-
 	DPRINTF(("code size %x/%x\n", size, round_page(size)));
 
 	if (!(rom->rom_code = uvm_km_alloc(kernel_map, round_page(size), 0,
@@ -327,6 +344,8 @@ sti_rom_setup(struct sti_rom *rom, bus_space_tag_t iot, bus_space_tag_t memt,
 		aprint_error(": cannot allocate %u bytes for code\n", size);
 		return ENOMEM;
 	}
+	DPRINTF(("code=0x%lx[%x]\n", rom->rom_code, size));
+
 	/*
 	 * Copy code into memory and make it executable.
 	 */
@@ -341,8 +360,7 @@ sti_rom_setup(struct sti_rom *rom, bus_space_tag_t iot, bus_space_tag_t memt,
 
 		for (addr = dd->dd_pacode[STI_BEGIN], eaddr = addr + size * 4;
 		    addr < eaddr; addr += 4 ) {
-			*p++ = bus_space_read_4(memt, romh, addr)
-			    & 0xff;
+			*p++ = bus_space_read_4(memt, romh, addr) & 0xff;
 		}
 	} else {	/* STI_DEVTYPE4 */
 		bus_space_read_region_stream_4(memt, romh,
@@ -368,26 +386,27 @@ sti_rom_setup(struct sti_rom *rom, bus_space_tag_t iot, bus_space_tag_t memt,
 	(dd->dd_pacode[(i)] == 0 ? 0 : \
 	    (rom->rom_code + (dd->dd_pacode[(i)] - dd->dd_pacode[0]) /	\
 	    (rom->rom_devtype == STI_DEVTYPE1 ? 4 : 1)))
-	rom->init	= (sti_init_t)	O(STI_INIT_GRAPH);
-	rom->mgmt	= (sti_mgmt_t)	O(STI_STATE_MGMT);
-	rom->unpmv	= (sti_unpmv_t)	O(STI_FONT_UNPMV);
-	rom->blkmv	= (sti_blkmv_t)	O(STI_BLOCK_MOVE);
-	rom->test	= (sti_test_t)	O(STI_SELF_TEST);
-	rom->exhdl	= (sti_exhdl_t)	O(STI_EXCEP_HDLR);
+
+	rom->init	= (sti_init_t)O(STI_INIT_GRAPH);
+	rom->mgmt	= (sti_mgmt_t)O(STI_STATE_MGMT);
+	rom->unpmv	= (sti_unpmv_t)O(STI_FONT_UNPMV);
+	rom->blkmv	= (sti_blkmv_t)O(STI_BLOCK_MOVE);
+	rom->test	= (sti_test_t)O(STI_SELF_TEST);
+	rom->exhdl	= (sti_exhdl_t)O(STI_EXCEP_HDLR);
 	rom->inqconf	= (sti_inqconf_t)O(STI_INQ_CONF);
 	rom->scment	= (sti_scment_t)O(STI_SCM_ENT);
-	rom->dmac	= (sti_dmac_t)	O(STI_DMA_CTRL);
-	rom->flowc	= (sti_flowc_t)	O(STI_FLOW_CTRL);
+	rom->dmac	= (sti_dmac_t)O(STI_DMA_CTRL);
+	rom->flowc	= (sti_flowc_t)O(STI_FLOW_CTRL);
 	rom->utiming	= (sti_utiming_t)O(STI_UTIMING);
-	rom->pmgr	= (sti_pmgr_t)	O(STI_PROC_MGR);
-	rom->util	= (sti_util_t)	O(STI_UTIL);
+	rom->pmgr	= (sti_pmgr_t)O(STI_PROC_MGR);
+	rom->util	= (sti_util_t)O(STI_UTIL);
 
 #undef O
+
 	/*
 	 * Set colormap entry is not implemented until 8.04, so force
 	 * a NULL pointer here.
 	 */
-
 	if (dd->dd_grrev < STI_REVISION(8, 4)) {
 		rom->scment = NULL;
 	}
@@ -407,7 +426,6 @@ sti_region_setup(struct sti_screen *scr)
 	bus_addr_t *bases = rom->bases;
 	struct sti_dd *dd = &rom->rom_dd;
 	struct sti_cfg *cc = &scr->scr_cfg;
-	bus_space_handle_t bh;
 	struct sti_region regions[STI_REGION_MAX], *r;
 	u_int regno, regcnt;
 	bus_addr_t addr;
@@ -468,15 +486,11 @@ sti_region_setup(struct sti_screen *scr)
 			continue;
 		}
 
-		/* XXXNH BUS_SPACE_MAP_CACHEABLE */
 		if (bus_space_map(memt, addr, r->length << PGSHIFT,
 		    r->cache ? BUS_SPACE_MAP_CACHEABLE : 0, &bh)) {
 			rom->regh[regno] = romh;	/* XXX */ /* XXXNH */
 			DPRINTF((" - already mapped region\n"));
 		} else {
-			rom->regh[regno] = bh;
-
-			/* XXX should use bus_space_vaddr */
 			addr = (bus_addr_t)
 			    bus_space_vaddr(memt, rom->regh[regno]);
 			if (regno == 1) {
@@ -632,7 +646,7 @@ sti_screen_setup(struct sti_screen *scr, int flags)
 	scr->scr_wsd.textops = &sti_emulops;
 	scr->scr_wsd.fontwidth = scr->scr_curfont.width;
 	scr->scr_wsd.fontheight = scr->scr_curfont.height;
-	scr->scr_wsd.capabilities = WSSCREEN_REVERSE | WSSCREEN_UNDERLINE;
+	scr->scr_wsd.capabilities = WSSCREEN_REVERSE;
 
 	scr->scr_scrlist[0] = &scr->scr_wsd;
 	scr->scr_screenlist.nscreens = 1;
@@ -751,6 +765,11 @@ sti_describe(struct sti_softc *sc)
 		sti_describe_screen(sc, sc->sc_scr);
 }
 
+/*
+ * Final part of attachment. On hppa where we use the PDC console
+ * during autoconf, this has to be postponed until autoconf has
+ * completed.
+ */
 void
 sti_end_attach(struct sti_softc *sc)
 {
@@ -922,6 +941,7 @@ rescan:
 /*
  * Wrappers around STI code pointers
  */
+
 int
 sti_init(struct sti_screen *scr, int mode)
 {
@@ -937,6 +957,7 @@ sti_init(struct sti_screen *scr, int mode)
 	memset(&a, 0, sizeof(a));
 
 	a.flags.flags = STI_INITF_WAIT | STI_INITF_EBET;
+#if 0
 	if (mode & STI_TEXTMODE) {
 		a.flags.flags |= STI_INITF_TEXT /* | STI_INITF_PNTS */ |
 		    STI_INITF_ICMT | STI_INITF_CMB;
@@ -945,6 +966,16 @@ sti_init(struct sti_screen *scr, int mode)
 	} else if (mode & STI_FBMODE) {
 		a.flags.flags |= STI_INITF_NTEXT /* | STI_INITF_PTS */;
 	}
+#else
+	if ((mode & STI_TEXTMODE) != 0) {
+		a.flags.flags |= STI_INITF_TEXT | STI_INITF_CMB |
+		    STI_INITF_PBET | STI_INITF_PBETI | STI_INITF_ICMT;
+	} else {
+		a.flags.flags |= STI_INITF_NTEXT;
+	}
+	if ((mode & STI_CLEARSCR) != 0)
+		a.flags.flags |= STI_INITF_CLEAR;
+#endif
 
 	a.in.text_planes = 1;
 	a.in.ext_in = &a.ein;
@@ -1091,7 +1122,6 @@ int
 sti_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 {
 	struct sti_screen *scr = (struct sti_screen *)v;
-	struct sti_rom *rom = scr->scr_rom;
 	struct wsdisplay_fbinfo *wdf;
 	struct wsdisplay_cmap *cmapp;
 	u_int mode, idx, count;
@@ -1129,7 +1159,7 @@ printf("%s: WSDISPLAYIO_MODE_EMUL %s:\n", __func__, scr->scr_wsmode != WSDISPLAY
 printf("%s: WSDISPLAYIO_MODE_DUMBFB %s:\n", __func__, scr->scr_wsmode != WSDISPLAYIO_MODE_DUMBFB ? "setupfb" : "");
 			if (scr->scr_wsmode != WSDISPLAYIO_MODE_DUMBFB) {
 printf("%s: setupfb %p\n", __func__, scr->setupfb);
-Debugger();
+				sti_init(scr, 0);
 				if (scr->setupfb != NULL)
 					scr->setupfb(scr);
 				else
@@ -1181,8 +1211,8 @@ Debugger();
 		break;
 #endif
 	case WSDISPLAYIO_GETCMAP:
-		if (rom->scment == NULL)
-			return ENOTTY;
+		if (scr->putcmap == NULL || scr->scr_bpp > 8)
+			return ENODEV;
 		cmapp = (struct wsdisplay_cmap *)data;
 		idx = cmapp->index;
 		count = cmapp->count;
@@ -1198,7 +1228,17 @@ Debugger();
 
 	case WSDISPLAYIO_PUTCMAP:
 		if (scr->putcmap == NULL || scr->scr_bpp > 8)
-			return ENOTTY;
+			return ENODEV;
+		if (scr->scr_wsmode == WSDISPLAYIO_MODE_EMUL) {
+			/*
+			 * The hardware palette settings are handled by
+			 * the STI ROM in STI_TEXTMODE and changing cmap
+			 * could cause mangled text colors at least on CRX.
+			 * Updating CMAP in EMUL mode isn't expected anyway
+			 * so just ignore it.
+			 */
+			return 0;
+		}
 		cmapp = (struct wsdisplay_cmap *)data;
 		idx = cmapp->index;
 		count = cmapp->count;
@@ -1285,7 +1325,6 @@ sti_alloc_screen(void *v, const struct wsscreen_descr *type, void **cookiep,
 	*cyp = 0;
 	sti_alloc_attr(scr, 0, 0, 0, defattr);
 	scr->scr_nscreens++;
-
 	return 0;
 }
 
@@ -1327,8 +1366,10 @@ sti_cursor(void *v, int on, int row, int col)
 	struct sti_screen *scr = (struct sti_screen *)v;
 	struct sti_font *fp = &scr->scr_curfont;
 
-	sti_bmove(scr, col * fp->width, row * fp->height, col * fp->width,
-	    row * fp->height, fp->height, fp->width, bmf_invert);
+	sti_bmove(scr,
+	    col * fp->width, row * fp->height,
+	    col * fp->width, row * fp->height,
+	    fp->height, fp->width, bmf_invert);
 }
 
 /*
@@ -1393,6 +1434,10 @@ sti_putchar(void *v, int row, int col, u_int uc, long attr)
 	struct sti_screen *scr = (struct sti_screen *)v;
 	struct sti_rom *rom = scr->scr_rom;
 	struct sti_font *fp = &scr->scr_curfont;
+	int bg, fg;
+
+	fg = WSATTR_UNPACK_FG(attr);
+	bg = WSATTR_UNPACK_BG(attr);
 
 
 	if (scr->scr_romfont != NULL) {
@@ -1408,9 +1453,8 @@ sti_putchar(void *v, int row, int col, u_int uc, long attr)
 		memset(&a, 0, sizeof(a));
 
 		a.flags.flags = STI_UNPMVF_WAIT;
-		/* XXX does not handle text attributes */
-		a.in.fg_colour = STI_COLOUR_WHITE;
-		a.in.bg_colour = STI_COLOUR_BLACK;
+		a.in.fg_colour = fg;
+		a.in.bg_colour = bg;
 		a.in.x = col * fp->width;
 		a.in.y = row * fp->height;
 		a.in.font_addr = scr->scr_romfont;
@@ -1430,9 +1474,8 @@ sti_putchar(void *v, int row, int col, u_int uc, long attr)
 		memset(&a, 0, sizeof(a));
 
 		a.flags.flags = STI_BLKMVF_WAIT;
-		/* XXX does not handle text attributes */
-		a.in.fg_colour = STI_COLOUR_WHITE;
-		a.in.bg_colour = STI_COLOUR_BLACK;
+		a.in.fg_colour = fg;
+		a.in.bg_colour = bg;
 
 		a.in.srcx = ((uc - fp->first) / scr->scr_fontmaxcol) *
 		    fp->width + scr->scr_fontbase;
@@ -1453,8 +1496,10 @@ sti_copycols(void *v, int row, int srccol, int dstcol, int ncols)
 	struct sti_screen *scr = (struct sti_screen *)v;
 	struct sti_font *fp = &scr->scr_curfont;
 
-	sti_bmove(scr, srccol * fp->width, row * fp->height, dstcol * fp->width,
-	    row * fp->height, fp->height, ncols * fp->width, bmf_copy);
+	sti_bmove(scr,
+	    srccol * fp->width, row * fp->height,
+	    dstcol * fp->width, row * fp->height,
+	    fp->height, ncols * fp->width, bmf_copy);
 }
 
 void
@@ -1463,9 +1508,10 @@ sti_erasecols(void *v, int row, int startcol, int ncols, long attr)
 	struct sti_screen *scr = (struct sti_screen *)v;
 	struct sti_font *fp = &scr->scr_curfont;
 
-	sti_bmove(scr, startcol * fp->width, row * fp->height,
-	    startcol * fp->width, row * fp->height, fp->height,
-	    ncols * fp->width, bmf_clear);
+	sti_bmove(scr,
+	    startcol * fp->width, row * fp->height,
+	    startcol * fp->width, row * fp->height,
+	    fp->height, ncols * fp->width, bmf_clear);
 }
 
 void
@@ -1495,8 +1541,18 @@ sti_alloc_attr(void *v, int fg, int bg, int flags, long *pattr)
 	struct sti_screen *scr = (struct sti_screen *)v;
 #endif
 
-	*pattr = 0;
+	if ((flags & (WSATTR_HILIT | WSATTR_BLINK |
+	    WSATTR_UNDERLINE | WSATTR_WSCOLORS)) != 0)
+		return EINVAL;
+	if ((flags & WSATTR_REVERSE) != 0) {
+		fg = STI_COLOUR_BLACK;
+		bg = STI_COLOUR_WHITE;
+	} else {
+		fg = STI_COLOUR_WHITE;
+		bg = STI_COLOUR_BLACK;
+	}
 
+	*pattr = WSATTR_PACK(fg, bg, flags);
 	return 0;
 }
 
@@ -1541,8 +1597,6 @@ sti_cnattach(struct sti_rom *rom, struct sti_screen *scr, bus_space_tag_t memt,
 	return 0;
 }
 #endif
-
-
 
 int
 ngle_default_putcmap(struct sti_screen *scr, u_int idx, u_int count)
@@ -1725,6 +1779,7 @@ printf("%s: done\n", __func__);
 void
 ngle_setup_fb(bus_space_tag_t memt, bus_space_handle_t memh, uint32_t reg10)
 {
+
 	ngle_setup_hw(memt, memh);
 	bus_space_write_4(memt, memh, NGLE_REG_10, reg10);
 	bus_space_write_4(memt, memh, NGLE_REG_14, 0x83000300);

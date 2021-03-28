@@ -1,4 +1,4 @@
-/*	$NetBSD: asm.h,v 1.3 2019/04/13 12:41:36 maya Exp $	*/
+/*	$NetBSD: asm.h,v 1.5 2020/04/17 14:19:44 joerg Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -49,7 +49,7 @@
 	REG_L	ra, CALLFRAME_RA(sp);				\
 	REG_L	a0, CALLFRAME_S0(sp);				\
 	addi	sp, sp, CALLFRAME_SIZ;				\
-	.set	pop;					
+	.set	pop;
 
 #ifdef GPROF
 #define	_PROF_PROLOGUE _KERN_MCOUNT
@@ -115,7 +115,9 @@
 	.asciiz str;			\
 	.align	3
 
-#define	__RCSID(name)	.pushsection ".ident"; .asciz name; .popsection
+#define __RCSID(x)	.pushsection ".ident","MS",@progbits,1;		\
+			.asciz x;					\
+			.popsection
 #define RCSID(name)	__RCSID(name)
 
 #if defined(_LP64)

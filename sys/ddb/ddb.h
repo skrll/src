@@ -1,4 +1,4 @@
-/*	$NetBSD: ddb.h,v 1.3 2018/03/04 07:14:50 mlelstv Exp $	*/
+/*	$NetBSD: ddb.h,v 1.5 2020/05/31 09:51:55 rin Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.

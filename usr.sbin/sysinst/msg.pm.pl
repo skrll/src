@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.pm.pl,v 1.1 2019/06/12 06:20:18 martin Exp $	*/
+/*	$NetBSD: msg.pm.pl,v 1.4 2020/11/05 11:10:11 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -36,7 +36,6 @@
 
 message fillzeros {Wype³nij zerami}
 message fillrandom {Wype³nij losowymi danymi}
-message fillcrypto {Wype³nij przez crypto danych}
 message raid0 {0 - brak parzysto¶ci, tylko proste rozk³adanie.}
 message raid1 {1 - Mirroring. Parytet jest lustro.}
 message raid4 {4 - Malowanie z parytetu przechowywanych w ostatniej czê¶ci.}
@@ -45,7 +44,7 @@ message raid5 {5 - Malowanie z parytetu w tych wszystkich elementów.}
 message wannaunblock {Urz±dzenie jest zablokowane. Czy chcesz, aby zmusiæ go odblokowaæ i kontynuowaæ?}
 message wannatry {Czy chcesz spróbowaæ?}
 message create_cgd {Utwórz wolumen kryptograficznych (CGD)}
-message create_cnd {Utwórz wirtualnego obraz dysku (VND)}
+message create_vnd {Utwórz wirtualnego obraz dysku (VND)}
 message create_vg {Utwórz grupê woluminów (LVM VG)}
 message create_lv {Utwórz wolumin logiczny}
 message create_raid {Utwórz oprogramowania RAID}
@@ -53,7 +52,6 @@ message updpmlist {Aktualizuj listê urz±dzeñ}
 message savepm {Zapisz zmiany}
 message pmblocked {ZABLOK.}
 message pmunchanged {BEZ ZMIAN}
-message pmsetboot {BOOT}
 message pmused {U¯YWANE}
 message pmmounted {(zamontowany)}
 message pmunused {(nieu¿ywany)}
@@ -153,4 +151,16 @@ message lvmlv_mirrors_ask {Mirrors?}
 message lvmlv_regsiz_ask {MirrorLogRegionSize?}
 message lvmlv_readahsect_ask {ReadAheadSectors?}
 message lvmlv_stripes_ask {Stripes?}
+
+message notsupported {Operacja nie jest obslugiwana!}
+message edit_parts {Edytuj partycje}
+message switch_parts {Switch partitioning scheme}
+message fmtasraid {Formatuj jako RAID}
+message fmtaslvm {Formatuj jak LVM PV}
+message encrypt {Szyfrowanie (CGD)}
+message erase {Bezpieczne kasowanie}
+message undo {Cofanie zmian}
+message unconfig {Cofnij konfiguracje}
+message edit {Edytuj}
+message doumount {Wymus odmontowanie}
 

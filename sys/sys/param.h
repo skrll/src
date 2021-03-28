@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.628 2019/12/20 21:13:48 ad Exp $	*/
+/*	$NetBSD: param.h,v 1.690 2021/02/19 14:51:59 christos Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -67,7 +67,7 @@
  *	2.99.9		(299000900)
  */
 
-#define	__NetBSD_Version__	999002700	/* NetBSD 9.99.27 */
+#define	__NetBSD_Version__	999008000	/* NetBSD 9.99.80 */
 
 #define __NetBSD_Prereq__(M,m,p) (((((M) * 100000000) + \
     (m) * 1000000) + (p) * 100) <= __NetBSD_Version__)
@@ -148,13 +148,17 @@
 #include <sys/uio.h>
 #include <uvm/uvm_param.h>
 #ifndef NPROC
-#define	NPROC	(20 + 16 * MAXUSERS)
+#define	NPROC			(20 + 16 * MAXUSERS)
+#endif
+#ifndef MAXFILES
+#define	MAXFILES		(3 * (NPROC + MAXUSERS) + 80)
+#define	MAXFILES_IMPLICIT
 #endif
 #ifndef NTEXT
-#define	NTEXT	(80 + NPROC / 8)		/* actually the object cache */
+#define	NTEXT			(80 + NPROC / 8) /* actually the object cache */
 #endif
 #ifndef NVNODE
-#define	NVNODE	(NPROC + NTEXT + 100)
+#define	NVNODE			(NPROC + NTEXT + 100)
 #define	NVNODE_IMPLICIT
 #endif
 #ifndef VNODE_KMEM_MAXPCT
@@ -163,7 +167,7 @@
 #ifndef BUFCACHE_VA_MAXPCT
 #define	BUFCACHE_VA_MAXPCT	20
 #endif
-#define	VNODE_COST	2048			/* assumed space in bytes */
+#define	VNODE_COST		2048		/* assumed space in bytes */
 #endif /* _KERNEL */
 
 /* Signals. */
@@ -196,6 +200,7 @@
 #define	dbtob(x)	((x) << DEV_BSHIFT)
 #define	btodb(x)	((x) >> DEV_BSHIFT)
 
+/* Coherency unit: assumed cache line size.  See also MIN_LWP_ALIGNMENT. */
 #ifndef COHERENCY_UNIT
 #define	COHERENCY_UNIT		64
 #endif
@@ -276,10 +281,24 @@
 #define	ALIGN(p)		(((uintptr_t)(p) + ALIGNBYTES) & ~ALIGNBYTES)
 #endif
 #ifndef ALIGNED_POINTER
-#define	ALIGNED_POINTER(p,t)	((((uintptr_t)(p)) & (sizeof(t) - 1)) == 0)
+#define	ALIGNED_POINTER(p,t)	((((uintptr_t)(p)) & (__alignof(t) - 1)) == 0)
 #endif
 #ifndef ALIGNED_POINTER_LOAD
 #define	ALIGNED_POINTER_LOAD(q,p,t)	(*(q) = *((const t *)(p)))
+#endif
+
+/*
+ * Return if pointer p is accessible for type t. For primitive types
+ * this means that the pointer itself can be dereferenced; for structures
+ * and unions this means that any field can be dereferenced. On CPUs
+ * that allow unaligned pointer access, we always return that the pointer
+ * is accessible to prevent unnecessary copies, although this might not be
+ * necessarily faster.
+ */
+#ifdef __NO_STRICT_ALIGNMENT
+#define	ACCESSIBLE_POINTER(p, t)	1
+#else
+#define	ACCESSIBLE_POINTER(p, t)	ALIGNED_POINTER(p, t)
 #endif
 
 /*
@@ -526,12 +545,16 @@ extern size_t coherency_unit;
 #endif /* _KERNEL */
 
 /*
- * Minimum alignment of "struct lwp" needed by the architecture.
- * This counts when packing a lock byte into a word alongside a
- * pointer to an LWP.
+ * Minimum alignment of "struct lwp" needed by the architecture.  This
+ * counts when packing a lock byte into a word alongside a pointer to an
+ * LWP.  We need a minimum of 32, but go with the cache line size.
  */
 #ifndef MIN_LWP_ALIGNMENT
-#define	MIN_LWP_ALIGNMENT	32
+# if COHERENCY_UNIT > 32
+#  define MIN_LWP_ALIGNMENT	COHERENCY_UNIT
+# else
+#  define MIN_LWP_ALIGNMENT	32
+# endif
 #endif
 #endif /* !__ASSEMBLER__ */
 

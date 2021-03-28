@@ -1,4 +1,4 @@
-/* $NetBSD: ihidev.c,v 1.9 2019/10/01 18:00:08 chs Exp $ */
+/* $NetBSD: ihidev.c,v 1.18 2021/01/27 02:29:48 thorpej Exp $ */
 /* $OpenBSD ihidev.c,v 1.13 2017/04/08 02:57:23 deraadt Exp $ */
 
 /*-
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ihidev.c,v 1.9 2019/10/01 18:00:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ihidev.c,v 1.18 2021/01/27 02:29:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -71,6 +71,7 @@ __KERNEL_RCSID(0, "$NetBSD: ihidev.c,v 1.9 2019/10/01 18:00:08 chs Exp $");
 #  include "acpica.h"
 #endif
 #if NACPICA > 0
+#include <dev/acpi/acpivar.h>
 #include <dev/acpi/acpi_intr.h>
 #endif
 
@@ -109,10 +110,14 @@ static int	ihidev_detach(device_t, int);
 CFATTACH_DECL_NEW(ihidev, sizeof(struct ihidev_softc),
     ihidev_match, ihidev_attach, ihidev_detach, NULL);
 
+static bool	ihiddev_intr_init(struct ihidev_softc *);
+static void	ihiddev_intr_fini(struct ihidev_softc *);
+
 static bool	ihidev_suspend(device_t, const pmf_qual_t *);
 static bool	ihidev_resume(device_t, const pmf_qual_t *);
 static int	ihidev_hid_command(struct ihidev_softc *, int, void *, bool);
 static int	ihidev_intr(void *);
+static void	ihidev_softintr(void *);
 static int	ihidev_reset(struct ihidev_softc *, bool);
 static int	ihidev_hid_desc_parse(struct ihidev_softc *);
 
@@ -120,9 +125,13 @@ static int	ihidev_maxrepid(void *, int);
 static int	ihidev_print(void *, const char *);
 static int	ihidev_submatch(device_t, cfdata_t, const int *, void *);
 
+static bool	ihidev_acpi_get_info(struct ihidev_softc *);
+
 static const struct device_compatible_entry compat_data[] = {
-	{ "hid-over-i2c",		0 },
-	{ NULL,				0 }
+	{ .compat = "PNP0C50" },
+	{ .compat = "ACPI0C50" },
+	{ .compat = "hid-over-i2c" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -146,22 +155,21 @@ ihidev_attach(device_t parent, device_t self, void *aux)
 	device_t dev;
 	int repid, repsz;
 	int isize;
-	uint32_t v;
 	int locs[IHIDBUSCF_NLOCS];
-
 
 	sc->sc_dev = self;
 	sc->sc_tag = ia->ia_tag;
 	sc->sc_addr = ia->ia_addr;
-	sc->sc_phandle = ia->ia_cookie;
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_VM);
 
-	if (!prop_dictionary_get_uint32(ia->ia_prop, "hid-descr-addr", &v)) {
-		aprint_error(": no hid-descr-addr value\n");
+	sc->sc_phandle = ia->ia_cookie;
+	if (ia->ia_cookietype != I2C_COOKIE_ACPI) {
+		aprint_error(": unsupported device tree type\n");
 		return;
 	}
-
-	sc->sc_hid_desc_addr = v;
+	if (! ihidev_acpi_get_info(sc)) {
+		return;
+	}
 
 	if (ihidev_hid_command(sc, I2C_HID_CMD_DESCR, NULL, false) ||
 	    ihidev_hid_desc_parse(sc)) {
@@ -200,20 +208,9 @@ ihidev_attach(device_t parent, device_t self, void *aux)
 		    repsz));
 	}
 	sc->sc_ibuf = kmem_zalloc(sc->sc_isize, KM_SLEEP);
-#if NACPICA > 0
-	{
-		char buf[100];
-
-		sc->sc_ih = acpi_intr_establish(self, sc->sc_phandle, IPL_TTY,
-		    false, ihidev_intr, sc, device_xname(self));
-		if (sc->sc_ih == NULL) {
-			aprint_error_dev(self, "can't establish interrupt\n");
-			return;
-		}
-		aprint_normal_dev(self, "interrupting at %s\n",
-		    acpi_intr_string(sc->sc_ih, buf, sizeof(buf)));
+	if (! ihiddev_intr_init(sc)) {
+		return;
 	}
-#endif
 
 	iha.iaa = ia;
 	iha.parent = sc;
@@ -260,10 +257,7 @@ ihidev_detach(device_t self, int flags)
 	struct ihidev_softc *sc = device_private(self);
 
 	mutex_enter(&sc->sc_intr_lock);
-#if NACPICA > 0
-	if (sc->sc_ih != NULL)
-		acpi_intr_disestablish(sc->sc_ih);
-#endif
+	ihiddev_intr_fini(sc);
 	if (ihidev_hid_command(sc, I2C_HID_CMD_SET_POWER,
 	    &I2C_HID_POWER_OFF, true))
 	aprint_error_dev(sc->sc_dev, "failed to power down\n");
@@ -649,31 +643,131 @@ ihidev_hid_desc_parse(struct ihidev_softc *sc)
 	return (0);
 }
 
+static bool
+ihiddev_intr_init(struct ihidev_softc *sc)
+{
+#if NACPICA > 0
+	ACPI_HANDLE hdl = (void *)(uintptr_t)sc->sc_phandle;
+	struct acpi_resources res;
+	ACPI_STATUS rv;
+	char buf[100];
+
+	rv = acpi_resource_parse(sc->sc_dev, hdl, "_CRS", &res,
+	    &acpi_resource_parse_ops_quiet);
+	if (ACPI_FAILURE(rv)) {
+		aprint_error_dev(sc->sc_dev, "can't parse '_CRS'\n");
+		return false;
+	}
+
+	const struct acpi_irq * const irq = acpi_res_irq(&res, 0);
+	if (irq == NULL) {
+		aprint_error_dev(sc->sc_dev, "no IRQ resource\n");
+		acpi_resource_cleanup(&res);
+		return false;
+	}
+
+	sc->sc_intr_type =
+	    irq->ar_type == ACPI_EDGE_SENSITIVE ? IST_EDGE : IST_LEVEL;
+
+	acpi_resource_cleanup(&res);
+
+	sc->sc_ih = acpi_intr_establish(sc->sc_dev, sc->sc_phandle, IPL_TTY,
+	    false, ihidev_intr, sc, device_xname(sc->sc_dev));
+	if (sc->sc_ih == NULL) {
+		aprint_error_dev(sc->sc_dev, "can't establish interrupt\n");
+		return false;
+	}
+	aprint_normal_dev(sc->sc_dev, "interrupting at %s\n",
+	    acpi_intr_string(sc->sc_ih, buf, sizeof(buf)));
+
+	sc->sc_sih = softint_establish(SOFTINT_SERIAL, ihidev_softintr, sc);
+	if (sc->sc_sih == NULL) {
+		aprint_error_dev(sc->sc_dev,
+		    "can't establish soft interrupt\n");
+		return false;
+	}
+
+	return true;
+#else
+	aprint_error_dev(sc->sc_dev, "can't establish interrupt\n");
+	return false;
+#endif
+}
+
+static void
+ihiddev_intr_fini(struct ihidev_softc *sc)
+{
+#if NACPICA > 0
+	if (sc->sc_ih != NULL) {
+		acpi_intr_disestablish(sc->sc_ih);
+	}
+	if (sc->sc_sih != NULL) {
+		softint_disestablish(sc->sc_sih);
+	}
+#endif
+}
+
+static void
+ihidev_intr_mask(struct ihidev_softc * const sc)
+{
+
+	if (sc->sc_intr_type == IST_LEVEL) {
+#if NACPICA > 0
+		acpi_intr_mask(sc->sc_ih);
+#endif
+	}
+}
+
+static void
+ihidev_intr_unmask(struct ihidev_softc * const sc)
+{
+
+	if (sc->sc_intr_type == IST_LEVEL) {
+#if NACPICA > 0
+		acpi_intr_unmask(sc->sc_ih);
+#endif
+	}
+}
+
 static int
 ihidev_intr(void *arg)
 {
-	struct ihidev_softc *sc = arg;
+	struct ihidev_softc * const sc = arg;
+
+	mutex_enter(&sc->sc_intr_lock);
+
+	/*
+	 * Schedule our soft interrupt handler.  If we're using a level-
+	 * triggered interrupt, we have to mask it off while we wait
+	 * for service.
+	 */
+	softint_schedule(sc->sc_sih);
+	ihidev_intr_mask(sc);
+
+	mutex_exit(&sc->sc_intr_lock);
+
+	return 1;
+}
+
+static void
+ihidev_softintr(void *arg)
+{
+	struct ihidev_softc * const sc = arg;
 	struct ihidev *scd;
 	u_int psize;
 	int res, i;
 	u_char *p;
 	u_int rep = 0;
 
-	/*
-	 * XXX: force I2C_F_POLL for now to avoid dwiic interrupting
-	 * while we are interrupting
-	 */
-
 	mutex_enter(&sc->sc_intr_lock);
-	iic_acquire_bus(sc->sc_tag, I2C_F_POLL);
-
+	iic_acquire_bus(sc->sc_tag, 0);
 	res = iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_addr, NULL, 0,
-	    sc->sc_ibuf, sc->sc_isize, I2C_F_POLL);
-
-	iic_release_bus(sc->sc_tag, I2C_F_POLL);
+	    sc->sc_ibuf, sc->sc_isize, 0);
+	iic_release_bus(sc->sc_tag, 0);
 	mutex_exit(&sc->sc_intr_lock);
+
 	if (res != 0)
-		return 1;
+		goto out;
 
 	/*
 	 * 6.1.1 - First two bytes are the packet length, which must be less
@@ -683,7 +777,7 @@ ihidev_intr(void *arg)
 	if (!psize || psize > sc->sc_isize) {
 		DPRINTF(("%s: %s: invalid packet size (%d vs. %d)\n",
 		    sc->sc_dev.dv_xname, __func__, psize, sc->sc_isize));
-		return (1);
+		goto out;
 	}
 
 	/* 3rd byte is the report id */
@@ -695,22 +789,26 @@ ihidev_intr(void *arg)
 	if (rep >= sc->sc_nrepid) {
 		aprint_error_dev(sc->sc_dev, "%s: bad report id %d\n",
 		    __func__, rep);
-		return (1);
+		goto out;
 	}
 
-	DPRINTF(("%s: ihidev_intr: hid input (rep %d):", sc->sc_dev.dv_xname,
-	    rep));
+	DPRINTF(("%s: %s: hid input (rep %d):", sc->sc_dev.dv_xname,
+	    __func__, rep));
 	for (i = 0; i < sc->sc_isize; i++)
 		DPRINTF((" %.2x", sc->sc_ibuf[i]));
 	DPRINTF(("\n"));
 
 	scd = sc->sc_subdevs[rep];
 	if (scd == NULL || !(scd->sc_state & IHIDEV_OPEN))
-		return (1);
+		goto out;
 
 	scd->sc_intr(scd, p, psize);
 
-	return 1;
+ out:
+	/*
+	 * If our interrupt is level-triggered, re-enable it now.
+	 */
+	ihidev_intr_unmask(sc);
 }
 
 static int
@@ -870,4 +968,33 @@ ihidev_set_report(struct device *dev, int type, int id, void *data,
 	}
 
 	return 0;
+}
+
+static bool
+ihidev_acpi_get_info(struct ihidev_softc *sc)
+{               
+	ACPI_HANDLE hdl = (void *)(uintptr_t)sc->sc_phandle;
+	ACPI_STATUS status;
+	ACPI_INTEGER val;
+
+	/* 3cdff6f7-4267-4555-ad05-b30a3d8938de */
+	uint8_t i2c_hid_guid[] = {
+		0xF7, 0xF6, 0xDF, 0x3C,
+		0x67, 0x42,
+		0x55, 0x45,
+		0xAD, 0x05,
+		0xB3, 0x0A, 0x3D, 0x89, 0x38, 0xDE,
+	};
+
+	status = acpi_dsm_integer(hdl, i2c_hid_guid, 1, 1, NULL, &val);
+	if (ACPI_FAILURE(status)) {
+		aprint_error_dev(sc->sc_dev,
+		    "failed to get HidDescriptorAddress: %s\n",
+		    AcpiFormatException(status)); 
+		return false;
+	}
+
+	sc->sc_hid_desc_addr = (u_int)val;
+
+	return true;
 }

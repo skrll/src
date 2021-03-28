@@ -1,7 +1,8 @@
-/* $NetBSD: vmstat.c,v 1.228 2019/09/13 13:56:05 christos Exp $ */
+/* $NetBSD: vmstat.c,v 1.242 2020/06/14 21:41:42 ad Exp $ */
 
 /*-
- * Copyright (c) 1998, 2000, 2001, 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2000, 2001, 2007, 2019, 2020
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation by:
@@ -70,7 +71,7 @@ __COPYRIGHT("@(#) Copyright (c) 1980, 1986, 1991, 1993\
 #if 0
 static char sccsid[] = "@(#)vmstat.c	8.2 (Berkeley) 3/1/95";
 #else
-__RCSID("$NetBSD: vmstat.c,v 1.228 2019/09/13 13:56:05 christos Exp $");
+__RCSID("$NetBSD: vmstat.c,v 1.242 2020/06/14 21:41:42 ad Exp $");
 #endif
 #endif /* not lint */
 
@@ -96,6 +97,8 @@ __RCSID("$NetBSD: vmstat.c,v 1.228 2019/09/13 13:56:05 christos Exp $");
 #include <sys/time.h>
 #include <sys/queue.h>
 #include <sys/kernhist.h>
+#include <sys/vnode.h>
+#include <sys/vnode_impl.h>
 
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm_stat.h>
@@ -148,27 +151,36 @@ struct cpu_info {
  */
 struct nlist namelist[] =
 {
-#define	X_BOOTTIME	0
-	{ .n_name = "_boottime" },
-#define	X_HZ		1
+#define	X_HZ		0
 	{ .n_name = "_hz" },
-#define	X_STATHZ	2
+#define	X_STATHZ	1
 	{ .n_name = "_stathz" },
-#define	X_NCHSTATS	3
+#define	X_NCHSTATS	2
 	{ .n_name = "_nchstats" },
-#define	X_ALLEVENTS	4
+#define	X_ALLEVENTS	3
 	{ .n_name = "_allevents" },
-#define	X_POOLHEAD	5
+#define	X_POOLHEAD	4
 	{ .n_name = "_pool_head" },
-#define	X_UVMEXP	6
+#define	X_UVMEXP	5
 	{ .n_name = "_uvmexp" },
-#define	X_TIME_SECOND	7
-	{ .n_name = "_time_second" },
-#define X_TIME		8
-	{ .n_name = "_time" },
-#define X_CPU_INFOS	9
+#define X_CPU_INFOS	6
 	{ .n_name = "_cpu_infos" },
-#define	X_NL_SIZE	10
+#define	X_NL_SIZE	7
+	{ .n_name = NULL },
+};
+
+/*
+ * Namelist for time data.
+ */
+struct nlist timenl[] =
+{
+#define	X_TIMEBASEBIN	0
+	{ .n_name = "_timebasebin" },
+#define	X_TIME_SECOND	1
+	{ .n_name = "_time_second" },
+#define X_TIME		2
+	{ .n_name = "_time" },
+#define	X_TIMENL_SIZE	3
 	{ .n_name = NULL },
 };
 
@@ -215,15 +227,11 @@ struct nlist hashnl[] =
 	{ .n_name = "_in_ifaddrhash" },
 #define	X_IFADDRHASHTBL	9
 	{ .n_name = "_in_ifaddrhashtbl" },
-#define	X_NCHASH	10
-	{ .n_name = "_nchash" },
-#define	X_NCHASHTBL	11
-	{ .n_name = "_nchashtbl" },
-#define	X_NCVHASH	12
-	{ .n_name = "_ncvhash" },
-#define	X_NCVHASHTBL	13
-	{ .n_name = "_ncvhashtbl" },
-#define X_HASHNL_SIZE	14	/* must be last */
+#define	X_VCACHEHASH	10
+	{ .n_name = "_vcache_hashmask" },
+#define	X_VCACHETBL	11
+	{ .n_name = "_vcache_hashtab" },
+#define X_HASHNL_SIZE	12	/* must be last */
 	{ .n_name = NULL },
 };
 
@@ -553,9 +561,7 @@ getnlist(int todo)
 				errx(1, "kvm_nlist: %s %s",
 				    "namelist", kvm_geterr(kd));
 			for (i = 0; i < __arraycount(namelist)-1; i++)
-				if (namelist[i].n_type == 0 &&
-				    i != X_TIME_SECOND &&
-				    i != X_TIME) {
+				if (namelist[i].n_type == 0) {
 					if (doexit++ == 0)
 						(void)fprintf(stderr,
 						    "%s: undefined symbols:",
@@ -568,6 +574,11 @@ getnlist(int todo)
 				exit(1);
 			}
 		}
+	}
+	if ((todo & (VMSTAT|INTRSTAT)) && !(done & (VMSTAT))) {
+		done |= VMSTAT;
+		if ((c = kvm_nlist(kd, timenl)) == -1 || c == X_TIMENL_SIZE)
+			errx(1, "kvm_nlist: %s %s", "timenl", kvm_geterr(kd));
 	}
 	if ((todo & (SUMSTAT|INTRSTAT)) && !(done & (SUMSTAT|INTRSTAT))) {
 		done |= SUMSTAT|INTRSTAT;
@@ -636,10 +647,13 @@ getuptime(void)
 		}
 		clock_gettime(CLOCK_REALTIME, &now);
 	} else {
-		if (boottime.tv_sec == 0)
-			kread(namelist, X_BOOTTIME, &boottime,
-			    sizeof(boottime));
-		if (kreadc(namelist, X_TIME_SECOND, &nowsec, sizeof(nowsec))) {
+		if (boottime.tv_sec == 0) {
+			struct bintime bt;
+
+			kread(timenl, X_TIMEBASEBIN, &bt, sizeof(bt));
+			bintime2timespec(&bt, &boottime);
+		}
+		if (kreadc(timenl, X_TIME_SECOND, &nowsec, sizeof(nowsec))) {
 			/*
 			 * XXX this assignment dance can be removed once
 			 * timeval tv_sec is SUS mandated time_t
@@ -647,7 +661,7 @@ getuptime(void)
 			now.tv_sec = nowsec;
 			now.tv_nsec = 0;
 		} else {
-			kread(namelist, X_TIME, &now, sizeof(now));
+			kread(timenl, X_TIME, &now, sizeof(now));
 		}
 	}
 	uptime = now.tv_sec - boottime.tv_sec;
@@ -907,7 +921,6 @@ dosum(void)
 		COPY(free);
 		COPY(paging);
 		COPY(wired);
-		COPY(zeropages);
 		COPY(reserve_pagedaemon);
 		COPY(reserve_kernel);
 		COPY(anonpages);
@@ -927,9 +940,6 @@ dosum(void)
 		COPY(forks);
 		COPY(forks_ppwait);
 		COPY(forks_sharevm);
-		COPY(pga_zerohit);
-		COPY(pga_zeromiss);
-		COPY(zeroaborts);
 		COPY(colorhit);
 		COPY(colormiss);
 		COPY(cpuhit);
@@ -992,7 +1002,6 @@ dosum(void)
 	}
 	(void)printf("%9" PRIu64 " pages paging\n", uvmexp.paging);
 	(void)printf("%9" PRIu64 " pages wired\n", uvmexp.wired);
-	(void)printf("%9" PRIu64 " zero pages\n", uvmexp.zeropages);
 	(void)printf("%9" PRIu64 " reserve pagedaemon pages\n",
 	    uvmexp.reserve_pagedaemon);
 	(void)printf("%9" PRIu64 " reserve kernel pages\n", uvmexp.reserve_kernel);
@@ -1027,12 +1036,6 @@ dosum(void)
 	(void)printf("%9" PRIu64 " forks blocked parent\n", uvmexp.forks_ppwait);
 	(void)printf("%9" PRIu64 " forks shared address space with parent\n",
 	    uvmexp.forks_sharevm);
-	(void)printf("%9" PRIu64 " pagealloc zero wanted and avail\n",
-	    uvmexp.pga_zerohit);
-	(void)printf("%9" PRIu64 " pagealloc zero wanted and not avail\n",
-	    uvmexp.pga_zeromiss);
-	(void)printf("%9" PRIu64 " aborts of idle page zeroing\n",
-	    uvmexp.zeroaborts);
 	(void)printf("%9" PRIu64 " pagealloc desired color avail\n",
 	    uvmexp.colorhit);
 	(void)printf("%9" PRIu64 " pagealloc desired color not avail\n",
@@ -1060,6 +1063,10 @@ dosum(void)
 	(void)printf("%9" PRIu64 " object faults\n", uvmexp.flt_obj);
 	(void)printf("%9" PRIu64 " promote copy faults\n", uvmexp.flt_prcopy);
 	(void)printf("%9" PRIu64 " promote zero fill faults\n", uvmexp.flt_przero);
+	(void)printf("%9" PRIu64 " faults upgraded lock\n",
+	    uvmexp.fltup);
+	(void)printf("%9" PRIu64 " faults couldn't upgrade lock\n",
+	    uvmexp.fltnoup);
 
 	(void)printf("%9" PRIu64 " times daemon wokeup\n",uvmexp.pdwoke);
 	(void)printf("%9" PRIu64 " revolutions of the clock hand\n", uvmexp.pdrevs);
@@ -1072,6 +1079,13 @@ dosum(void)
 	(void)printf("%9" PRIu64 " pages found busy by daemon\n", uvmexp.pdbusy);
 	(void)printf("%9" PRIu64 " total pending pageouts\n", uvmexp.pdpending);
 	(void)printf("%9" PRIu64 " pages deactivated\n", uvmexp.pddeact);
+	(void)printf("%9" PRIu64 " per-cpu stats synced\n", uvmexp.countsyncall);
+	(void)printf("%9" PRIu64 " anon pages possibly dirty\n", uvmexp.anonunknown);
+	(void)printf("%9" PRIu64 " anon pages dirty\n", uvmexp.anondirty);
+	(void)printf("%9" PRIu64 " anon pages clean\n", uvmexp.anonclean);
+	(void)printf("%9" PRIu64 " file pages possibly dirty\n", uvmexp.fileunknown);
+	(void)printf("%9" PRIu64 " file pages dirty\n", uvmexp.filedirty);
+	(void)printf("%9" PRIu64 " file pages clean\n", uvmexp.fileclean);
 
 	if (active_kernel) {
 		ssize = sizeof(nch_stats);
@@ -1096,6 +1110,9 @@ dosum(void)
 	(void)printf("%9" PRIu64 " too long\n", nch_stats.ncs_long);
 	(void)printf("%9" PRIu64 " pass2 hits\n", nch_stats.ncs_pass2);
 	(void)printf("%9" PRIu64 " 2passes\n", nch_stats.ncs_2passes);
+	(void)printf("%9" PRIu64 " reverse hits\n", nch_stats.ncs_revhits);
+	(void)printf("%9" PRIu64 " reverse miss\n", nch_stats.ncs_revmiss);
+	(void)printf("%9" PRIu64 " access denied\n", nch_stats.ncs_denied);
 	(void)printf(
 	    "%9s cache hits (%d%% pos + %d%% neg) system %d%% per-process\n",
 	    "", PCT(nch_stats.ncs_goodhits, nchtotal),
@@ -1464,7 +1481,7 @@ dopool_sysctl(int verbose, int wide)
 	    "Minpg",
 	    wide ? 7 : 6, "Maxpg",
 	    "Idle",
-	    wide ? "  Flags" : "",
+	    wide ? "   Flags" : "",
 	    wide ? "   Util" : "");
 
 	name_len = MIN((int)sizeof(pp->pr_wchan), wide ? 16 : 11);
@@ -1505,7 +1522,7 @@ dopool_sysctl(int verbose, int wide)
 		PRWORD(ovflw, " %*s", wide ? 7 : 6, 1, maxp);
 		PRWORD(ovflw, " %*" PRIu64, 5, 1, pp->pr_nidle);
 		if (wide)
-			PRWORD(ovflw, " 0x%0*" PRIx64, 5, 1,
+			PRWORD(ovflw, " 0x%0*" PRIx64, 6, 1,
 			    pp->pr_flags);
 
 		this_inuse = pp->pr_nout * pp->pr_size;
@@ -1612,7 +1629,7 @@ dopool(int verbose, int wide)
 			    "Minpg",
 			    wide ? 7 : 6, "Maxpg",
 			    "Idle",
-			    wide ? "  Flags" : "",
+			    wide ? "   Flags" : "",
 			    wide ? "   Util" : "");
 			first = 0;
 		}
@@ -1651,7 +1668,7 @@ dopool(int verbose, int wide)
 		PRWORD(ovflw, " %*s", wide ? 7 : 6, 1, maxp);
 		PRWORD(ovflw, " %*lu", 5, 1, pp->pr_nidle);
 		if (wide)
-			PRWORD(ovflw, " 0x%0*x", 5, 1,
+			PRWORD(ovflw, " 0x%0*x", 6, 1,
 			    pp->pr_flags | pp->pr_roflags);
 
 		this_inuse = pp->pr_nout * pp->pr_size;
@@ -1768,7 +1785,8 @@ dopoolcache(int verbose)
 	TAILQ_HEAD(,pool) pool_head;
 	struct pool pool, *pp = &pool;
 	char name[32];
-	uint64_t cpuhit, cpumiss, tot;
+	uint64_t cpuhit, cpumiss, pchit, pcmiss, contended, tot;
+	uint32_t nfull;
 	void *addr;
 	int first, ovflw;
 	size_t i;
@@ -1787,12 +1805,13 @@ dopoolcache(int verbose)
 		deref_kptr(pp->pr_wchan, name, sizeof(name),
 		    "pool wait channel trashed");
 		deref_kptr(pp->pr_cache, pc, sizeof(*pc), "pool cache trashed");
-		if (pc->pc_misses == 0 && !verbose)
-			continue;
 		name[sizeof(name)-1] = '\0';
 
 		cpuhit = 0;
 		cpumiss = 0;
+		pcmiss = 0;
+		contended = 0;
+		nfull = 0;
 		for (i = 0; i < __arraycount(pc->pc_cpus); i++) {
 		    	if ((addr = pc->pc_cpus[i]) == NULL)
 		    		continue;
@@ -1800,7 +1819,14 @@ dopoolcache(int verbose)
 			    "pool cache cpu trashed");
 			cpuhit += cc->cc_hits;
 			cpumiss += cc->cc_misses;
+			pcmiss += cc->cc_pcmisses;
+			nfull += cc->cc_nfull;
+			contended += cc->cc_contended;
 		}
+		pchit = cpumiss - pcmiss;
+
+		if (pcmiss == 0 && !verbose)
+			continue;
 
 		if (first) {
 			(void)printf("Pool cache statistics.\n");
@@ -1821,14 +1847,14 @@ dopoolcache(int verbose)
 
 		ovflw = 0;
 		PRWORD(ovflw, "%-*s", 13, 1, name);
-		PRWORD(ovflw, " %*llu", 6, 1, (long long)pc->pc_contended);
+		PRWORD(ovflw, " %*llu", 6, 1, (long long)contended);
 		PRWORD(ovflw, " %*u", 6, 1, pc->pc_pcgsize);
-		PRWORD(ovflw, " %*u", 5, 1, pc->pc_nfull);
-		PRWORD(ovflw, " %*u", 5, 1, pc->pc_nempty);
-		PRWORD(ovflw, " %*llu", 10, 1, (long long)pc->pc_misses);
+		PRWORD(ovflw, " %*u", 5, 1, nfull);
+		PRWORD(ovflw, " %*u", 5, 1, 0);
+		PRWORD(ovflw, " %*llu", 10, 1, (long long)pcmiss);
 
-		tot = pc->pc_hits + pc->pc_misses;
-		p = pc->pc_hits * 100.0 / (tot);
+		tot = pchit + pcmiss;
+		p = pchit * 100.0 / (tot);
 		PRWORD(ovflw, " %*llu", 11, 1, (long long)tot);
 		PRWORD(ovflw, " %*.1f", 6, 1, p);
 
@@ -1842,7 +1868,9 @@ dopoolcache(int verbose)
 
 enum hashtype {			/* from <sys/systm.h> */
 	HASH_LIST,
-	HASH_TAILQ
+	HASH_SLIST,
+	HASH_TAILQ,
+	HASH_PSLIST
 };
 
 struct uidinfo {		/* XXX: no kernel header file */
@@ -1868,17 +1896,13 @@ struct kernel_hash {
 		X_IFADDRHASH, X_IFADDRHASHTBL,
 		HASH_LIST, offsetof(struct in_ifaddr, ia_hash),
 	}, {
-		"name cache hash",
-		X_NCHASH, X_NCHASHTBL,
-		HASH_LIST, offsetof(struct namecache, nc_hash),
-	}, {
-		"name cache directory hash",
-		X_NCVHASH, X_NCVHASHTBL,
-		HASH_LIST, offsetof(struct namecache, nc_vhash),
-	}, {
 		"user info (uid -> used processes) hash",
 		X_UIHASH, X_UIHASHTBL,
 		HASH_LIST, offsetof(struct uidinfo, ui_hash),
+	}, {
+		"vnode cache hash",
+		X_VCACHEHASH, X_VCACHETBL,
+		HASH_SLIST, offsetof(struct vnode_impl, vi_hash),
 	}, {
 		NULL, -1, -1, 0, 0,
 	}
@@ -1888,6 +1912,7 @@ void
 dohashstat(int verbose, int todo, const char *hashname)
 {
 	LIST_HEAD(, generic)	*hashtbl_list;
+	SLIST_HEAD(, generic)	*hashtbl_slist;
 	TAILQ_HEAD(, generic)	*hashtbl_tailq;
 	struct kernel_hash	*curhash;
 	void	*hashaddr, *hashbuf, *nhashbuf, *nextaddr;
@@ -1969,14 +1994,22 @@ dohashstat(int verbose, int todo, const char *hashname)
 		items = maxchain = 0;
 		if (curhash->type == HASH_LIST) {
 			hashtbl_list = hashbuf;
+			hashtbl_slist = NULL;
+			hashtbl_tailq = NULL;
+		} else if (curhash->type == HASH_SLIST) {
+			hashtbl_list = NULL;
+			hashtbl_slist = hashbuf;
 			hashtbl_tailq = NULL;
 		} else {
 			hashtbl_list = NULL;
+			hashtbl_slist = NULL;
 			hashtbl_tailq = hashbuf;
 		}
 		for (i = 0; i < hashsize; i++) {
 			if (curhash->type == HASH_LIST)
 				nextaddr = LIST_FIRST(&hashtbl_list[i]);
+			else if (curhash->type == HASH_SLIST)
+				nextaddr = SLIST_FIRST(&hashtbl_slist[i]);
 			else
 				nextaddr = TAILQ_FIRST(&hashtbl_tailq[i]);
 			if (nextaddr == NULL)
@@ -2008,7 +2041,7 @@ dohashstat(int verbose, int todo, const char *hashname)
 }
 
 /*
- * kreadc like kread but returns 1 if sucessful, 0 otherwise
+ * kreadc like kread but returns 1 if successful, 0 otherwise
  */
 int
 kreadc(struct nlist *nl, int nlx, void *addr, size_t size)

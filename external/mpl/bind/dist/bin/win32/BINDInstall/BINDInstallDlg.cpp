@@ -3,7 +3,7 @@
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -138,6 +138,7 @@ const FileData installFiles[] =
 	{"libdns.dll", FileData::BinDir, FileData::Critical, FALSE, TRUE},
 	{"libirs.dll", FileData::BinDir, FileData::Critical, FALSE, TRUE},
 	{"libeay32.dll", FileData::BinDir, FileData::Critical, FALSE, TRUE},
+	{"libuv.dll", FileData::BinDir, FileData::Critical, FALSE, TRUE},
 #ifdef HAVE_LIBXML2
 	{"libxml2.dll", FileData::BinDir, FileData::Critical, FALSE, TRUE},
 #endif
@@ -643,7 +644,7 @@ void CBINDInstallDlg::OnInstall() {
 	}
 	catch(DWORD dw)	{
 		CString msg;
-		msg.Format("A fatal error occured\n(%s)", GetErrMessage(dw));
+		msg.Format("A fatal error occurred\n(%s)", GetErrMessage(dw));
 		MessageBox(msg);
 		SetCurrent(IDS_CLEANUP);
 		FailedInstall();

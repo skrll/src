@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_quirks.c,v 1.92 2019/05/23 04:44:49 msaitoh Exp $	*/
+/*	$NetBSD: usb_quirks.c,v 1.97 2021/02/21 12:36:38 martin Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_quirks.c,v 1.30 2003/01/02 04:15:55 imp Exp $	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_quirks.c,v 1.92 2019/05/23 04:44:49 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_quirks.c,v 1.97 2021/02/21 12:36:38 martin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -128,7 +128,7 @@ usbd_get_desc_fake(struct usbd_device *dev, int type, int index,
 	usbd_status err = USBD_INVAL;
 
 	if (dev->ud_quirks == NULL || dev->ud_quirks->desc == NULL) {
-		DPRINTF("%04x/%04x: no fake descriptors",
+		DPRINTF("%04jx/%04j: no fake descriptors",
 		        UGETW(dd->idVendor), UGETW(dd->idProduct), 0, 0);
 		goto out;
 	}
@@ -140,7 +140,7 @@ usbd_get_desc_fake(struct usbd_device *dev, int type, int index,
 	}
 
 	if (dev->ud_quirks->desc[j] == NULL) {
-		DPRINTF("%04x/%04x: no fake descriptor type = %d, len = %d",
+		DPRINTF("%04jx/%04jx: no fake descriptor type = %jd, len = %jd",
 		       UGETW(dd->idVendor), UGETW(dd->idProduct), type, len);
 		goto out;
 	}
@@ -149,14 +149,14 @@ usbd_get_desc_fake(struct usbd_device *dev, int type, int index,
 		ub = dev->ud_quirks->desc[j];
 
 		if (ub->bLength > len) {
-			DPRINTF("%04x/%04x: short buf len = %d, bLength = %d",
+			DPRINTF("%04jx/%04jx: short buf len = %jd, bLength = %jd",
 			        UGETW(dd->idVendor), UGETW(dd->idProduct),
 			        type, ub->bLength);
 			goto out;
 		}
 
 		memcpy(desc, ub, ub->bLength);
-		DPRINTF("%04x/%04x: Use fake descriptor type %d",
+		DPRINTF("%04jx/%04jx: Use fake descriptor type %jd",
 			UGETW(dd->idVendor), UGETW(dd->idProduct),
 			type, 0);
 
@@ -168,10 +168,10 @@ usbd_get_desc_fake(struct usbd_device *dev, int type, int index,
 
 	err = USBD_NORMAL_COMPLETION;
 
-	DPRINTF("%04x/%04x: Using fake USB descriptors\n",
+	DPRINTF("%04jx/%04jx: Using fake USB descriptors\n",
 	        UGETW(dd->idVendor), UGETW(dd->idProduct), 0, 0);
 out:
-	DPRINTF("return err = %d", err, 0, 0, 0);
+	DPRINTF("return err = %jd", err, 0, 0, 0);
 	return err;
 }
 
@@ -205,6 +205,8 @@ Static const struct usbd_quirk_entry {
  { USB_VENDOR_TI,		USB_PRODUCT_TI_MSP430,			ANY,
 	{ UQ_HID_IGNORE, NULL }},
  { USB_VENDOR_XRITE,		ANY,					ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { USB_VENDOR_WAYTECH,		USB_PRODUCT_WAYTECH_USB2SERIAL,		ANY,
 	{ UQ_HID_IGNORE, NULL }},
  { USB_VENDOR_KYE,		USB_PRODUCT_KYE_NICHE,			0x100,
 	{ UQ_NO_SET_PROTO, NULL }},
@@ -304,6 +306,55 @@ Static const struct usbd_quirk_entry {
 	{ UQ_HID_IGNORE | UQ_BAD_AUDIO, NULL }},
  { USB_VENDOR_APPLE,		USB_PRODUCT_APPLE_IPHONE_3GS,		ANY,
 	{ UQ_HID_IGNORE | UQ_BAD_AUDIO, NULL }},
+
+ /*
+  * Various devices using serial boot loader protocol, as supported
+  * by pkgsrc/sysutils/imx_usb_loader
+  */
+ { 0x066f,			0x3780,		/* mx23 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x004f,		/* mx28 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x0052,		/* mx50 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x0054,		/* mx6 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x0061,		/* mx6 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x0063,		/* mx6 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x0071,		/* mx6 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x007d,		/* mx6 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x0080,		/* mx6ull */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x1fc9,			0x0128,		/* mx6 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x0076,		/* mx7 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x1fc9,			0x0126,		/* mx7ulp */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x0041,		/* mx51 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x004e,		/* mx53 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x15a2,			0x006a,		/* vybrid */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x066f,			0x37ff,		/* linux_gadget */	ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x1b67,			0x4fff,		/* mx6 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x0525,			0xb4a4,		/* mx6 */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x1fc9,			0x012b,		/* mx8mq */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x1fc9,			0x0134,		/* mx8mm */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x1fc9,			0x013e,		/* mx8mn */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
+ { 0x3016,			0x1001, 	/* mx8mn */		ANY,
+	{ UQ_HID_IGNORE, NULL }},
 
  { USB_VENDOR_LG,		USB_PRODUCT_LG_CDMA_MSM,		ANY,
 	{ UQ_ASSUME_CM_OVER_DATA, NULL }},

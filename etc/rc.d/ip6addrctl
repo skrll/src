@@ -1,10 +1,11 @@
 #!/bin/sh
 #
-# $FreeBSD: head/etc/rc.d/ip6addrctl 270836 2014-08-30 07:08:10Z hrs $
+# $NetBSD: ip6addrctl,v 1.7 2020/09/08 12:52:18 martin Exp $
+# FreeBSD: head/etc/rc.d/ip6addrctl 270836 2014-08-30 07:08:10Z hrs
 #
 
 # PROVIDE: ip6addrctl
-# REQUIRE: root bootconf mountcritlocal tty
+# REQUIRE: root bootconf CRITLOCALMOUNTED tty
 
 $_rc_subr_loaded . /etc/rc.subr
 
@@ -85,7 +86,7 @@ ip6addrctl_start()
 
 ip6addrctl_stop()
 {
-	ip6addrctl flush >/dev/null 2>&1
+	${IP6ADDRCTL_CMD} flush >/dev/null 2>&1
 }
 
 load_rc_config $name

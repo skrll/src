@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1 2012/03/23 21:29:45 christos Exp $
+#	$NetBSD: Makefile,v 1.4 2020/09/06 07:20:26 mrg Exp $
 
 PROG=		ipmon
 SRCS=		ipmon.c ipmon_y.c ipmon_l.c
@@ -10,6 +10,8 @@ DPSRCS+=	ipmon_l.h ipmon_y.h
 
 CLEANFILES+=	ipmon_y.c ipmon_y.h
 CLEANFILES+=	ipmon_l.c ipmon_l.h
+
+COPTS.ipmon.c+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} == 8:? -Wno-error=format-overflow :}
 
 ipmon_y.c: ipmon_y.y
 	${_MKTARGET_CREATE}
@@ -33,5 +35,7 @@ ipmon_l.h: lexer.h
 	${_MKTARGET_CREATE}
 	${TOOL_SED} -e 's/yy/ipmon_yy/g' \
 	    ${.ALLSRC} > ${.TARGET}
+
+COPTS.ipmon.c+=        	${GCC_NO_ADDR_OF_PACKED_MEMBER} ${GCC_NO_FORMAT_OVERFLOW}
 
 .include <bsd.prog.mk>

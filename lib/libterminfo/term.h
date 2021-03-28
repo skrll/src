@@ -1,7 +1,7 @@
-/* $NetBSD: term.h,v 1.22 2017/03/23 00:39:06 roy Exp $ */
+/* $NetBSD: term.h,v 1.24 2020/06/05 22:08:10 roy Exp $ */
 
 /*
- * Copyright (c) 2009, 2010, 2011, 2013 The NetBSD Foundation, Inc.
+ * Copyright (c) 2009, 2010, 2011, 2013, 2020 The NetBSD Foundation, Inc.
  *
  * This code is derived from software contributed to The NetBSD Foundation
  * by Roy Marples.
@@ -313,7 +313,7 @@ enum TINUMS {
  * dot_vert_spacing: Spacing of pins vertically in pins per inch
  * init_tabs: Tabs initially every #1 spaces
  * label_height: Number of rows in each label
- * label_width: Numbre of columns in each label
+ * label_width: Number of columns in each label
  * lines: Number of lines on a screen or a page
  * lines_of_memory: Lines of memory of > lines; 0 means varies
  * max_attributes: Maximum combined video attributes terminal can display
@@ -1934,7 +1934,7 @@ typedef struct {
 	const char *name;
 	const char *desc;
 	signed char *flags;
-	short *nums;
+	int *nums;
 	const char **strs;
 } TERMINAL;
 #endif

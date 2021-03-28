@@ -1,16 +1,15 @@
-/*	$NetBSD: spnego.h,v 1.2 2018/08/12 13:02:35 christos Exp $	*/
+/*	$NetBSD: spnego.h,v 1.4 2021/02/19 16:42:16 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 /*! \file
  * \brief
@@ -29,19 +28,11 @@
  * everything inside the SPNEGO wrapper.
  */
 OM_uint32
-gss_init_sec_context_spnego(OM_uint32 *,
-			    const gss_cred_id_t,
-			    gss_ctx_id_t *,
-			    const gss_name_t,
-			    const gss_OID,
-			    OM_uint32,
-			    OM_uint32,
-			    const gss_channel_bindings_t,
-			    const gss_buffer_t,
-			    gss_OID *,
-			    gss_buffer_t,
-			    OM_uint32 *,
-			    OM_uint32 *);
+gss_init_sec_context_spnego(OM_uint32 *, const gss_cred_id_t, gss_ctx_id_t *,
+			    const gss_name_t, const gss_OID, OM_uint32,
+			    OM_uint32, const gss_channel_bindings_t,
+			    const gss_buffer_t, gss_OID *, gss_buffer_t,
+			    OM_uint32 *, OM_uint32 *);
 
 /*%
  * Wrapper for GSSAPI gss_accept_sec_context(), using portable SPNEGO
@@ -51,17 +42,10 @@ gss_init_sec_context_spnego(OM_uint32 *,
  * if so, processes it, otherwise hands the call off to the standard
  * gss_accept_sec_context() function.
  */
-OM_uint32 gss_accept_sec_context_spnego(OM_uint32 *,
-					gss_ctx_id_t *,
-					const gss_cred_id_t,
-					const gss_buffer_t,
-					const gss_channel_bindings_t,
-					gss_name_t *,
-					gss_OID *,
-					gss_buffer_t,
-					OM_uint32 *,
-					OM_uint32 *,
-					gss_cred_id_t *);
+OM_uint32
+gss_accept_sec_context_spnego(OM_uint32 *, gss_ctx_id_t *, const gss_cred_id_t,
+			      const gss_buffer_t, const gss_channel_bindings_t,
+			      gss_name_t *, gss_OID *, gss_buffer_t,
+			      OM_uint32 *, OM_uint32 *, gss_cred_id_t *);
 
-
-#endif
+#endif /* ifndef _SPNEGO_H_ */

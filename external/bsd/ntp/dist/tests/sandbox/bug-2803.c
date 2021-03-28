@@ -1,3 +1,5 @@
+/*	$NetBSD: bug-2803.c,v 1.2 2020/05/25 20:47:37 christos Exp $	*/
+
 #include <config.h>
 
 #include <stdio.h>

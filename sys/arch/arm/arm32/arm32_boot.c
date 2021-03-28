@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_boot.c,v 1.35 2019/12/20 21:05:33 ad Exp $	*/
+/*	$NetBSD: arm32_boot.c,v 1.41 2020/12/01 02:43:14 rin Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec Corporation.  All rights reserved.
@@ -122,7 +122,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.35 2019/12/20 21:05:33 ad Exp $");
+__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.41 2020/12/01 02:43:14 rin Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cputypes.h"
@@ -131,11 +131,13 @@ __KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.35 2019/12/20 21:05:33 ad Exp $");
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
-#include <sys/reboot.h>
-#include <sys/cpu.h>
-#include <sys/intr.h>
+
+#include <sys/asan.h>
 #include <sys/atomic.h>
+#include <sys/cpu.h>
 #include <sys/device.h>
+#include <sys/intr.h>
+#include <sys/reboot.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -156,10 +158,6 @@ __KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.35 2019/12/20 21:05:33 ad Exp $");
 #define VPRINTF(...)	printf(__VA_ARGS__)
 #else
 #define VPRINTF(...)	__nothing
-#endif
-
-#ifdef MULTIPROCESSOR
-static kmutex_t cpu_hatch_lock;
 #endif
 
 vaddr_t
@@ -193,10 +191,9 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	memset(tf, 0, sizeof(*tf));
 	lwp_settrapframe(l, tf);
 
-#if defined(__ARMEB__)
-	tf->tf_spsr = PSR_USR32_MODE | (CPU_IS_ARMV7_P() ? PSR_E_BIT : 0);
-#else
  	tf->tf_spsr = PSR_USR32_MODE;
+#ifdef _ARM_ARCH_BE8
+	tf->tf_spsr |= PSR_E_BIT;
 #endif
 
 	VPRINTF("bootstrap done.\n");
@@ -295,9 +292,14 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		}
 	}
 
-	/* Boot strap pmap telling it where the managed kernel virtual memory is */
+	/*
+	 * Bootstrap pmap telling it where the managed kernel virtual memory
+	 * is.
+	 */
 	VPRINTF("pmap ");
 	pmap_bootstrap(kvm_base, kvm_base + kvm_size);
+
+	kasan_init();
 
 #ifdef __HAVE_MEMORY_DISK__
 	md_root_setconf(memory_disk, sizeof memory_disk);
@@ -323,8 +325,6 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 #endif
 
 #ifdef MULTIPROCESSOR
-	mutex_init(&cpu_hatch_lock, MUTEX_DEFAULT, IPL_NONE);
-
 	/*
 	 * Ensure BP cache is flushed to memory so that APs start cache
 	 * coherency with correct view.
@@ -354,23 +354,8 @@ cpu_hatch(struct cpu_info *ci, u_int cpuindex, void (*md_cpu_init)(struct cpu_in
 	splhigh();
 
 	VPRINTF("%s(%s): ", __func__, cpu_name(ci));
+	/* mpidr/midr filled in by armv7_mpcontinuation */
 	ci->ci_ctrl = armreg_sctlr_read();
-	uint32_t mpidr = armreg_mpidr_read();
-	ci->ci_mpidr = mpidr;
-	if (mpidr & MPIDR_MT) {
-		cpu_topology_set(ci,
-		    __SHIFTOUT(mpidr, MPIDR_AFF2),
-		    __SHIFTOUT(mpidr, MPIDR_AFF1),
-		    __SHIFTOUT(mpidr, MPIDR_AFF0),
-		    0);
-	} else {
-		cpu_topology_set(ci,
-		    __SHIFTOUT(mpidr, MPIDR_AFF1),
-	            __SHIFTOUT(mpidr, MPIDR_AFF0),
-	            0,
-	            0);
-	}
-
 	ci->ci_arm_cpuid = cpu_idnum();
 	ci->ci_arm_cputype = ci->ci_arm_cpuid & CPU_ID_CPU_MASK;
 	ci->ci_arm_cpurev = ci->ci_arm_cpuid & CPU_ID_REVISION_MASK;
@@ -438,9 +423,6 @@ cpu_hatch(struct cpu_info *ci, u_int cpuindex, void (*md_cpu_init)(struct cpu_in
 
 	VPRINTF(" done!\n");
 
-	/* Notify cpu_boot_secondary_processors that we're done */
-	atomic_and_32(&arm_cpu_mbox, ~__BIT(cpuindex));
-	membar_producer();
-	__asm __volatile("sev; sev; sev");
+	cpu_clr_mbox(cpuindex);
 }
 #endif /* MULTIPROCESSOR */

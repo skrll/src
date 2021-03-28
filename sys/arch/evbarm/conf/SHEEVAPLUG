@@ -1,4 +1,4 @@
-#	$NetBSD: SHEEVAPLUG,v 1.64 2019/04/26 22:46:03 sevan Exp $
+#	$NetBSD: SHEEVAPLUG,v 1.73 2021/01/20 01:20:26 nia Exp $
 #
 #  This configuration supports for generically Marvell SheevaPlug
 #
@@ -49,7 +49,6 @@ file-system	PUFFS		# Userspace file systems (e.g. ntfs-3g & sshfs)
 #file-system 	UMAPFS		# NULLFS + uid and gid remapping
 #file-system 	UNION		# union file system
 #file-system 	CODA		# Coda File System; also needs vcoda (below)
-#file-system 	SMBFS		# experimental - CIFS; also needs nsmb (below)
 file-system 	PTYFS		# /dev/ptm support
 file-system 	TMPFS		# Efficient memory file-system
 #file-system 	UDF		# experimental - OSTA UDF CD/DVD file-system
@@ -98,9 +97,6 @@ options 	NFS_BOOT_DHCP
 include 	"conf/compat_netbsd50.config"
 options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
 
-options 	COMPAT_OSSAUDIO	# OSS (Voxware) audio driver compatibility
-options 	COMPAT_LINUX	# binary compatibility with Linux
-
 # Shared memory options
 
 options 	SYSVMSG		# System V-like message queues
@@ -136,7 +132,7 @@ options 	USBVERBOSE	# verbose USB device autoconfig messages
 options 	DIAGNOSTIC	# internal consistency checks
 options 	DEBUG
 #options 	LOCKDEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 options 	DDB		# in-kernel debugger
 #options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
@@ -343,9 +339,6 @@ ucom*	at uvscom? portno ?
 # RIM BlackBerry
 uberry* at uhub? port ?
 
-# Diamond Multimedia Rio 500
-urio*	at uhub? port ?
-
 # USB Handspring Visor
 uvisor* at uhub? port ?
 ucom*	at uvisor?
@@ -362,9 +355,6 @@ usscanner* at uhub? port ?
 
 # Topfield TF5000PVR range of DVB recorders
 utoppy* at uhub? port ?
-
-# Y@P firmware loader
-uyap*	at uhub? port ?
 
 # D-Link DSB-R100 USB radio
 udsbr*	at uhub? port ?
@@ -455,7 +445,6 @@ pseudo-device	loop			# network loopback
 #pseudo-device	ppp			# Point-to-Point Protocol
 #pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
 #pseudo-device	sl			# Serial Line IP
-#pseudo-device	strip			# Starmode Radio IP (Metricom)
 #pseudo-device	irframetty		# IrDA frame line discipline
 pseudo-device	tap			# virtual Ethernet
 #pseudo-device	tun			# network tunneling over tty
@@ -465,7 +454,7 @@ pseudo-device	tap			# virtual Ethernet
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 # miscellaneous pseudo-devices
@@ -478,9 +467,6 @@ pseudo-device	drvctl			# device control
 
 # a pseudo device needed for Coda	# also needs CODA (above)
 #pseudo-device	vcoda			# coda minicache <-> venus comm.
-
-# a pseudo device needed for SMBFS
-#pseudo-device	nsmb			# experimental - SMB requester
 
 # wscons pseudo-devices
 #pseudo-device	wsmux			# mouse & keyboard multiplexor

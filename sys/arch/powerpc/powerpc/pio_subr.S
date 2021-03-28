@@ -1,4 +1,4 @@
-/*	$NetBSD: pio_subr.S,v 1.16 2014/07/29 16:19:45 joerg Exp $	*/
+/*	$NetBSD: pio_subr.S,v 1.18 2020/07/06 10:31:24 rin Exp $	*/
 
 /*
  * Copyright (c) 2003 Matt Thomas
@@ -27,6 +27,11 @@
  * SUCH DAMAGE.
  *
  */
+
+#ifdef _KERNEL_OPT
+#include "opt_ppcarch.h"
+#endif
+
 /*
  * Assembly note:
  *	We use rotlw instead of slw because rotlw ignores bit 26 and slw
@@ -41,7 +46,11 @@
 #endif
 
 #undef DBGSYNC
+#if defined(PPC_IBM4XX) && !defined(PPC_IBM440)
+#define	DBGSYNC /* nothing; eieio is implemented as sync */
+#else
 #define	DBGSYNC	msync
+#endif
 #define	eieio	mbar 0
 
 /* LINTSTUB: include <sys/param.h> */

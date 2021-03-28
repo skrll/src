@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_subr.c,v 1.102 2019/10/25 17:17:30 macallan Exp $	*/
+/*	$NetBSD: cpu_subr.c,v 1.107 2021/02/26 21:15:20 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 Matt Thomas.
@@ -34,13 +34,17 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.102 2019/10/25 17:17:30 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.107 2021/02/26 21:15:20 thorpej Exp $");
 
-#include "opt_ppcparam.h"
-#include "opt_ppccache.h"
-#include "opt_multiprocessor.h"
-#include "opt_altivec.h"
 #include "sysmon_envsys.h"
+
+#ifdef _KERNEL_OPT
+#include "opt_altivec.h"
+#include "opt_multiprocessor.h"
+#include "opt_ppcarch.h"
+#include "opt_ppccache.h"
+#include "opt_ppcparam.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -231,24 +235,27 @@ static const struct cputab models[] = {
 	{ "",		0,		REVFMT_HEX }
 };
 
+#include <powerpc/oea/bat.h>
+extern struct bat battable[];
+
 #ifdef MULTIPROCESSOR
 struct cpu_info cpu_info[CPU_MAXNUM] = {
     [0] = {
 	.ci_curlwp = &lwp0,
+	.ci_battable = battable,
     },
 };
 volatile struct cpu_hatch_data *cpu_hatch_data;
 volatile int cpu_hatch_stack;
 #define HATCH_STACK_SIZE 0x1000
 extern int ticks_per_intr;
-#include <powerpc/oea/bat.h>
 #include <powerpc/pic/picvar.h>
 #include <powerpc/pic/ipivar.h>
-extern struct bat battable[];
 #else
 struct cpu_info cpu_info[1] = {
     [0] = {
 	.ci_curlwp = &lwp0,
+	.ci_battable = battable,
     },
 };
 #endif /*MULTIPROCESSOR*/
@@ -258,20 +265,24 @@ register_t cpu_psluserset;
 register_t cpu_pslusermod;
 register_t cpu_pslusermask = 0xffff;
 
-/* This is to be called from locore.S, and nowhere else. */
+unsigned long oeacpufeat;
 
 void
-cpu_model_init(void)
+cpu_features_probe(void)
 {
+	static bool feature_probe_done;
+
 	u_int pvr, vers;
+
+	if (feature_probe_done) {
+		return;
+	}
 
 	pvr = mfpvr();
 	vers = pvr >> 16;
 
-	oeacpufeat = 0;
-
 	if ((vers >= IBMRS64II && vers <= IBM970GX) || vers == MPC620 ||
-		vers == IBMCELL || vers == IBMPOWER6P5) {
+	    vers == IBMCELL || vers == IBMPOWER6P5) {
 		oeacpufeat |= OEACPU_64;
 		oeacpufeat |= OEACPU_64_BRIDGE;
 		oeacpufeat |= OEACPU_NOBAT;
@@ -280,22 +291,53 @@ cpu_model_init(void)
 		oeacpufeat |= OEACPU_601;
 
 	} else if (MPC745X_P(vers)) {
-		register_t hid1 = mfspr(SPR_HID1);
-
 		if (vers != MPC7450) {
-			register_t hid0 = mfspr(SPR_HID0);
-
 			/* Enable more SPRG registers */
 			oeacpufeat |= OEACPU_HIGHSPRG;
 
 			/* Enable more BAT registers */
 			oeacpufeat |= OEACPU_HIGHBAT;
-			hid0 |= HID0_HIGH_BAT_EN;
 
 			/* Enable larger BAT registers */
 			oeacpufeat |= OEACPU_XBSEN;
-			hid0 |= HID0_XBSEN;
+		}
 
+	} else if (vers == IBM750FX || vers == IBM750GX) {
+		oeacpufeat |= OEACPU_HIGHBAT;
+	}
+
+	feature_probe_done = true;
+}
+
+void
+cpu_features_enable(void)
+{
+	static bool feature_enable_done;
+
+	if (feature_enable_done) {
+		return;
+	}
+
+	u_int pvr, vers;
+
+	pvr = mfpvr();
+	vers = pvr >> 16;
+
+	if (MPC745X_P(vers)) {
+		register_t hid0 = mfspr(SPR_HID0);
+		register_t hid1 = mfspr(SPR_HID1);
+
+		const register_t ohid0 = hid0;
+
+		if (oeacpufeat & OEACPU_HIGHBAT) {
+			hid0 |= HID0_HIGH_BAT_EN;
+		}
+
+		if (oeacpufeat & OEACPU_XBSEN) {
+			hid0 |= HID0_XBSEN;
+		}
+
+		if (hid0 != ohid0) {
 			mtspr(SPR_HID0, hid0);
 			__asm volatile("sync;isync");
 		}
@@ -305,10 +347,22 @@ cpu_model_init(void)
 
 		mtspr(SPR_HID1, hid1);
 		__asm volatile("sync;isync");
-
-	} else if (vers == IBM750FX || vers == IBM750GX) {
-		oeacpufeat |= OEACPU_HIGHBAT;
 	}
+
+	feature_enable_done = true;
+}
+
+/* This is to be called from locore.S, and nowhere else. */
+
+void
+cpu_model_init(void)
+{
+	/*
+	 * This is just a wrapper for backwards-compatibility, and will
+	 * probably be garbage-collected in the near future.
+	 */
+	cpu_features_probe();
+	cpu_features_enable();
 }
 
 void
@@ -1325,6 +1379,7 @@ cpu_spinup(device_t self, struct cpu_info *ci)
 	ci->ci_curlwp = ci->ci_data.cpu_idlelwp;
 	ci->ci_curpcb = lwp_getpcb(ci->ci_curlwp);
 	ci->ci_curpm = ci->ci_curpcb->pcb_pm;
+	ci->ci_battable = battable;
 
 	cpu_hatch_data = h;
 	h->hatch_running = 0;

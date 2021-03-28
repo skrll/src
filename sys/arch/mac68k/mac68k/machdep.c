@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.355 2019/08/18 07:05:16 rin Exp $	*/
+/*	$NetBSD: machdep.c,v 1.360 2021/02/26 10:54:12 rin Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -74,15 +74,17 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.355 2019/08/18 07:05:16 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.360 2021/02/26 10:54:12 rin Exp $");
 
 #include "opt_adb.h"
+#include "opt_compat_netbsd.h"
 #include "opt_copy_symtab.h"
 #include "opt_ddb.h"
 #include "opt_ddbparam.h"
 #include "opt_kgdb.h"
+#include "opt_mac68k.h"
 #include "opt_modular.h"
-#include "opt_compat_netbsd.h"
+
 #include "akbd.h"
 #include "genfb.h"
 #include "macfb.h"
@@ -414,7 +416,7 @@ cpu_startup(void)
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	    VM_PHYS_SIZE, 0, false, NULL);
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	/*
@@ -902,7 +904,11 @@ getenvvars(u_long flag, char *buf)
 	 */
 	mac68k_machine.machineid = machineid = getenv("MACHINEID");
 	mac68k_machine.mach_processor = getenv("PROCESSOR");
+#ifndef MAC68K_MEMSIZE
 	mac68k_machine.mach_memsize = getenv("MEMSIZE");
+#else
+	mac68k_machine.mach_memsize = MAC68K_MEMSIZE;
+#endif
 	mac68k_machine.do_graybars = getenv("GRAYBARS");
 	mac68k_machine.serial_boot_echo = getenv("SERIALECHO");
 	mac68k_machine.serial_console = getenv("SERIALCONSOLE");

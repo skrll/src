@@ -1,4 +1,4 @@
-/*	$NetBSD: exec.h,v 1.157 2019/11/20 19:37:54 pgoyette Exp $	*/
+/*	$NetBSD: exec.h,v 1.159 2020/01/23 10:05:44 ad Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -139,6 +139,7 @@ struct ps_strings32 {
  */
 
 #include <sys/uio.h>
+#include <sys/rwlock.h>
 
 struct lwp;
 struct proc;
@@ -271,8 +272,8 @@ int	check_veriexec		(struct lwp *, struct vnode *,
 int	check_exec		(struct lwp *, struct exec_package *,
 				     struct pathbuf *, char **);
 int	exec_init		(int);
-int	exec_read_from		(struct lwp *, struct vnode *, u_long off,
-				    void *, size_t);
+int	exec_read		(struct lwp *, struct vnode *, u_long off,
+				    void *, size_t, int);
 int	exec_setup_stack	(struct lwp *, struct exec_package *);
 
 void	exec_free_emul_arg	(struct exec_package *);
@@ -312,6 +313,7 @@ int      exec_makepathbuf(struct lwp *, const char *, enum uio_seg,
     struct pathbuf **, size_t *);
 
 extern int	maxexec;
+extern krwlock_t exec_lock;
 
 /*
  * Utility functions

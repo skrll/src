@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.h,v 1.18 2019/11/12 18:18:04 kamil Exp $	*/
+/*	$NetBSD: t_ptrace_wait.h,v 1.32 2020/06/22 12:21:02 rin Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -73,18 +73,21 @@
 #	define TWAIT_GENERIC(a,b,c)		waitpid((a),(b),(c))
 #	define TWAIT_HAVE_PID			1
 #	define TWAIT_HAVE_STATUS		1
+#	define TWAIT_HAVE_OPTIONS		1
 #elif defined(TWAIT_WAITID)
 #	define TWAIT_FNAME			"waitid"
 #	define TWAIT_GENERIC(a,b,c)		\
 		waitid(P_PID,(a),NULL,(c)|WEXITED|WTRAPPED)
 #	define TWAIT_WAIT6TYPE(a,b,c,d,e,f)	waitid((a),(b),(f),(d))
 #	define TWAIT_HAVE_PID			1
+#	define TWAIT_HAVE_OPTIONS		1
 #elif defined(TWAIT_WAIT3)
 #	define TWAIT_FNAME			"wait3"
 #	define TWAIT_WAIT4TYPE(a,b,c,d)		wait3((b),(c),(d))
 #	define TWAIT_GENERIC(a,b,c)		wait3((b),(c),NULL)
 #	define TWAIT_HAVE_STATUS		1
 #	define TWAIT_HAVE_RUSAGE		1
+#	define TWAIT_HAVE_OPTIONS		1
 #elif defined(TWAIT_WAIT4)
 #	define TWAIT_FNAME			"wait4"
 #	define TWAIT_WAIT4TYPE(a,b,c,d)		wait4((a),(b),(c),(d))
@@ -92,6 +95,7 @@
 #	define TWAIT_HAVE_PID			1
 #	define TWAIT_HAVE_STATUS		1
 #	define TWAIT_HAVE_RUSAGE		1
+#	define TWAIT_HAVE_OPTIONS		1
 #elif defined(TWAIT_WAIT6)
 #	define TWAIT_FNAME			"wait6"
 #	define TWAIT_WAIT6TYPE(a,b,c,d,e,f)	wait6((a),(b),(c),(d),(e),(f))
@@ -99,6 +103,7 @@
 		wait6(P_PID,(a),(b),(c)|WEXITED|WTRAPPED,NULL,NULL)
 #	define TWAIT_HAVE_PID			1
 #	define TWAIT_HAVE_STATUS		1
+#	define TWAIT_HAVE_OPTIONS		1
 #endif
 
 /*
@@ -458,6 +463,33 @@ await_stopped_child(pid_t process)
 	return child;
 }
 
+static void __used
+await_collected(pid_t process)
+{
+	struct kinfo_proc2 p;
+	size_t len = sizeof(p);
+
+	const int name[] = {
+		[0] = CTL_KERN,
+		[1] = KERN_PROC2,
+		[2] = KERN_PROC_PID,
+		[3] = process,
+		[4] = sizeof(p),
+		[5] = 1
+	};
+
+	const size_t namelen = __arraycount(name);
+
+	/* Await the process to disappear */
+	while(1) {
+		FORKEE_ASSERT_EQ(sysctl(name, namelen, &p, &len, NULL, 0), 0);
+		if (len == 0)
+			break;
+
+		ATF_REQUIRE(usleep(1000) == 0);
+	}
+}
+
 /* Happy number sequence -- this function is used to just consume cpu cycles */
 #define	HAPPY_NUMBER	1
 
@@ -622,10 +654,14 @@ trigger_ill(void)
 #endif
 }
 
+#include <fenv.h>
+
+#if (__arm__ && !__SOFTFP__) || __aarch64__
+#include <ieeefp.h> /* only need for ARM Cortex/Neon hack */
+
 static bool __used
 are_fpu_exceptions_supported(void)
 {
-#if (__arm__ && !__SOFTFP__) || __aarch64__
 	/*
 	 * Some NEON fpus do not trap on IEEE 754 FP exceptions.
 	 * Skip these tests if running on them and compiled for
@@ -633,22 +669,37 @@ are_fpu_exceptions_supported(void)
 	 */
 	if (0 == fpsetmask(fpsetmask(FP_X_INV)))
 		return false;
-#endif
 	return true;
 }
+#else
+#define are_fpu_exceptions_supported() 1
+#endif
 
 static void __used
 trigger_fpe(void)
 {
-	volatile int a = getpid();
-	volatile int b = atoi("0");
+#if __i386__ || __x86_64__
+	/*
+	 * XXX
+	 * Hack for QEMU bug #1668041, by which floating-point division by
+	 * zero is not trapped correctly. Also, assertions for si_code in
+	 * ptrace_signal_wait.h are commented out. Clean them up after the
+	 * bug is fixed.
+	 */
+	volatile int a, b;
+#else
+	volatile double a, b;
+#endif
+
+	a = getpid();
+	b = atoi("0");
 
 #ifdef __HAVE_FENV
 	feenableexcept(FE_ALL_EXCEPT);
 #endif
 
 	/* Division by zero causes CPU trap, translated to SIGFPE */
-	usleep(a / b);
+	usleep((int)(a / b));
 }
 
 static void __used
@@ -679,7 +730,7 @@ struct lwp_event_count {
 	int lec_count;
 };
 
-static int *
+static int * __used
 find_event_count(struct lwp_event_count list[], lwpid_t lwp, size_t max_lwps)
 {
 	size_t i;
@@ -702,6 +753,18 @@ find_event_count(struct lwp_event_count list[], lwpid_t lwp, size_t max_lwps)
 #define ATF_TP_ADD_TC_HAVE_PID(a,b)	ATF_TP_ADD_TC(a,b)
 #else
 #define ATF_TP_ADD_TC_HAVE_PID(a,b)
+#endif
+
+#if defined(TWAIT_HAVE_STATUS)
+#define ATF_TP_ADD_TC_HAVE_STATUS(a,b)	ATF_TP_ADD_TC(a,b)
+#else
+#define ATF_TP_ADD_TC_HAVE_STATUS(a,b)
+#endif
+
+#if defined(TWAIT_HAVE_STATUS) && (defined(__i386__) || defined(__x86_64__))
+#define ATF_TP_ADD_TC_HAVE_STATUS_X86(a,b)	ATF_TP_ADD_TC(a,b)
+#else
+#define ATF_TP_ADD_TC_HAVE_STATUS_X86(a,b)
 #endif
 
 #if defined(HAVE_GPREGS)

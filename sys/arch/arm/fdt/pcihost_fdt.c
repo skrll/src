@@ -1,4 +1,4 @@
-/* $NetBSD: pcihost_fdt.c,v 1.11 2019/06/23 22:06:03 jmcneill Exp $ */
+/* $NetBSD: pcihost_fdt.c,v 1.23 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,18 +27,19 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pcihost_fdt.c,v 1.11 2019/06/23 22:06:03 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pcihost_fdt.c,v 1.23 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
+
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/intr.h>
-#include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/extent.h>
-#include <sys/queue.h>
-#include <sys/mutex.h>
 #include <sys/kmem.h>
+#include <sys/lwp.h>
+#include <sys/mutex.h>
+#include <sys/queue.h>
+#include <sys/systm.h>
 
 #include <machine/cpu.h>
 
@@ -94,10 +95,10 @@ static int	pcihost_bus_space_map(void *, bus_addr_t, bus_size_t,
 CFATTACH_DECL_NEW(pcihost_fdt, sizeof(struct pcihost_softc),
 	pcihost_match, pcihost_attach, NULL, NULL);
 
-static const struct of_compat_data compat_data[] = {
-	{ "pci-host-cam-generic",	PCIHOST_CAM },
-	{ "pci-host-ecam-generic",	PCIHOST_ECAM },
-	{ NULL,				0 }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "pci-host-cam-generic",	.value = PCIHOST_CAM },
+	{ .compat = "pci-host-ecam-generic",	.value = PCIHOST_ECAM },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -105,7 +106,7 @@ pcihost_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -126,12 +127,13 @@ pcihost_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dmat = faa->faa_dmat;
 	sc->sc_bst = faa->faa_bst;
 	sc->sc_phandle = faa->faa_phandle;
-	error = bus_space_map(sc->sc_bst, cs_addr, cs_size, 0, &sc->sc_bsh);
+	error = bus_space_map(sc->sc_bst, cs_addr, cs_size,
+	    _ARM_BUS_SPACE_MAP_STRONGLY_ORDERED, &sc->sc_bsh);
 	if (error) {
 		aprint_error(": couldn't map registers: %d\n", error);
 		return;
 	}
-	sc->sc_type = of_search_compatible(sc->sc_phandle, compat_data)->data;
+	sc->sc_type = of_compatible_lookup(sc->sc_phandle, compat_data)->value;
 
 #ifdef __HAVE_PCI_MSI_MSIX
 	if (sc->sc_type == PCIHOST_ECAM) {
@@ -221,28 +223,30 @@ pcihost_init(pci_chipset_tag_t pc, void *priv)
 static int
 pcihost_config(struct pcihost_softc *sc)
 {
-	struct extent *ioext = NULL, *memext = NULL, *pmemext = NULL;
 	const u_int *ranges;
 	u_int probe_only;
-	int error, len;
+	int error, len, type;
 	bool swap;
 
 	struct pcih_bus_space * const pibs = &sc->sc_io;
 	pibs->bst = *sc->sc_bst;
 	pibs->bst.bs_cookie = pibs;
 	pibs->map = pibs->bst.bs_map;
+	pibs->flags = PCI_FLAGS_IO_OKAY;
 	pibs->bst.bs_map = pcihost_bus_space_map;
 
 	struct pcih_bus_space * const pmbs = &sc->sc_mem;
 	pmbs->bst = *sc->sc_bst;
 	pmbs->bst.bs_cookie = pmbs;
 	pmbs->map = pmbs->bst.bs_map;
+	pmbs->flags = PCI_FLAGS_MEM_OKAY;
 	pmbs->bst.bs_map = pcihost_bus_space_map;
 
 	/*
 	 * If this flag is set, skip configuration of the PCI bus and use existing config.
 	 */
-	if (of_getprop_uint32(sc->sc_phandle, "linux,pci-probe-only", &probe_only))
+	const int chosen = OF_finddevice("/chosen");
+	if (chosen <= 0 || of_getprop_uint32(chosen, "linux,pci-probe-only", &probe_only))
 		probe_only = 0;
 	if (probe_only)
 		return 0;
@@ -260,6 +264,8 @@ pcihost_config(struct pcihost_softc *sc)
 		swap = true;
 	}
 
+	struct pciconf_resources *pcires = pciconf_resource_init();
+
 	/*
 	 * Each entry in the ranges table contains:
 	 *  - bus address (3 cells)
@@ -271,9 +277,9 @@ pcihost_config(struct pcihost_softc *sc)
 #define	DECODE32(x,o)	(swap ? be32dec(&(x)[o]) : (x)[o])
 #define	DECODE64(x,o)	(swap ? be64dec(&(x)[o]) : (((uint64_t)((x)[(o)+0]) << 32) + (x)[(o)+1]))
 		const uint32_t phys_hi = DECODE32(ranges, 0);
-		const uint64_t bus_phys = DECODE64(ranges, 1);
+		      uint64_t bus_phys = DECODE64(ranges, 1);
 		const uint64_t cpu_phys = DECODE64(ranges, 3);
-		const uint64_t size = DECODE64(ranges, 5);
+		      uint64_t size = DECODE64(ranges, 5);
 #undef	DECODE32
 #undef	DECODE64
 
@@ -292,18 +298,21 @@ pcihost_config(struct pcihost_softc *sc)
 			pibs->ranges[pibs->nranges].bbus = cpu_phys;
 			pibs->ranges[pibs->nranges].size = size;
 			++pibs->nranges;
-			if (ioext != NULL) {
-				aprint_error_dev(sc->sc_dev, "ignoring duplicate IO space range\n");
-				continue;
-			}
-			ioext = extent_create("pciio", bus_phys, bus_phys + size - 1, NULL, 0, EX_NOWAIT);
 			aprint_verbose_dev(sc->sc_dev,
 			    "IO: 0x%" PRIx64 "+0x%" PRIx64 "@0x%" PRIx64 "\n",
 			    bus_phys, size, cpu_phys);
-			/* reserve a PC-like legacy IO ports range, perhaps for access to VGA registers */
-			if (bus_phys == 0 && size >= 0x10000)
-				extent_alloc_region(ioext, 0, 0x1000, EX_WAITOK);
-			sc->sc_pci_flags |= PCI_FLAGS_IO_OKAY;
+			/*
+			 * Reserve a PC-like legacy IO ports range, perhaps
+			 * for access to VGA registers.
+			 */
+			if (bus_phys == 0 && size >= 0x10000) {
+				bus_phys += 0x1000;
+				size -= 0x1000;
+			}
+			error = pciconf_resource_add(pcires,
+			    PCICONF_RESOURCE_IO, bus_phys, size);
+			if (error == 0)
+				sc->sc_pci_flags |= PCI_FLAGS_IO_OKAY;
 			break;
 		case PHYS_HI_SPACE_MEM64:
 			/* FALLTHROUGH */
@@ -319,44 +328,30 @@ pcihost_config(struct pcihost_softc *sc)
 			++pmbs->nranges;
 			if ((phys_hi & PHYS_HI_PREFETCH) != 0 ||
 			    __SHIFTOUT(phys_hi, PHYS_HI_SPACE) == PHYS_HI_SPACE_MEM64) {
-				if (pmemext != NULL) {
-					aprint_error_dev(sc->sc_dev, "ignoring duplicate mem (prefetchable) range\n");
-					continue;
-				}
-				pmemext = extent_create("pcipmem", bus_phys, bus_phys + size - 1, NULL, 0, EX_NOWAIT);
+				type = PCICONF_RESOURCE_PREFETCHABLE_MEM;
 				aprint_verbose_dev(sc->sc_dev,
 				    "MMIO (%d-bit prefetchable): 0x%" PRIx64 "+0x%" PRIx64 "@0x%" PRIx64 "\n",
 				    is64 ? 64 : 32, bus_phys, size, cpu_phys);
 			} else {
-				if (memext != NULL) {
-					aprint_error_dev(sc->sc_dev, "ignoring duplicate mem (non-prefetchable) range\n");
-					continue;
-				}
-				memext = extent_create("pcimem", bus_phys, bus_phys + size - 1, NULL, 0, EX_NOWAIT);
+				type = PCICONF_RESOURCE_MEM;
 				aprint_verbose_dev(sc->sc_dev,
 				    "MMIO (%d-bit non-prefetchable): 0x%" PRIx64 "+0x%" PRIx64 "@0x%" PRIx64 "\n",
 				    is64 ? 64 : 32, bus_phys, size, cpu_phys);
 			}
-			sc->sc_pci_flags |= PCI_FLAGS_MEM_OKAY;
+			error = pciconf_resource_add(pcires, type, bus_phys,
+			    size);
+			if (error == 0)
+				sc->sc_pci_flags |= PCI_FLAGS_MEM_OKAY;
 			break;
 		default:
 			break;
 		}
 	}
 
-	if (memext == NULL && pmemext != NULL) {
-		memext = pmemext;
-		pmemext = NULL;
-	}
+	error = pci_configure_bus(&sc->sc_pc, pcires, sc->sc_bus_min,
+	    PCIHOST_CACHELINE_SIZE);
 
-	error = pci_configure_bus(&sc->sc_pc, ioext, memext, pmemext, sc->sc_bus_min, PCIHOST_CACHELINE_SIZE);
-
-	if (ioext)
-		extent_destroy(ioext);
-	if (memext)
-		extent_destroy(memext);
-	if (pmemext)
-		extent_destroy(pmemext);
+	pciconf_resource_fini(pcires);
 
 	if (error) {
 		aprint_error_dev(sc->sc_dev, "configuration failed: %d\n", error);
@@ -617,7 +612,8 @@ pcihost_intr_establish(void *v, pci_intr_handle_t ih, int ipl,
 	if (specifier == NULL)
 		return NULL;
 
-	return fdtbus_intr_establish_raw(ihandle, specifier, ipl, flags, callback, arg);
+	return fdtbus_intr_establish_raw(ihandle, specifier, ipl, flags,
+	    callback, arg, xname);
 }
 
 static void
@@ -633,6 +629,11 @@ pcihost_bus_space_map(void *t, bus_addr_t bpa, bus_size_t size, int flag,
     bus_space_handle_t *bshp)
 {
 	struct pcih_bus_space * const pbs = t;
+
+	if ((pbs->flags & PCI_FLAGS_IO_OKAY) != 0) {
+		/* Force strongly ordered mapping for all I/O space */
+		flag = _ARM_BUS_SPACE_MAP_STRONGLY_ORDERED;
+	}
 
 	for (size_t i = 0; i < pbs->nranges; i++) {
 		const bus_addr_t rmin = pbs->ranges[i].bpci;

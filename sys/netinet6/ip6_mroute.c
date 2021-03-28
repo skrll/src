@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_mroute.c,v 1.130 2019/07/24 02:38:29 msaitoh Exp $	*/
+/*	$NetBSD: ip6_mroute.c,v 1.132 2020/06/12 11:04:45 roy Exp $	*/
 /*	$KAME: ip6_mroute.c,v 1.49 2001/07/25 09:21:18 jinmei Exp $	*/
 
 /*
@@ -117,7 +117,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_mroute.c,v 1.130 2019/07/24 02:38:29 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_mroute.c,v 1.132 2020/06/12 11:04:45 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -540,9 +540,8 @@ ip6_mrouter_done(void)
 		for (mifi = 0; mifi < nummifs; mifi++) {
 			if (mif6table[mifi].m6_ifp &&
 			    !(mif6table[mifi].m6_flags & MIFF_REGISTER)) {
-				sin6.sin6_family = AF_INET6;
-				sin6.sin6_addr = in6addr_any;
 				ifp = mif6table[mifi].m6_ifp;
+				sockaddr_in6_init(&sin6, &in6addr_any, 0, 0, 0);
 				if_mcast_op(ifp, SIOCDELMULTI,
 				    sin6tocsa(&sin6));
 			}
@@ -674,8 +673,7 @@ add_m6if(struct mif6ctl *mifcp)
 		 * Enable promiscuous reception of all IPv6 multicasts
 		 * from the interface.
 		 */
-		sin6.sin6_family = AF_INET6;
-		sin6.sin6_addr = in6addr_any;
+		sockaddr_in6_init(&sin6, &in6addr_any, 0, 0, 0);
 		error = if_mcast_op(ifp, SIOCADDMULTI, sin6tosa(&sin6));
 		splx(s);
 		if (error)
@@ -732,8 +730,7 @@ del_m6if(mifi_t *mifip)
 		 */
 		ifp = mifp->m6_ifp;
 
-		sin6.sin6_family = AF_INET6;
-		sin6.sin6_addr = in6addr_any;
+		sockaddr_in6_init(&sin6, &in6addr_any, 0, 0, 0);
 		if_mcast_op(ifp, SIOCDELMULTI, sin6tosa(&sin6));
 	} else {
 		if (reg_mif_num != (mifi_t)-1) {
@@ -1533,7 +1530,6 @@ phyint_send(struct ip6_hdr *ip6, struct mif6 *mifp, struct mbuf *m)
 	static struct route ro;
 	bool ingroup;
 	struct sockaddr_in6 dst6;
-	u_long linkmtu;
 
 	s = splsoftnet();
 
@@ -1599,8 +1595,7 @@ phyint_send(struct ip6_hdr *ip6, struct mif6 *mifp, struct mbuf *m)
 	 * Put the packet into the sending queue of the outgoing interface
 	 * if it would fit in the MTU of the interface.
 	 */
-	linkmtu = IN6_LINKMTU(ifp);
-	if (mb_copy->m_pkthdr.len <= linkmtu || linkmtu < IPV6_MMTU) {
+	if (mb_copy->m_pkthdr.len <= ifp->if_mtu || ifp->if_mtu < IPV6_MMTU) {
 		error = ip6_if_output(ifp, ifp, mb_copy, &dst6, NULL);
 #ifdef MRT6DEBUG
 		if (mrt6debug & DEBUG_XMIT)
@@ -1614,7 +1609,8 @@ phyint_send(struct ip6_hdr *ip6, struct mif6 *mifp, struct mbuf *m)
 		 * a DDoS to a router.
 		 */
 		if (ip6_mcast_pmtu) {
-			icmp6_error(mb_copy, ICMP6_PACKET_TOO_BIG, 0, linkmtu);
+			icmp6_error(mb_copy, ICMP6_PACKET_TOO_BIG, 0,
+			    ifp->if_mtu);
 		} else {
 			/* simply discard the packet */
 #ifdef MRT6DEBUG

@@ -1,17 +1,15 @@
-/*	$NetBSD: os.c,v 1.3 2019/01/09 16:55:17 christos Exp $	*/
+/*	$NetBSD: os.c,v 1.5 2021/02/19 16:42:21 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
-#include <config.h>
 
 #include <windows.h>
 
@@ -22,8 +20,9 @@ static SYSTEM_INFO SystemInfo;
 
 static void
 initialize_action(void) {
-	if (bInit)
+	if (bInit) {
 		return;
+	}
 
 	GetSystemInfo(&SystemInfo);
 	bInit = TRUE;
@@ -34,8 +33,9 @@ isc_os_ncpus(void) {
 	long ncpus;
 	initialize_action();
 	ncpus = SystemInfo.dwNumberOfProcessors;
-	if (ncpus <= 0)
+	if (ncpus <= 0) {
 		ncpus = 1;
+	}
 
 	return ((unsigned int)ncpus);
 }

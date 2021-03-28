@@ -1,7 +1,7 @@
-/*	$NetBSD: db_proc.c,v 1.8 2018/11/02 11:59:59 maxv Exp $	*/
+/*	$NetBSD: db_proc.c,v 1.14 2021/01/11 07:49:04 simonb Exp $	*/
 
 /*-
- * Copyright (c) 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 2009, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_proc.c,v 1.8 2018/11/02 11:59:59 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_proc.c,v 1.14 2021/01/11 07:49:04 simonb Exp $");
 
 #ifndef _KERNEL
 #include <stdbool.h>
@@ -149,7 +149,7 @@ db_show_all_procs(db_expr_t addr, bool haddr, db_expr_t count,
 
 	switch (*mode) {
 	case 'a':
-		db_printf("PID  %10s %18s %18s %18s\n",
+		db_printf("PID   %-16s %18s %18s %18s\n",
 		    "COMMAND", "STRUCT PROC *", "UAREA *", "VMSPACE/VM_MAP");
 		break;
 	case 'l':
@@ -180,7 +180,7 @@ db_show_all_procs(db_expr_t addr, bool haddr, db_expr_t count,
 
 		switch (*mode) {
 		case 'a':
-			db_printf("%10.10s %18lx %18lx %18lx\n",
+			db_printf(" %-16.16s %18lx %18lx %18lx\n",
 			    p.p_comm, (long)pp,
 			    (long)(lp != NULL ? l.l_addr : 0),
 			    (long)p.p_vmspace);
@@ -233,12 +233,12 @@ db_show_all_procs(db_expr_t addr, bool haddr, db_expr_t count,
 				wbuf[0] = '\0';
 			}
 			db_printf("%8d %8d %10d %d %#7x %4d %16s %7.7s\n",
-			    p.p_pptr != NULL ? p.p_pid : -1, pgrp.pg_id,
+			    p.p_pptr != NULL ? p.p_pptr->p_pid : -1, pgrp.pg_id,
 #ifdef _KERNEL
 			    kauth_cred_getuid(p.p_cred),
 #else
 			    /* XXX CRASH(8) */ 666,
-#endif			    
+#endif
 			    p.p_stat, p.p_flag,
 			    p.p_nlwps, p.p_comm,
 			    (p.p_nlwps != 1) ? "*" : wbuf);
@@ -348,8 +348,8 @@ db_show_proc(db_expr_t addr, bool haddr, db_expr_t count, const char *modif)
 			    sizeof(cpuno), (char *)&cpuno);
 		} else
 			cpuno = -1;
-		db_printf("    stat %d flags %x cpu %d pri %d \n",
-		    l.l_stat, l.l_flag, cpuno, l.l_priority);
+		db_printf("    stat %d flags %x cpu %d pri %d ref %d\n",
+		    l.l_stat, l.l_flag, cpuno, l.l_priority, l.l_refcnt);
 
 		if (l.l_wchan && l.l_wmesg) {
 			db_read_string(l.l_wmesg, MAXCOMLEN, wbuf);

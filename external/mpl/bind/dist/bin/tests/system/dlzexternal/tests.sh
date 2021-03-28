@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -122,6 +122,16 @@ $DIG $DIGOPTS -b 10.53.0.5 +noall +answer axfr example.nil > dig.out.example.ns1
 grep "; Transfer failed" dig.out.example.ns1.test$n > /dev/null || ret=1
 $DIG $DIGOPTS -b 10.53.0.5 +noall +answer axfr alternate.nil > dig.out.alternate.ns1.test$n
 grep "; Transfer failed" dig.out.alternate.ns1.test$n > /dev/null || ret=1
+[ "$ret" -eq 0 ] || echo_i "failed"
+status=`expr $status + $ret`
+
+newtest "testing AXFR denied based on view ACL"
+# 10.53.0.1 should be disallowed
+$DIG $DIGOPTS -b 10.53.0.1 +noall +answer axfr example.org > dig.out.example.ns1.test$n.1
+grep "; Transfer failed" dig.out.example.ns1.test$n.1 > /dev/null || ret=1
+# 10.53.0.2 should be allowed
+$DIG $DIGOPTS -b 10.53.0.2 +noall +answer axfr example.org > dig.out.example.ns1.test$n.2
+grep "; Transfer failed" dig.out.example.ns1.test$n.2 > /dev/null && ret=1
 [ "$ret" -eq 0 ] || echo_i "failed"
 status=`expr $status + $ret`
 

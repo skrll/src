@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -58,7 +58,7 @@ copy_setports dnsrpzd.conf.in dnsrpzd.conf
 # decide whether to test DNSRPS
 # Note that dnsrps.conf and dnsrps-slave.conf are included in named.conf
 # and differ from dnsrpz.conf which is used by dnsrpzd.
-$SHELL ../rpz/ckdnsrps.sh -A $TEST_DNSRPS $DEBUG
+$SHELL ../ckdnsrps.sh -A $TEST_DNSRPS $DEBUG
 test -z "`grep 'dnsrps-enable yes' dnsrps.conf`" && TEST_DNSRPS=
 
 # set up test policy zones.
@@ -74,6 +74,8 @@ done
 cp ns3/manual-update-rpz.db.in ns3/manual-update-rpz.db
 cp ns8/manual-update-rpz.db.in ns8/manual-update-rpz.db
 
+cp ns3/mixed-case-rpz-1.db.in ns3/mixed-case-rpz.db
+
 # a zone that expires quickly and then can't be refreshed
 cp ns5/fast-expire.db.in ns5/fast-expire.db
 cp ns5/expire.conf.in ns5/expire.conf
@@ -86,7 +88,7 @@ signzone () {
     KEYNAME=`$KEYGEN -q -a rsasha256 -K $1 $2`
     cat $1/$3 $1/$KEYNAME.key > $1/tmp
     $SIGNER -P -K $1 -o $2 -f $1/$4 $1/tmp >/dev/null
-    sed -n -e 's/\(.*\) IN DNSKEY \([0-9]\{1,\} [0-9]\{1,\} [0-9]\{1,\}\) \(.*\)/trusted-keys {"\1" \2 "\3";};/p' $1/$KEYNAME.key >>trusted.conf
+    sed -n -e 's/\(.*\) IN DNSKEY \([0-9]\{1,\} [0-9]\{1,\} [0-9]\{1,\}\) \(.*\)/trust-anchors {"\1" static-key \2 "\3";};/p' $1/$KEYNAME.key >>trusted.conf
     DSFILENAME=dsset-${2}${TP}
     rm $DSFILENAME $1/tmp
 }

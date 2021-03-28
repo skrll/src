@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3_fdt.c,v 1.8 2019/07/19 12:14:15 hkenken Exp $ */
+/* $NetBSD: gicv3_fdt.c,v 1.15 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015-2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3_fdt.c,v 1.8 2019/07/19 12:14:15 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3_fdt.c,v 1.15 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -48,6 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: gicv3_fdt.c,v 1.8 2019/07/19 12:14:15 hkenken Exp $"
 #include <arm/cortex/gicv3.h>
 #include <arm/cortex/gicv3_its.h>
 #include <arm/cortex/gic_reg.h>
+#include <arm/cortex/gic_v2m.h>
 
 #define	GICV3_MAXIRQ	1020
 
@@ -62,13 +63,14 @@ static void	gicv3_fdt_attach(device_t, device_t, void *);
 
 static int	gicv3_fdt_map_registers(struct gicv3_fdt_softc *);
 #if NPCI > 0 && defined(__HAVE_PCI_MSI_MSIX)
+static void	gicv3_fdt_attach_mbi(struct gicv3_fdt_softc *);
 static void	gicv3_fdt_attach_its(struct gicv3_fdt_softc *, bus_space_tag_t, int);
 #endif
 
 static int	gicv3_fdt_intr(void *);
 
 static void *	gicv3_fdt_establish(device_t, u_int *, int, int,
-		    int (*)(void *), void *);
+		    int (*)(void *), void *, const char *);
 static void	gicv3_fdt_disestablish(device_t, void *);
 static bool	gicv3_fdt_intrstr(device_t, u_int *, char *, size_t);
 
@@ -105,20 +107,26 @@ struct gicv3_fdt_softc {
 	struct gicv3_fdt_irq	*sc_irq[GICV3_MAXIRQ];
 };
 
+static const struct device_compatible_entry gicv3_fdt_quirks[] = {
+	{ .compat = "rockchip,rk3399",		.value = GICV3_QUIRK_RK3399 },
+	DEVICE_COMPAT_EOL
+};
+
 CFATTACH_DECL_NEW(gicv3_fdt, sizeof(struct gicv3_fdt_softc),
 	gicv3_fdt_match, gicv3_fdt_attach, NULL, NULL);
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "arm,gic-v3" },
+	DEVICE_COMPAT_EOL
+};
 
 static int
 gicv3_fdt_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"arm,gic-v3",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
 
-	return of_match_compatible(phandle, compatible);
+	return of_compatible_match(phandle, compat_data);
 }
 
 static void
@@ -152,6 +160,13 @@ gicv3_fdt_attach(device_t parent, device_t self, void *aux)
 
 	aprint_debug_dev(self, "%d redistributors\n", sc->sc_gic.sc_bsh_r_count);
 
+	/* Apply quirks */
+	const struct device_compatible_entry *dce =
+	    of_compatible_lookup(OF_finddevice("/"), gicv3_fdt_quirks);
+	if (dce != NULL) {
+		sc->sc_gic.sc_quirks |= dce->value;
+	}
+
 	error = gicv3_init(&sc->sc_gic);
 	if (error) {
 		aprint_error_dev(self, "failed to initialize GIC: %d\n", error);
@@ -159,12 +174,23 @@ gicv3_fdt_attach(device_t parent, device_t self, void *aux)
 	}
 
 #if NPCI > 0 && defined(__HAVE_PCI_MSI_MSIX)
-	for (int child = OF_child(phandle); child; child = OF_peer(child)) {
-		if (!fdtbus_status_okay(child))
-			continue;
-		const char * const its_compat[] = { "arm,gic-v3-its", NULL };
-		if (of_match_compatible(child, its_compat))
-			gicv3_fdt_attach_its(sc, faa->faa_bst, child);
+	if (of_hasprop(phandle, "msi-controller")) {
+		/* Message Based Interrupts */
+		gicv3_fdt_attach_mbi(sc);
+	} else {
+		/* Interrupt Translation Services */
+		static const struct device_compatible_entry its_compat[] = {
+			{ .compat = "arm,gic-v3-its" },
+			DEVICE_COMPAT_EOL
+		};
+
+		for (int child = OF_child(phandle); child;
+		     child = OF_peer(child)) {
+			if (!fdtbus_status_okay(child))
+				continue;
+			if (of_compatible_match(child, its_compat))
+				gicv3_fdt_attach_its(sc, faa->faa_bst, child);
+		}
 	}
 #endif
 
@@ -240,6 +266,52 @@ gicv3_fdt_map_registers(struct gicv3_fdt_softc *sc)
 
 #if NPCI > 0 && defined(__HAVE_PCI_MSI_MSIX)
 static void
+gicv3_fdt_attach_mbi(struct gicv3_fdt_softc *sc)
+{
+	struct gic_v2m_frame *frame;
+	const u_int *ranges;
+	bus_addr_t addr;
+	int len, frame_count;
+
+	if (of_hasprop(sc->sc_phandle, "mbi-alias")) {
+		aprint_error_dev(sc->sc_gic.sc_dev, "'mbi-alias' property not supported\n");
+		return;
+	}
+
+	if (fdtbus_get_reg(sc->sc_phandle, 0, &addr, NULL) != 0)
+		return;
+
+	ranges = fdtbus_get_prop(sc->sc_phandle, "mbi-ranges", &len);
+	if (ranges == NULL) {
+		aprint_error_dev(sc->sc_gic.sc_dev, "missing 'mbi-ranges' property\n");
+		return;
+	}
+
+	frame_count = 0;
+	while (len >= 8) {
+		const u_int base_spi = be32dec(&ranges[0]);
+		const u_int num_spis = be32dec(&ranges[1]);
+
+		frame = kmem_zalloc(sizeof(*frame), KM_SLEEP);
+		frame->frame_reg = addr;
+		frame->frame_pic = pic_list[0];
+		frame->frame_base = base_spi;
+		frame->frame_count = num_spis;
+
+		if (gic_v2m_init(frame, sc->sc_gic.sc_dev, frame_count++) != 0) {
+			aprint_error_dev(sc->sc_gic.sc_dev, "failed to initialize MBI frame\n");
+		} else {
+			aprint_normal_dev(sc->sc_gic.sc_dev, "MBI frame @ %#" PRIx64
+			    ", SPIs %u-%u\n", frame->frame_reg,
+			    frame->frame_base, frame->frame_base + frame->frame_count - 1);
+		}
+
+		ranges += 2;
+		len -= 8;
+	}
+}
+
+static void
 gicv3_fdt_attach_its(struct gicv3_fdt_softc *sc, bus_space_tag_t bst, int phandle)
 {
 	bus_space_handle_t bsh;
@@ -265,7 +337,7 @@ gicv3_fdt_attach_its(struct gicv3_fdt_softc *sc, bus_space_tag_t bst, int phandl
 
 static void *
 gicv3_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
-    int (*func)(void *), void *arg)
+    int (*func)(void *), void *arg, const char *xname)
 {
 	struct gicv3_fdt_softc * const sc = device_private(dev);
 	struct gicv3_fdt_irq *firq;
@@ -297,11 +369,11 @@ gicv3_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 		TAILQ_INIT(&firq->intr_handlers);
 		firq->intr_irq = irq;
 		if (arg == NULL) {
-			firq->intr_ih = intr_establish(irq, ipl, level | mpsafe,
-			    func, NULL);
+			firq->intr_ih = intr_establish_xname(irq, ipl,
+			    level | mpsafe, func, NULL, xname);
 		} else {
-			firq->intr_ih = intr_establish(irq, ipl, level | mpsafe,
-			    gicv3_fdt_intr, firq);
+			firq->intr_ih = intr_establish_xname(irq, ipl,
+			    level | mpsafe, gicv3_fdt_intr, firq, xname);
 		}
 		if (firq->intr_ih == NULL) {
 			kmem_free(firq, sizeof(*firq));

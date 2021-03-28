@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_init.c,v 1.49 2019/03/28 18:12:24 maxv Exp $	*/
+/*	$NetBSD: vfs_init.c,v 1.52 2021/02/04 21:07:06 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2008 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.49 2019/03/28 18:12:24 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.52 2021/02/04 21:07:06 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -151,6 +151,7 @@ static void
 sysctl_vfs_setup(void)
 {
 	extern int vfs_magiclinks;
+	extern int vfs_timestamp_precision;
 
 	sysctl_createv(&vfs_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
@@ -170,6 +171,13 @@ sysctl_vfs_setup(void)
 		       SYSCTL_DESCR("Whether \"magic\" symlinks are expanded"),
 		       NULL, 0, &vfs_magiclinks, 0,
 		       CTL_VFS, VFS_GENERIC, VFS_MAGICLINKS, CTL_EOL);
+	sysctl_createv(&vfs_sysctllog, 0, NULL, NULL,
+			CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+			CTLTYPE_INT, "timestamp_precision",
+			SYSCTL_DESCR("File timestamp precision"),
+			NULL, 0, &vfs_timestamp_precision, 0,
+			CTL_VFS, VFS_GENERIC, VFS_TIMESTAMP_PRECISION,
+			CTL_EOL);
 }
 
 
@@ -368,7 +376,7 @@ mount_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	enum kauth_system_req req;
 
 	result = KAUTH_RESULT_DEFER;
-	req = (enum kauth_system_req)arg0;
+	req = (enum kauth_system_req)(uintptr_t)(uintptr_t)arg0;
 
 	if (action != KAUTH_SYSTEM_MOUNT)
 		return result;
@@ -377,10 +385,10 @@ mount_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 		result = KAUTH_RESULT_ALLOW;
 	else if (req == KAUTH_REQ_SYSTEM_MOUNT_DEVICE) {
 		vnode_t *devvp = arg2;
-		mode_t access_mode = (mode_t)(unsigned long)arg3;
+		accmode_t accmode = (accmode_t)(unsigned long)arg3;
 		int error;
 
-		error = VOP_ACCESS(devvp, access_mode, cred);
+		error = VOP_ACCESS(devvp, accmode, cred);
 		if (!error)
 			result = KAUTH_RESULT_ALLOW;
 	}

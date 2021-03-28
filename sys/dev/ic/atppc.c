@@ -1,4 +1,4 @@
-/* $NetBSD: atppc.c,v 1.34 2018/09/03 16:29:31 riastradh Exp $ */
+/* $NetBSD: atppc.c,v 1.37 2020/11/16 00:12:13 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2001 Alcove - Nicolas Souchu
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atppc.c,v 1.34 2018/09/03 16:29:31 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atppc.c,v 1.37 2020/11/16 00:12:13 msaitoh Exp $");
 
 #include "opt_atppc.h"
 
@@ -1669,7 +1669,7 @@ atppc_nibble_read(struct atppc_softc *atppc)
 				return;
 		}
 
-		/* Store byte transfered */
+		/* Store byte transferred */
 		*(atppc->sc_inbstart) = ((nibble2char(nibble[1]) << 4) & 0xf0) |
 			(nibble2char(nibble[0]) & 0x0f);
 		atppc->sc_inbstart++;
@@ -1720,7 +1720,7 @@ atppc_byte_read(struct atppc_softc * const atppc)
 		if (atppc->sc_inerr)
 			return;
 
-		/* Store byte transfered */
+		/* Store byte transferred */
 		*(atppc->sc_inbstart) = atppc_r_dtr(atppc);
 		atppc_barrier_r(atppc);
 
@@ -1942,7 +1942,7 @@ atppc_ecp_read_error(struct atppc_softc *atppc)
 	/* Check for invalid states */
 	if ((ecr & ATPPC_FIFO_EMPTY) && (ecr & ATPPC_FIFO_FULL)) {
 		ATPPC_DPRINTF(("%s: FIFO full+empty bits set.\n", __func__));
-		ATPPC_DPRINTF(("%s: reseting FIFO.\n", __func__));
+		ATPPC_DPRINTF(("%s: resetting FIFO.\n", __func__));
 		atppc_w_ecr(atppc, ATPPC_ECR_PS2);
 		atppc_barrier_w(atppc);
 	}
@@ -2310,7 +2310,7 @@ atppc_fifo_write_error(struct atppc_softc * const atppc,
 		atppc->sc_outbstart += worklen;
 	}
 
-	ATPPC_DPRINTF(("%s: reseting FIFO.\n", __func__));
+	ATPPC_DPRINTF(("%s: resetting FIFO.\n", __func__));
 	atppc_w_ecr(atppc, ATPPC_ECR_PS2);
 	atppc_barrier_w(atppc);
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.28 2019/12/21 12:53:54 ad Exp $ */
+/* $NetBSD: cpu.c,v 1.58 2021/01/11 21:58:31 skrll Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.28 2019/12/21 12:53:54 ad Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.58 2021/01/11 21:58:31 skrll Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -35,19 +35,28 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.28 2019/12/21 12:53:54 ad Exp $");
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
 #include <sys/atomic.h>
-#include <sys/device.h>
 #include <sys/cpu.h>
+#include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/reboot.h>
+#include <sys/rndsource.h>
 #include <sys/sysctl.h>
+#include <sys/systm.h>
+
+#include <crypto/aes/aes_impl.h>
+#include <crypto/aes/arch/arm/aes_armv8.h>
+#include <crypto/aes/arch/arm/aes_neon.h>
+#include <crypto/chacha/chacha_impl.h>
+#include <crypto/chacha/arch/arm/chacha_neon.h>
 
 #include <aarch64/armreg.h>
 #include <aarch64/cpu.h>
-#include <aarch64/cpufunc.h>
+#include <aarch64/cpu_counter.h>
 #include <aarch64/machdep.h>
 
+#include <arm/cpufunc.h>
+#include <arm/cpu_topology.h>
 #ifdef FDT
 #include <arm/fdt/arm_fdtvar.h>
 #endif
@@ -63,18 +72,12 @@ static void identify_aarch64_model(uint32_t, char *, size_t);
 static void cpu_identify(device_t self, struct cpu_info *);
 static void cpu_identify1(device_t self, struct cpu_info *);
 static void cpu_identify2(device_t self, struct cpu_info *);
+static void cpu_init_counter(struct cpu_info *);
 static void cpu_setup_id(struct cpu_info *);
 static void cpu_setup_sysctl(device_t, struct cpu_info *);
-
-#ifdef MULTIPROCESSOR
-uint64_t cpu_mpidr[MAXCPUS];
-
-volatile u_int aarch64_cpu_mbox[howmany(MAXCPUS, sizeof(u_int))] __cacheline_aligned = { 0 };
-volatile u_int aarch64_cpu_hatched[howmany(MAXCPUS, sizeof(u_int))] __cacheline_aligned = { 0 };
-u_int arm_cpu_max = 1;
-
-static kmutex_t cpu_hatch_lock;
-#endif /* MULTIPROCESSOR */
+static void cpu_setup_rng(device_t, struct cpu_info *);
+static void cpu_setup_aes(device_t, struct cpu_info *);
+static void cpu_setup_chacha(device_t, struct cpu_info *);
 
 #ifdef MULTIPROCESSOR
 #define NCPUINFO	MAXCPUS
@@ -83,18 +86,14 @@ static kmutex_t cpu_hatch_lock;
 #endif /* MULTIPROCESSOR */
 
 /*
- * Our exported CPU info;
- * these will be refered from secondary cpus in the middle of hatching.
+ * Our exported cpu_info structs; these will be first used by the
+ * secondary cpus as part of cpu_mpstart and the hatching process.
  */
 struct cpu_info cpu_info_store[NCPUINFO] = {
 	[0] = {
 		.ci_cpl = IPL_HIGH,
 		.ci_curlwp = &lwp0
 	}
-};
-
-struct cpu_info *cpu_info[NCPUINFO] __read_mostly = {
-	[0] = &cpu_info_store[0]
 };
 
 void
@@ -119,8 +118,6 @@ cpu_attach(device_t dv, cpuid_t id)
 
 		ci->ci_cpl = IPL_HIGH;
 		ci->ci_cpuid = id;
-		// XXX big.LITTLE
-		ci->ci_data.cpu_cc_freq = cpu_info_store[0].ci_data.cpu_cc_freq;
 		/* ci_id is stored by own cpus when hatching */
 
 		cpu_info[ncpu] = ci;
@@ -143,9 +140,11 @@ cpu_attach(device_t dv, cpuid_t id)
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
 
-	aarch64_gettopology(ci, ci->ci_id.ac_mpidr);
+	ci->ci_kfpu_spl = -1;
 
+	arm_cpu_do_topology(ci);
 	cpu_identify(ci->ci_dev, ci);
+
 #ifdef MULTIPROCESSOR
 	if (unit != 0) {
 		mi_cpu_attach(ci);
@@ -157,42 +156,48 @@ cpu_attach(device_t dv, cpuid_t id)
 	fpu_attach(ci);
 
 	cpu_identify1(dv, ci);
-#if 0
-	/* already done in locore */
-	aarch64_getcacheinfo(unit); 
-#endif
+
+	/* aarch64_getcacheinfo(0) was called by locore.S */
 	aarch64_printcacheinfo(dv);
 	cpu_identify2(dv, ci);
 
+	cpu_init_counter(ci);
+
 	cpu_setup_sysctl(dv, ci);
+	cpu_setup_rng(dv, ci);
+	cpu_setup_aes(dv, ci);
+	cpu_setup_chacha(dv, ci);
 }
 
 struct cpuidtab {
 	uint32_t cpu_partnum;
 	const char *cpu_name;
-	const char *cpu_class;
+	const char *cpu_vendor;
 	const char *cpu_architecture;
 };
 
 #define CPU_PARTMASK	(CPU_ID_IMPLEMENTOR_MASK | CPU_ID_PARTNO_MASK)
 
 const struct cpuidtab cpuids[] = {
-	{ CPU_ID_CORTEXA35R0 & CPU_PARTMASK, "Cortex-A35", "Cortex", "V8-A" },
-	{ CPU_ID_CORTEXA53R0 & CPU_PARTMASK, "Cortex-A53", "Cortex", "V8-A" },
-	{ CPU_ID_CORTEXA57R0 & CPU_PARTMASK, "Cortex-A57", "Cortex", "V8-A" },
-	{ CPU_ID_CORTEXA55R1 & CPU_PARTMASK, "Cortex-A55", "Cortex", "V8.2-A+" },
-	{ CPU_ID_CORTEXA65R0 & CPU_PARTMASK, "Cortex-A65", "Cortex", "V8.2-A+" },
-	{ CPU_ID_CORTEXA72R0 & CPU_PARTMASK, "Cortex-A72", "Cortex", "V8-A" },
-	{ CPU_ID_CORTEXA73R0 & CPU_PARTMASK, "Cortex-A73", "Cortex", "V8-A" },
-	{ CPU_ID_CORTEXA75R2 & CPU_PARTMASK, "Cortex-A75", "Cortex", "V8.2-A+" },
-	{ CPU_ID_CORTEXA76R3 & CPU_PARTMASK, "Cortex-A76", "Cortex", "V8.2-A+" },
-	{ CPU_ID_CORTEXA76AER1 & CPU_PARTMASK, "Cortex-A76AE", "Cortex", "V8.2-A+" },
-	{ CPU_ID_CORTEXA77R0 & CPU_PARTMASK, "Cortex-A77", "Cortex", "V8.2-A+" },
-	{ CPU_ID_EMAG8180 & CPU_PARTMASK, "Ampere eMAG", "Skylark", "V8-A" },
-	{ CPU_ID_THUNDERXRX, "Cavium ThunderX", "Cavium", "V8-A" },
-	{ CPU_ID_THUNDERX81XXRX, "Cavium ThunderX CN81XX", "Cavium", "V8-A" },
-	{ CPU_ID_THUNDERX83XXRX, "Cavium ThunderX CN83XX", "Cavium", "V8-A" },
-	{ CPU_ID_THUNDERX2RX, "Cavium ThunderX2", "Cavium", "V8.1-A" },
+	{ CPU_ID_CORTEXA35R0 & CPU_PARTMASK, "Cortex-A35", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA53R0 & CPU_PARTMASK, "Cortex-A53", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA57R0 & CPU_PARTMASK, "Cortex-A57", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA55R1 & CPU_PARTMASK, "Cortex-A55", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA65R0 & CPU_PARTMASK, "Cortex-A65", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA72R0 & CPU_PARTMASK, "Cortex-A72", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA73R0 & CPU_PARTMASK, "Cortex-A73", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA75R2 & CPU_PARTMASK, "Cortex-A75", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA76R3 & CPU_PARTMASK, "Cortex-A76", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA76AER1 & CPU_PARTMASK, "Cortex-A76AE", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA77R0 & CPU_PARTMASK, "Cortex-A77", "Arm", "v8.2-A+" },
+	{ CPU_ID_NVIDIADENVER2 & CPU_PARTMASK, "Denver2", "NVIDIA", "v8-A" },
+	{ CPU_ID_EMAG8180 & CPU_PARTMASK, "eMAG", "Ampere", "v8-A" },
+	{ CPU_ID_NEOVERSEE1R1 & CPU_PARTMASK, "Neoverse E1", "Arm", "v8.2-A+" },
+	{ CPU_ID_NEOVERSEN1R3 & CPU_PARTMASK, "Neoverse N1", "Arm", "v8.2-A+" },
+	{ CPU_ID_THUNDERXRX, "ThunderX", "Cavium", "v8-A" },
+	{ CPU_ID_THUNDERX81XXRX, "ThunderX CN81XX", "Cavium", "v8-A" },
+	{ CPU_ID_THUNDERX83XXRX, "ThunderX CN83XX", "Cavium", "v8-A" },
+	{ CPU_ID_THUNDERX2RX, "ThunderX2", "Marvell", "v8.1-A" },
 };
 
 static void
@@ -207,9 +212,9 @@ identify_aarch64_model(uint32_t cpuid, char *buf, size_t len)
 
 	for (i = 0; i < __arraycount(cpuids); i++) {
 		if (cpupart == cpuids[i].cpu_partnum) {
-			snprintf(buf, len, "%s r%dp%d (%s %s core)",
-			    cpuids[i].cpu_name, variant, revision,
-			    cpuids[i].cpu_class,
+			snprintf(buf, len, "%s %s r%dp%d (%s)",
+			    cpuids[i].cpu_vendor, cpuids[i].cpu_name,
+			    variant, revision,
 			    cpuids[i].cpu_architecture);
 			return;
 		}
@@ -222,50 +227,52 @@ static void
 cpu_identify(device_t self, struct cpu_info *ci)
 {
 	char model[128];
+	const char *m;
 
 	identify_aarch64_model(ci->ci_id.ac_midr, model, sizeof(model));
-	if (ci->ci_index == 0)
-		cpu_setmodel("%s", model);
+	if (ci->ci_index == 0) {
+		m = cpu_getmodel();
+		if (m == NULL || *m == 0)
+			cpu_setmodel("%s", model);
+	}
 
 	aprint_naive("\n");
-	aprint_normal(": %s\n", model);
-	aprint_normal_dev(ci->ci_dev, "package %u, core %u, smt %u\n",
-	    ci->ci_package_id, ci->ci_core_id, ci->ci_smt_id);
+	aprint_normal(": %s, id 0x%lx\n", model, ci->ci_cpuid);
 }
 
 static void
 cpu_identify1(device_t self, struct cpu_info *ci)
 {
-	uint32_t ctr, sctlr;	/* for cache */
+	uint64_t ctr, clidr, sctlr;	/* for cache */
 
 	/* SCTLR - System Control Register */
 	sctlr = reg_sctlr_el1_read();
 	if (sctlr & SCTLR_I)
-		aprint_normal_dev(self, "IC enabled");
+		aprint_verbose_dev(self, "IC enabled");
 	else
-		aprint_normal_dev(self, "IC disabled");
+		aprint_verbose_dev(self, "IC disabled");
 
 	if (sctlr & SCTLR_C)
-		aprint_normal(", DC enabled");
+		aprint_verbose(", DC enabled");
 	else
-		aprint_normal(", DC disabled");
+		aprint_verbose(", DC disabled");
 
 	if (sctlr & SCTLR_A)
-		aprint_normal(", Alignment check enabled\n");
+		aprint_verbose(", Alignment check enabled\n");
 	else {
 		switch (sctlr & (SCTLR_SA | SCTLR_SA0)) {
 		case SCTLR_SA | SCTLR_SA0:
-			aprint_normal(
+			aprint_verbose(
 			    ", EL0/EL1 stack Alignment check enabled\n");
 			break;
 		case SCTLR_SA:
-			aprint_normal(", EL1 stack Alignment check enabled\n");
+			aprint_verbose(", EL1 stack Alignment check enabled\n");
 			break;
 		case SCTLR_SA0:
-			aprint_normal(", EL0 stack Alignment check enabled\n");
+			aprint_verbose(", EL0 stack Alignment check enabled\n");
 			break;
 		case 0:
-			aprint_normal(", Alignment check disabled\n");
+			aprint_verbose(", Alignment check disabled\n");
 			break;
 		}
 	}
@@ -274,14 +281,21 @@ cpu_identify1(device_t self, struct cpu_info *ci)
 	 * CTR - Cache Type Register
 	 */
 	ctr = reg_ctr_el0_read();
-	aprint_normal_dev(self, "Cache Writeback Granule %" PRIu64 "B,"
+	clidr = reg_clidr_el1_read();
+	aprint_verbose_dev(self, "Cache Writeback Granule %" PRIu64 "B,"
 	    " Exclusives Reservation Granule %" PRIu64 "B\n",
 	    __SHIFTOUT(ctr, CTR_EL0_CWG_LINE) * 4,
 	    __SHIFTOUT(ctr, CTR_EL0_ERG_LINE) * 4);
 
-	aprint_normal_dev(self, "Dcache line %ld, Icache line %ld\n",
+	aprint_verbose_dev(self, "Dcache line %ld, Icache line %ld"
+	    ", DIC=%lu, IDC=%lu, LoUU=%lu, LoC=%lu, LoUIS=%lu\n",
 	    sizeof(int) << __SHIFTOUT(ctr, CTR_EL0_DMIN_LINE),
-	    sizeof(int) << __SHIFTOUT(ctr, CTR_EL0_IMIN_LINE));
+	    sizeof(int) << __SHIFTOUT(ctr, CTR_EL0_IMIN_LINE),
+	    __SHIFTOUT(ctr, CTR_EL0_DIC),
+	    __SHIFTOUT(ctr, CTR_EL0_IDC),
+	    __SHIFTOUT(clidr, CLIDR_LOUU),
+	    __SHIFTOUT(clidr, CLIDR_LOC),
+	    __SHIFTOUT(clidr, CLIDR_LOUIS));
 }
 
 
@@ -301,130 +315,179 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 
 	dfr0 = reg_id_aa64dfr0_el1_read();
 
-	aprint_normal_dev(self, "revID=0x%" PRIx64, id->ac_revidr);
+	aprint_debug_dev(self, "midr=0x%" PRIx32 " mpidr=0x%" PRIx32 "\n",
+	    (uint32_t)ci->ci_id.ac_midr, (uint32_t)ci->ci_id.ac_mpidr);
+	aprint_verbose_dev(self, "revID=0x%" PRIx64, id->ac_revidr);
 
 	/* ID_AA64DFR0_EL1 */
 	switch (__SHIFTOUT(dfr0, ID_AA64DFR0_EL1_PMUVER)) {
 	case ID_AA64DFR0_EL1_PMUVER_V3:
-		aprint_normal(", PMCv3");
+		aprint_verbose(", PMCv3");
 		break;
 	case ID_AA64DFR0_EL1_PMUVER_NOV3:
-		aprint_normal(", PMC");
+		aprint_verbose(", PMC");
 		break;
 	}
 
 	/* ID_AA64MMFR0_EL1 */
 	switch (__SHIFTOUT(id->ac_aa64mmfr0, ID_AA64MMFR0_EL1_TGRAN4)) {
 	case ID_AA64MMFR0_EL1_TGRAN4_4KB:
-		aprint_normal(", 4k table");
+		aprint_verbose(", 4k table");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_aa64mmfr0, ID_AA64MMFR0_EL1_TGRAN16)) {
 	case ID_AA64MMFR0_EL1_TGRAN16_16KB:
-		aprint_normal(", 16k table");
+		aprint_verbose(", 16k table");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_aa64mmfr0, ID_AA64MMFR0_EL1_TGRAN64)) {
 	case ID_AA64MMFR0_EL1_TGRAN64_64KB:
-		aprint_normal(", 64k table");
+		aprint_verbose(", 64k table");
 		break;
 	}
 
 	switch (__SHIFTOUT(id->ac_aa64mmfr0, ID_AA64MMFR0_EL1_ASIDBITS)) {
 	case ID_AA64MMFR0_EL1_ASIDBITS_8BIT:
-		aprint_normal(", 8bit ASID");
+		aprint_verbose(", 8bit ASID");
 		break;
 	case ID_AA64MMFR0_EL1_ASIDBITS_16BIT:
-		aprint_normal(", 16bit ASID");
+		aprint_verbose(", 16bit ASID");
 		break;
 	}
-	aprint_normal("\n");
+	aprint_verbose("\n");
 
 
 
-	aprint_normal_dev(self, "auxID=0x%" PRIx64, ci->ci_id.ac_aa64isar0);
+	aprint_verbose_dev(self, "auxID=0x%" PRIx64, ci->ci_id.ac_aa64isar0);
 
 	/* PFR0 */
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_CSV3)) {
+	case ID_AA64PFR0_EL1_CSV3_IMPL:
+		aprint_verbose(", CSV3");
+		break;
+	}
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_CSV2)) {
+	case ID_AA64PFR0_EL1_CSV2_IMPL:
+		aprint_verbose(", CSV2");
+		break;
+	}
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_GIC)) {
 	case ID_AA64PFR0_EL1_GIC_CPUIF_EN:
-		aprint_normal(", GICv3");
+		aprint_verbose(", GICv3");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_FP)) {
-	case ID_AA64PFR0_EL1_FP_IMPL:
-		aprint_normal(", FP");
+	case ID_AA64PFR0_EL1_FP_NONE:
+		break;
+	default:
+		aprint_verbose(", FP");
 		break;
 	}
 
 	/* ISAR0 */
 	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_CRC32)) {
 	case ID_AA64ISAR0_EL1_CRC32_CRC32X:
-		aprint_normal(", CRC32");
+		aprint_verbose(", CRC32");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_SHA1)) {
 	case ID_AA64ISAR0_EL1_SHA1_SHA1CPMHSU:
-		aprint_normal(", SHA1");
+		aprint_verbose(", SHA1");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_SHA2)) {
 	case ID_AA64ISAR0_EL1_SHA2_SHA256HSU:
-		aprint_normal(", SHA256");
+		aprint_verbose(", SHA256");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_AES)) {
 	case ID_AA64ISAR0_EL1_AES_AES:
-		aprint_normal(", AES");
+		aprint_verbose(", AES");
 		break;
 	case ID_AA64ISAR0_EL1_AES_PMUL:
-		aprint_normal(", AES+PMULL");
+		aprint_verbose(", AES+PMULL");
+		break;
+	}
+	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_RNDR)) {
+	case ID_AA64ISAR0_EL1_RNDR_RNDRRS:
+		aprint_verbose(", RNDRRS");
 		break;
 	}
 
+	/* PFR0:DIT -- data-independent timing support */
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_DIT)) {
+	case ID_AA64PFR0_EL1_DIT_IMPL:
+		aprint_verbose(", DIT");
+		break;
+	}
 
 	/* PFR0:AdvSIMD */
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
-	case ID_AA64PFR0_EL1_ADV_SIMD_IMPL:
-		aprint_normal(", NEON");
+	case ID_AA64PFR0_EL1_ADV_SIMD_NONE:
+		break;
+	default:
+		aprint_verbose(", NEON");
 		break;
 	}
 
 	/* MVFR0/MVFR1 */
 	switch (__SHIFTOUT(id->ac_mvfr0, MVFR0_FPROUND)) {
 	case MVFR0_FPROUND_ALL:
-		aprint_normal(", rounding");
+		aprint_verbose(", rounding");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_mvfr0, MVFR0_FPTRAP)) {
 	case MVFR0_FPTRAP_TRAP:
-		aprint_normal(", exceptions");
+		aprint_verbose(", exceptions");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_mvfr1, MVFR1_FPDNAN)) {
 	case MVFR1_FPDNAN_NAN:
-		aprint_normal(", NaN propagation");
+		aprint_verbose(", NaN propagation");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_mvfr1, MVFR1_FPFTZ)) {
 	case MVFR1_FPFTZ_DENORMAL:
-		aprint_normal(", denormals");
+		aprint_verbose(", denormals");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_mvfr0, MVFR0_SIMDREG)) {
 	case MVFR0_SIMDREG_16x64:
-		aprint_normal(", 16x64bitRegs");
+		aprint_verbose(", 16x64bitRegs");
 		break;
 	case MVFR0_SIMDREG_32x64:
-		aprint_normal(", 32x64bitRegs");
+		aprint_verbose(", 32x64bitRegs");
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_mvfr1, MVFR1_SIMDFMAC)) {
 	case MVFR1_SIMDFMAC_FMAC:
-		aprint_normal(", Fused Multiply-Add");
+		aprint_verbose(", Fused Multiply-Add");
 		break;
 	}
 
-	aprint_normal("\n");
+	aprint_verbose("\n");
+}
+
+/*
+ * Enable the performance counter, then estimate frequency for
+ * the current PE and store the result in cpu_cc_freq.
+ */
+static void
+cpu_init_counter(struct cpu_info *ci)
+{
+	const uint64_t dfr0 = reg_id_aa64dfr0_el1_read();
+	const u_int pmuver = __SHIFTOUT(dfr0, ID_AA64DFR0_EL1_PMUVER);
+	if (pmuver == ID_AA64DFR0_EL1_PMUVER_NONE) {
+		/* Performance Monitors Extension not implemented. */
+		return;
+	}
+
+	reg_pmcr_el0_write(PMCR_E | PMCR_C);
+	reg_pmcntenset_el0_write(PMCNTEN_C);
+
+	const uint32_t prev = cpu_counter32();
+	delay(100000);
+	ci->ci_data.cpu_cc_freq = (cpu_counter32() - prev) * 10;
 }
 
 /*
@@ -449,12 +512,14 @@ cpu_setup_id(struct cpu_info *ci)
 
 	id->ac_aa64mmfr0 = reg_id_aa64mmfr0_el1_read();
 	id->ac_aa64mmfr1 = reg_id_aa64mmfr1_el1_read();
-	/* Only in ARMv8.2. */
-	id->ac_aa64mmfr2 = 0 /* reg_id_aa64mmfr2_el1_read() */;
+	id->ac_aa64mmfr2 = reg_id_aa64mmfr2_el1_read();
 
 	id->ac_mvfr0     = reg_mvfr0_el1_read();
 	id->ac_mvfr1     = reg_mvfr1_el1_read();
 	id->ac_mvfr2     = reg_mvfr2_el1_read();
+
+	id->ac_clidr     = reg_clidr_el1_read();
+	id->ac_ctr       = reg_ctr_el0_read();
 
 	/* Only in ARMv8.2. */
 	id->ac_aa64zfr0  = 0 /* reg_id_aa64zfr0_el1_read() */;
@@ -488,39 +553,119 @@ cpu_setup_sysctl(device_t dv, struct cpu_info *ci)
 		       CTL_CREATE, CTL_EOL);
 }
 
-#ifdef MULTIPROCESSOR
-void
-cpu_boot_secondary_processors(void)
+static struct krndsource rndrrs_source;
+
+static void
+rndrrs_get(size_t nbytes, void *cookie)
 {
-	u_int n, bit;
+	/* Entropy bits per data byte, wild-arse guess.  */
+	const unsigned bpb = 4;
+	size_t nbits = nbytes*NBBY;
+	uint64_t x;
+	int error;
 
-	if ((boothowto & RB_MD1) != 0)
-		return;
-
-	mutex_init(&cpu_hatch_lock, MUTEX_DEFAULT, IPL_NONE);
-
-	VPRINTF("%s: starting secondary processors\n", __func__);
-
-	/* send mbox to have secondary processors do cpu_hatch() */
-	for (n = 0; n < __arraycount(aarch64_cpu_mbox); n++)
-		atomic_or_uint(&aarch64_cpu_mbox[n], aarch64_cpu_hatched[n]);
-	__asm __volatile ("sev; sev; sev");
-
-	/* wait all cpus have done cpu_hatch() */
-	for (n = 0; n < __arraycount(aarch64_cpu_mbox); n++) {
-		while (membar_consumer(), aarch64_cpu_mbox[n] & aarch64_cpu_hatched[n]) {
-			__asm __volatile ("wfe");
-		}
-		/* Add processors to kcpuset */
-		for (bit = 0; bit < 32; bit++) {
-			if (aarch64_cpu_hatched[n] & __BIT(bit))
-				kcpuset_set(kcpuset_attached, n * 32 + bit);
-		}
+	while (nbits) {
+		/*
+		 * x := random 64-bit sample
+		 * error := Z bit, set to 1 if sample is bad
+		 *
+		 * XXX This should be done by marking the function
+		 * __attribute__((target("arch=armv8.5-a+rng"))) and
+		 * using `mrs %0, rndrrs', but:
+		 *
+		 * (a) the version of gcc we use doesn't support that,
+		 * and
+		 * (b) clang doesn't seem to like `rndrrs' itself.
+		 *
+		 * So we use the numeric encoding for now.
+		 */
+		__asm __volatile(""
+		    "mrs	%0, s3_3_c2_c4_1\n"
+		    "cset	%w1, eq"
+		    : "=r"(x), "=r"(error));
+		if (error)
+			break;
+		rnd_add_data_sync(&rndrrs_source, &x, sizeof(x),
+		    bpb*sizeof(x));
+		nbits -= MIN(nbits, bpb*sizeof(x));
 	}
 
-	VPRINTF("%s: secondary processors hatched\n", __func__);
+	explicit_memset(&x, 0, sizeof x);
 }
 
+/*
+ * setup the RNDRRS entropy source
+ */
+static void
+cpu_setup_rng(device_t dv, struct cpu_info *ci)
+{
+	struct aarch64_sysctl_cpu_id *id = &ci->ci_id;
+
+	/* Probably shared between cores.  */
+	if (!CPU_IS_PRIMARY(ci))
+		return;
+
+	/* Verify that it is supported.  */
+	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_RNDR)) {
+	case ID_AA64ISAR0_EL1_RNDR_RNDRRS:
+		break;
+	default:
+		return;
+	}
+
+	/* Attach it.  */
+	rndsource_setcb(&rndrrs_source, rndrrs_get, NULL);
+	rnd_attach_source(&rndrrs_source, "rndrrs", RND_TYPE_RNG,
+	    RND_FLAG_DEFAULT|RND_FLAG_HASCB);
+}
+
+/*
+ * setup the AES implementation
+ */
+static void
+cpu_setup_aes(device_t dv, struct cpu_info *ci)
+{
+	struct aarch64_sysctl_cpu_id *id = &ci->ci_id;
+
+	/* Check for ARMv8.0-AES support.  */
+	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_AES)) {
+	case ID_AA64ISAR0_EL1_AES_AES:
+	case ID_AA64ISAR0_EL1_AES_PMUL:
+		aes_md_init(&aes_armv8_impl);
+		return;
+	default:
+		break;
+	}
+
+	/* Failing that, check for SIMD support.  */
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
+	case ID_AA64PFR0_EL1_ADV_SIMD_IMPL:
+		aes_md_init(&aes_neon_impl);
+		return;
+	default:
+		break;
+	}
+}
+
+/*
+ * setup the ChaCha implementation
+ */
+static void
+cpu_setup_chacha(device_t dv, struct cpu_info *ci)
+{
+	struct aarch64_sysctl_cpu_id *id = &ci->ci_id;
+
+	/* Check for SIMD support.  */
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
+	case ID_AA64PFR0_EL1_ADV_SIMD_IMPL:
+		chacha_md_init(&chacha_neon_impl);
+		return;
+	default:
+		break;
+	}
+}
+
+#ifdef MULTIPROCESSOR
 void
 cpu_hatch(struct cpu_info *ci)
 {
@@ -538,6 +683,8 @@ cpu_hatch(struct cpu_info *ci)
 
 	mutex_exit(&cpu_hatch_lock);
 
+	cpu_init_counter(ci);
+
 	intr_cpu_init(ci);
 
 #ifdef FDT
@@ -548,23 +695,12 @@ cpu_hatch(struct cpu_info *ci)
 #endif
 
 	/*
-	 * clear my bit of aarch64_cpu_mbox to tell cpu_boot_secondary_processors().
+	 * clear my bit of arm_cpu_mbox to tell cpu_boot_secondary_processors().
 	 * there are cpu0,1,2,3, and if cpu2 is unresponsive,
 	 * ci_index are each cpu0=0, cpu1=1, cpu2=undef, cpu3=2.
 	 * therefore we have to use device_unit instead of ci_index for mbox.
 	 */
-	const u_int off = device_unit(ci->ci_dev) / 32;
-	const u_int bit = device_unit(ci->ci_dev) % 32;
-	atomic_and_uint(&aarch64_cpu_mbox[off], ~__BIT(bit));
-	__asm __volatile ("sev; sev; sev");
-}
 
-bool
-cpu_hatched_p(u_int cpuindex)
-{
-	const u_int off = cpuindex / 32;
-	const u_int bit = cpuindex % 32;
-	membar_consumer();
-	return (aarch64_cpu_hatched[off] & __BIT(bit)) != 0;
+	cpu_clr_mbox(device_unit(ci->ci_dev));
 }
 #endif /* MULTIPROCESSOR */

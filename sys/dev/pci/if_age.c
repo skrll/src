@@ -1,4 +1,4 @@
-/*	$NetBSD: if_age.c,v 1.65 2019/12/01 08:16:49 msaitoh Exp $ */
+/*	$NetBSD: if_age.c,v 1.69 2020/03/01 02:51:42 thorpej Exp $ */
 /*	$OpenBSD: if_age.c,v 1.1 2009/01/16 05:00:34 kevlo Exp $	*/
 
 /*-
@@ -31,7 +31,7 @@
 /* Driver for Attansic Technology Corp. L1 Gigabit Ethernet. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_age.c,v 1.65 2019/12/01 08:16:49 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_age.c,v 1.69 2020/03/01 02:51:42 thorpej Exp $");
 
 #include "vlan.h"
 
@@ -152,9 +152,13 @@ age_attach(device_t parent, device_t self, void *aux)
 	aprint_normal(": Attansic/Atheros L1 Gigabit Ethernet\n");
 
 	sc->sc_dev = self;
-	sc->sc_dmat = pa->pa_dmat;
 	sc->sc_pct = pa->pa_pc;
 	sc->sc_pcitag = pa->pa_tag;
+
+	if (pci_dma64_available(pa))
+		sc->sc_dmat = pa->pa_dmat64;
+	else
+		sc->sc_dmat = pa->pa_dmat;
 
 	/*
 	 * Allocate IO memory
@@ -320,12 +324,12 @@ age_detach(device_t self, int flags)
 
 	mii_detach(&sc->sc_miibus, MII_PHY_ANY, MII_OFFSET_ANY);
 
-	/* Delete all remaining media. */
-	ifmedia_delete_instance(&sc->sc_miibus.mii_media, IFM_INST_ANY);
-
 	ether_ifdetach(ifp);
 	if_detach(ifp);
 	age_dma_free(sc);
+
+	/* Delete all remaining media. */
+	ifmedia_fini(&sc->sc_miibus.mii_media);
 
 	if (sc->sc_irq_handle != NULL) {
 		pci_intr_disestablish(sc->sc_pct, sc->sc_irq_handle);
@@ -698,7 +702,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for TX ring */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_TX_RING_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_tx_ring_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_tx_ring_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for Tx ring, "
@@ -740,7 +744,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for RX ring */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_RX_RING_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_rx_ring_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_rx_ring_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for Rx ring, "
@@ -782,7 +786,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for RX return ring */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_RR_RING_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_rr_ring_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_rr_ring_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for Rx "
@@ -826,7 +830,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for CMB block */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_CMB_BLOCK_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_cmb_block_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_cmb_block_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for "
@@ -870,7 +874,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for SMB block */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_SMB_BLOCK_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_smb_block_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_smb_block_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for "
@@ -900,6 +904,31 @@ age_dma_alloc(struct age_softc *sc)
 
 	sc->age_rdata.age_smb_block_paddr =
 	    sc->age_cdata.age_smb_block_map->dm_segs[0].ds_addr;
+
+	/*
+	 * All of the memory we allocated above needs to be within
+	 * the same 4GB segment.  Make sure this is so.
+	 *
+	 * XXX We don't care WHAT 4GB segment they're in, just that
+	 * XXX they're all in the same one.  Need some bus_dma API
+	 * XXX help to make this easier to enforce when we actually
+	 * XXX perform the allocation.
+	 */
+	if (! (AGE_ADDR_HI(sc->age_rdata.age_tx_ring_paddr) ==
+	       AGE_ADDR_HI(sc->age_rdata.age_rx_ring_paddr)
+
+	    && AGE_ADDR_HI(sc->age_rdata.age_tx_ring_paddr) ==
+	       AGE_ADDR_HI(sc->age_rdata.age_rr_ring_paddr)
+
+	    && AGE_ADDR_HI(sc->age_rdata.age_tx_ring_paddr) ==
+	       AGE_ADDR_HI(sc->age_rdata.age_cmb_block_paddr)
+
+	    && AGE_ADDR_HI(sc->age_rdata.age_tx_ring_paddr) ==
+	       AGE_ADDR_HI(sc->age_rdata.age_smb_block_paddr))) {
+		aprint_error_dev(sc->sc_dev,
+		    "control data allocation constraints failed\n");
+		return ENOBUFS;
+	}
 
 	/* Create DMA maps for Tx buffers. */
 	for (i = 0; i < AGE_TX_RING_CNT; i++) {
@@ -1079,7 +1108,7 @@ age_watchdog(struct ifnet *ifp)
 	if ((sc->age_flags & AGE_FLAG_LINK) == 0) {
 		printf("%s: watchdog timeout (missed link)\n",
 		    device_xname(sc->sc_dev));
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		age_init(ifp);
 		return;
 	}
@@ -1092,7 +1121,7 @@ age_watchdog(struct ifnet *ifp)
 	}
 
 	printf("%s: watchdog timeout\n", device_xname(sc->sc_dev));
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	age_init(ifp);
 	age_start(ifp);
 }
@@ -1411,7 +1440,7 @@ age_rxeof(struct age_softc *sc, struct rx_rdesc *rxrd)
 		desc = rxd->rx_desc;
 		/* Add a new receive buffer to the ring. */
 		if (age_newbuf(sc, rxd, 0) != 0) {
-			ifp->if_iqdrops++;
+			if_statinc(ifp, if_iqdrops);
 			/* Reuse Rx buffers. */
 			if (sc->age_cdata.age_rxhead != NULL) {
 				m_freem(sc->age_cdata.age_rxhead);
@@ -2033,20 +2062,27 @@ age_stats_update(struct age_softc *sc)
 	stat->tx_mcast_bytes += smb->tx_mcast_bytes;
 
 	/* Update counters in ifnet. */
-	ifp->if_opackets += smb->tx_frames;
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
 
-	ifp->if_collisions += smb->tx_single_colls +
+	if_statadd_ref(nsr, if_opackets, smb->tx_frames);
+
+	if_statadd_ref(nsr, if_collisions,
+	    smb->tx_single_colls +
 	    smb->tx_multi_colls + smb->tx_late_colls +
-	    smb->tx_excess_colls * HDPX_CFG_RETRY_DEFAULT;
+	    smb->tx_excess_colls * HDPX_CFG_RETRY_DEFAULT);
 
-	ifp->if_oerrors += smb->tx_excess_colls +
+	if_statadd_ref(nsr, if_oerrors,
+	    smb->tx_excess_colls +
 	    smb->tx_late_colls + smb->tx_underrun +
-	    smb->tx_pkts_truncated;
+	    smb->tx_pkts_truncated);
 
-	ifp->if_ierrors += smb->rx_crcerrs + smb->rx_lenerrs +
+	if_statadd_ref(nsr, if_ierrors,
+	    smb->rx_crcerrs + smb->rx_lenerrs +
 	    smb->rx_runts + smb->rx_pkts_truncated +
 	    smb->rx_fifo_oflows + smb->rx_desc_oflows +
-	    smb->rx_alignerrs;
+	    smb->rx_alignerrs);
+
+	IF_STAT_PUTREF(ifp);
 
 	/* Update done, clear. */
 	smb->updated = 0;

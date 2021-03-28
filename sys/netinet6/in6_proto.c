@@ -1,4 +1,4 @@
-/*	$NetBSD: in6_proto.c,v 1.126 2018/08/14 14:49:14 maxv Exp $	*/
+/*	$NetBSD: in6_proto.c,v 1.128 2020/06/12 11:04:45 roy Exp $	*/
 /*	$KAME: in6_proto.c,v 1.66 2000/10/10 15:35:47 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6_proto.c,v 1.126 2018/08/14 14:49:14 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6_proto.c,v 1.128 2020/06/12 11:04:45 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_gateway.h"
@@ -335,6 +335,7 @@ const struct ip6protosw inet6sw[] = {
 	.pr_input = sctp6_input,
 	.pr_ctlinput = sctp6_ctlinput,
 	.pr_ctloutput = sctp_ctloutput,
+	.pr_usrreqs = &sctp6_usrreqs,
 	.pr_drain = sctp_drain,
 },
 {	.pr_type = SOCK_STREAM,
@@ -344,6 +345,7 @@ const struct ip6protosw inet6sw[] = {
 	.pr_input = sctp6_input,
 	.pr_ctlinput = sctp6_ctlinput,
 	.pr_ctloutput = sctp_ctloutput,
+	.pr_usrreqs = &sctp6_usrreqs,
 	.pr_drain = sctp_drain,
 },
 #endif /* SCTP */
@@ -539,7 +541,6 @@ int ip6_forwarding = IPV6FORWARDING;	/* act as router? */
 int ip6_sendredirects = 1;
 int ip6_defhlim = IPV6_DEFHLIM;
 int ip6_defmcasthlim = IPV6_DEFAULT_MULTICAST_HOPS;
-int ip6_accept_rtadv = 0;
 int ip6_maxfragpackets = 200;
 int ip6_maxfrags = 200;
 int ip6_log_interval = 5;
@@ -547,24 +548,13 @@ int ip6_hdrnestlimit = 15;
 int ip6_dad_count = 1;	/* DupAddrDetectionTransmits */
 int ip6_auto_flowlabel = 1;
 int ip6_use_deprecated = 1;	/* allow deprecated addr (RFC2462 5.5.4) */
-int ip6_rr_prune = 5;	/* router renumbering prefix
-                         * walk list every 5 sec. */
 int ip6_mcast_pmtu = 0;	/* enable pMTU discovery for multicast? */
 int ip6_v6only = 1;
 int ip6_neighborgcthresh = 2048; /* Threshold # of NDP entries for GC */
-int ip6_maxifprefixes = 16; /* Max acceptable prefixes via RA per IF */
-int ip6_maxifdefrouters = 16; /* Max acceptable def routers via RA */
 int ip6_maxdynroutes = 4096; /* Max # of routes created via redirect */
 
 int ip6_keepfaith = 0;
 time_t ip6_log_time = 0;
-int ip6_rtadv_maxroutes = 100; /* (arbitrary) initial maximum number of
-                                * routes via rtadv expected to be
-                                * significantly larger than common use.
-                                * if you need to count: 3 extra initial
-                                * routes, plus 1 per interface after the
-                                * first one, then one per non-linklocal
-                                * prefix */
 
 /* icmp6 */
 int pmtu_expire = 60*10;

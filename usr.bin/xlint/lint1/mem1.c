@@ -1,4 +1,4 @@
-/*	$NetBSD: mem1.c,v 1.18 2016/12/24 17:43:45 christos Exp $	*/
+/*	$NetBSD: mem1.c,v 1.26 2021/02/21 13:27:22 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: mem1.c,v 1.18 2016/12/24 17:43:45 christos Exp $");
+__RCSID("$NetBSD: mem1.c,v 1.26 2021/02/21 13:27:22 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -55,36 +55,32 @@ typedef struct fn {
 	char	*fn_name;
 	size_t	fn_len;
 	int	fn_id;
-	struct	fn *fn_nxt;
+	struct	fn *fn_next;
 } fn_t;
 
 static	fn_t	*fnames;
 
 static	fn_t	*srchfn(const char *, size_t);
 
-/*
- * Look for a Filename of length l.
- */
+/* Find the given filename, or return NULL. */
 static fn_t *
 srchfn(const char *s, size_t len)
 {
 	fn_t	*fn;
 
-	for (fn = fnames; fn != NULL; fn = fn->fn_nxt) {
+	for (fn = fnames; fn != NULL; fn = fn->fn_next) {
 		if (fn->fn_len == len && memcmp(fn->fn_name, s, len) == 0)
 			break;
 	}
-	return (fn);
+	return fn;
 }
 
-/*
- * Return a shared string for filename s.
- */
+/* Return a copy of the filename s with unlimited lifetime. */
 const char *
 fnalloc(const char *s)
 {
 
-	return (s != NULL ? fnnalloc(s, strlen(s)) : NULL);
+	return s != NULL ? fnnalloc(s, strlen(s)) : NULL;
 }
 
 struct repl {
@@ -100,9 +96,9 @@ void
 fnaddreplsrcdir(char *arg)
 {
 	struct repl *r = xmalloc(sizeof(*r));
-	
+
 	r->orig = arg;
-	if ((r->repl = strchr(arg, '=')) == NULL) 
+	if ((r->repl = strchr(arg, '=')) == NULL)
 		err(1, "Bad replacement directory spec `%s'", arg);
 	r->len = r->repl - r->orig;
 	*(r->repl)++ = '\0';
@@ -119,7 +115,7 @@ fnxform(const char *name, size_t len)
 	static char buf[MAXPATHLEN];
 	struct repl *r;
 
-	for (r = replist; r; r = r->next)
+	for (r = replist; r != NULL; r = r->next)
 		if (r->len < len && memcmp(name, r->orig, r->len) == 0)
 			break;
 	if (r == NULL)
@@ -136,17 +132,17 @@ fnnalloc(const char *s, size_t len)
 	static	int	nxt_id = 0;
 
 	if (s == NULL)
-		return (NULL);
+		return NULL;
 
 	if ((fn = srchfn(s, len)) == NULL) {
 		fn = xmalloc(sizeof (fn_t));
-		/* Do not used strdup() because string is not NUL-terminated.*/
+		/* Do not use strdup() because s is not NUL-terminated.*/
 		fn->fn_name = xmalloc(len + 1);
 		(void)memcpy(fn->fn_name, s, len);
 		fn->fn_name[len] = '\0';
 		fn->fn_len = len;
 		fn->fn_id = nxt_id++;
-		fn->fn_nxt = fnames;
+		fn->fn_next = fnames;
 		fnames = fn;
 		/* Write id of this filename to the output file. */
 		outclr();
@@ -154,20 +150,18 @@ fnnalloc(const char *s, size_t len)
 		outchar('s');
 		outstrg(fnxform(fn->fn_name, fn->fn_len));
 	}
-	return (fn->fn_name);
+	return fn->fn_name;
 }
 
-/*
- * Get id of a filename.
- */
+/* Get the ID of a filename. */
 int
 getfnid(const char *s)
 {
 	fn_t	*fn;
 
 	if (s == NULL || (fn = srchfn(s, strlen(s))) == NULL)
-		return (-1);
-	return (fn->fn_id);
+		return -1;
+	return fn->fn_id;
 }
 
 /*
@@ -215,23 +209,26 @@ xnewblk(void)
 	mb->blk = xmapalloc(mblklen);
 	mb->size = mblklen;
 
-	return (mb);
+	return mb;
 }
 
-/*
- * Allocate new memory. If the first block of the list has not enough
- * free space, or there is no first block, get a new block. The new
- * block is taken from the free list or, if there is no block on the
- * free list, is allocated using xnewblk(). If a new block is allocated
- * it is initialized with zero. Blocks taken from the free list are
- * zero'd in xfreeblk().
- */
+/* Allocate new memory, initialized with zero. */
 static void *
 xgetblk(mbl_t **mbp, size_t s)
 {
 	mbl_t	*mb;
 	void	*p;
 	size_t	t = 0;
+
+	/*
+	 * If the first block of the list has not enough free space,
+	 * or there is no first block, get a new block. The new block
+	 * is taken from the free list or, if there is no block on the
+	 * free list, is allocated using xnewblk().
+	 *
+	 * If a new block is allocated it is initialized with zero.
+	 * Blocks taken from the free list are zero'd in xfreeblk().
+	 */
 
 	s = WORST_ALIGN(s);
 	if ((mb = *mbp) == NULL || mb->nfree < s) {
@@ -244,7 +241,7 @@ xgetblk(mbl_t **mbp, size_t s)
 #ifndef BLKDEBUG
 			(void)memset(mb->blk, 0, mb->size);
 #endif
-			if (t)
+			if (t > 0)
 				mblklen = t;
 		} else {
 			frmblks = mb->nxt;
@@ -260,7 +257,7 @@ xgetblk(mbl_t **mbp, size_t s)
 #ifdef BLKDEBUG
 	(void)memset(p, 0, s);
 #endif
-	return (p);
+	return p;
 }
 
 /*
@@ -292,9 +289,7 @@ initmem(void)
 }
 
 
-/*
- * Allocate memory associated with level l.
- */
+/* Allocate memory associated with level l. */
 void *
 getlblk(size_t l, size_t s)
 {
@@ -304,19 +299,17 @@ getlblk(size_t l, size_t s)
 		(void)memset(&mblks[nmblks], 0, ML_INC * sizeof (mbl_t *));
 		nmblks += ML_INC;
 	}
-	return (xgetblk(&mblks[l], s));
+	return xgetblk(&mblks[l], s);
 }
 
 void *
 getblk(size_t s)
 {
 
-	return (getlblk(mblklev, s));
+	return getlblk(mblklev, s);
 }
 
-/*
- * Free all memory associated with level l.
- */
+/* Free all memory associated with level l. */
 void
 freelblk(int l)
 {
@@ -331,32 +324,29 @@ freeblk(void)
 	freelblk(mblklev);
 }
 
-/*
- * tgetblk() returns memory which is associated with the current
- * expression.
- */
 static	mbl_t	*tmblk;
 
+/*
+ * Return zero-initialized memory that is freed at the end of the current
+ * expression.
+ */
 void *
 tgetblk(size_t s)
 {
 
-	return (xgetblk(&tmblk, s));
+	return xgetblk(&tmblk, s);
 }
 
-/*
- * Get memory for a new tree node.
- */
+/* Return a freshly allocated tree node. */
 tnode_t *
 getnode(void)
 {
-
-	return (tgetblk(sizeof (tnode_t)));
+	tnode_t *tn = tgetblk(sizeof *tn);
+	tn->tn_from_system_header = in_system_header;
+	return tn;
 }
 
-/*
- * Free all memory which is allocated by the current expression.
- */
+/* Free all memory which is allocated by the current expression. */
 void
 tfreeblk(void)
 {
@@ -376,7 +366,7 @@ tsave(void)
 
 	tmem = tmblk;
 	tmblk = NULL;
-	return (tmem);
+	return tmem;
 }
 
 /*

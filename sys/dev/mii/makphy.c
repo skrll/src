@@ -1,4 +1,4 @@
-/*	$NetBSD: makphy.c,v 1.63 2019/12/12 09:25:37 msaitoh Exp $	*/
+/*	$NetBSD: makphy.c,v 1.68 2020/11/04 09:15:10 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: makphy.c,v 1.63 2019/12/12 09:25:37 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: makphy.c,v 1.68 2020/11/04 09:15:10 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -117,6 +117,7 @@ static const struct mii_phydesc makphys[] = {
 	MII_PHY_DESC(xxMARVELL, E3016),
 	MII_PHY_DESC(xxMARVELL, E3082),
 	MII_PHY_DESC(xxMARVELL, PHYG65G),
+	MII_PHY_DESC(xxMARVELL, I347),
 	MII_PHY_END,
 };
 
@@ -181,6 +182,8 @@ makphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
 
+	mii_lock(mii);
+
 	switch (model) {
 	case MII_MODEL_xxMARVELL_E1000:
 		if ((maksc->sc_flags & MAKPHY_F_I210) != 0)
@@ -213,7 +216,7 @@ page0:
 		!= 0)) {
 		bool fiberonly = false, copperonly = false;
 
-		/* Both copper and fiber is set. check MODE[] */
+		/* Both copper and fiber are set. check MODE[] */
 		switch (sc->mii_mpd_model) {
 		case MII_MODEL_xxMARVELL_E1011:
 		case MII_MODEL_xxMARVELL_E1111:
@@ -255,6 +258,7 @@ page0:
 			sc->mii_flags &= ~MIIF_IS_1000X;
 		}
 	}
+	mii_unlock(mii);
 	mii_phy_add_media(sc);
 }
 
@@ -263,6 +267,8 @@ makphy_reset(struct mii_softc *sc)
 {
 	struct makphy_softc *maksc = (struct makphy_softc *)sc;
 	uint16_t reg;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	mii_phy_reset(sc);
 
@@ -345,6 +351,8 @@ makphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 	if (!device_is_active(sc->mii_dev))
 		return ENXIO;
 
+	KASSERT(mii_locked(mii));
+
 	switch (cmd) {
 	case MII_POLLSTAT:
 		/* If we're not polling our PHY instance, just return. */
@@ -413,6 +421,8 @@ makphy_status(struct mii_softc *sc)
 	struct mii_data *mii = sc->mii_pdata;
 	uint16_t bmcr, gsr, pssr, essr;
 
+	KASSERT(mii_locked(mii));
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
@@ -420,15 +430,14 @@ makphy_status(struct mii_softc *sc)
 	/* XXX FIXME: Use different page for Fiber on newer chips */
 	PHY_READ(sc, MAKPHY_PSSR, &pssr);
 
-	if (pssr & PSSR_LINK)
+	if (pssr & MAKPHY_PSSR_LINK)
 		mii->mii_media_status |= IFM_ACTIVE;
 
 	if (bmcr & BMCR_LOOP)
 		mii->mii_media_active |= IFM_LOOP;
 
-	if (bmcr & BMCR_ISO) {
+	if (bmcr & (BMCR_ISO | BMCR_PDOWN)) {
 		mii->mii_media_active |= IFM_NONE;
-		mii->mii_media_status = 0;
 		return;
 	}
 
@@ -437,13 +446,13 @@ makphy_status(struct mii_softc *sc)
 		 * Check Speed and Duplex Resolved bit.
 		 * Note that this bit is always 1 when autonego is not enabled.
 		 */
-		if (!(pssr & PSSR_RESOLVED)) {
+		if (!(pssr & MAKPHY_PSSR_RESOLVED)) {
 			/* Erg, still trying, I guess... */
 			mii->mii_media_active |= IFM_NONE;
 			return;
 		}
 	} else {
-		if ((pssr & PSSR_LINK) == 0) {
+		if ((pssr & MAKPHY_PSSR_LINK) == 0) {
 			mii->mii_media_active |= IFM_NONE;
 			return;
 		}
@@ -471,10 +480,10 @@ makphy_status(struct mii_softc *sc)
 		/* Fiber/Copper auto select mode */
 
 		PHY_READ(sc, MAKPHY_PSSR, &pssr);
-		if ((pssr & PSSR_RESOLUTION_FIBER) == 0)
+		if ((pssr & MAKPHY_PSSR_RESOLUTION_FIBER) == 0)
 			goto copper;
 
-		switch (PSSR_SPEED_get(pssr)) {
+		switch (MAKPHY_PSSR_SPEED_get(pssr)) {
 		case SPEED_1000:
 			mii->mii_media_active |= IFM_1000_SX;
 			break;
@@ -488,7 +497,7 @@ makphy_status(struct mii_softc *sc)
 		}
 	} else {
 copper:
-		switch (PSSR_SPEED_get(pssr)) {
+		switch (MAKPHY_PSSR_SPEED_get(pssr)) {
 		case SPEED_1000:
 			mii->mii_media_active |= IFM_1000_T;
 			break;
@@ -505,7 +514,7 @@ copper:
 		}
 	}
 
-	if (pssr & PSSR_DUPLEX)
+	if (pssr & MAKPHY_PSSR_DUPLEX)
 		mii->mii_media_active |= mii_phy_flowstatus(sc) | IFM_FDX;
 	else
 		mii->mii_media_active |= IFM_HDX;

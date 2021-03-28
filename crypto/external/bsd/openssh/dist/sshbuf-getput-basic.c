@@ -1,4 +1,4 @@
-/*	$OpenBSD: sshbuf-getput-basic.c,v 1.9 2019/09/06 04:53:27 djm Exp $	*/
+/*	$OpenBSD: sshbuf-getput-basic.c,v 1.11 2020/06/05 03:25:35 djm Exp $	*/
 /*
  * Copyright (c) 2011 Damien Miller
  *
@@ -15,7 +15,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 #include "includes.h"
-__RCSID("$NetBSD: sshbuf-getput-basic.c,v 1.9 2019/10/12 18:32:22 christos Exp $");
+__RCSID("$NetBSD: sshbuf-getput-basic.c,v 1.11 2020/12/04 18:42:50 christos Exp $");
 
 #include <sys/types.h>
 
@@ -336,6 +336,8 @@ sshbuf_put(struct sshbuf *buf, const void *v, size_t len)
 int
 sshbuf_putb(struct sshbuf *buf, const struct sshbuf *v)
 {
+	if (v == NULL)
+		return 0;
 	return sshbuf_put(buf, sshbuf_ptr(v), sshbuf_len(v));
 }
 
@@ -533,6 +535,9 @@ sshbuf_put_cstring(struct sshbuf *buf, const char *v)
 int
 sshbuf_put_stringb(struct sshbuf *buf, const struct sshbuf *v)
 {
+	if (v == NULL)
+		return sshbuf_put_string(buf, NULL, 0);
+
 	return sshbuf_put_string(buf, sshbuf_ptr(v), sshbuf_len(v));
 }
 

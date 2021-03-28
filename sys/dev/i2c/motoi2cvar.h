@@ -1,4 +1,4 @@
-/* $NetBSD: motoi2cvar.h,v 1.5 2019/08/05 12:21:00 hkenken Exp $ */
+/* $NetBSD: motoi2cvar.h,v 1.8 2021/01/25 12:08:47 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2007, 2010 The NetBSD Foundation, Inc.
@@ -48,10 +48,15 @@ struct motoi2c_softc {
 	bus_space_tag_t		sc_iot;
 	bus_space_handle_t	sc_ioh;
 	struct i2c_controller	sc_i2c;
-	kmutex_t		sc_buslock;
 	motoi2c_iord_t		sc_iord;
 	motoi2c_iowr_t		sc_iowr;
 	int			sc_phandle;
+	prop_array_t		sc_child_devices;
+	int			sc_flags;
+#define	MOTOI2C_F_ENABLE_INV	__BIT(0)
+#define	MOTOI2C_F_STATUS_W1C	__BIT(1)
+	uint8_t			sc_enable_mask;
+	uint8_t			sc_disable_mask;
 };
 
 #define	MOTOI2C_ADR_DEFAULT	(0x7e << 1)

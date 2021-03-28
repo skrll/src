@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_pcie.c,v 1.26 2019/03/12 18:46:20 jakllsch Exp $ */
+/* $NetBSD: tegra_pcie.c,v 1.36 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,18 +27,19 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_pcie.c,v 1.26 2019/03/12 18:46:20 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_pcie.c,v 1.36 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
+
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/intr.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/extent.h>
-#include <sys/queue.h>
-#include <sys/mutex.h>
 #include <sys/kmem.h>
+#include <sys/kernel.h>
+#include <sys/lwp.h>
+#include <sys/mutex.h>
+#include <sys/queue.h>
+#include <sys/systm.h>
 
 #include <machine/cpu.h>
 
@@ -64,6 +65,11 @@ static void	tegra_pcie_attach(device_t, device_t, void *);
 #define TEGRA_PCIE_NBUS 256
 #define TEGRA_PCIE_ECFB (1<<(12 - 8))	/* extended conf frags per bus */
 
+enum tegra_pcie_type {
+	TEGRA_PCIE_124		= 0,
+	TEGRA_PCIE_210		= 1,
+};
+
 struct tegra_pcie_ih {
 	int			(*ih_callback)(void *);
 	void			*ih_arg;
@@ -80,6 +86,7 @@ struct tegra_pcie_softc {
 	bus_space_handle_t	sc_bsh_pads;
 	bus_space_handle_t	sc_bsh_rpconf;
 	int			sc_phandle;
+	enum tegra_pcie_type	sc_type;
 
 	struct arm32_pci_chipset sc_pc;
 
@@ -129,17 +136,18 @@ static void	tegra_pcie_intr_disestablish(void *, void *);
 CFATTACH_DECL_NEW(tegra_pcie, sizeof(struct tegra_pcie_softc),
 	tegra_pcie_match, tegra_pcie_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "nvidia,tegra210-pcie",	.value = TEGRA_PCIE_210 },
+	{ .compat = "nvidia,tegra124-pcie",	.value = TEGRA_PCIE_124 },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 tegra_pcie_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"nvidia,tegra210-pcie",
-		"nvidia,tegra124-pcie",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -147,7 +155,8 @@ tegra_pcie_attach(device_t parent, device_t self, void *aux)
 {
 	struct tegra_pcie_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
-	struct extent *ioext, *memext, *pmemext;
+	const struct device_compatible_entry *dce;
+	struct pciconf_resources *pcires;
 	struct pcibus_attach_args pba;
 	bus_addr_t afi_addr, cs_addr, pads_addr;
 	bus_size_t afi_size, cs_size, pads_size;
@@ -188,12 +197,16 @@ tegra_pcie_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": couldn't map pads registers: %d\n", error);
 		return;
 	}
-	error = bus_space_map(sc->sc_bst, cs_addr, cs_size, 0,
-	    &sc->sc_bsh_rpconf);
+	error = bus_space_map(sc->sc_bst, cs_addr, cs_size,
+	    _ARM_BUS_SPACE_MAP_STRONGLY_ORDERED, &sc->sc_bsh_rpconf);
 	if (error) {
 		aprint_error(": couldn't map cs registers: %d\n", error);
 		return;
 	}
+
+	dce = of_compatible_lookup(faa->faa_phandle, compat_data);
+	KASSERT(dce != NULL);
+	sc->sc_type = dce->value;
 
 	tegra_pcie_conf_map_buses(sc);
 
@@ -213,8 +226,8 @@ tegra_pcie_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_ih = fdtbus_intr_establish(faa->faa_phandle, 0, IPL_VM,
-	    FDT_INTR_MPSAFE, tegra_pcie_intr, sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(faa->faa_phandle, 0, IPL_VM,
+	    FDT_INTR_MPSAFE, tegra_pcie_intr, sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt on %s\n",
 		    intrstr);
@@ -226,22 +239,19 @@ tegra_pcie_attach(device_t parent, device_t self, void *aux)
 
 	tegra_pcie_init(&sc->sc_pc, sc);
 
-	ioext = extent_create("pciio", TEGRA_PCIE_IO_BASE,
-	    TEGRA_PCIE_IO_BASE + TEGRA_PCIE_IO_SIZE - 1,
-	    NULL, 0, EX_NOWAIT);
-	memext = extent_create("pcimem", TEGRA_PCIE_MEM_BASE,
-	    TEGRA_PCIE_MEM_BASE + TEGRA_PCIE_MEM_SIZE - 1,
-	    NULL, 0, EX_NOWAIT);
-	pmemext = extent_create("pcipmem", TEGRA_PCIE_PMEM_BASE,
-	    TEGRA_PCIE_PMEM_BASE + TEGRA_PCIE_PMEM_SIZE - 1,
-	    NULL, 0, EX_NOWAIT);
+	pcires = pciconf_resource_init();
 
-	error = pci_configure_bus(&sc->sc_pc, ioext, memext, pmemext, 0,
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    TEGRA_PCIE_IO_BASE, TEGRA_PCIE_IO_SIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    TEGRA_PCIE_MEM_BASE, TEGRA_PCIE_MEM_SIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_PREFETCHABLE_MEM,
+	    TEGRA_PCIE_PMEM_BASE, TEGRA_PCIE_PMEM_SIZE);
+
+	error = pci_configure_bus(&sc->sc_pc, pcires, 0,
 	    arm_dcache_align);
 
-	extent_destroy(ioext);
-	extent_destroy(memext);
-	extent_destroy(pmemext);
+	pciconf_resource_fini(pcires);
 
 	if (error) {
 		aprint_error_dev(self, "configuration failed (%d)\n",
@@ -465,14 +475,14 @@ tegra_pcie_setup(struct tegra_pcie_softc * const sc)
 	bus_space_write_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PCIE_CONFIG_REG, cfg);
 
 	/* Configure refclk pad */
-	const char * const tegra124_compat[] = { "nvidia,tegra124-pcie", NULL };
-	if (of_match_compatible(sc->sc_phandle, tegra124_compat))
-		bus_space_write_4(sc->sc_bst, sc->sc_bsh_pads, PADS_REFCLK_CFG0_REG,
-		    0x44ac44ac);
-	const char * const tegra210_compat[] = { "nvidia,tegra210-pcie", NULL };
-	if (of_match_compatible(sc->sc_phandle, tegra210_compat))
-		bus_space_write_4(sc->sc_bst, sc->sc_bsh_pads, PADS_REFCLK_CFG0_REG,
-		    0x90b890b8);
+	if (sc->sc_type == TEGRA_PCIE_124) {
+		bus_space_write_4(sc->sc_bst, sc->sc_bsh_pads,
+		    PADS_REFCLK_CFG0_REG, 0x44ac44ac);
+	}
+	if (sc->sc_type == TEGRA_PCIE_210) {
+		bus_space_write_4(sc->sc_bst, sc->sc_bsh_pads,
+		    PADS_REFCLK_CFG0_REG, 0x90b890b8);
+	}
 
 	/*
 	 * Map PCI address spaces into ARM address space via
@@ -565,7 +575,8 @@ tegra_pcie_conf_frag_map(struct tegra_pcie_softc * const sc, uint bus,
 	}
 
 	a = TEGRA_PCIE_EXTC_BASE + (bus << 16) + (frg << 24);
-	if (bus_space_map(sc->sc_bst, a, 1 << 16, 0,
+	if (bus_space_map(sc->sc_bst, a, 1 << 16,
+	    _ARM_BUS_SPACE_MAP_STRONGLY_ORDERED,
 	    &sc->sc_bsh_extc[bus-1][frg]) != 0)
 		device_printf(sc->sc_dev, "couldn't map PCIE "
 		    "configuration for bus %u fragment %#x", bus, frg);

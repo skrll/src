@@ -1,4 +1,4 @@
-/* $NetBSD: rk3399_cru.c,v 1.18 2019/12/18 18:40:19 jakllsch Exp $ */
+/* $NetBSD: rk3399_cru.c,v 1.21 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: rk3399_cru.c,v 1.18 2019/12/18 18:40:19 jakllsch Exp $");
+__KERNEL_RCSID(1, "$NetBSD: rk3399_cru.c,v 1.21 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -48,9 +48,9 @@ __KERNEL_RCSID(1, "$NetBSD: rk3399_cru.c,v 1.18 2019/12/18 18:40:19 jakllsch Exp
 static int rk3399_cru_match(device_t, cfdata_t, void *);
 static void rk3399_cru_attach(device_t, device_t, void *);
 
-static const char * const compatible[] = {
-	"rockchip,rk3399-cru",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "rockchip,rk3399-cru" },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(rk3399_cru, sizeof(struct rk_cru_softc),
@@ -181,6 +181,7 @@ static const struct rk_cru_cpu_rate armclkb_rates[] = {
         RK3399_CPUB_RATE(2088000000, 1, 10, 10),
         RK3399_CPUB_RATE(2040000000, 1, 10, 10),
         RK3399_CPUB_RATE(2016000000, 1, 9, 9),
+        RK3399_CPUB_RATE(2000000000, 1, 9, 9),
         RK3399_CPUB_RATE(1992000000, 1, 9, 9),
         RK3399_CPUB_RATE(1896000000, 1, 9, 9),
         RK3399_CPUB_RATE(1800000000, 1, 8, 8),
@@ -846,6 +847,27 @@ static struct rk_cru_clk rk3399_cru_clks[] = {
 		     0),
 	RK_MUX(RK3399_SCLK_PCIE_CORE, "clk_pcie_core", mux_pciecore_cru_phy_parents, CLKSEL_CON(18), __BIT(7)),
 
+	/* Crypto */
+	RK_COMPOSITE(RK3399_SCLK_CRYPTO0, "clk_crypto0", mux_pll_src_cpll_gpll_ppll_parents,
+		     CLKSEL_CON(24),	/* muxdiv_reg */
+		     __BITS(7,6),	/* mux_mask */
+		     __BITS(4,0),	/* div_mask */
+		     CLKGATE_CON(7),	/* gate_reg */
+		     __BIT(7),		/* gate_mask */
+		     RK_COMPOSITE_ROUND_DOWN /*???*/),
+	RK_COMPOSITE(RK3399_SCLK_CRYPTO1, "clk_crypto1", mux_pll_src_cpll_gpll_ppll_parents,
+		     CLKSEL_CON(26),	/* muxdiv_reg */
+		     __BITS(7,6),	/* mux_mask */
+		     __BITS(4,0),	/* div_mask */
+		     CLKGATE_CON(8),	/* gate_reg */
+		     __BIT(7),		/* gate_mask */
+		     RK_COMPOSITE_ROUND_DOWN /*???*/),
+	RK_GATE(RK3399_HCLK_M_CRYPTO0, "hclk_m_crypto0", "pclk_perilp0", CLKGATE_CON(24), 5),
+	RK_GATE(RK3399_HCLK_S_CRYPTO0, "hclk_s_crypto0", "pclk_perilp0", CLKGATE_CON(24), 6),
+	RK_GATE(RK3399_HCLK_M_CRYPTO1, "hclk_m_crypto1", "pclk_perilp0", CLKGATE_CON(24), 14),
+	RK_GATE(RK3399_HCLK_S_CRYPTO1, "hclk_s_crypto1", "pclk_perilp0", CLKGATE_CON(24), 15),
+	RK_GATE(RK3399_ACLK_DMAC1_PERILP, "aclk_dmac1_perilp", "pclk_perilp", CLKGATE_CON(25), 6),
+
 	/* TSADC */
 	RK_COMPOSITE(RK3399_SCLK_TSADC, "clk_tsadc", mux_clk_tsadc_parents,
 		     CLKSEL_CON(27),	/* muxdiv_reg */
@@ -1083,7 +1105,7 @@ rk3399_cru_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void

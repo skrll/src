@@ -1,4 +1,4 @@
-/*	$NetBSD: dns.h,v 1.2 2017/02/14 01:16:44 christos Exp $	*/
+/*	$NetBSD: dns.h,v 1.4 2020/05/25 23:47:13 christos Exp $	*/
 
 #ifndef _DNS_H_INCLUDED_
 #define _DNS_H_INCLUDED_
@@ -61,6 +61,7 @@
  */
 #ifdef NO_DNSSEC
 #undef RES_USE_DNSSEC
+#undef RES_TRUSTAD
 #endif
 
  /*
@@ -71,6 +72,9 @@
 #endif
 #ifndef RES_USE_EDNS0
 #define RES_USE_EDNS0	0
+#endif
+#ifndef RES_TRUSTAD
+#define RES_TRUSTAD	0
 #endif
 
  /*-
@@ -302,6 +306,11 @@ extern int dns_rr_filter_execute(DNS_RR **);
 
 #endif
 
+ /*
+  * dns_str_resflags.c
+  */
+const char *dns_str_resflags(unsigned long);
+
 /* LICENSE
 /* .ad
 /* .fi
@@ -311,6 +320,11 @@ extern int dns_rr_filter_execute(DNS_RR **);
 /*	IBM T.J. Watson Research
 /*	P.O. Box 704
 /*	Yorktown Heights, NY 10598, USA
+/*
+/*	Wietse Venema
+/*	Google, Inc.
+/*	111 8th Avenue
+/*	New York, NY 10011, USA
 /*--*/
 
 #endif

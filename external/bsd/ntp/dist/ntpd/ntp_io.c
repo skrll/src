@@ -1,4 +1,4 @@
-/*	$NetBSD: ntp_io.c,v 1.26 2018/04/07 00:19:52 christos Exp $	*/
+/*	$NetBSD: ntp_io.c,v 1.31 2021/01/31 08:27:49 roy Exp $	*/
 
 /*
  * ntp_io.c - input/output routines for ntpd.	The socket-opening code
@@ -179,7 +179,7 @@ endpt *	any_interface;		/* wildcard ipv4 interface */
 endpt *	any6_interface;		/* wildcard ipv6 interface */
 endpt *	loopback_interface;	/* loopback ipv4 interface */
 
-isc_boolean_t broadcast_client_enabled;	/* is broadcast client enabled */
+static isc_boolean_t broadcast_client_enabled;	/* is broadcast client enabled */
 u_int sys_ifnum;			/* next .ifnum to assign */
 int ninterfaces;			/* Total number of interfaces */
 
@@ -455,8 +455,13 @@ init_io(void)
 {
 	/* Init buffer free list and stat counters */
 	init_recvbuff(RECV_INIT);
+#ifdef SO_RERROR
+	/* route(4) overflow can be observed */
+	interface_interval = 0;
+#else
 	/* update interface every 5 minutes as default */
 	interface_interval = 300;
+#endif
 
 #ifdef WORK_PIPE
 	addremove_io_fd = &ntpd_addremove_io_fd;
@@ -2013,10 +2018,7 @@ update_interfaces(
 	 */
 	refresh_all_peerinterfaces();
 
-	if (broadcast_client_enabled)
-		io_setbclient();
-
-	if (sys_bclient)
+	if (broadcast_client_enabled || sys_bclient)
 		io_setbclient();
 
 #ifdef MCAST
@@ -2345,11 +2347,12 @@ socket_broadcast_disable(
 /*
  * return the broadcast client flag value
  */
-isc_boolean_t
+/*isc_boolean_t
 get_broadcastclient_flag(void)
 {
 	return (broadcast_client_enabled);
 }
+*/
 
 /*
  * Check to see if the address is a multicast address
@@ -2607,32 +2610,38 @@ void
 io_setbclient(void)
 {
 #ifdef OPEN_BCAST_SOCKET
-	struct interface *	interf;
-	unsigned int		nif;
+	endpt *		ep;
+	unsigned int	nif, ni4, ni6;
 
-	nif = 0;
+	nif = ni4 = ni6 = 0;
 	set_reuseaddr(1);
 
-	for (interf = ep_list;
-	     interf != NULL;
-	     interf = interf->elink) {
-
-		if (interf->flags & (INT_WILDCARD | INT_LOOPBACK))
+	for (ep = ep_list; ep != NULL; ep = ep->elink) {
+		/* count IPv6 vs IPv4 interfaces. Needed later to decide
+		 * if we should log an error or not.
+		 */
+		switch (ep->family) {
+		case AF_INET : ++ni4; break;
+		case AF_INET6: ++ni6; break;
+		default      :        break;
+		}
+		
+		if (ep->flags & (INT_WILDCARD | INT_LOOPBACK))
 			continue;
 
 		/* use only allowed addresses */
-		if (interf->ignore_packets)
+		if (ep->ignore_packets)
 			continue;
 
 		/* Need a broadcast-capable interface */
-		if (!(interf->flags & INT_BROADCAST))
+		if (!(ep->flags & INT_BROADCAST))
 			continue;
 
 		/* Only IPv4 addresses are valid for broadcast */
-		REQUIRE(IS_IPV4(&interf->bcast));
+		REQUIRE(IS_IPV4(&ep->bcast));
 
 		/* Do we already have the broadcast address open? */
-		if (interf->flags & INT_BCASTOPEN) {
+		if (ep->flags & INT_BCASTOPEN) {
 			/*
 			 * account for already open interfaces to avoid
 			 * misleading warning below
@@ -2644,19 +2653,19 @@ io_setbclient(void)
 		/*
 		 * Try to open the broadcast address
 		 */
-		interf->family = AF_INET;
-		interf->bfd = open_socket(&interf->bcast, 1, 0, interf);
+		ep->family = AF_INET;
+		ep->bfd = open_socket(&ep->bcast, 1, 0, ep);
 
 		/*
 		 * If we succeeded then we use it otherwise enable
 		 * broadcast on the interface address
 		 */
-		if (interf->bfd != INVALID_SOCKET) {
+		if (ep->bfd != INVALID_SOCKET) {
 			nif++;
-			interf->flags |= INT_BCASTOPEN;
+			ep->flags |= INT_BCASTOPEN;
 			msyslog(LOG_INFO,
 				"Listen for broadcasts to %s on interface #%d %s",
-				stoa(&interf->bcast), interf->ifnum, interf->name);
+				stoa(&ep->bcast), ep->ifnum, ep->name);
 		} else switch (errno) {
 			/* Silently ignore EADDRINUSE as we probably
 			 * opened the socket already for an address in
@@ -2670,8 +2679,8 @@ io_setbclient(void)
 			 * regular socket, it's quite useless to try this
 			 * again.
 			 */
-			if (interf->fd != INVALID_SOCKET) {
-				interf->flags |= INT_BCASTOPEN;
+			if (ep->fd != INVALID_SOCKET) {
+				ep->flags |= INT_BCASTOPEN;
 				nif++;
 			}
 #		    endif
@@ -2680,7 +2689,7 @@ io_setbclient(void)
 		default:
 			msyslog(LOG_INFO,
 				"failed to listen for broadcasts to %s on interface #%d %s",
-				stoa(&interf->bcast), interf->ifnum, interf->name);
+				stoa(&ep->bcast), ep->ifnum, ep->name);
 			break;
 		}
 	}
@@ -2690,8 +2699,14 @@ io_setbclient(void)
 		DPRINTF(1, ("io_setbclient: listening to %d broadcast addresses\n", nif));
 	} else {
 		broadcast_client_enabled = ISC_FALSE;
-		msyslog(LOG_ERR,
-			"Unable to listen for broadcasts, no broadcast interfaces available");
+		/* This is expected when having only IPv6 interfaces
+		 * and no IPv4 interfaces at all. We suppress the error
+		 * log in that case... everything else should work!
+		 */
+		if (ni4 && !ni6) {
+			msyslog(LOG_ERR,
+				"Unable to listen for broadcasts, no broadcast interfaces available");
+		}
 	}
 #else
 	msyslog(LOG_ERR,
@@ -3135,8 +3150,9 @@ sendpkt(
 	int	cc;
 	int	rc;
 	u_char	cttl;
-	l_fp	fp_zero = { { 0, }, 0, };
-
+	l_fp	fp_zero = { { 0 }, 0 };
+	l_fp	org, rec, xmt;
+	
 	ismcast = IS_MCAST(dest);
 	if (!ismcast)
 		src = ep;
@@ -3221,11 +3237,14 @@ sendpkt(
 	} while (ismcast && src != NULL);
 
 	/* HMS: pkt->rootdisp is usually random here */
+	NTOHL_FP(&pkt->org, &org);
+	NTOHL_FP(&pkt->rec, &rec);
+	NTOHL_FP(&pkt->xmt, &xmt);
 	record_raw_stats(src ? &src->sin : NULL, dest,
-			&pkt->org, &pkt->rec, &pkt->xmt, &fp_zero,
-			PKT_MODE(pkt->li_vn_mode),
-			PKT_VERSION(pkt->li_vn_mode),
+			&org, &rec, &xmt, &fp_zero,
 			PKT_LEAP(pkt->li_vn_mode),
+			PKT_VERSION(pkt->li_vn_mode),
+			PKT_MODE(pkt->li_vn_mode),
 			pkt->stratum,
 			pkt->ppoll, pkt->precision,
 			pkt->rootdelay, pkt->rootdisp, pkt->refid,
@@ -4711,9 +4730,18 @@ process_routing_msgs(struct asyncio_reader *reader)
 
 	if (cnt < 0) {
 		if (errno == ENOBUFS) {
-			msyslog(LOG_ERR,
-				"routing socket reports: %m");
-		} else {
+			msyslog(LOG_DEBUG,
+				"routing socket overflowed"
+				" - will update interfaces");
+			/*
+			 * drain the routing socket as we need to update
+			 * the interfaces anyway
+			 */
+			do {
+				cnt = read(reader->fd, buffer, sizeof(buffer));
+			} while (cnt != -1 || errno == ENOBUFS);
+			timer_interfacetimeout(current_time + UPDATE_GRACE);
+		} else if (errno != EINTR) {
 			msyslog(LOG_ERR,
 				"routing socket reports: %m - disabling");
 			remove_asyncio_reader(reader);
@@ -4765,14 +4793,8 @@ process_routing_msgs(struct asyncio_reader *reader)
 #ifdef RTM_CHANGE
 		case RTM_CHANGE:
 #endif
-#ifdef RTM_LOSING
-		case RTM_LOSING:
-#endif
 #ifdef RTM_IFINFO
 		case RTM_IFINFO:
-#endif
-#ifdef RTM_IFANNOUNCE
-		case RTM_IFANNOUNCE:
 #endif
 #ifdef RTM_NEWLINK
 		case RTM_NEWLINK:
@@ -4823,6 +4845,9 @@ init_async_notifications()
 	struct sockaddr_nl sa;
 #else
 	int fd = socket(PF_ROUTE, SOCK_RAW, 0);
+#ifdef SO_RERROR
+	int on = 1;
+#endif
 #endif
 #ifdef RO_MSGFILTER
 	unsigned char msgfilter[] = {
@@ -4844,14 +4869,8 @@ init_async_notifications()
 #ifdef RTM_CHANGE
 		RTM_CHANGE,
 #endif
-#ifdef RTM_LOSING
-		RTM_LOSING,
-#endif
 #ifdef RTM_IFINFO
 		RTM_IFINFO,
-#endif
-#ifdef RTM_IFANNOUNCE
-		RTM_IFANNOUNCE,
 #endif
 #ifdef RTM_NEWLINK
 		RTM_NEWLINK,
@@ -4892,6 +4911,10 @@ init_async_notifications()
 	if (setsockopt(fd, PF_ROUTE, RO_MSGFILTER,
 	    &msgfilter, sizeof(msgfilter)) == -1)
 		msyslog(LOG_ERR, "RO_MSGFILTER: %m");
+#endif
+#ifdef SO_RERROR
+	if (setsockopt(fd, SOL_SOCKET, SO_RERROR, &on, sizeof(on)) == -1)
+		msyslog(LOG_ERR, "SO_RERROR: %m");
 #endif
 	make_socket_nonblocking(fd);
 #if defined(HAVE_SIGNALED_IO)

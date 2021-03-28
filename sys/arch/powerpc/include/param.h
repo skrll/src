@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.31 2019/01/07 22:00:32 jdolecek Exp $	*/
+/*	$NetBSD: param.h,v 1.33 2020/07/06 09:34:17 rin Exp $	*/
 
 /*-
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -34,10 +34,8 @@
 #ifndef _POWERPC_PARAM_H
 #define	_POWERPC_PARAM_H
 
-#ifdef	_KERNEL
-#if defined(_KERNEL_OPT)
+#ifdef _KERNEL_OPT
 #include "opt_ppcarch.h"
-#endif
 #endif
 
 /*
@@ -67,7 +65,7 @@
 
 #ifdef PPC_IBM4XX
 #define	PGSHIFT		14	/* Use 16KB to reduce TLB thrashing */
-#define	UPAGES		2
+#define	UPAGES		1
 #else
 #define	PGSHIFT		12
 #define	UPAGES		4

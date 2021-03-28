@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -611,6 +611,7 @@ AcpiWalkResourceBuffer (
     ACPI_STATUS                 Status = AE_OK;
     ACPI_RESOURCE               *Resource;
     ACPI_RESOURCE               *ResourceEnd;
+
 
     ACPI_FUNCTION_TRACE (AcpiWalkResourceBuffer);
 

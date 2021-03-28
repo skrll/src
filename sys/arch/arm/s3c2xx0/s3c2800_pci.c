@@ -1,4 +1,4 @@
-/*	$NetBSD: s3c2800_pci.c,v 1.27 2019/11/10 21:16:24 chs Exp $	*/
+/*	$NetBSD: s3c2800_pci.c,v 1.30 2020/11/20 18:34:45 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2002 Fujitsu Component Limited
@@ -100,7 +100,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: s3c2800_pci.c,v 1.27 2019/11/10 21:16:24 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: s3c2800_pci.c,v 1.30 2020/11/20 18:34:45 thorpej Exp $");
 
 #include "opt_pci.h"
 #include "pci.h"
@@ -109,8 +109,7 @@ __KERNEL_RCSID(0, "$NetBSD: s3c2800_pci.c,v 1.27 2019/11/10 21:16:24 chs Exp $")
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/extent.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -233,7 +232,7 @@ sspci_attach(device_t parent, device_t self, void *aux)
 	bus_dma_tag_t pci_dma_tag;
 	const char *error_on;	/* for panic message */
 #if defined(PCI_NETBSD_CONFIGURE)
-	struct extent *ioext, *memext;
+	struct pciconf_resources *pcires;
 	struct pcibus_attach_args pci_pba;
 #endif
 
@@ -295,20 +294,19 @@ sspci_attach(device_t parent, device_t self, void *aux)
 	}
 
 #if defined(PCI_NETBSD_CONFIGURE)
-	ioext = extent_create("pciio", 0x100, S3C2800_PCI_IOSPACE_SIZE - 0x100,
-	    NULL, 0, EX_NOWAIT);
+	pcires = pciconf_resource_init();
 
-	memext = extent_create("pcimem", 0, S3C2800_PCI_MEMSPACE_SIZE,
-	    NULL, 0, EX_NOWAIT);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    0x100, S3C2800_PCI_IOSPACE_SIZE - 0x100);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    0, S3C2800_PCI_MEMSPACE_SIZE);
 
 	sspci_chipset.pc_conf_v = (void *) sc;
 	sspci_chipset.pc_intr_v = (void *) sc;
 
-	pci_configure_bus(&sspci_chipset, ioext, memext, NULL, 0,
-	    arm_dcache_align);
+	pci_configure_bus(&sspci_chipset, pcires, 0, arm_dcache_align);
 
-	extent_destroy(memext);
-	extent_destroy(ioext);
+	pciconf_resource_fini(pcires);
 #endif				/* PCI_NETBSD_CONFIGURE */
 
 	/* initialize bus space tag */
@@ -519,7 +517,7 @@ s3c2800_pci_intr_establish(void *pcv, pci_intr_handle_t ih, int level,
 	    "func=%p, arg=%p, xname=%s)\n", pcv, ih, level, func, arg, xname);
 #endif
 
-	handler = malloc(sizeof *handler, M_DEVBUF, M_WAITOK);
+	handler = kmem_alloc(sizeof *handler, KM_SLEEP);
 	handler->func = func;
 	handler->arg = arg;
 	handler->level = level;

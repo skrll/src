@@ -1,5 +1,5 @@
 #! /usr/bin/env sh
-#	$NetBSD: build.sh,v 1.333 2019/06/07 15:49:20 sborrill Exp $
+#	$NetBSD: build.sh,v 1.346 2021/01/28 10:36:27 martin Exp $
 #
 # Copyright (c) 2001-2011 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -559,6 +559,7 @@ level of source directory"
 	do_disk_image=false
 	do_params=false
 	do_rump=false
+	do_dtb=false
 
 	# done_{operation}=true if given operation has been done.
 	#
@@ -636,16 +637,13 @@ MACHINE=dreamcast	MACHINE_ARCH=sh3el
 MACHINE=emips		MACHINE_ARCH=mipseb
 MACHINE=epoc32		MACHINE_ARCH=arm
 MACHINE=epoc32		MACHINE_ARCH=earmv4	ALIAS=eepoc32 DEFAULT
-MACHINE=evbarm		MACHINE_ARCH=arm	ALIAS=evboarm-el
-MACHINE=evbarm		MACHINE_ARCH=armeb	ALIAS=evboarm-eb
-MACHINE=evbarm		MACHINE_ARCH=earm	ALIAS=evbearm-el	ALIAS=evbarm-el DEFAULT
-MACHINE=evbarm		MACHINE_ARCH=earmeb	ALIAS=evbearm-eb	ALIAS=evbarm-eb
-MACHINE=evbarm		MACHINE_ARCH=earmhf	ALIAS=evbearmhf-el	ALIAS=evbarmhf-el
-MACHINE=evbarm		MACHINE_ARCH=earmhfeb	ALIAS=evbearmhf-eb	ALIAS=evbarmhf-eb
+MACHINE=evbarm		MACHINE_ARCH=		NO_DEFAULT
 MACHINE=evbarm		MACHINE_ARCH=earmv4	ALIAS=evbearmv4-el	ALIAS=evbarmv4-el
 MACHINE=evbarm		MACHINE_ARCH=earmv4eb	ALIAS=evbearmv4-eb	ALIAS=evbarmv4-eb
 MACHINE=evbarm		MACHINE_ARCH=earmv5	ALIAS=evbearmv5-el	ALIAS=evbarmv5-el
+MACHINE=evbarm		MACHINE_ARCH=earmv5hf	ALIAS=evbearmv5hf-el	ALIAS=evbarmv5hf-el
 MACHINE=evbarm		MACHINE_ARCH=earmv5eb	ALIAS=evbearmv5-eb	ALIAS=evbarmv5-eb
+MACHINE=evbarm		MACHINE_ARCH=earmv5hfeb	ALIAS=evbearmv5hf-eb	ALIAS=evbarmv5hf-eb
 MACHINE=evbarm		MACHINE_ARCH=earmv6	ALIAS=evbearmv6-el	ALIAS=evbarmv6-el
 MACHINE=evbarm		MACHINE_ARCH=earmv6hf	ALIAS=evbearmv6hf-el	ALIAS=evbarmv6hf-el
 MACHINE=evbarm		MACHINE_ARCH=earmv6eb	ALIAS=evbearmv6-eb	ALIAS=evbarmv6-eb
@@ -654,7 +652,7 @@ MACHINE=evbarm		MACHINE_ARCH=earmv7	ALIAS=evbearmv7-el	ALIAS=evbarmv7-el
 MACHINE=evbarm		MACHINE_ARCH=earmv7eb	ALIAS=evbearmv7-eb	ALIAS=evbarmv7-eb
 MACHINE=evbarm		MACHINE_ARCH=earmv7hf	ALIAS=evbearmv7hf-el	ALIAS=evbarmv7hf-el
 MACHINE=evbarm		MACHINE_ARCH=earmv7hfeb	ALIAS=evbearmv7hf-eb	ALIAS=evbarmv7hf-eb
-MACHINE=evbarm		MACHINE_ARCH=aarch64	ALIAS=evbarm64-el	ALIAS=evbarm64 DEFAULT
+MACHINE=evbarm		MACHINE_ARCH=aarch64	ALIAS=evbarm64-el	ALIAS=evbarm64
 MACHINE=evbarm		MACHINE_ARCH=aarch64eb	ALIAS=evbarm64-eb
 MACHINE=evbcf		MACHINE_ARCH=coldfire
 MACHINE=evbmips		MACHINE_ARCH=		NO_DEFAULT
@@ -817,7 +815,7 @@ validatearch()
 
 	case "${MACHINE_ARCH}" in
 	"")
-		bomb "No MACHINE_ARCH provided"
+		bomb "No MACHINE_ARCH provided. Use 'build.sh -m ${MACHINE} list-arch' to show options."
 		;;
 	esac
 
@@ -1031,8 +1029,8 @@ usage()
 	cat <<_usage_
 
 Usage: ${progname} [-EhnoPRrUuxy] [-a arch] [-B buildid] [-C cdextras]
-                [-D dest] [-j njob] [-M obj] [-m mach] [-N noisy]
-                [-O obj] [-R release] [-S seed] [-T tools]
+                [-c compiler] [-D dest] [-j njob] [-M obj] [-m mach]
+                [-N noisy] [-O obj] [-R release] [-S seed] [-T tools]
                 [-V var=[value]] [-w wrapper] [-X x11src] [-Y extsrcsrc]
                 [-Z var]
                 operation [...]
@@ -1047,6 +1045,7 @@ Usage: ${progname} [-EhnoPRrUuxy] [-a arch] [-B buildid] [-C cdextras]
     makewrapper         Create ${toolprefix}make-\${MACHINE} wrapper and ${toolprefix}make.
                         Always performed.
     cleandir            Run "make cleandir".  [Default unless -u is used]
+    dtb			Build devicetree blobs.
     obj                 Run "make obj".  [Default unless -o is used]
     tools               Build and install tools.
     install=idir        Run "make installworld" to \`idir' to install all sets
@@ -1063,6 +1062,7 @@ Usage: ${progname} [-EhnoPRrUuxy] [-a arch] [-B buildid] [-C cdextras]
     sets                Create binary sets in
                         RELEASEDIR/RELEASEMACHINEDIR/binary/sets.
                         DESTDIR should be populated beforehand.
+    distsets            Same as "distribution sets".
     sourcesets          Create source sets in RELEASEDIR/source/sets.
     syspkgs             Create syspkgs in
                         RELEASEDIR/RELEASEMACHINEDIR/binary/syspkgs.
@@ -1083,9 +1083,14 @@ Usage: ${progname} [-EhnoPRrUuxy] [-a arch] [-B buildid] [-C cdextras]
     -a arch        Set MACHINE_ARCH to arch.  [Default: deduced from MACHINE]
     -B buildid     Set BUILDID to buildid.
     -C cdextras    Append cdextras to CDEXTRA variable for inclusion on CD-ROM.
+    -c compiler    Select compiler:
+                       clang
+                       gcc
+                   [Default: gcc]
     -D dest        Set DESTDIR to dest.  [Default: destdir.MACHINE]
     -E             Set "expert" mode; disables various safety checks.
-                   Should not be used without expert knowledge of the build system.
+                   Should not be used without expert knowledge of the build
+                   system.
     -h             Print this help message.
     -j njob        Run up to njob jobs in parallel; see make(1) -j.
     -M obj         Set obj root directory to obj; sets MAKEOBJDIRPREFIX.
@@ -1097,7 +1102,8 @@ Usage: ${progname} [-EhnoPRrUuxy] [-a arch] [-B buildid] [-C cdextras]
     -N noisy       Set the noisyness (MAKEVERBOSE) level of the build:
                        0   Minimal output ("quiet")
                        1   Describe what is occurring
-                       2   Describe what is occurring and echo the actual command
+                       2   Describe what is occurring and echo the actual
+                           command
                        3   Ignore the effect of the "@" prefix in make commands
                        4   Trace shell commands using the shell's -x flag
                    [Default: 2]
@@ -1132,7 +1138,7 @@ _usage_
 
 parseoptions()
 {
-	opts='a:B:C:D:Ehj:M:m:N:nO:oPR:rS:T:UuV:w:X:xY:yZ:'
+	opts='a:B:C:c:D:Ehj:M:m:N:nO:oPR:rS:T:UuV:w:X:xY:yZ:'
 	opt_a=false
 	opt_m=false
 
@@ -1176,6 +1182,21 @@ parseoptions()
 		-C)
 			eval ${optargcmd}; resolvepaths OPTARG
 			CDEXTRA="${CDEXTRA}${CDEXTRA:+ }${OPTARG}"
+			;;
+
+		-c)
+			eval ${optargcmd}
+			case "${OPTARG}" in
+			gcc)	# default, no variables needed
+				;;
+			clang)	setmakeenv HAVE_LLVM yes
+				setmakeenv MKLLVM yes
+				setmakeenv MKGCC no
+				;;
+			#pcc)	...
+			#	;;
+			*)	bomb "Unknown compiler: ${OPTARG}"
+			esac
 			;;
 
 		-D)
@@ -1377,9 +1398,16 @@ parseoptions()
 			    bomb "Must supply a directory with \`install=...'"
 			;;
 
+		distsets)
+			operations="$(echo "$operations" | sed 's/distsets/distribution sets/')"
+			do_sets=true
+			op=distribution
+			;;
+
 		build|\
 		cleandir|\
 		distribution|\
+		dtb|\
 		install-image|\
 		iso-image-source|\
 		iso-image|\
@@ -1437,6 +1465,7 @@ parseoptions()
 	export MAKEFLAGS MACHINE MACHINE_ARCH
 	setmakeenv USETOOLS "yes"
 	setmakeenv MAKEWRAPPERMACHINE "${makewrappermachine:-${MACHINE}}"
+	setmakeenv MAKE_OBJDIR_CHECK_WRITABLE no
 }
 
 # sanitycheck --
@@ -1463,7 +1492,7 @@ sanitycheck()
 	path="${path%:}"	# delete trailing ":"
 	path="${path%:.}"	# delete trailing ":."
 	case ":${path}:/" in
-	*:[!/]*)
+	*:[!/~]*)
 		if ${do_expertmode}; then
 			warning "PATH contains non-absolute components"
 		else
@@ -1646,7 +1675,7 @@ rebuildmake()
 {
 	make="$(print_tooldir_make)"
 	if [ -n "${make}" ] && [ -x "${make}" ]; then
-		for f in usr.bin/make/*.[ch] usr.bin/make/lst.lib/*.[ch]; do
+		for f in usr.bin/make/*.[ch]; do
 			if [ "${f}" -nt "${make}" ]; then
 				statusmsg "${make} outdated" \
 					"(older than ${f}), needs building."
@@ -1664,18 +1693,23 @@ rebuildmake()
 		return
 	fi
 
+	# Silent configure with MAKEVERBOSE==0
+	if [ ${MAKEVERBOSE:-2} -eq 0 ]; then
+		configure_args=--silent
+	fi
+
 	statusmsg "Bootstrapping ${toolprefix}make"
 	${runcmd} cd "${tmpdir}"
 	${runcmd} env CC="${HOST_CC-cc}" CPPFLAGS="${HOST_CPPFLAGS}" \
 		CFLAGS="${HOST_CFLAGS--O}" LDFLAGS="${HOST_LDFLAGS}" \
-	    ${HOST_SH} "${TOP}/tools/make/configure" ||
+	    ${HOST_SH} "${TOP}/tools/make/configure" ${configure_args} ||
 	( cp ${tmpdir}/config.log ${tmpdir}-config.log
 	      bomb "Configure of ${toolprefix}make failed, see ${tmpdir}-config.log for details" )
 	${runcmd} ${HOST_SH} buildmake.sh ||
 	    bomb "Build of ${toolprefix}make failed"
 	make="${tmpdir}/${toolprefix}make"
 	${runcmd} cd "${TOP}"
-	${runcmd} rm -f usr.bin/make/*.o usr.bin/make/lst.lib/*.o
+	${runcmd} rm -f usr.bin/make/*.o
 	done_rebuildmake=true
 }
 
@@ -1938,7 +1972,7 @@ createmakewrapper()
 	eval cat <<EOF ${makewrapout}
 #! ${HOST_SH}
 # Set proper variables to allow easy "make" building of a NetBSD subtree.
-# Generated from:  \$NetBSD: build.sh,v 1.333 2019/06/07 15:49:20 sborrill Exp $
+# Generated from:  \$NetBSD: build.sh,v 1.346 2021/01/28 10:36:27 martin Exp $
 # with these arguments: ${_args}
 #
 
@@ -2037,7 +2071,7 @@ getkernelconf()
 diskimage()
 {
 	ARG="$(echo $1 | tr '[:lower:]' '[:upper:]')"
-	[ -f "${DESTDIR}/etc/mtree/set.base" ] || 
+	[ -f "${DESTDIR}/etc/mtree/set.base" ] ||
 	    bomb "The release binaries must be built first"
 	kerneldir="${RELEASEDIR}/${RELEASEMACHINEDIR}/binary/kernel"
 	kernel="${kerneldir}/netbsd-${ARG}.gz"
@@ -2137,6 +2171,21 @@ buildmodules()
 	statusmsg "Successful build of kernel modules for NetBSD/${MACHINE} ${DISTRIBVER}"
 }
 
+builddtb()
+{
+	statusmsg "Building devicetree blobs for NetBSD/${MACHINE} ${DISTRIBVER}"
+	if [ "${MKOBJDIRS}" != "no" ]; then
+		make_in_dir sys/dtb obj
+	fi
+	if [ "${MKUPDATE}" = "no" ]; then
+		make_in_dir sys/dtb cleandir
+	fi
+	make_in_dir sys/dtb dependall
+	make_in_dir sys/dtb install
+
+	statusmsg "Successful build of devicetree blobs for NetBSD/${MACHINE} ${DISTRIBVER}"
+}
+
 installmodules()
 {
 	dir="$1"
@@ -2177,7 +2226,7 @@ RUMP_LIBSETS='
 	-lrumpkern_tty -lrumpvfs -lrump,
 	-lrumpfs_tmpfs -lrumpvfs -lrump,
 	-lrumpfs_ffs -lrumpfs_msdos -lrumpvfs -lrumpdev_disk -lrumpdev -lrump,
-	-lrumpnet_virtif -lrumpnet_netinet -lrumpnet_net -lrumpnet 
+	-lrumpnet_virtif -lrumpnet_netinet -lrumpnet_net -lrumpnet
 	    -lrumpdev -lrumpvfs -lrump,
 	-lrumpnet_sockin -lrumpfs_smbfs -lrumpdev_netsmb
 	    -lrumpkern_crypto -lrumpdev -lrumpnet -lrumpvfs -lrump,
@@ -2375,6 +2424,10 @@ main()
 		disk-image=*)
 			arg=${op#*=}
 			diskimage "${arg}"
+			;;
+
+		dtb)
+			builddtb
 			;;
 
 		modules)

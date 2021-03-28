@@ -3,24 +3,27 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 ############################################################################
 
+import sys
+
 try:
     import yaml
-except:
+except (ModuleNotFoundError, ImportError):
     print("No python yaml module, skipping")
-    exit(1)
+    sys.exit(1)
 
 import subprocess
 import pprint
-import sys
 
-DNSTAP_READ=sys.argv[1]
-DATAFILE=sys.argv[2]
+DNSTAP_READ = sys.argv[1]
+DATAFILE = sys.argv[2]
+ARGS = [DNSTAP_READ, '-y', DATAFILE]
 
-f = subprocess.Popen([DNSTAP_READ, '-y', DATAFILE], stdout=subprocess.PIPE)
-pprint.pprint([l for l in yaml.load_all(f.stdout)])
+with subprocess.Popen(ARGS, stdout=subprocess.PIPE) as f:
+    for y in yaml.load_all(f.stdout, Loader=yaml.SafeLoader):
+        pprint.pprint(y)

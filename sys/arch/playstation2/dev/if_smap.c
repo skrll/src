@@ -1,4 +1,4 @@
-/*	$NetBSD: if_smap.c,v 1.31 2019/11/10 21:16:31 chs Exp $	*/
+/*	$NetBSD: if_smap.c,v 1.33 2020/11/21 17:46:08 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.31 2019/11/10 21:16:31 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.33 2020/11/21 17:46:08 thorpej Exp $");
 
 #include "debug_playstation2.h"
 
@@ -42,6 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.31 2019/11/10 21:16:31 chs Exp $");
 #include <sys/ioctl.h>
 #include <sys/rndsource.h>
 #include <sys/socket.h>
+#include <sys/kmem.h>
 
 #include <playstation2/ee/eevar.h>
 
@@ -192,10 +193,9 @@ smap_attach(struct device *parent, struct device *self, void *aux)
 	smap_desc_init(sc);
 
 	/* allocate temporary buffer */
-	txbuf = malloc(ETHER_MAX_LEN - ETHER_CRC_LEN + SMAP_FIFO_ALIGN + 16,
-	    M_DEVBUF, M_WAITOK);
-	rxbuf = malloc(ETHER_MAX_LEN + SMAP_FIFO_ALIGN + 16,
-	    M_DEVBUF, M_WAITOK);
+	txbuf = kmem_alloc(ETHER_MAX_LEN - ETHER_CRC_LEN + SMAP_FIFO_ALIGN + 16,
+	    KM_SLEEP);
+	rxbuf = kmem_alloc(ETHER_MAX_LEN + SMAP_FIFO_ALIGN + 16, KM_SLEEP);
 	sc->tx_buf = (u_int32_t *)ROUND16((vaddr_t)txbuf);
 	sc->rx_buf = (u_int32_t *)ROUND16((vaddr_t)rxbuf);
 
@@ -336,7 +336,7 @@ smap_rxeof(void *arg)
 		if ((stat & SMAP_RXDESC_EMPTY) != 0) {
 			break;
 		} else if (stat & 0x7fff) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next_packet;
 		}
 
@@ -357,7 +357,7 @@ smap_rxeof(void *arg)
 		MGETHDR(m, M_DONTWAIT, MT_DATA);
 		if (m == NULL) {
 			printf("%s: unable to allocate Rx mbuf\n", DEVNAME);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next_packet;
 		}
 
@@ -368,7 +368,7 @@ smap_rxeof(void *arg)
 				    DEVNAME);
 				m_freem(m);
 				m = NULL;
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				goto next_packet;
 			}
 		}
@@ -426,11 +426,11 @@ smap_txeof(void *arg)
 		} else if (stat & 0x7fff) {
 			if (stat & (SMAP_TXDESC_ECOLL | SMAP_TXDESC_LCOLL |
 			    SMAP_TXDESC_MCOLL | SMAP_TXDESC_SCOLL))
-				ifp->if_collisions++;
+				if_statinc(ifp, if_collisions);
 			else
-				ifp->if_oerrors++;
+				if_statinc(ifp, if_oerrors);
 		} else {
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 		}
 
 		if (sc->tx_desc_cnt == 0)
@@ -546,7 +546,7 @@ smap_watchdog(struct ifnet *ifp)
 	struct smap_softc *sc = ifp->if_softc;
 
 	printf("%s: watchdog timeout\n", DEVNAME);
-	sc->ethercom.ec_if.if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	smap_fifo_init(sc);
 	smap_desc_init(sc);

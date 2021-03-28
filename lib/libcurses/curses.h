@@ -1,4 +1,4 @@
-/*	$NetBSD: curses.h,v 1.126 2019/09/03 13:43:34 roy Exp $	*/
+/*	$NetBSD: curses.h,v 1.130 2021/02/13 10:37:00 rillig Exp $	*/
 
 /*
  * Copyright (c) 1981, 1993, 1994
@@ -61,14 +61,14 @@ typedef wchar_t	attr_t;
 #ifdef HAVE_WCHAR
 /*
  * The complex character structure required by the X/Open reference and used
- * in * functions such as in_wchstr(). It includes a string of up to 8 wide
+ * in functions such as in_wchstr(). It includes a string of up to 8 wide
  * characters and its length, an attribute, and a color-pair.
  */
 #define CURSES_CCHAR_MAX 8
 #define CCHARW_MAX       5
 typedef struct {
 	attr_t		attributes;		/* character attributes */
-	unsigned	elements;		/* number of wide char in
+	unsigned	elements;		/* number of wide chars in
 						   vals[] */
 	wchar_t		vals[CURSES_CCHAR_MAX]; /* wide chars including
 						   non-spacing */
@@ -86,12 +86,12 @@ typedef chtype cchar_t;
 
 #ifndef _CURSES_PRIVATE
 
-#define _puts(s)        tputs(s, 0, __cputchar)
-#define _putchar(c)     __cputchar(c)
+#define _puts(s)	tputs(s, 0, __cputchar)
+#define _putchar(c)	__cputchar(c)
 
 /* Old-style terminal modes access. */
-#define crmode()        cbreak()
-#define nocrmode()      nocbreak()
+#define crmode()	cbreak()
+#define nocrmode()	nocbreak()
 #endif /* _CURSES_PRIVATE */
 
 
@@ -107,7 +107,7 @@ typedef chtype cchar_t;
 
 /* First function key (block of 64 follow) */
 #define    KEY_F0         0x108
-/* Function defining other function key values*/
+/* Function defining other function key values */
 #define    KEY_F(n)       (KEY_F0+(n))
 
 #define    KEY_DL         0x148    /* Delete Line */
@@ -132,7 +132,7 @@ typedef chtype cchar_t;
 #define    KEY_LL         0x15B    /* Home Down */
 
 /*
- * "Keypad" keys arranged like this:
+ * "Keypad" keys are arranged like this:
  *
  *  A1   up  A3
  * left  B2 right
@@ -170,7 +170,7 @@ typedef chtype cchar_t;
 #define    KEY_RESTART    0x177    /* Restart key */
 #define    KEY_RESUME     0x178    /* Resume key */
 #define    KEY_SAVE       0x179    /* Save key */
-#define    KEY_SBEG       0x17A    /* Shift begin key */
+#define    KEY_SBEG       0x17A    /* Shift Begin key */
 #define    KEY_SCANCEL    0x17B    /* Shift Cancel key */
 #define    KEY_SCOMMAND   0x17C    /* Shift Command key */
 #define    KEY_SCOPY      0x17D    /* Shift Copy key */
@@ -204,12 +204,12 @@ typedef chtype cchar_t;
 #define    KEY_MOUSE      0x199    /* Mouse event has occurred */
 #define    KEY_RESIZE     0x200    /* Resize event has occurred */
 #define    KEY_MAX        0x240    /* maximum extended key value */
-#define    KEY_CODE_YES   0x241    /* A function key pressed */
+#define    KEY_CODE_YES   0x241    /* A function key was pressed */
 
 #include <unctrl.h>
 
 /*
- * A window an array of __LINE structures pointed to by the 'lines' pointer.
+ * A window is an array of __LINE structures pointed to by the 'lines' pointer.
  * A line is an array of __LDATA structures pointed to by the 'line' pointer.
  */
 
@@ -638,7 +638,7 @@ __END_DECLS
 	} while(0 /* CONSTCOND */)
 
 
-/* Public function prototypes. */
+/* Public functions. */
 __BEGIN_DECLS
 int	 assume_default_colors(short, short);
 int	 baudrate(void);
@@ -980,14 +980,82 @@ bool is_keypad(const WINDOW *);
 bool is_leaveok(const WINDOW *);
 bool is_pad(const WINDOW *);
 
+/* ncurses mouse support */
+#define	NB_MOUSE_MASK(b, m)	((m) << (((b) - 1) * 5))
+#define	NB_BUTTON_RELEASED	001L
+#define	NB_BUTTON_PRESSED	002L
+#define	NB_BUTTON_CLICKED	004L
+#define	NB_DOUBLE_CLICKED	010L
+#define	NB_TRIPLE_CLICKED	020L
+#define	NB_RESERVED_EVENT	040L
+
+#define	BUTTON1_RELEASED	NB_MOUSE_MASK(1, NB_BUTTON_RELEASED)
+#define	BUTTON1_PRESSED		NB_MOUSE_MASK(1, NB_BUTTON_PRESSED)
+#define	BUTTON1_CLICKED		NB_MOUSE_MASK(1, NB_BUTTON_CLICKED)
+#define	BUTTON1_DOUBLE_CLICKED	NB_MOUSE_MASK(1, NB_DOUBLE_CLICKED)
+#define	BUTTON1_TRIPLE_CLICKED	NB_MOUSE_MASK(1, NB_TRIPLE_CLICKED)
+
+#define	BUTTON2_RELEASED	NB_MOUSE_MASK(2, NB_BUTTON_RELEASED)
+#define	BUTTON2_PRESSED		NB_MOUSE_MASK(2, NB_BUTTON_PRESSED)
+#define	BUTTON2_CLICKED		NB_MOUSE_MASK(2, NB_BUTTON_CLICKED)
+#define	BUTTON2_DOUBLE_CLICKED	NB_MOUSE_MASK(2, NB_DOUBLE_CLICKED)
+#define	BUTTON2_TRIPLE_CLICKED	NB_MOUSE_MASK(2, NB_TRIPLE_CLICKED)
+
+#define	BUTTON3_RELEASED	NB_MOUSE_MASK(3, NB_BUTTON_RELEASED)
+#define	BUTTON3_PRESSED		NB_MOUSE_MASK(3, NB_BUTTON_PRESSED)
+#define	BUTTON3_CLICKED		NB_MOUSE_MASK(3, NB_BUTTON_CLICKED)
+#define	BUTTON3_DOUBLE_CLICKED	NB_MOUSE_MASK(3, NB_DOUBLE_CLICKED)
+#define	BUTTON3_TRIPLE_CLICKED	NB_MOUSE_MASK(3, NB_TRIPLE_CLICKED)
+
+#define	BUTTON4_RELEASED	NB_MOUSE_MASK(4, NB_BUTTON_RELEASED)
+#define	BUTTON4_PRESSED		NB_MOUSE_MASK(4, NB_BUTTON_PRESSED)
+#define	BUTTON4_CLICKED		NB_MOUSE_MASK(4, NB_BUTTON_CLICKED)
+#define	BUTTON4_DOUBLE_CLICKED	NB_MOUSE_MASK(4, NB_DOUBLE_CLICKED)
+#define	BUTTON4_TRIPLE_CLICKED	NB_MOUSE_MASK(4, NB_TRIPLE_CLICKED)
+
+#define	BUTTON5_RELEASED	NB_MOUSE_MASK(5, NB_BUTTON_RELEASED)
+#define	BUTTON5_PRESSED		NB_MOUSE_MASK(5, NB_BUTTON_PRESSED)
+#define	BUTTON5_CLICKED		NB_MOUSE_MASK(5, NB_BUTTON_CLICKED)
+#define	BUTTON5_DOUBLE_CLICKED	NB_MOUSE_MASK(5, NB_DOUBLE_CLICKED)
+#define	BUTTON5_TRIPLE_CLICKED	NB_MOUSE_MASK(5, NB_TRIPLE_CLICKED)
+
+#define	BUTTON_CTRL		NB_MOUSE_MASK(6, 0001L)
+#define	BUTTON_SHIFT		NB_MOUSE_MASK(6, 0002L)
+#define	BUTTON_ALT		NB_MOUSE_MASK(6, 0004L)
+#define	REPORT_MOUSE_POSITION	NB_MOUSE_MASK(6, 0010L)
+#define	ALL_MOUSE_EVENTS	(REPORT_MOUSE_POSITION - 1)
+
+#define	BUTTON_RELEASE(e, x)		((e) & NB_MOUSE_MASK(x, 001))
+#define	BUTTON_PRESS(e, x)		((e) & NB_MOUSE_MASK(x, 002))
+#define	BUTTON_CLICK(e, x)		((e) & NB_MOUSE_MASK(x, 004))
+#define	BUTTON_DOUBLE_CLICK(e, x)	((e) & NB_MOUSE_MASK(x, 010))
+#define	BUTTON_TRIPLE_CLICK(e, x)	((e) & NB_MOUSE_MASK(x, 020))
+#define	BUTTON_RESERVED_EVENT(e, x)	((e) & NB_MOUSE_MASK(x, 040))
+
+typedef unsigned long mmask_t;
+typedef struct {
+	short id;		/* ID to distinguish multiple devices */
+	int x, y, z;		/* event coordinates */
+	mmask_t bstate;		/* button state bits */
+} MEVENT;
+
+bool has_mouse(void);
+int getmouse(MEVENT *);
+int ungetmouse(MEVENT *);
+mmask_t mousemask(mmask_t, mmask_t *);
+bool wenclose(const WINDOW *, int, int);
+bool mouse_trafo(int *, int *, bool);
+bool wmouse_trafo(const WINDOW *, int *, int *, bool);
+int mouseinterval(int);
+
 /* ncurses version for compat */
 const char *curses_version(void);
 
 /* Private functions that are needed for user programs prototypes. */
-int	 __cputchar(int);
-int	 __waddbytes(WINDOW *, const char *, int, attr_t);
+int	__cputchar(int);
+int	__waddbytes(WINDOW *, const char *, int, attr_t);
 #ifdef HAVE_WCHAR
-int __cputwchar( wchar_t );
+int	__cputwchar(wchar_t);
 #endif /* HAVE_WCHAR */
 __END_DECLS
 

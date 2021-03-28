@@ -1,4 +1,4 @@
-/*	$NetBSD: stubs.c,v 1.24 2012/11/12 18:00:35 skrll Exp $	*/
+/*	$NetBSD: stubs.c,v 1.27 2020/07/03 15:31:25 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1998 Mark Brinicombe.
@@ -41,24 +41,27 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: stubs.c,v 1.24 2012/11/12 18:00:35 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: stubs.c,v 1.27 2020/07/03 15:31:25 skrll Exp $");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/errno.h>
-#include <sys/proc.h>
+
 #include <sys/conf.h>
+#include <sys/core.h>
+#include <sys/errno.h>
+#include <sys/kcore.h>
 #include <sys/msgbuf.h>
+#include <sys/proc.h>
+#include <sys/systm.h>
+
 #include <uvm/uvm_extern.h>
+
 #include <machine/cpu.h>
 #include <machine/intr.h>
 #include <machine/bootconfig.h>
 #include <machine/pcb.h>
+
 #include <arm/arm32/machdep.h>
 #include <arm/kcore.h>
-#include <sys/kcore.h>
-#include <sys/core.h>
-#include <sys/exec_aout.h>
 
 extern dev_t dumpdev;
 
@@ -130,7 +133,7 @@ cpu_dump(void)
 
 	bdev = bdevsw_lookup(dumpdev);
 	if (bdev == NULL)
-		return (ENXIO);
+		return ENXIO;
 	dump = bdev->d_dump;
 
 	memset(bf, 0, sizeof bf);
@@ -162,7 +165,7 @@ cpu_dump(void)
 		memsegp[i].size = bootconfig.dram[i].pages * PAGE_SIZE;
 	}
 
-	return (dump(dumpdev, dumplo, bf, dbtob(1)));
+	return dump(dumpdev, dumplo, bf, dbtob(1));
 }
 
 /*
@@ -176,9 +179,9 @@ cpu_dumpsize(void)
 	size = ALIGN(sizeof(kcore_seg_t)) + ALIGN(sizeof(cpu_kcore_hdr_t)) +
 	    ALIGN( bootconfig.dramblocks * sizeof(phys_ram_seg_t));
 	if (roundup(size, dbtob(1)) != dbtob(1))
-		return (-1);
+		return -1;
 
-	return (1);
+	return 1;
 }
 
 
@@ -195,7 +198,7 @@ cpu_dump_mempagecnt(void)
 		n += bootconfig.dram[i].pages;
 	}
 
-	return (n);
+	return n;
 }
 
 /* This should be moved to machdep.c */
@@ -270,7 +273,8 @@ dodumpsys(void)
 			error = (*bdev->d_dump)(dumpdev,
 			    blkno, (void *) dumpspace, PAGE_SIZE);
 
-			if (error) goto err;
+			if (error)
+				goto err;
 			blkno += btodb(PAGE_SIZE);
 			len += PAGE_SIZE;
 		}

@@ -1,11 +1,11 @@
-/*	$NetBSD: ecs.h,v 1.5 2019/09/05 19:32:58 christos Exp $	*/
+/*	$NetBSD: ecs.h,v 1.7 2021/02/19 16:42:16 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -24,11 +24,13 @@
 
 struct dns_ecs {
 	isc_netaddr_t addr;
-	uint8_t source;
-	uint8_t scope;
+	uint8_t	      source;
+	uint8_t	      scope;
 };
 
-#define DNS_ECS_FORMATSIZE (ISC_NETADDR_FORMATSIZE + 8) /* <address>/NNN/NNN */
+#define DNS_ECS_FORMATSIZE                                \
+	(ISC_NETADDR_FORMATSIZE + 8) /* <address>/NNN/NNN \
+				      */
 
 ISC_LANG_BEGINDECLS
 

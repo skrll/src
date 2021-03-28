@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_type.h,v 1.43 2019/09/20 09:28:37 msaitoh Exp $ */
+/* $NetBSD: ixgbe_type.h,v 1.48 2020/12/26 06:10:17 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -1998,6 +1998,13 @@ enum {
 #define IXGBE_EIMS_PBUR		IXGBE_EICR_PBUR /* Pkt Buf Handler Err */
 #define IXGBE_EIMS_DHER		IXGBE_EICR_DHER /* Descr Handler Error */
 #define IXGBE_EIMS_TCP_TIMER	IXGBE_EICR_TCP_TIMER /* TCP Timer */
+/*
+ * EIMS_OTHER is R/W on 82598 though the document says it's reserved.
+ * It MUST be required to set this bit to get OTHER interrupt.
+ *
+ * On other chips, it's read only. It's set if any bits of 29..16 is not zero.
+ * Bit 30 (TCP_TIMER) doesn't affect to EIMS_OTHER.
+ */
 #define IXGBE_EIMS_OTHER	IXGBE_EICR_OTHER /* INT Cause Active */
 
 /* Extended Interrupt Mask Clear */
@@ -2019,6 +2026,7 @@ enum {
 #define IXGBE_EIMC_PBUR		IXGBE_EICR_PBUR /* Pkt Buf Handler Err */
 #define IXGBE_EIMC_DHER		IXGBE_EICR_DHER /* Desc Handler Err */
 #define IXGBE_EIMC_TCP_TIMER	IXGBE_EICR_TCP_TIMER /* TCP Timer */
+/* EIMC_OTHER works only on 82598. See EIMS_OTHER's comment */
 #define IXGBE_EIMC_OTHER	IXGBE_EICR_OTHER /* INT Cause Active */
 
 #define IXGBE_EIMS_ENABLE_MASK ( \
@@ -2072,7 +2080,8 @@ enum {
 #define IXGBE_FTQF_QUEUE_ENABLE		0x80000000
 
 /* Interrupt clear mask */
-#define IXGBE_IRQ_CLEAR_MASK	0xFFFFFFFF
+#define IXGBE_IRQ_CLEAR_MASK		0xFFFFFFFF
+#define IXGBE_MSIX_OTHER_CLEAR_MASK	0xFFFF0000
 
 /* Interrupt Vector Allocation Registers */
 #define IXGBE_IVAR_REG_NUM		25
@@ -4263,6 +4272,8 @@ struct ixgbe_hw {
 	bool allow_unsupported_sfp;
 	bool wol_enabled;
 	bool need_crosstalk_fix;
+	bool need_unsupported_sfp_recovery;
+	u32 quirks;
 };
 
 #define ixgbe_call_func(hw, func, params, error) \
@@ -4313,7 +4324,7 @@ struct ixgbe_hw {
 
 #define IXGBE_ERR_NOT_TRUSTED			-50 /* XXX NetBSD */
 #define IXGBE_ERR_NOT_IN_PROMISC		-51 /* XXX NetBSD */
-
+#define IXGBE_ERR_FAN_FAILURE			-52 /* XXX NetBSD */
 #define IXGBE_NOT_IMPLEMENTED			0x7FFFFFFF
 
 
@@ -4535,5 +4546,8 @@ struct ixgbe_bypass_eeprom {
 #define IXGBE_HOST_INTERFACE_FLASH_INFO_CMD			0x37
 #define IXGBE_HOST_INTERFACE_APPLY_UPDATE_CMD			0x38
 #define IXGBE_HOST_INTERFACE_MASK_CMD				0x000000FF
+
+/* Flags for hw.quirks */
+#define IXGBE_QUIRK_MOD_ABS_INVERT	__BIT(0)
 
 #endif /* _IXGBE_TYPE_H_ */

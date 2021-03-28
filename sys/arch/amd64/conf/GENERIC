@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.551 2019/12/14 07:45:20 maxv Exp $
+# $NetBSD: GENERIC,v 1.583 2021/01/24 16:33:48 jmcneill Exp $
 #
 # GENERIC machine description file
 #
@@ -22,11 +22,9 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.551 $"
+#ident		"GENERIC-$Revision: 1.583 $"
 
 maxusers	64		# estimated number of users
-
-#options 	MULTIBOOT	# Multiboot support (see multiboot(8)) 
 
 # delay between "rebooting ..." message and hardware reset, in milliseconds
 #options 	CPURESET_DELAY=2000
@@ -76,10 +74,12 @@ options 	USERCONF	# userconf(4) support
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
 # CPU-related options
-#options 	USER_LDT	# User-settable LDT, used by Wine
+options 	USER_LDT	# User-settable LDT, used by Wine
 options 	SVS		# Separate Virtual Space
-makeoptions	SPECTRE_V2_GCC_MITIGATION=1	# GCC Spectre variant 2
-						# migitation
+options 	PCPU_IDT	# Per CPU IDTs
+
+# GCC Spectre variant 2 mitigation
+makeoptions	SPECTRE_V2_GCC_MITIGATION=1
 options 	SPECTRE_V2_GCC_MITIGATION
 
 # CPU features
@@ -90,6 +90,15 @@ hyperv0 	at cpu0		# Microsoft Hyper-V
 #odcm0		at cpu0		# On-demand clock modulation
 powernow0	at cpu0		# AMD PowerNow! and Cool'n'Quiet (non-ACPI)
 vmt0		at cpu0		# VMware Tools
+
+#Xen PV support for HVM guests
+options 	XENPVHVM
+options 	XEN
+hypervisor*	at mainbus?		# Xen hypervisor
+xenbus*	 	at hypervisor?		# Xen virtual bus
+xencons*	at hypervisor?		# Xen virtual console
+xennet*  	at xenbus?		# Xen virtual network interface
+xbd*		at xenbus?		# Xen virtual block device
 
 # Alternate buffer queue strategies for better responsiveness under high
 # disk I/O load.
@@ -114,12 +123,15 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB		# remote debugger
 #options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
 makeoptions	DEBUG="-g"	# compile full symbol table for CTF
-#options 	KUBSAN		# Kernel Undefined Behavior Sanitizer (kUBSan)
-#options 	UBSAN_ALWAYS_FATAL	# (optional) Panic on all kUBSan reports
+options DDB_COMMANDONENTER="trace;show registers"
 #options 	SYSCALL_STATS	# per syscall counts
 #options 	SYSCALL_TIMES	# per syscall times
 #options 	SYSCALL_TIMES_HASCOUNTER	# use 'broken' rdtsc (soekris)
 options 	KDTRACE_HOOKS	# kernel DTrace hooks
+
+# Kernel Undefined Behavior Sanitizer (kUBSan).
+#options 	KUBSAN			# mandatory
+#options 	UBSAN_ALWAYS_FATAL	# optional: panic on all kUBSan reports
 
 # Kernel Address Sanitizer (kASan). You need to disable SVS to use it.
 # The quarantine is optional and can help KASAN find more use-after-frees.
@@ -136,23 +148,22 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 #options 	KCSAN_PANIC	# optional
 
 # Kernel Memory Sanitizer (kMSan). You need to disable SVS and kernel modules
-# to use it. The quarantine is optional and can help KMSAN find uninitialized
+# to use it. POOL_NOCACHE is optional and can help KMSAN find uninitialized
 # memory in pool caches. Note that KMSAN requires at least 4GB of RAM.
 #makeoptions 	KMSAN=1		# mandatory
 #options 	KMSAN		# mandatory
 #no options	SVS		# mandatory
 #no options 	MODULAR		# mandatory
 #no options 	MODULAR_DEFAULT_AUTOLOAD	# mandatory
-#options	POOL_QUARANTINE	# optional
+#options 	POOL_NOCACHE	# optional
 #options 	KMSAN_PANIC	# optional
-
-# Kernel Info Leak Detector.
-#makeoptions 	KLEAK=1
-#options 	KLEAK
 
 # Kernel Code Coverage Driver.
 #makeoptions	KCOV=1
 #options 	KCOV
+
+# Fault Injection Driver.
+#options 	FAULT
 
 # Compatibility options
 # x86_64 never shipped with a.out binaries; the two options below are
@@ -167,10 +178,7 @@ include 	"conf/compat_netbsd15.config"
 
 #options 	COMPAT_386BSD_MBRPART # recognize old partition ID
 
-options 	COMPAT_OSSAUDIO
 options 	COMPAT_NETBSD32
-options 	COMPAT_LINUX
-options 	COMPAT_LINUX32	# req. COMPAT_LINUX and COMPAT_NETBSD32
 options 	EXEC_ELF32
 
 # Wedge support
@@ -193,6 +201,7 @@ options 	WAPBL		# File system journaling support
 # Note that UFS_DIRHASH is suspected of causing kernel memory corruption.
 # It is not recommended for general use.
 #options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
+options		UFS_ACL		# UFS Access Control Lists
 #options 	FFS_NO_SNAPSHOT	# No FFS snapshot support
 options 	UFS_EXTATTR	# Extended attribute support for UFS1
 # ext2fs
@@ -344,7 +353,7 @@ sony*		at acpi?		# Sony Notebook Controller
 spic*		at acpi?		# Sony Programmable I/O Controller
 wsmouse*	at spic?		# mouse
 thinkpad*	at acpi?		# IBM/Lenovo Thinkpad hotkeys
-#tpm*		at acpi?		# ACPI TPM (Experimental)
+tpm*		at acpi?		# ACPI TPM (Experimental)
 ug*		at acpi?		# Abit uGuru Hardware monitor
 valz*		at acpi?		# Toshiba Dynabook hotkeys
 wb*		at acpi?		# Winbond W83L518D SD/MMC reader
@@ -450,6 +459,7 @@ nouveaufb*	at nouveaufbbus?
 # Cryptographic Devices
 
 # PCI cryptographic devices
+amdccp*	at pci? dev ? function ?	# AMD Cryptographic Coprocessor
 hifn*	at pci? dev ? function ?	# Hifn 7755/7811/795x
 #qat*	at pci? dev ? function ?	# Intel QuickAssist
 ubsec*	at pci? dev ? function ?	# Broadcom 5501/5601/580x/582x
@@ -535,8 +545,9 @@ iic*	at ichsmb?
 ismt* at pci? dev ? function ?
 iic*	at ismt?
 
-# I2C controller as found in some Intel PCH devices.
-dwiic*		at pci?			# I2C controller
+# DesignWare I2C controller as found in some Intel PCH and AMD FCH devices.
+dwiic*		at acpi?		# DesignWare I2C controller
+dwiic*		at pci?			# DesignWare I2C controller
 iic*		at dwiic?
 
 # Thermal monitor and fan controller
@@ -780,6 +791,7 @@ age*	at pci? dev ? function ?	# Attansic/Atheros L1 Gigabit Ethernet
 alc*	at pci? dev ? function ?	# Attansic/Atheros L1C/L2C Ethernet
 ale*	at pci? dev ? function ?	# Attansic/Atheros L1E Ethernet
 an*	at pci? dev ? function ?	# Aironet PC4500/PC4800 (802.11)
+aq*	at pci? dev ? function ?	# Aquantia AQC 10 gigabit
 ath*	at pci? dev ? function ?	# Atheros 5210/5211/5212 802.11
 athn*	at pci? dev ? function ?	# Atheros AR9k (802.11a/g/n)
 atw*	at pci? dev ? function ?	# ADMtek ADM8211 (802.11)
@@ -788,17 +800,18 @@ bge*	at pci? dev ? function ?	# Broadcom 570x gigabit Ethernet
 bnx*	at pci? dev ? function ?	# Broadcom NetXtremeII gigabit Ethernet
 bwi*	at pci? dev ? function ?	# Broadcom BCM43xx wireless
 bwfm*	at pci? dev ? function ?	# Broadcom FullMAC
+cas*	at pci? dev ? function ?	# Sun Cassini/Cassini+ Ethernet
 dge*	at pci? dev ? function ?	# Intel 82597 10GbE LR
 ena*	at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
 ep*	at pci? dev ? function ?	# 3Com 3c59x
 epic*	at pci? dev ? function ?	# SMC EPIC/100 Ethernet
-esh*	at pci? dev ? function ?	# Essential HIPPI card
 et*	at pci? dev ? function ?	# Agere/LSI ET1310/ET1301 Gigabit
 ex*	at pci? dev ? function ?	# 3Com 90x[BC]
-fpa*	at pci? dev ? function ?	# DEC DEFPA FDDI
 fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
 gem*	at pci? dev ? function ?	# Apple GMAC and Sun ERI gigabit enet
 gsip*	at pci? dev ? function ?	# NS83820 Gigabit Ethernet
+hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
+iavf*	at pci? dev ? function ?	# Intel Adaptive Virtual Function
 ipw*	at pci? dev ? function ?	# Intel PRO/Wireless 2100
 iwi*	at pci? dev ? function ?	# Intel PRO/Wireless 2200BG
 iwm*	at pci? dev ? function ?	# Intel Centrino 7260
@@ -807,8 +820,7 @@ ixg*	at pci? dev ? function ?	# Intel 8259x 10 gigabit
 ixl*	at pci? dev ? function ?	# Intel Ethernet 700 Series
 ixv*	at pci? dev ? function ?	# Intel 8259x 10G virtual function
 jme*	at pci? dev ? function ?	# JMicron JMC2[56]0 ethernet
-hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
-le*	at pci? dev ? function ?	# PCnet-PCI Ethernet
+kse*	at pci? dev ? function ?	# Micrel KSZ8841/8842 ethernet
 lii*	at pci? dev ? function ?	# Atheros L2 Fast-Ethernet
 malo*	at pci? dev ? function ?	# Marvell Libertas Wireless
 mcx*	at pci? dev ? function ?	# Mellanox 5th generation Ethernet
@@ -853,8 +865,6 @@ mbe*	at pcmcia? function ?		# MB8696x based Ethernet
 ne*	at pcmcia? function ?		# NE2000-compatible Ethernet
 ray*	at pcmcia? function ?		# Raytheon Raylink (802.11)
 sm*	at pcmcia? function ?		# Megahertz Ethernet
-# tr at pcmcia has problems with Cardbus bridges
-#tr*	at pcmcia? function ?		# TROPIC based Token-Ring
 wi*	at pcmcia? function ?		# Lucent/Intersil WaveLan IEEE (802.11)
 xirc*	at pcmcia? function ?		# Xircom CreditCard Ethernet
 com*	at xirc?
@@ -964,7 +974,6 @@ auich*	at pci? dev ? function ?	# Intel/AMD/nVidia AC'97 Audio
 auixp*	at pci? dev ? function ?	# ATI IXP AC'97 Audio
 autri*	at pci? dev ? function ?	# Trident 4DWAVE based AC'97 Audio
 auvia*	at pci? dev ? function ?	# VIA AC'97 audio
-#azalia* at pci? dev ? function ?	# High Definition Audio
 clcs*	at pci? dev ? function ?	# Cirrus Logic CS4280
 clct*	at pci? dev ? function ?	# Cirrus Logic CS4281
 cmpci*	at pci? dev ? function ?	# C-Media CMI8338/8738
@@ -1134,8 +1143,8 @@ options 	RAID_AUTOCONFIG		# auto-configuration of RAID components
 pseudo-device	fss			# file system snapshot device
 
 pseudo-device	md			# memory disk device (ramdisk)
-options 	MEMORY_DISK_HOOKS	# enable root ramdisk
-options 	MEMORY_DISK_DYNAMIC	# loaded via kernel module(7)
+options		MEMORY_DISK_HOOKS	# enable md specific hooks
+options 	MEMORY_DISK_DYNAMIC	# enable dynamic resizing
 
 pseudo-device	vnd			# disk-like interface to files
 options 	VND_COMPRESSION		# compressed vnd(4)
@@ -1149,7 +1158,6 @@ pseudo-device	loop			# network loopback
 pseudo-device	ppp			# Point-to-Point Protocol
 pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
 pseudo-device	sl			# Serial Line IP
-pseudo-device	strip			# Starmode Radio IP (Metricom)
 pseudo-device	irframetty		# IrDA frame line discipline
 pseudo-device	tun			# network tunneling over tty
 pseudo-device	tap			# virtual Ethernet
@@ -1160,7 +1168,7 @@ pseudo-device	ipsecif			# tunnel interface for routing based ipsec
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	l2tp			# L2TPv3 interface
 pseudo-device	npf			# NPF packet filter

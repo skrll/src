@@ -2,15 +2,18 @@
 
 # Obvious program stuff.
 bin_PROGRAMS = tmux
-CLEANFILES = tmux.1.mdoc tmux.1.man
+CLEANFILES = tmux.1.mdoc tmux.1.man cmd-parse.c
 
 # Distribution tarball options.
 EXTRA_DIST = \
-	CHANGES README README.ja COPYING example_tmux.conf compat/*.[ch] \
+	CHANGES README README.ja COPYING example_tmux.conf \
 	osdep-*.c mdoc2man.awk tmux.1
+dist_EXTRA_tmux_SOURCES = compat/*.[ch]
 
 # Preprocessor flags.
-AM_CPPFLAGS += @XOPEN_DEFINES@ -DTMUX_CONF="\"$(sysconfdir)/tmux.conf\""
+AM_CPPFLAGS += @XOPEN_DEFINES@ \
+	-DTMUX_VERSION="\"@VERSION@\"" \
+	-DTMUX_CONF="\"$(sysconfdir)/tmux.conf:~/.tmux.conf:~/.config/tmux/tmux.conf\""
 
 # Additional object files.
 LDADD = $(LIBOBJS)
@@ -71,6 +74,7 @@ dist_tmux_SOURCES = \
 	cmd-confirm-before.c \
 	cmd-copy-mode.c \
 	cmd-detach-client.c \
+	cmd-display-menu.c \
 	cmd-display-message.c \
 	cmd-display-panes.c \
 	cmd-find-window.c \
@@ -87,12 +91,12 @@ dist_tmux_SOURCES = \
 	cmd-list-panes.c \
 	cmd-list-sessions.c \
 	cmd-list-windows.c \
-	cmd-list.c \
 	cmd-load-buffer.c \
 	cmd-lock-server.c \
 	cmd-move-window.c \
 	cmd-new-session.c \
 	cmd-new-window.c \
+	cmd-parse.y \
 	cmd-paste-buffer.c \
 	cmd-pipe-pane.c \
 	cmd-queue.c \
@@ -112,14 +116,12 @@ dist_tmux_SOURCES = \
 	cmd-send-keys.c \
 	cmd-set-buffer.c \
 	cmd-set-environment.c \
-	cmd-set-hook.c \
 	cmd-set-option.c \
 	cmd-show-environment.c \
 	cmd-show-messages.c \
 	cmd-show-options.c \
 	cmd-source-file.c \
 	cmd-split-window.c \
-	cmd-string.c \
 	cmd-swap-pane.c \
 	cmd-swap-window.c \
 	cmd-switch-client.c \
@@ -131,11 +133,11 @@ dist_tmux_SOURCES = \
 	control-notify.c \
 	control.c \
 	environ.c \
+	file.c \
 	format.c \
 	format-draw.c \
 	grid-view.c \
 	grid.c \
-	hooks.c \
 	input-keys.c \
 	input.c \
 	job.c \
@@ -145,6 +147,7 @@ dist_tmux_SOURCES = \
 	layout-set.c \
 	layout.c \
 	log.c \
+	menu.c \
 	mode-tree.c \
 	names.c \
 	notify.c \
@@ -152,6 +155,7 @@ dist_tmux_SOURCES = \
 	options.c \
 	paste.c \
 	proc.c \
+	regsub.c \
 	resize.c \
 	screen-redraw.c \
 	screen-write.c \
@@ -160,6 +164,7 @@ dist_tmux_SOURCES = \
 	server-fn.c \
 	server.c \
 	session.c \
+	spawn.c \
 	status.c \
 	style.c \
 	tmux.c \

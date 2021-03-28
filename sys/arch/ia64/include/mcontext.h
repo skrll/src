@@ -1,4 +1,4 @@
-/*	$NetBSD: mcontext.h,v 1.9 2019/06/17 15:08:34 kamil Exp $	*/
+/*	$NetBSD: mcontext.h,v 1.12 2020/06/29 17:09:33 scole Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -39,7 +39,7 @@
 #include <machine/_regset.h>
 
 /* XXX fix this, just get to compile for now */
-#define _NGREG	128 
+#define _NGREG	1
 
 #ifndef __ASSEMBLER__
 typedef unsigned long __greg_t;
@@ -114,13 +114,21 @@ typedef struct __mcontext {
 #define _UC_MACHINE_SP(uc)	((uc)->uc_mcontext.mc_special.sp)  /* gregs[12] */
 #define _UC_MACHINE_FP(uc)	0 /* Not supported in target */
 #define	_UC_MACHINE_PC(uc)	((uc)->uc_mcontext.mc_special.iip)
-#define	_UC_MACHINE_INTRV(uc)	((uc)->uc_mcontext.__gregs[8])
+#define	_UC_MACHINE_INTRV(uc)	((uc)->uc_mcontext.mc_scratch.gr8) /* gregs[8] */
 #define _UC_MACHINE_SET_PC(uc, pc)	(uc)->uc_mcontext.mc_special.iip = (pc)
 
+#if defined(_RTLD_SOURCE) || defined(_LIBC_SOURCE) || \
+    defined(__LIBPTHREAD_SOURCE__)
+#include <sys/tls.h>
+
+__BEGIN_DECLS
 static __inline void *
 __lwp_getprivate_fast(void)
 {
 	return (void*)0;
 }
+__END_DECLS
+
+#endif
 
 #endif	/* !_IA64_MCONTEXT_H_ */

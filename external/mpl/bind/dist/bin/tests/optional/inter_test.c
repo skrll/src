@@ -1,18 +1,17 @@
-/*	$NetBSD: inter_test.c,v 1.2 2018/08/12 13:02:29 christos Exp $	*/
+/*	$NetBSD: inter_test.c,v 1.4 2021/02/19 16:42:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
 /*! \file */
-#include <config.h>
 
 #include <stdlib.h>
 
@@ -27,16 +26,17 @@ main(int argc, char **argv) {
 	isc_interfaceiter_t *iter = NULL;
 	isc_interface_t ifdata;
 	isc_result_t result;
-	const char * res;
+	const char *res;
 	char buf[128];
 
 	UNUSED(argc);
 	UNUSED(argv);
 
-	RUNTIME_CHECK(isc_mem_create(0, 0, &mctx) == ISC_R_SUCCESS);
+	isc_mem_create(&mctx);
 	result = isc_interfaceiter_create(mctx, &iter);
-	if (result != ISC_R_SUCCESS)
+	if (result != ISC_R_SUCCESS) {
 		goto cleanup;
+	}
 	result = isc_interfaceiter_first(iter);
 	while (result == ISC_R_SUCCESS) {
 		result = isc_interfaceiter_current(iter, &ifdata);
@@ -50,21 +50,21 @@ main(int argc, char **argv) {
 		INSIST(ifdata.af == AF_INET || ifdata.af == AF_INET6);
 		res = inet_ntop(ifdata.af, &ifdata.address.type, buf,
 				sizeof(buf));
-		if (ifdata.address.zone != 0)
+		if (ifdata.address.zone != 0) {
 			fprintf(stdout, "address = %s (zone %u)\n",
-				res == NULL ? "BAD" : res,
-				ifdata.address.zone);
-		else
+				res == NULL ? "BAD" : res, ifdata.address.zone);
+		} else {
 			fprintf(stdout, "address = %s\n",
 				res == NULL ? "BAD" : res);
+		}
 		INSIST(ifdata.address.family == ifdata.af);
 		res = inet_ntop(ifdata.af, &ifdata.netmask.type, buf,
 				sizeof(buf));
 		fprintf(stdout, "netmask = %s\n", res == NULL ? "BAD" : res);
 		INSIST(ifdata.netmask.family == ifdata.af);
 		if ((ifdata.flags & INTERFACE_F_POINTTOPOINT) != 0) {
-			res = inet_ntop(ifdata.af, &ifdata.dstaddress.type,
-					 buf, sizeof(buf));
+			res = inet_ntop(ifdata.af, &ifdata.dstaddress.type, buf,
+					sizeof(buf));
 			fprintf(stdout, "dstaddress = %s\n",
 				res == NULL ? "BAD" : res);
 
@@ -82,8 +82,9 @@ main(int argc, char **argv) {
 	fprintf(stdout, "\nPass 2\n\n");
 
 	result = isc_interfaceiter_create(mctx, &iter);
-	if (result != ISC_R_SUCCESS)
+	if (result != ISC_R_SUCCESS) {
 		goto cleanup;
+	}
 	result = isc_interfaceiter_first(iter);
 	while (result == ISC_R_SUCCESS) {
 		result = isc_interfaceiter_current(iter, &ifdata);
@@ -97,21 +98,21 @@ main(int argc, char **argv) {
 		INSIST(ifdata.af == AF_INET || ifdata.af == AF_INET6);
 		res = inet_ntop(ifdata.af, &ifdata.address.type, buf,
 				sizeof(buf));
-		if (ifdata.address.zone != 0)
+		if (ifdata.address.zone != 0) {
 			fprintf(stdout, "address = %s (zone %u)\n",
-				res == NULL ? "BAD" : res,
-				ifdata.address.zone);
-		else
+				res == NULL ? "BAD" : res, ifdata.address.zone);
+		} else {
 			fprintf(stdout, "address = %s\n",
 				res == NULL ? "BAD" : res);
+		}
 		INSIST(ifdata.address.family == ifdata.af);
 		res = inet_ntop(ifdata.af, &ifdata.netmask.type, buf,
 				sizeof(buf));
 		fprintf(stdout, "netmask = %s\n", res == NULL ? "BAD" : res);
 		INSIST(ifdata.netmask.family == ifdata.af);
 		if ((ifdata.flags & INTERFACE_F_POINTTOPOINT) != 0) {
-			res = inet_ntop(ifdata.af, &ifdata.dstaddress.type,
-					 buf, sizeof(buf));
+			res = inet_ntop(ifdata.af, &ifdata.dstaddress.type, buf,
+					sizeof(buf));
 			fprintf(stdout, "dstaddress = %s\n",
 				res == NULL ? "BAD" : res);
 
@@ -125,7 +126,7 @@ main(int argc, char **argv) {
 		}
 	}
 	isc_interfaceiter_destroy(&iter);
- cleanup:
+cleanup:
 	isc_mem_destroy(&mctx);
 
 	return (0);

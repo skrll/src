@@ -1,4 +1,4 @@
-/* $NetBSD: alpha.h,v 1.38 2019/04/06 03:06:24 thorpej Exp $ */
+/* $NetBSD: alpha.h,v 1.44 2020/10/14 00:59:50 thorpej Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -67,29 +67,34 @@ struct reg;
 struct rpb;
 struct trapframe;
 
+extern bool alpha_is_qemu;
+extern int alpha_use_cctr;
 extern u_long cpu_implver;		/* from IMPLVER instruction */
 extern u_long cpu_amask;		/* from AMASK instruction */
 extern int bootdev_debug;
 extern int alpha_fp_sync_complete;
 extern int alpha_unaligned_print, alpha_unaligned_fix, alpha_unaligned_sigbus;
+extern void (*alpha_delay_fn)(unsigned long);
 
-void	XentArith(uint64_t, uint64_t, uint64_t);		/* MAGIC */
+void	XentArith(uint64_t, uint64_t, uint64_t);	/* MAGIC */
 void	XentIF(uint64_t, uint64_t, uint64_t);		/* MAGIC */
 void	XentInt(uint64_t, uint64_t, uint64_t);		/* MAGIC */
 void	XentMM(uint64_t, uint64_t, uint64_t);		/* MAGIC */
-void	XentRestart(void);					/* MAGIC */
+void	XentRestart(void);				/* MAGIC */
 void	XentSys(uint64_t, uint64_t, uint64_t);		/* MAGIC */
 void	XentUna(uint64_t, uint64_t, uint64_t);		/* MAGIC */
 void	alpha_init(u_long, u_long, u_long, u_long, u_long);
+void	alpha_page_physload_sheltered(u_long, u_long, u_long, u_long);
 void	ast(struct trapframe *);
 int	badaddr(void *, size_t);
 int	badaddr_read(void *, size_t, void *);
 uint64_t console_restart(struct trapframe *);
 void	do_sir(void);
-void	exception_return(void);					/* MAGIC */
+void	exception_return(void);				/* MAGIC */
+void	alpha_kthread_backstop(void);			/* MAGIC */
 void	frametoreg(const struct trapframe *, struct reg *);
 void	init_bootstrap_console(void);
-void	init_prom_interface(struct rpb *);
+void	init_prom_interface(unsigned long, struct rpb *);
 void	interrupt(unsigned long, unsigned long, unsigned long,
 	    struct trapframe *);
 void	machine_check(unsigned long, struct trapframe *, unsigned long,

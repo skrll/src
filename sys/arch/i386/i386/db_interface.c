@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.84 2019/02/14 07:12:40 cherry Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.86 2021/02/23 07:13:52 mrg Exp $	*/
 
 /*
  * Mach Operating System
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.84 2019/02/14 07:12:40 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.86 2021/02/23 07:13:52 mrg Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -86,7 +86,7 @@ const struct db_command db_machine_command_table[] = {
 	{ DDB_ADD_CMD("cpu",	db_mach_cpu,	0,
 	  "switch to another cpu", "cpu-no", NULL) },
 #endif
-	{ DDB_ADD_CMD(NULL, NULL, 0, NULL, NULL, NULL) },
+	{ DDB_END_CMD },
 };
 
 void kdbprinttrap(int, int);
@@ -114,12 +114,15 @@ db_machine_init(void)
 #ifdef MULTIPROCESSOR
 #ifndef XENPV
 	vector *handler = &Xintr_ddbipi;
+	struct idt_vec *iv;
+
+	iv = &(cpu_info_primary.ci_idtvec);
 #if NLAPIC > 0
 	if (lapic_is_x2apic())
 		handler = &Xintr_x2apic_ddbipi;
 #endif
-	ddb_vec = idt_vec_alloc(0xf0, 0xff);
-	idt_vec_set(ddb_vec, handler);
+	ddb_vec = idt_vec_alloc(iv, 0xf0, 0xff);
+	idt_vec_set(iv, ddb_vec, handler);
 #else
 	/* Initialised as part of xen_ipi_init() */
 #endif /* XENPV */

@@ -1,4 +1,4 @@
-/*	$NetBSD: ulfs_inode.c,v 1.22 2019/12/13 20:10:22 ad Exp $	*/
+/*	$NetBSD: ulfs_inode.c,v 1.26 2020/09/05 16:30:13 riastradh Exp $	*/
 /*  from NetBSD: ufs_inode.c,v 1.95 2015/06/13 14:56:45 hannken Exp  */
 
 /*
@@ -38,11 +38,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ulfs_inode.c,v 1.22 2019/12/13 20:10:22 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ulfs_inode.c,v 1.26 2020/09/05 16:30:13 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_lfs.h"
 #include "opt_quota.h"
+#include "opt_uvmhist.h"
 #endif
 
 #include <sys/param.h>
@@ -69,7 +70,11 @@ __KERNEL_RCSID(0, "$NetBSD: ulfs_inode.c,v 1.22 2019/12/13 20:10:22 ad Exp $");
 #include <ufs/lfs/ulfs_extattr.h>
 #endif
 
+#ifdef UVMHIST
 #include <uvm/uvm.h>
+#endif
+#include <uvm/uvm_page.h>
+#include <uvm/uvm_stat.h>
 
 /*
  * Last reference to an inode.  If necessary, write or delete it.
@@ -206,7 +211,7 @@ ulfs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 	len += delta;
 
 	genfs_node_wrlock(vp);
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	error = VOP_GETPAGES(vp, pagestart, pgs, &npages, 0,
 	    VM_PROT_WRITE, 0, PGO_SYNCIO | PGO_PASTEOF | PGO_NOBLOCKALLOC |
 	    PGO_NOTIMESTAMP | PGO_GLOCKHELD);
@@ -223,17 +228,17 @@ ulfs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 	genfs_node_unlock(vp);
 
 	/*
-	 * if the allocation succeeded, clear PG_CLEAN on all the pages
-	 * and clear PG_RDONLY on any pages that are now fully backed
-	 * by disk blocks.  if the allocation failed, we do not invalidate
-	 * the pages since they might have already existed and been dirty,
-	 * in which case we need to keep them around.  if we created the pages,
-	 * they will be clean and read-only, and leaving such pages
-	 * in the cache won't cause any problems.
+	 * if the allocation succeeded, mark all pages dirty and clear
+	 * PG_RDONLY on any pages that are now fully backed by disk blocks. 
+	 * if the allocation failed, we do not invalidate the pages since
+	 * they might have already existed and been dirty, in which case we
+	 * need to keep them around.  if we created the pages, they will be
+	 * clean and read-only, and leaving such pages in the cache won't
+	 * cause any problems.
 	 */
 
 	GOP_SIZE(vp, off + len, &eob, 0);
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	for (i = 0; i < npages; i++) {
 		KASSERT((pgs[i]->flags & PG_RELEASED) == 0);
 		if (!error) {
@@ -241,12 +246,14 @@ ulfs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 			    pagestart + ((i + 1) << PAGE_SHIFT) <= eob) {
 				pgs[i]->flags &= ~PG_RDONLY;
 			}
-			pgs[i]->flags &= ~PG_CLEAN;
+			uvm_pagemarkdirty(pgs[i], UVM_PAGE_STATUS_DIRTY);
 		}
+		uvm_pagelock(pgs[i]);
 		uvm_pageactivate(pgs[i]);
+		uvm_pageunlock(pgs[i]);
 	}
 	uvm_page_unbusy(pgs, npages);
-	mutex_exit(uobj->vmobjlock);
+	rw_exit(uobj->vmobjlock);
 
  out:
  	kmem_free(pgs, pgssize);

@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_emmc.c,v 1.33 2018/08/19 09:18:48 rin Exp $	*/
+/*	$NetBSD: bcm2835_emmc.c,v 1.43 2021/01/29 14:11:14 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_emmc.c,v 1.33 2018/08/19 09:18:48 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_emmc.c,v 1.43 2021/01/29 14:11:14 skrll Exp $");
 
 #include "bcmdmac.h"
 
@@ -91,17 +91,24 @@ static void bcmemmc_dma_done(uint32_t, uint32_t, void *);
 CFATTACH_DECL_NEW(bcmemmc, sizeof(struct bcmemmc_softc),
     bcmemmc_match, bcmemmc_attach, NULL, NULL);
 
+enum bcmemmc_type {
+	BCM2835_SDHCI,
+	BCM2711_EMMC2,
+};
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "brcm,bcm2835-sdhci",	.value = BCM2835_SDHCI },
+	{ .compat = "brcm,bcm2711-emmc2",	.value = BCM2711_EMMC2 },
+	DEVICE_COMPAT_EOL
+};
+
 /* ARGSUSED */
 static int
 bcmemmc_match(device_t parent, struct cfdata *match, void *aux)
 {
-	const char * const compatible[] = {
-	    "brcm,bcm2835-sdhci",
-	    NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 /* ARGSUSED */
@@ -110,8 +117,7 @@ bcmemmc_attach(device_t parent, device_t self, void *aux)
 {
 	struct bcmemmc_softc *sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
-	prop_dictionary_t dict = device_properties(self);
-	bool disable = false;
+	const int phandle = faa->faa_phandle;
 	int error;
 
 	sc->sc.sc_dev = self;
@@ -127,17 +133,9 @@ bcmemmc_attach(device_t parent, device_t self, void *aux)
 	sc->sc.sc_clkbase = 50000;	/* Default to 50MHz */
 	sc->sc_iot = faa->faa_bst;
 
-	prop_dictionary_get_bool(dict, "disable", &disable);
-	if (disable) {
-		aprint_naive(": disabled\n");
-		aprint_normal(": disabled\n");
-		return;
-	}
-
 	bus_addr_t addr;
 	bus_size_t size;
 
-	const int phandle = faa->faa_phandle;
 	error = fdtbus_get_reg(phandle, 0, &addr, &size);
 	if (error) {
 		aprint_error_dev(sc->sc.sc_dev, "unable to map device\n");
@@ -174,8 +172,8 @@ bcmemmc_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_SDMMC, 0,
-	    sdhc_intr, &sc->sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_SDMMC, 0,
+	    sdhc_intr, &sc->sc, device_xname(self));
 
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt %s\n",
@@ -185,6 +183,12 @@ bcmemmc_attach(device_t parent, device_t self, void *aux)
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
 #if NBCMDMAC > 0
+	enum bcmemmc_type type =
+	    of_compatible_lookup(phandle, compat_data)->value;
+
+	if (type != BCM2835_SDHCI)
+		goto done;
+
 	sc->sc_dmac = bcm_dmac_alloc(BCM_DMAC_TYPE_NORMAL, IPL_SDMMC,
 	    bcmemmc_dma_done, sc);
 	if (sc->sc_dmac == NULL)
@@ -324,6 +328,7 @@ bcmemmc_xfer_data_dma(struct sdhc_softc *sdhc_sc, struct sdmmc_command *cmd)
 			    sc->sc_dmamap->dm_segs[0].ds_addr +
 			    sizeof(struct bcm_dmac_conblk) * (seg+1);
 		}
+		bcm_dmac_swap_conblk(&sc->sc_cblk[seg]);
 		sc->sc_cblk[seg].cb_padding[0] = 0;
 		sc->sc_cblk[seg].cb_padding[1] = 0;
 	}

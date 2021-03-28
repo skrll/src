@@ -1,4 +1,4 @@
-/*	$NetBSD: copyin.c,v 1.7 2019/04/07 05:25:55 thorpej Exp $	*/
+/*	$NetBSD: copyin.c,v 1.9 2020/07/06 09:34:16 rin Exp $	*/
 
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
@@ -35,10 +35,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: copyin.c,v 1.7 2019/04/07 05:25:55 thorpej Exp $");
-
 #define	__UFETCHSTORE_PRIVATE
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: copyin.c,v 1.9 2020/07/06 09:34:16 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/lwp.h>
@@ -306,6 +306,7 @@ copyinstr(const void *usaddr, void *kdaddr, size_t len, size_t *done)
 {
 	struct pcb * const pcb = lwp_getpcb(curlwp);
 	struct faultbuf env;
+	int rv;
 
 	if (__predict_false(len == 0)) {
 		if (done)
@@ -313,7 +314,7 @@ copyinstr(const void *usaddr, void *kdaddr, size_t len, size_t *done)
 		return 0;
 	}
 
-	int rv = setfault(&env);
+	rv = setfault(&env);
 	if (rv != 0) {
 		pcb->pcb_onfault = NULL;
 		if (done)
@@ -346,15 +347,14 @@ copyinstr(const void *usaddr, void *kdaddr, size_t len, size_t *done)
 		*kdaddr8++ = data;
 		if ((uint8_t) data == 0) {
 			copylen++;
-			break;
+			goto out;
 		}
 	}
+	rv = ENAMETOOLONG;
 
+out:
 	pcb->pcb_onfault = NULL;
 	if (done)
 		*done = copylen;
-	/*
-	 * If the last byte is not NUL (0), then the name is too long.
-	 */
-	return (uint8_t)data ? ENAMETOOLONG : 0;
+	return rv;
 }

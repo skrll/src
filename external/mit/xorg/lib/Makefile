@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.50 2019/05/31 11:13:27 maya Exp $
+#	$NetBSD: Makefile,v 1.54 2020/10/28 08:10:10 nia Exp $
 
 # build libraries for xorg
 
@@ -9,10 +9,10 @@
 SUBDIR=	libfontenc freetype libFS libICE libglapi${OLD_PREFIX} \
 	libXau libXdmcp libdrm libpciaccess libpthread-stubs libxshmfence .WAIT
 .if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64"
-SUBDIR+=libdrm_intel libdrm_amdgpu
+SUBDIR+=libdrm_intel
 .endif
 .if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64" || ${MACHINE} == "evbarm"
-SUBDIR+=libdrm_nouveau
+SUBDIR+=libdrm_amdgpu libdrm_nouveau
 .endif
 SUBDIR+=libdrm_radeon pixman
 .if !defined(MLIBDIR)
@@ -36,7 +36,7 @@ SUBDIR+=libvdpau \
 	.WAIT
 .endif
 SUBDIR+=libXi libXxf86vm \
-	libGL${OLD_PREFIX} libXScrnSaver libXTrap libXevie libXfont libXfont2 \
+	libGL${OLD_PREFIX} libXScrnSaver libXfont libXfont2 \
 	libXinerama libXmu libXmuu libXpm libXrender \
 	libXres libXtst libXvMC libXvMCW libXv libXxf86dga libXxf86misc \
 	libxkbui \
@@ -50,7 +50,7 @@ SUBDIR+=libchromeXvMCPro
 SUBDIR+=libGLU libGLw libXaw6 libXaw libXcursor \
 	libXrandr \
 	.WAIT \
-	libXpresent libXft libglut \
+	libXpresent libXft \
 	.WAIT \
 	libXdmGreet \
 	xcb-util

@@ -1,4 +1,4 @@
-#	$NetBSD: files.imx51,v 1.20 2019/10/12 06:46:13 skrll Exp $
+#	$NetBSD: files.imx51,v 1.24 2020/06/21 16:33:34 skrll Exp $
 #
 # Configuration info for the Freescale i.MX5x
 #
@@ -99,7 +99,7 @@ file	arch/arm/imx/imx51_uart.c		imx51_uart
 defflag	opt_imxuart.h				IMXUARTCONSOLE
 
 # USB controller
-# attach of this driver need to be specified in paltform configuration
+# attach of this driver need to be specified in platform configuration
 device imxusbc { unit, irq } : bus_dma_generic
 file   arch/arm/imx/imx51_usb.c			imxusbc
 
@@ -117,7 +117,7 @@ file	arch/arm/imx/imxi2c.c		imxi2c
 file	arch/arm/imx/imx51_i2c.c	imxi2c
 
 # SPI bus controller
-# attach of this driver need to be specified in paltform configuration
+# attach of this driver need to be specified in platform configuration
 # use flags to module version
 device  imxspi : spibus
 file    arch/arm/imx/imxspi.c			imxspi
@@ -137,6 +137,6 @@ defparam opt_imxspi.h				IMXSPI_DEBUG
 # file	arch/arm/imx/imx51_i2s.c		imxi2s needs-flag
 
 # PWM controller
-device	imxpwm
+device	imxpwm: pwm, clk
 file	arch/arm/imx/imxpwm.c			imxpwm
 file	arch/arm/imx/imx51_pwm.c		imxpwm

@@ -1,4 +1,4 @@
-/*	$NetBSD: pmu.c,v 1.32 2018/09/03 16:29:25 riastradh Exp $ */
+/*	$NetBSD: pmu.c,v 1.35 2021/01/26 14:49:41 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2006 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmu.c,v 1.32 2018/09/03 16:29:25 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmu.c,v 1.35 2021/01/26 14:49:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -85,7 +85,6 @@ struct pmu_softc {
 	struct todr_chip_handle sc_todr;
 	struct adb_bus_accessops sc_adbops;
 	struct i2c_controller sc_i2c;
-	kmutex_t sc_i2c_lock;
 	struct pmu_ops sc_pmu_ops;
 	struct sysmon_pswitch sc_lidswitch;
 	struct sysmon_pswitch sc_powerbutton;
@@ -147,8 +146,6 @@ static 	int pmu_adb_send(void *, int, int, int, uint8_t *);
 static	int pmu_adb_set_handler(void *, void (*)(void *, int, uint8_t *), void *);
 
 /* i2c stuff */
-static int pmu_i2c_acquire_bus(void *, int);
-static void pmu_i2c_release_bus(void *, int);
 static int pmu_i2c_exec(void *, i2c_op_t, i2c_addr_t, const void *, size_t,
 		    void *, size_t, int);
 
@@ -368,8 +365,8 @@ pmu_attach(device_t parent, device_t self, void *aux)
 				addr = (addr & 0xff) >> 1;
 				DPRINTF("-> %s@%x\n", name, addr);
 				dev = prop_dictionary_create();
-				prop_dictionary_set_cstring(dev, "name", name);
-				data = prop_data_create_data(compat, strlen(compat)+1);
+				prop_dictionary_set_string(dev, "name", name);
+				data = prop_data_create_copy(compat, strlen(compat)+1);
 				prop_dictionary_set(dev, "compatible", data);
 				prop_object_release(data);
 				prop_dictionary_set_uint32(dev, "addr", addr);
@@ -381,15 +378,8 @@ pmu_attach(device_t parent, device_t self, void *aux)
 			}
 			memset(&iba, 0, sizeof(iba));
 			iba.iba_tag = &sc->sc_i2c;
-			mutex_init(&sc->sc_i2c_lock, MUTEX_DEFAULT, IPL_NONE);
+			iic_tag_init(&sc->sc_i2c);
 			sc->sc_i2c.ic_cookie = sc;
-			sc->sc_i2c.ic_acquire_bus = pmu_i2c_acquire_bus;
-			sc->sc_i2c.ic_release_bus = pmu_i2c_release_bus;
-			sc->sc_i2c.ic_send_start = NULL;
-			sc->sc_i2c.ic_send_stop = NULL;
-			sc->sc_i2c.ic_initiate_xfer = NULL;
-			sc->sc_i2c.ic_read_byte = NULL;
-			sc->sc_i2c.ic_write_byte = NULL;
 			sc->sc_i2c.ic_exec = pmu_i2c_exec;
 			config_found_ia(sc->sc_dev, "i2cbus", &iba,
 			    iicbus_print);
@@ -438,10 +428,10 @@ next:
 	}
 
 	/* attach batteries */
-	if (of_compatible(root_node, has_legacy_battery) != -1) {
+	if (of_compatible(root_node, has_legacy_battery)) {
 
 		pmu_attach_legacy_battery(sc);
-	} else if (of_compatible(root_node, has_two_smart_batteries) != -1) {
+	} else if (of_compatible(root_node, has_two_smart_batteries)) {
 
 		pmu_attach_smart_battery(sc, 0);
 		pmu_attach_smart_battery(sc, 1);
@@ -923,24 +913,6 @@ pmu_adb_set_handler(void *cookie, void (*handler)(void *, int, uint8_t *),
 	sc->sc_adb_handler = handler;
 	sc->sc_adb_cookie = hcookie;
 	return 0;
-}
-
-static int
-pmu_i2c_acquire_bus(void *cookie, int flags)
-{
-	struct pmu_softc *sc = cookie;
-
-	mutex_enter(&sc->sc_i2c_lock);
-
-	return 0;
-}
-
-static void
-pmu_i2c_release_bus(void *cookie, int flags)
-{
-	struct pmu_softc *sc = cookie;
-
-	mutex_exit(&sc->sc_i2c_lock);
 }
 
 static int

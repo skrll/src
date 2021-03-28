@@ -1,4 +1,4 @@
-/*	$NetBSD: dk.c,v 1.97 2018/05/12 10:33:06 mlelstv Exp $	*/
+/*	$NetBSD: dk.c,v 1.102 2020/10/06 15:05:54 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2005, 2006, 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dk.c,v 1.97 2018/05/12 10:33:06 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dk.c,v 1.102 2020/10/06 15:05:54 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_dkwedge.h"
@@ -310,6 +310,34 @@ dkwedge_add(struct dkwedge_info *dkw)
 	if (dkw->dkw_offset < 0)
 		return (EINVAL);
 
+	/*
+	 * Check for an existing wedge at the same disk offset. Allow
+	 * updating a wedge if the only change is the size, and the new
+	 * size is larger than the old.
+	 */
+	sc = NULL;
+	mutex_enter(&pdk->dk_openlock);
+	LIST_FOREACH(lsc, &pdk->dk_wedges, sc_plink) {
+		if (lsc->sc_offset != dkw->dkw_offset)
+			continue;
+		if (strcmp(lsc->sc_wname, dkw->dkw_wname) != 0)
+			break;
+		if (strcmp(lsc->sc_ptype, dkw->dkw_ptype) != 0)
+			break;
+		if (lsc->sc_size > dkw->dkw_size)
+			break;
+
+		sc = lsc;
+		sc->sc_size = dkw->dkw_size;
+		dk_set_geometry(sc, pdk);
+
+		break;
+	}
+	mutex_exit(&pdk->dk_openlock);
+
+	if (sc != NULL)
+		goto announce;
+
 	sc = malloc(sizeof(*sc), M_DKWEDGE, M_WAITOK|M_ZERO);
 	sc->sc_state = DKW_STATE_LARVAL;
 	sc->sc_parent = pdk;
@@ -475,6 +503,7 @@ dkwedge_add(struct dkwedge_info *dkw)
 	/* Disk wedge is ready for use! */
 	sc->sc_state = DKW_STATE_RUNNING;
 
+announce:
 	/* Announce our arrival. */
 	aprint_normal(
 	    "%s at %s: \"%s\", %"PRIu64" blocks at %"PRId64", type: %s\n",
@@ -1152,21 +1181,23 @@ dkopen(dev_t dev, int flags, int fmt, struct lwp *l)
 static int
 dklastclose(struct dkwedge_softc *sc)
 {
-	int error = 0, doclose;
+	struct vnode *vp;
+	int error = 0;
 
-	doclose = 0;
+	vp = NULL;
 	if (sc->sc_parent->dk_rawopens > 0) {
-		if (--sc->sc_parent->dk_rawopens == 0)
-			doclose = 1;
+		if (--sc->sc_parent->dk_rawopens == 0) {
+			KASSERT(sc->sc_parent->dk_rawvp != NULL);
+			vp = sc->sc_parent->dk_rawvp;
+			sc->sc_parent->dk_rawvp = NULL;
+		}
 	}
 
 	mutex_exit(&sc->sc_parent->dk_rawlock);
 	mutex_exit(&sc->sc_dk.dk_openlock);
 
-	if (doclose) {
-		KASSERT(sc->sc_parent->dk_rawvp != NULL);
-		dk_close_parent(sc->sc_parent->dk_rawvp, FREAD | FWRITE);
-		sc->sc_parent->dk_rawvp = NULL;
+	if (vp) {
+		dk_close_parent(vp, FREAD | FWRITE);
 	}
 
 	return error;
@@ -1410,7 +1441,10 @@ dkminphys(struct buf *bp)
 
 	dev = bp->b_dev;
 	bp->b_dev = sc->sc_pdev;
-	(*sc->sc_parent->dk_driver->d_minphys)(bp);
+	if (sc->sc_parent->dk_driver && sc->sc_parent->dk_driver->d_minphys)
+		(*sc->sc_parent->dk_driver->d_minphys)(bp);
+	else
+		minphys(bp);
 	bp->b_dev = dev;
 }
 
@@ -1501,7 +1535,24 @@ dkioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 
 		break;
 	    }
+	case DIOCGSECTORALIGN:
+	    {
+		struct disk_sectoralign *dsa = data;
+		uint32_t r;
 
+		error = VOP_IOCTL(sc->sc_parent->dk_rawvp, cmd, dsa, flag,
+		    l != NULL ? l->l_cred : NOCRED);
+		if (error)
+			break;
+
+		r = sc->sc_offset % dsa->dsa_alignment;
+		if (r < dsa->dsa_firstaligned)
+			dsa->dsa_firstaligned = dsa->dsa_firstaligned - r;
+		else
+			dsa->dsa_firstaligned = (dsa->dsa_firstaligned +
+			    dsa->dsa_alignment) - r;
+		break;
+	    }
 	default:
 		error = ENOTTY;
 	}
@@ -1605,7 +1656,8 @@ dkdump(dev_t dev, daddr_t blkno, void *va, size_t size)
 	/* Our content type is static, no need to open the device. */
 
 	if (strcmp(sc->sc_ptype, DKW_PTYPE_SWAP) != 0 &&
-	    strcmp(sc->sc_ptype, DKW_PTYPE_RAID) != 0) {
+	    strcmp(sc->sc_ptype, DKW_PTYPE_RAID) != 0 &&
+	    strcmp(sc->sc_ptype, DKW_PTYPE_CGD) != 0) {
 		rv = ENXIO;
 		goto out;
 	}

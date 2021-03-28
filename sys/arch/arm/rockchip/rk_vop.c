@@ -1,4 +1,4 @@
-/* $NetBSD: rk_vop.c,v 1.5 2019/12/17 18:30:51 jakllsch Exp $ */
+/* $NetBSD: rk_vop.c,v 1.10 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rk_vop.c,v 1.5 2019/12/17 18:30:51 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk_vop.c,v 1.10 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -140,7 +140,7 @@ struct rk_vop_softc {
 
 	struct fdt_device_ports	sc_ports;
 
-	struct rk_vop_config	*sc_conf;
+	const struct rk_vop_config *sc_conf;
 };
 
 #define	to_rk_vop_crtc(x)	container_of(x, struct rk_vop_crtc, base)
@@ -218,10 +218,13 @@ static const struct rk_vop_config rk3399_vop_big_config = {
 	.set_polarity = rk3399_vop_set_polarity,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "rockchip,rk3399-vop-big",		(uintptr_t)&rk3399_vop_big_config },
-	{ "rockchip,rk3399-vop-lit",		(uintptr_t)&rk3399_vop_lit_config },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "rockchip,rk3399-vop-big",
+	  .data = &rk3399_vop_big_config },
+	{ .compat = "rockchip,rk3399-vop-lit",
+	  .data = &rk3399_vop_lit_config },
+
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -235,6 +238,7 @@ rk_vop_mode_do_set_base(struct drm_crtc *crtc, struct drm_framebuffer *fb,
 	    to_rk_drm_framebuffer(crtc->primary->fb);
 
 	uint64_t paddr = (uint64_t)sfb->obj->dmamap->dm_segs[0].ds_addr;
+
 
 	paddr += y * sfb->base.pitches[0];
 	paddr += x * drm_format_plane_cpp(sfb->base.pixel_format, 0);
@@ -265,6 +269,27 @@ static const struct drm_crtc_funcs rk_vop_crtc_funcs = {
 static void
 rk_vop_dpms(struct drm_crtc *crtc, int mode)
 {
+	struct rk_vop_crtc *mixer_crtc = to_rk_vop_crtc(crtc);
+	struct rk_vop_softc * const sc = mixer_crtc->sc;
+	uint32_t val;
+
+	val = RD4(sc, VOP_SYS_CTRL);
+
+	switch (mode) {
+	case DRM_MODE_DPMS_ON:
+		val &= ~VOP_STANDBY_EN;
+		break;
+	case DRM_MODE_DPMS_STANDBY:
+	case DRM_MODE_DPMS_SUSPEND:
+	case DRM_MODE_DPMS_OFF:
+		val |= VOP_STANDBY_EN;
+		break;
+	}
+
+	WR4(sc, VOP_SYS_CTRL, val);
+
+	/* Commit settings */
+	WR4(sc, VOP_REG_CFG_DONE, REG_LOAD_EN);
 }
 
 static bool
@@ -510,7 +535,7 @@ rk_vop_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -559,7 +584,7 @@ rk_vop_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	sc->sc_phandle = faa->faa_phandle;
-	sc->sc_conf = (void *)of_search_compatible(phandle, compat_data)->data;
+	sc->sc_conf = of_compatible_lookup(phandle, compat_data)->data;
 
 	aprint_naive("\n");
 	aprint_normal(": %s\n", sc->sc_conf->descr);

@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3.h,v 1.7 2019/06/30 11:11:38 jmcneill Exp $ */
+/* $NetBSD: gicv3.h,v 1.11 2021/01/16 21:05:15 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -30,6 +30,7 @@
 #define _ARM_CORTEX_GICV3_H
 
 #include <sys/intr.h>
+#include <sys/vmem.h>
 
 struct gicv3_dma {
 	bus_dma_segment_t	segs[1];
@@ -60,21 +61,29 @@ struct gicv3_softc {
 	bus_space_handle_t	*sc_bsh_r;	/* GICR */
 	u_int			sc_bsh_r_count;
 
+	u_int			sc_quirks;
+#define	GICV3_QUIRK_RK3399	__BIT(0)	/* Rockchip RK3399 GIC-500 */
+
+	uint32_t		sc_gicd_typer;
+
 	u_int			sc_priority_shift;
 	u_int			sc_pmr_shift;
 
 	uint32_t		sc_enabled_sgippi;
-	uint64_t		sc_irouter[MAXCPUS];
+	uint64_t		*sc_irouter;
 
 	/* LPI configuration table */
 	struct gicv3_dma	sc_lpiconf;
 	bool			sc_lpiconf_flush;
 
 	/* LPI pending tables */
-	struct gicv3_dma	sc_lpipend[MAXCPUS];
+	struct gicv3_dma	*sc_lpipend;
+
+	/* LPI IDs */
+	vmem_t			*sc_lpi_pool;
 
 	/* Unique identifier for PEs */
-	u_int			sc_processor_id[MAXCPUS];
+	u_int			*sc_processor_id;
 
 	/* Callbacks */
 	LIST_HEAD(, gicv3_lpi_callback) sc_lpi_callbacks;

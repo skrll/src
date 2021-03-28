@@ -1,4 +1,4 @@
-/*	$NetBSD: sysmon_envsys.c,v 1.144 2019/03/26 15:50:23 bad Exp $	*/
+/*	$NetBSD: sysmon_envsys.c,v 1.147 2020/06/11 02:39:31 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008 Juan Romero Pardines.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysmon_envsys.c,v 1.144 2019/03/26 15:50:23 bad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysmon_envsys.c,v 1.147 2020/06/11 02:39:31 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -267,7 +267,7 @@ sysmonioctl_envsys(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 				return EINVAL;
 			}
 			
-			devname = prop_dictionary_keysym_cstring_nocopy(obj);
+			devname = prop_dictionary_keysym_value(obj);
 			DPRINTF(("%s: processing the '%s' array requests\n",
 			    __func__, devname));
 
@@ -824,16 +824,6 @@ out:
 	if (error == 0) {
 		nevent = 0;
 
-		if (sme->sme_flags & SME_INIT_REFRESH) {
-			sysmon_task_queue_sched(0, sme_initial_refresh, sme);
-			DPRINTF(("%s: scheduled initial refresh for '%s'\n",
-				__func__, sme->sme_name));
-		}
-		SLIST_FOREACH(evdv, &sme_evdrv_list, evdrv_head) {
-			sysmon_task_queue_sched(0,
-			    sme_event_drvadd, evdv->evdrv);
-			nevent++;
-		}
 		/*
 		 * Hook the sensor into rnd(4) entropy pool if requested
 		 */
@@ -888,6 +878,17 @@ out:
 				rnd_attach_source(&edata->rnd_src, rnd_name,
 				    rnd_type, rnd_flag);
 			}
+		}
+
+		if (sme->sme_flags & SME_INIT_REFRESH) {
+			sysmon_task_queue_sched(0, sme_initial_refresh, sme);
+			DPRINTF(("%s: scheduled initial refresh for '%s'\n",
+				__func__, sme->sme_name));
+		}
+		SLIST_FOREACH(evdv, &sme_evdrv_list, evdrv_head) {
+			sysmon_task_queue_sched(0,
+			    sme_event_drvadd, evdv->evdrv);
+			nevent++;
 		}
 		DPRINTF(("%s: driver '%s' registered (nsens=%d nevent=%d)\n",
 		    __func__, sme->sme_name, sme->sme_nsensors, nevent));
@@ -949,9 +950,9 @@ sysmon_envsys_destroy_plist(prop_array_t array)
 		DPRINTFOBJ(("%s: iterating over dictionary\n", __func__));
 		while ((obj = prop_object_iterator_next(iter2)) != NULL) {
 			DPRINTFOBJ(("%s: obj=%s\n", __func__,
-			    prop_dictionary_keysym_cstring_nocopy(obj)));
+			    prop_dictionary_keysym_value(obj)));
 			prop_dictionary_remove(dict,
-			    prop_dictionary_keysym_cstring_nocopy(obj));
+			    prop_dictionary_keysym_value(obj));
 			prop_object_iterator_reset(iter2);
 		}
 		prop_object_iterator_release(iter2);
@@ -1150,7 +1151,7 @@ sme_sensor_dictionary_get(prop_array_t array, const char *index)
 
 	while ((dict = prop_object_iterator_next(iter))) {
 		obj = prop_dictionary_get(dict, "index");
-		if (prop_string_equals_cstring(obj, index))
+		if (prop_string_equals_string(obj, index))
 			break;
 	}
 
@@ -1391,7 +1392,7 @@ sme_add_property_dictionary(struct sysmon_envsys *sme, prop_array_t array,
 		class = "ac-adapter";
 	else
 		class = "other";
-	if (!prop_dictionary_set_cstring_nocopy(pdict, "device-class", class)) {
+	if (!prop_dictionary_set_string_nocopy(pdict, "device-class", class)) {
 		error = EINVAL;
 		goto out;
 	}
@@ -1847,7 +1848,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		if (obj1 && prop_object_type(obj1) == PROP_TYPE_NUMBER) {
 			targetfound = true;
 			refresh_timo =
-			    prop_number_unsigned_integer_value(obj1);
+			    prop_number_unsigned_value(obj1);
 			if (refresh_timo < 1)
 				error = EINVAL;
 			else {
@@ -1903,7 +1904,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		obj2 = prop_dictionary_get(udict, "description");
 		if (obj2 && prop_object_type(obj2) == PROP_TYPE_STRING) {
 			targetfound = true;
-			blah = prop_string_cstring_nocopy(obj2);
+			blah = prop_string_value(obj2);
 
 			/*
 			 * Check for duplicate description.
@@ -1946,7 +1947,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 			targetfound = true;
 			if (edata->flags & ENVSYS_FCHANGERFACT) {
 				mutex_enter(&sme->sme_mtx);
-				edata->rfact = prop_number_integer_value(obj2);
+				edata->rfact = prop_number_signed_value(obj2);
 				edata->upropset |= PROP_RFACT;
 				mutex_exit(&sme->sme_mtx);
 				DPRINTF(("%s: sensor%d changed rfact to %d\n",
@@ -1965,7 +1966,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		obj2 = prop_dictionary_get(udict, "critical-capacity");
 		if (obj2 && prop_object_type(obj2) == PROP_TYPE_NUMBER) {
 			targetfound = true;
-			lims.sel_critmin = prop_number_integer_value(obj2);
+			lims.sel_critmin = prop_number_signed_value(obj2);
 			props |= PROP_BATTCAP;
 		}
 
@@ -1975,7 +1976,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		obj2 = prop_dictionary_get(udict, "warning-capacity");
 		if (obj2 && prop_object_type(obj2) == PROP_TYPE_NUMBER) {
 			targetfound = true;
-			lims.sel_warnmin = prop_number_integer_value(obj2);
+			lims.sel_warnmin = prop_number_signed_value(obj2);
 			props |= PROP_BATTWARN;
 		}
 
@@ -1985,7 +1986,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		obj2 = prop_dictionary_get(udict, "high-capacity");
 		if (obj2 && prop_object_type(obj2) == PROP_TYPE_NUMBER) {
 			targetfound = true;
-			lims.sel_warnmin = prop_number_integer_value(obj2);
+			lims.sel_warnmin = prop_number_signed_value(obj2);
 			props |= PROP_BATTHIGH;
 		}
 
@@ -1995,7 +1996,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		obj2 = prop_dictionary_get(udict, "maximum-capacity");
 		if (obj2 && prop_object_type(obj2) == PROP_TYPE_NUMBER) {
 			targetfound = true;
-			lims.sel_warnmin = prop_number_integer_value(obj2);
+			lims.sel_warnmin = prop_number_signed_value(obj2);
 			props |= PROP_BATTMAX;
 		}
 
@@ -2005,7 +2006,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		obj2 = prop_dictionary_get(udict, "critical-max");
 		if (obj2 && prop_object_type(obj2) == PROP_TYPE_NUMBER) {
 			targetfound = true;
-			lims.sel_critmax = prop_number_integer_value(obj2);
+			lims.sel_critmax = prop_number_signed_value(obj2);
 			props |= PROP_CRITMAX;
 		}
 
@@ -2015,7 +2016,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		obj2 = prop_dictionary_get(udict, "warning-max");
 		if (obj2 && prop_object_type(obj2) == PROP_TYPE_NUMBER) {
 			targetfound = true;
-			lims.sel_warnmax = prop_number_integer_value(obj2);
+			lims.sel_warnmax = prop_number_signed_value(obj2);
 			props |= PROP_WARNMAX;
 		}
 
@@ -2025,7 +2026,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		obj2 = prop_dictionary_get(udict, "critical-min");
 		if (obj2 && prop_object_type(obj2) == PROP_TYPE_NUMBER) {
 			targetfound = true;
-			lims.sel_critmin = prop_number_integer_value(obj2);
+			lims.sel_critmin = prop_number_signed_value(obj2);
 			props |= PROP_CRITMIN;
 		}
 
@@ -2035,7 +2036,7 @@ sme_userset_dictionary(struct sysmon_envsys *sme, prop_dictionary_t udict,
 		obj2 = prop_dictionary_get(udict, "warning-min");
 		if (obj2 && prop_object_type(obj2) == PROP_TYPE_NUMBER) {
 			targetfound = true;
-			lims.sel_warnmin = prop_number_integer_value(obj2);
+			lims.sel_warnmin = prop_number_signed_value(obj2);
 			props |= PROP_WARNMIN;
 		}
 

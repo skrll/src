@@ -1,4 +1,4 @@
-/* $NetBSD: tcagpio.c,v 1.4 2018/06/26 06:03:57 thorpej Exp $ */
+/* $NetBSD: tcagpio.c,v 1.8 2021/01/27 02:29:48 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcagpio.c,v 1.4 2018/06/26 06:03:57 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcagpio.c,v 1.8 2021/01/27 02:29:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -69,8 +69,8 @@ struct tcagpio_pin {
 };
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "ti,tca9539",			0 },
-	{ NULL,				0 }
+	{ .compat = "ti,tca9539" },
+	DEVICE_COMPAT_EOL
 };
 
 static uint8_t
@@ -102,10 +102,10 @@ tcagpio_write(struct tcagpio_softc *sc, uint8_t reg, uint8_t val, int flags)
 		aprint_error_dev(sc->sc_dev, "error writing reg %#x: %d\n", reg, error);
 }
 
-#define	I2C_READ(sc, reg)	tcagpio_read((sc), (reg), I2C_F_POLL)
-#define	I2C_WRITE(sc, reg, val)	tcagpio_write((sc), (reg), (val), I2C_F_POLL)
-#define	I2C_LOCK(sc)		iic_acquire_bus((sc)->sc_i2c, I2C_F_POLL)
-#define	I2C_UNLOCK(sc)		iic_release_bus((sc)->sc_i2c, I2C_F_POLL)
+#define	I2C_READ(sc, reg)	tcagpio_read((sc), (reg), 0)
+#define	I2C_WRITE(sc, reg, val)	tcagpio_write((sc), (reg), (val), 0)
+#define	I2C_LOCK(sc)		iic_acquire_bus((sc)->sc_i2c, 0)
+#define	I2C_UNLOCK(sc)		iic_release_bus((sc)->sc_i2c, 0)
 
 static int
 tcagpio_gpio_config(struct tcagpio_softc *sc, int pin, int flags)

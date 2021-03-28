@@ -1,4 +1,4 @@
-#	$NetBSD: t_static_destructor.sh,v 1.2 2018/03/24 00:26:51 kamil Exp $
+#	$NetBSD: t_static_destructor.sh,v 1.4 2020/10/13 06:49:27 rin Exp $
 #
 # Copyright (c) 2017 The NetBSD Foundation, Inc.
 # All rights reserved.

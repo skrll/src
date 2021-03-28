@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_object.c,v 1.18 2019/12/15 21:11:35 ad Exp $	*/
+/*	$NetBSD: uvm_object.c,v 1.25 2020/08/15 07:24:09 chs Exp $	*/
 
 /*
  * Copyright (c) 2006, 2010, 2019 The NetBSD Foundation, Inc.
@@ -37,14 +37,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_object.c,v 1.18 2019/12/15 21:11:35 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_object.c,v 1.25 2020/08/15 07:24:09 chs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
 #endif
 
 #include <sys/param.h>
-#include <sys/mutex.h>
+#include <sys/rwlock.h>
 #include <sys/queue.h>
 
 #include <uvm/uvm.h>
@@ -67,7 +67,7 @@ uvm_obj_init(struct uvm_object *uo, const struct uvm_pagerops *ops,
 #endif
 	if (alock) {
 		/* Allocate and assign a lock. */
-		uo->vmobjlock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
+		uo->vmobjlock = rw_obj_alloc();
 	} else {
 		/* The lock will need to be set via uvm_obj_setlock(). */
 		uo->vmobjlock = NULL;
@@ -93,7 +93,7 @@ uvm_obj_destroy(struct uvm_object *uo, bool dlock)
 
 	/* Destroy the lock, if requested. */
 	if (dlock) {
-		mutex_obj_free(uo->vmobjlock);
+		rw_obj_free(uo->vmobjlock);
 	}
 	radix_tree_fini_tree(&uo->uo_pages);
 }
@@ -105,17 +105,17 @@ uvm_obj_destroy(struct uvm_object *uo, bool dlock)
  * => Only dynamic lock may be previously set.  We drop the reference then.
  */
 void
-uvm_obj_setlock(struct uvm_object *uo, kmutex_t *lockptr)
+uvm_obj_setlock(struct uvm_object *uo, krwlock_t *lockptr)
 {
-	kmutex_t *olockptr = uo->vmobjlock;
+	krwlock_t *olockptr = uo->vmobjlock;
 
 	if (olockptr) {
 		/* Drop the reference on the old lock. */
-		mutex_obj_free(olockptr);
+		rw_obj_free(olockptr);
 	}
 	if (lockptr == NULL) {
 		/* If new lock is not passed - allocate default one. */
-		lockptr = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
+		lockptr = rw_obj_alloc();
 	}
 	uo->vmobjlock = lockptr;
 }
@@ -137,7 +137,7 @@ uvm_obj_wirepages(struct uvm_object *uobj, off_t start, off_t end,
 
 	left = (end - start) >> PAGE_SHIFT;
 
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	while (left) {
 
 		npages = MIN(FETCH_PAGECOUNT, left);
@@ -146,12 +146,12 @@ uvm_obj_wirepages(struct uvm_object *uobj, off_t start, off_t end,
 		memset(pgs, 0, sizeof(pgs));
 		error = (*uobj->pgops->pgo_get)(uobj, offset, pgs, &npages, 0,
 			VM_PROT_READ | VM_PROT_WRITE, UVM_ADV_SEQUENTIAL,
-			PGO_ALLPAGES | PGO_SYNCIO);
+			PGO_SYNCIO);
 
 		if (error)
 			goto error;
 
-		mutex_enter(uobj->vmobjlock);
+		rw_enter(uobj->vmobjlock, RW_WRITER);
 		for (i = 0; i < npages; i++) {
 
 			KASSERT(pgs[i] != NULL);
@@ -164,9 +164,9 @@ uvm_obj_wirepages(struct uvm_object *uobj, off_t start, off_t end,
 				while (pgs[i]->loan_count) {
 					pg = uvm_loanbreak(pgs[i]);
 					if (!pg) {
-						mutex_exit(uobj->vmobjlock);
+						rw_exit(uobj->vmobjlock);
 						uvm_wait("uobjwirepg");
-						mutex_enter(uobj->vmobjlock);
+						rw_enter(uobj->vmobjlock, RW_WRITER);
 						continue;
 					}
 				}
@@ -174,14 +174,17 @@ uvm_obj_wirepages(struct uvm_object *uobj, off_t start, off_t end,
 			}
 
 			if (pgs[i]->flags & PG_AOBJ) {
-				pgs[i]->flags &= ~(PG_CLEAN);
+				uvm_pagemarkdirty(pgs[i],
+				    UVM_PAGE_STATUS_DIRTY);
 				uao_dropswap(uobj, i);
 			}
 		}
 
 		/* Wire the pages */
 		for (i = 0; i < npages; i++) {
+			uvm_pagelock(pgs[i]);
 			uvm_pagewire(pgs[i]);
+			uvm_pageunlock(pgs[i]);
 			if (list != NULL)
 				TAILQ_INSERT_TAIL(list, pgs[i], pageq.queue);
 		}
@@ -192,7 +195,7 @@ uvm_obj_wirepages(struct uvm_object *uobj, off_t start, off_t end,
 		left -= npages;
 		offset += npages << PAGE_SHIFT;
 	}
-	mutex_exit(uobj->vmobjlock);
+	rw_exit(uobj->vmobjlock);
 
 	return 0;
 
@@ -216,16 +219,115 @@ uvm_obj_unwirepages(struct uvm_object *uobj, off_t start, off_t end)
 	struct vm_page *pg;
 	off_t offset;
 
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	for (offset = start; offset < end; offset += PAGE_SIZE) {
 		pg = uvm_pagelookup(uobj, offset);
 
 		KASSERT(pg != NULL);
 		KASSERT(!(pg->flags & PG_RELEASED));
 
+		uvm_pagelock(pg);
 		uvm_pageunwire(pg);
+		uvm_pageunlock(pg);
 	}
-	mutex_exit(uobj->vmobjlock);
+	rw_exit(uobj->vmobjlock);
+}
+
+static inline bool
+uvm_obj_notag_p(struct uvm_object *uobj, int tag)
+{
+
+	KASSERT(rw_lock_held(uobj->vmobjlock));
+	return radix_tree_empty_tagged_tree_p(&uobj->uo_pages, tag);
+}
+
+bool
+uvm_obj_clean_p(struct uvm_object *uobj)
+{
+
+	return uvm_obj_notag_p(uobj, UVM_PAGE_DIRTY_TAG);
+}
+
+bool
+uvm_obj_nowriteback_p(struct uvm_object *uobj)
+{
+
+	return uvm_obj_notag_p(uobj, UVM_PAGE_WRITEBACK_TAG);
+}
+
+static inline bool
+uvm_obj_page_tag_p(struct vm_page *pg, int tag)
+{
+	struct uvm_object *uobj = pg->uobject;
+	uint64_t pgidx = pg->offset >> PAGE_SHIFT;
+
+	KASSERT(uobj != NULL);
+	KASSERT(rw_lock_held(uobj->vmobjlock));
+	return radix_tree_get_tag(&uobj->uo_pages, pgidx, tag) != 0;
+}
+
+static inline void
+uvm_obj_page_set_tag(struct vm_page *pg, int tag)
+{
+	struct uvm_object *uobj = pg->uobject;
+	uint64_t pgidx = pg->offset >> PAGE_SHIFT;
+
+	KASSERT(uobj != NULL);
+	KASSERT(rw_write_held(uobj->vmobjlock));
+	radix_tree_set_tag(&uobj->uo_pages, pgidx, tag);
+}
+
+static inline void
+uvm_obj_page_clear_tag(struct vm_page *pg, int tag)
+{
+	struct uvm_object *uobj = pg->uobject;
+	uint64_t pgidx = pg->offset >> PAGE_SHIFT;
+
+	KASSERT(uobj != NULL);
+	KASSERT(rw_write_held(uobj->vmobjlock));
+	radix_tree_clear_tag(&uobj->uo_pages, pgidx, tag);
+}
+
+bool
+uvm_obj_page_dirty_p(struct vm_page *pg)
+{
+
+	return uvm_obj_page_tag_p(pg, UVM_PAGE_DIRTY_TAG);
+}
+
+void
+uvm_obj_page_set_dirty(struct vm_page *pg)
+{
+
+	uvm_obj_page_set_tag(pg, UVM_PAGE_DIRTY_TAG);
+}
+
+void
+uvm_obj_page_clear_dirty(struct vm_page *pg)
+{
+
+	uvm_obj_page_clear_tag(pg, UVM_PAGE_DIRTY_TAG);
+}
+
+bool
+uvm_obj_page_writeback_p(struct vm_page *pg)
+{
+
+	return uvm_obj_page_tag_p(pg, UVM_PAGE_WRITEBACK_TAG);
+}
+
+void
+uvm_obj_page_set_writeback(struct vm_page *pg)
+{
+
+	uvm_obj_page_set_tag(pg, UVM_PAGE_WRITEBACK_TAG);
+}
+
+void
+uvm_obj_page_clear_writeback(struct vm_page *pg)
+{
+
+	uvm_obj_page_clear_tag(pg, UVM_PAGE_WRITEBACK_TAG);
 }
 
 #if defined(DDB) || defined(DEBUGPRINT)
@@ -243,7 +345,7 @@ uvm_object_printit(struct uvm_object *uobj, bool full,
 	voff_t off;
 
 	(*pr)("OBJECT %p: locked=%d, pgops=%p, npages=%d, ",
-	    uobj, mutex_owned(uobj->vmobjlock), uobj->pgops, uobj->uo_npages);
+	    uobj, rw_write_held(uobj->vmobjlock), uobj->pgops, uobj->uo_npages);
 	if (UVM_OBJ_IS_KERN_OBJECT(uobj))
 		(*pr)("refs=<SYSTEM>\n");
 	else
@@ -253,10 +355,9 @@ uvm_object_printit(struct uvm_object *uobj, bool full,
 		return;
 	}
 	(*pr)("  PAGES <pg,offset>:\n  ");
-	uvm_page_array_init(&a);
+	uvm_page_array_init(&a, uobj, 0);
 	off = 0;
-	while ((pg = uvm_page_array_fill_and_peek(&a, uobj, off, 0, 0))
-	    != NULL) {
+	while ((pg = uvm_page_array_fill_and_peek(&a, off, 0)) != NULL) {
 		cnt++;
 		(*pr)("<%p,0x%llx> ", pg, (long long)pg->offset);
 		if ((cnt % 3) == 0) {

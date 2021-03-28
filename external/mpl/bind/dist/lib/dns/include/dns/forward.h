@@ -1,11 +1,11 @@
-/*	$NetBSD: forward.h,v 1.3 2019/01/09 16:55:12 christos Exp $	*/
+/*	$NetBSD: forward.h,v 1.5 2021/02/19 16:42:16 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -25,16 +25,16 @@
 ISC_LANG_BEGINDECLS
 
 struct dns_forwarder {
-	isc_sockaddr_t			addr;
-	isc_dscp_t			dscp;
-	ISC_LINK(dns_forwarder_t)	link;
+	isc_sockaddr_t addr;
+	isc_dscp_t     dscp;
+	ISC_LINK(dns_forwarder_t) link;
 };
 
-typedef ISC_LIST(struct dns_forwarder)	dns_forwarderlist_t;
+typedef ISC_LIST(struct dns_forwarder) dns_forwarderlist_t;
 
 struct dns_forwarders {
-	dns_forwarderlist_t	fwdrs;
-	dns_fwdpolicy_t		fwdpolicy;
+	dns_forwarderlist_t fwdrs;
+	dns_fwdpolicy_t	    fwdpolicy;
 };
 
 isc_result_t

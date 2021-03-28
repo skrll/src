@@ -1,4 +1,4 @@
-/*	$NetBSD: lfs_rfw.c,v 1.34 2019/01/01 10:06:55 hannken Exp $	*/
+/*	$NetBSD: lfs_rfw.c,v 1.36 2020/09/05 16:30:13 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2002, 2003 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lfs_rfw.c,v 1.34 2019/01/01 10:06:55 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lfs_rfw.c,v 1.36 2020/09/05 16:30:13 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_quota.h"
@@ -54,7 +54,6 @@ __KERNEL_RCSID(0, "$NetBSD: lfs_rfw.c,v 1.34 2019/01/01 10:06:55 hannken Exp $")
 #include <sys/pool.h>
 #include <sys/socket.h>
 #include <sys/syslog.h>
-#include <uvm/uvm_extern.h>
 #include <sys/sysctl.h>
 #include <sys/conf.h>
 #include <sys/kauth.h>
@@ -66,10 +65,7 @@ __KERNEL_RCSID(0, "$NetBSD: lfs_rfw.c,v 1.34 2019/01/01 10:06:55 hannken Exp $")
 #include <ufs/lfs/ulfsmount.h>
 #include <ufs/lfs/ulfs_extern.h>
 
-#include <uvm/uvm.h>
-#include <uvm/uvm_stat.h>
-#include <uvm/uvm_pager.h>
-#include <uvm/uvm_pdaemon.h>
+#include <uvm/uvm_extern.h>
 
 #include <ufs/lfs/lfs.h>
 #include <ufs/lfs/lfs_accessors.h>
@@ -113,7 +109,7 @@ lfs_rf_valloc(struct lfs *fs, ino_t ino, int vers, struct lwp *l,
 	 * we don't have to do anything else.  If the version number is wrong,
 	 * take appropriate action.
 	 */
-	error = VFS_VGET(fs->lfs_ivnode->v_mount, ino, &vp);
+	error = VFS_VGET(fs->lfs_ivnode->v_mount, ino, LK_EXCLUSIVE, &vp);
 	if (error == 0) {
 		DLOG((DLOG_RF, "lfs_rf_valloc[1]: ino %d vp %p\n", ino, vp));
 

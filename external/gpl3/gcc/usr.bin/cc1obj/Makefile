@@ -1,25 +1,23 @@
-#	$NetBSD: Makefile,v 1.12 2019/02/06 16:57:30 christos Exp $
+#	$NetBSD: Makefile,v 1.17 2020/09/05 14:24:26 mrg Exp $
 
 MYOBJS=		${G_OBJC_OBJS} ${G_C_AND_OBJC_OBJS} 
 PROG=		cc1obj
-SRCS=		${MYOBJS:S,objc/,,:S,c-family/,,:S,c/,,:Nlibcpp.a:.o=.c} main.c ${PROG}-checksum.c
+SRCS=		${MYOBJS:S,objc/,,:S,c-family/,,:S,c/,,:S,known-headers.o,known-headers.cc,:S,c-spellcheck.o,c-spellcheck.cc,:Nlibcpp.a:.o=.c}
+SRCS+=		main.c ${PROG}-checksum.c
 
 CPPFLAGS+=	-I${DIST}/gcc/objc
 CPPFLAGS.prefix.c+=	-DPREFIX=\"/usr\"
 
 .include "../Makefile.backend"
 .include "../Makefile.backtrace"
-.include "../Makefile.common"
-.include "../Makefile.common-target"
 .include "../Makefile.libcpp"
 .include "../Makefile.libdecnumber"
-.include "../Makefile.libiberty"
 
 CHECKSUM_OBJS=	${BACKENDOBJ}/libbackend.a \
 		main.o \
 		${LIBBACKTRACEOBJ}/libbacktrace.a \
-		${COMMONOBJ}/libcommon.a \
 		${COMMONTARGETOBJ}/libcommon-target.a \
+		${COMMONOBJ}/libcommon.a \
 		${LIBCPPOBJ}/libcpp.a \
 		${LIBDECNUMBEROBJ}/libdecnumber.a \
 		${LIBIBERTYOBJ}/libiberty.a \
@@ -46,6 +44,9 @@ COPTS.objc-act.c+=			-Wno-stack-protector
 COPTS.objc-gnu-runtime-abi-01.c+=	-Wno-stack-protector
 COPTS.objc-next-runtime-abi-01.c+=	-Wno-stack-protector
 
+COPTS.c-cppbuiltin.c+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} == 8:? -Wno-error=format-overflow :}
+COPTS.c-typeck.c+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} == 8:? -Wno-error=format-overflow :}
+
 .if ${MACHINE_ARCH} == "vax"
 COPTS.c-decl.c+=-O0
 COPTS.c-typeck.c+=-O0
@@ -55,6 +56,10 @@ COPTS.c-ada-spec.c+=-O0
 COPTS.cilk.c+=-O0
 COPTS.c-ubsan.c+=-O0
 COPTS.cc1obj-checksum.c+=-O0
+.endif
+
+.if ${MACHINE_ARCH} == "mipseb" || ${MACHINE_ARCH} == "mipsel"
+COPTS.c-common.c+=-O3
 .endif
 
 LDADD+=	${LIBMPC} ${LIBMPFR} ${LIBGMP} -lintl -lz -lm

@@ -1,4 +1,4 @@
-/*	$NetBSD: ptrace.h,v 1.23 2019/06/26 12:30:12 mgorny Exp $	*/
+/*	$NetBSD: ptrace.h,v 1.26 2020/05/30 08:41:23 maxv Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -159,6 +159,19 @@
 	{ DT_REG, N("xmmregs"), Pmachdep_xmmregs,			\
 	  procfs_machdep_validxmmregs },
 
+#define PT32_GETXSTATE		PT_GETXSTATE
+#define COREDUMP_MACHDEP_LWP_NOTES(l, ns, name)				\
+{									\
+	struct xstate xstate;						\
+	memset(&xstate, 0, sizeof(xstate));				\
+	if (!process_read_xstate(l, &xstate))				\
+	{								\
+		ELFNAMEEND(coredump_savenote)(ns,			\
+		    CONCAT(CONCAT(PT, ELFSIZE), _GETXSTATE), name,	\
+		    &xstate, sizeof(xstate));				\
+	}								\
+}
+
 struct xmmregs;
 
 /* Functions used by both ptrace(2) and procfs. */
@@ -173,6 +186,12 @@ struct pfsnode;
 int	procfs_machdep_doxmmregs(struct lwp *, struct lwp *,
 	    struct pfsnode *, struct uio *);
 int	procfs_machdep_validxmmregs(struct lwp *, struct mount *);
+
+/*
+ * The fpregs structure contains an fxsave area, which must have 16-byte
+ * alignment.
+ */
+#define PTRACE_REGS_ALIGN __aligned(16)
 
 #endif /* _KERNEL */
 

@@ -1,10 +1,10 @@
-#	$NetBSD: Makefile,v 1.15 2019/05/14 15:41:23 christos Exp $
+#	$NetBSD: Makefile,v 1.19 2020/05/06 09:18:10 bouyer Exp $
 
 .include <bsd.own.mk>
 
 INSTIMGBASE=	NetBSD-${DISTRIBVER}-i386-install	# gives ${IMGBASE}.img
 
-INSTIMAGEMB?=	1750			# for all installation binaries
+INSTIMAGEMB?=	1900			# for all installation binaries
 
 PRIMARY_BOOT=		bootxx_ffsv1
 SECONDARY_BOOT=		boot

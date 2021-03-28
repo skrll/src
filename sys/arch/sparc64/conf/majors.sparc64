@@ -1,4 +1,4 @@
-#	$NetBSD: majors.sparc64,v 1.37 2019/01/28 02:29:00 dholland Exp $
+#	$NetBSD: majors.sparc64,v 1.39 2020/04/04 16:06:16 jdolecek Exp $
 #
 # Device majors for sparc64
 #
@@ -71,7 +71,7 @@ device-major	uhid		char 79			uhid
 device-major	ulpt		char 80			ulpt
 device-major	ugen		char 81			ugen
 device-major	ucom		char 82			ucom
-device-major	urio		char 83			urio
+#device-major	obsolete	char 83			obsolete (urio)
 device-major	uscanner	char 84			uscanner
 device-major	radio		char 85			radio
 
@@ -112,7 +112,7 @@ device-major	dmoverio	char 129		dmoverio
 #device-major	obsolete	char 131		obsolete (fwiso)
 device-major	dpt		char 132		dpt
 device-major	twe		char 133		twe
-device-major	nsmb		char 134		nsmb		
+#device-major	obsolete	char 134		obsolete (nsmb)		
 device-major	sysmon		char 135		sysmon
 
 device-major	ksyms		char 136		ksyms

@@ -1,4 +1,4 @@
-/*	$NetBSD: plcom.c,v 1.60 2019/11/10 21:16:25 chs Exp $	*/
+/*	$NetBSD: plcom.c,v 1.62 2020/10/19 17:00:02 tnn Exp $	*/
 
 /*-
  * Copyright (c) 2001 ARM Ltd
@@ -94,7 +94,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: plcom.c,v 1.60 2019/11/10 21:16:25 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plcom.c,v 1.62 2020/10/19 17:00:02 tnn Exp $");
 
 #include "opt_plcom.h"
 #include "opt_ddb.h"
@@ -297,12 +297,12 @@ pwritem1(struct plcom_instance *pi, bus_size_t o, const uint8_t *datap,
 
 #define	PREAD1(pi, reg)		pread1(pi, reg)
 #define	PREAD4(pi, reg)		\
-	(bus_space_read_4((pi)->pi_iot, (pi)->pi_ioh, (reg)))
+	bus_space_read_4((pi)->pi_iot, (pi)->pi_ioh, (reg))
 
 #define	PWRITE1(pi, reg, val)	pwrite1(pi, reg, val)
 #define	PWRITEM1(pi, reg, d, c)	pwritem1(pi, reg, d, c)
 #define	PWRITE4(pi, reg, val)	\
-	(bus_space_write_4((pi)->pi_iot, (pi)->pi_ioh, (reg), (val)))
+	bus_space_write_4((pi)->pi_iot, (pi)->pi_ioh, (reg), (val))
 
 int
 pl010comspeed(long speed, long frequency)
@@ -2326,11 +2326,6 @@ plcom_common_putc(dev_t dev, struct plcom_instance *pi, int c)
 
 	PWRITE1(pi, PL01XCOM_DR, c);
 	PLCOM_BARRIER(pi, BR | BW);
-
-	/* wait for this transmission to complete */
-	timo = 1500000;
-	while (!ISSET(PREAD1(pi, PL01XCOM_FR), PL01X_FR_TXFE) && --timo)
-		continue;
 
 	splx(s);
 }

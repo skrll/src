@@ -1,4 +1,4 @@
-/*	$NetBSD: kvm_x86_64.c,v 1.10 2014/02/19 20:21:22 dsl Exp $	*/
+/*	$NetBSD: kvm_x86_64.c,v 1.12 2020/04/25 05:17:16 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1989, 1992, 1993
@@ -38,7 +38,7 @@
 #if 0
 static char sccsid[] = "@(#)kvm_hp300.c	8.1 (Berkeley) 6/4/93";
 #else
-__RCSID("$NetBSD: kvm_x86_64.c,v 1.10 2014/02/19 20:21:22 dsl Exp $");
+__RCSID("$NetBSD: kvm_x86_64.c,v 1.12 2020/04/25 05:17:16 maxv Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
@@ -118,7 +118,7 @@ _kvm_kvatop(kvm_t *kd, vaddr_t va, paddr_t *pa)
 		_kvm_syserr(kd, 0, "could not read PT level 4 entry");
 		goto lose;
 	}
-	if ((pde & PG_V) == 0) {
+	if ((pde & PTE_P) == 0) {
 		_kvm_err(kd, 0, "invalid translation (invalid level 4 PDE)");
 		goto lose;
 	}
@@ -126,45 +126,45 @@ _kvm_kvatop(kvm_t *kd, vaddr_t va, paddr_t *pa)
 	/*
 	 * Level 3.
 	 */
-	pde_pa = (pde & PG_FRAME) + (pl3_pi(va) * sizeof(pd_entry_t));
+	pde_pa = (pde & PTE_FRAME) + (pl3_pi(va) * sizeof(pd_entry_t));
 	if (_kvm_pread(kd, kd->pmfd, (void *)&pde, sizeof(pde),
 	    _kvm_pa2off(kd, pde_pa)) != sizeof(pde)) {
 		_kvm_syserr(kd, 0, "could not read PT level 3 entry");
 		goto lose;
 	}
-	if ((pde & PG_V) == 0) {
+	if ((pde & PTE_P) == 0) {
 		_kvm_err(kd, 0, "invalid translation (invalid level 3 PDE)");
 		goto lose;
 	}
-	if (pde & PG_PS) {
+	if (pde & PTE_PS) {
 		page_off = va & (NBPD_L3 - 1);
-		*pa = (pde & PG_1GFRAME) + page_off;
+		*pa = (pde & PTE_1GFRAME) + page_off;
 		return (int)(NBPD_L3 - page_off);
 	}
 
 	/*
 	 * Level 2.
 	 */
-	pde_pa = (pde & PG_FRAME) + (pl2_pi(va) * sizeof(pd_entry_t));
+	pde_pa = (pde & PTE_FRAME) + (pl2_pi(va) * sizeof(pd_entry_t));
 	if (_kvm_pread(kd, kd->pmfd, (void *)&pde, sizeof(pde),
 	    _kvm_pa2off(kd, pde_pa)) != sizeof(pde)) {
 		_kvm_syserr(kd, 0, "could not read PT level 2 entry");
 		goto lose;
 	}
-	if ((pde & PG_V) == 0) {
+	if ((pde & PTE_P) == 0) {
 		_kvm_err(kd, 0, "invalid translation (invalid level 2 PDE)");
 		goto lose;
 	}
-	if (pde & PG_PS) {
+	if (pde & PTE_PS) {
 		page_off = va & (NBPD_L2 - 1);
-		*pa = (pde & PG_2MFRAME) + page_off;
+		*pa = (pde & PTE_2MFRAME) + page_off;
 		return (int)(NBPD_L2 - page_off);
 	}
 
 	/*
 	 * Level 1.
 	 */
-	pte_pa = (pde & PG_FRAME) + (pl1_pi(va) * sizeof(pt_entry_t));
+	pte_pa = (pde & PTE_FRAME) + (pl1_pi(va) * sizeof(pt_entry_t));
 	if (_kvm_pread(kd, kd->pmfd, (void *) &pte, sizeof(pte),
 	    _kvm_pa2off(kd, pte_pa)) != sizeof(pte)) {
 		_kvm_syserr(kd, 0, "could not read PTE");
@@ -173,18 +173,48 @@ _kvm_kvatop(kvm_t *kd, vaddr_t va, paddr_t *pa)
 	/*
 	 * Validate the PTE and return the physical address.
 	 */
-	if ((pte & PG_V) == 0) {
+	if ((pte & PTE_P) == 0) {
 		_kvm_err(kd, 0, "invalid translation (invalid PTE)");
 		goto lose;
 	}
 	page_off = va & PGOFSET;
-	*pa = (pte & PG_FRAME) + page_off;
+	*pa = (pte & PTE_FRAME) + page_off;
 	return (int)(NBPG - page_off);
 
  lose:
 	*pa = (u_long)~0L;
 	return (0);
 }
+
+struct p2o {
+	paddr_t pa;
+	psize_t sz;
+	off_t off;
+};
+
+static int
+cmp_p2o(const void *a, const void *b)
+{
+	const struct p2o *p1 = a;
+	const struct p2o *p2 = b;
+
+	/* If one range contains the start of the other, it's a match. */
+	if (p1->pa >= p2->pa && p1->pa < p2->pa + p2->sz) {
+		return 0;
+	}
+	if (p2->pa >= p1->pa && p2->pa < p1->pa + p1->sz) {
+		return 0;
+	}
+
+	/* Otherwise sort by pa. */
+	if (p1->pa < p2->pa)
+		return -1;
+	else if (p1->pa > p2->pa)
+		return 1;
+	else
+		return 0;
+}
+
 
 /*
  * Translate a physical address to a file-offset in the crash dump.
@@ -197,18 +227,35 @@ _kvm_pa2off(kvm_t *kd, paddr_t pa)
 	off_t off;
 	int i;
 
+	static struct p2o *map;
+	struct p2o key, *val;
+
 	cpu_kh = kd->cpu_data;
 	ramsegs = (void *)((char *)(void *)cpu_kh + ALIGN(sizeof *cpu_kh));
 
-	off = 0;
-	for (i = 0; i < cpu_kh->nmemsegs; i++) {
-		if (pa >= ramsegs[i].start &&
-		    (pa - ramsegs[i].start) < ramsegs[i].size) {
-			off += (pa - ramsegs[i].start);
-			break;
+	if (map == NULL) {
+		map = calloc(sizeof *map, cpu_kh->nmemsegs);
+		off = 0;
+		for (i = 0; i < cpu_kh->nmemsegs; i++) {
+			map[i].pa = ramsegs[i].start;
+			map[i].sz = ramsegs[i].size;
+			map[i].off = off;
+			off += ramsegs[i].size;
 		}
-		off += ramsegs[i].size;
+#if 0
+		/* The array appears to be sorted already */
+		qsort(map, cpu_kh->nmemsegs, sizeof(*map), cmp_p2o);
+#endif
 	}
+
+	key.pa = pa;
+	key.sz = 1;
+	key.off = -1;
+	val = bsearch(&key, map, cpu_kh->nmemsegs, sizeof (key), cmp_p2o);
+	if (val)
+		off = val->off + pa - val->pa;
+	else
+		off = 0;
 
 	return (kd->dump_off + off);
 }

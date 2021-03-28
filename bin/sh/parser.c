@@ -1,4 +1,4 @@
-/*	$NetBSD: parser.c,v 1.169 2019/12/10 09:18:37 kre Exp $	*/
+/*	$NetBSD: parser.c,v 1.171 2020/08/19 22:41:47 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)parser.c	8.7 (Berkeley) 5/16/95";
 #else
-__RCSID("$NetBSD: parser.c,v 1.169 2019/12/10 09:18:37 kre Exp $");
+__RCSID("$NetBSD: parser.c,v 1.171 2020/08/19 22:41:47 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -666,6 +666,18 @@ simplecmd(union node **rpp, union node *redir)
 			/* We have a function */
 			consumetoken(TRP);
 			funclinno = plinno;
+			/*
+			 * Make sure there are no unquoted $'s in the
+			 * name (allowing those, not expanding them,
+			 * simply treating '$' as a character, is desireable
+			 * but the parser has converted them to CTLxxx
+			 * chars, and that's not what we want
+			 *
+			 * Fortunately here the user can simply quote
+			 * the name to avoid this restriction.
+			 */
+			if (!noexpand(n->narg.text))
+				synerror("Bad function name (use quotes)");
 			rmescapes(n->narg.text);
 			if (strchr(n->narg.text, '/'))
 				synerror("Bad function name");
@@ -1488,7 +1500,7 @@ parsebackq(VSS *const stack, char * const in,
 		VTRACE(DBG_PARSE|DBG_LEXER, (" produced %d\n", psavelen));
 		if (psavelen > 0) {
 			pstr = grabstackstr(out);
-			CTRACE(DBG_LEXER,
+			CTRACE(DBG_LEXER, 
 			    ("parsebackq() reprocessing as $(%s)\n", pstr));
 			setinputstring(pstr, 1, line1);
 		}
@@ -2091,7 +2103,7 @@ readtoken1(int firstc, char const *syn, int oneword)
 			parenlevel++;
 			VTRACE(DBG_LEXER, ("'('(%d)", parenlevel));
 			USTPUTC(c, out);
-			continue;;
+			continue;
 		case CRP:	/* ')' in arithmetic */
 			if (parenlevel > 0) {
 				USTPUTC(c, out);
@@ -2681,7 +2693,7 @@ expandonstack(char *ps, int cmdsub, int lineno)
 
 		readtoken1(pgetc(), DQSYNTAX, 1);
 		if (backquotelist != NULL) {
-			if (!cmdsub)
+			if (!cmdsub) 
 				result = ps;
 			else if (!promptcmds)
 				result = "-o promptcmds not set: ";

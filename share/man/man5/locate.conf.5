@@ -1,4 +1,4 @@
-.\"	$NetBSD: locate.conf.5,v 1.9 2011/07/10 13:42:49 apb Exp $
+.\"	$NetBSD: locate.conf.5,v 1.12 2020/04/26 00:40:10 simonb Exp $
 .\"
 .\" Copyright (c) 2004 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -27,7 +27,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd July 10, 2011
+.Dd April 25, 2020
 .Dt LOCATE.CONF 5
 .Os
 .Sh NAME
@@ -59,6 +59,13 @@ in the middle of a line does not start a comment.
 .Pp
 The configuration options are as follows:
 .Bl -tag -width XXXXXX
+.It Sy database Ar filename
+Specify the location of the
+.Xr locate 1
+database to be created.
+.Pp
+Default:
+.Pa /var/db/locate.database
 .It Sy ignore Ar pattern ...
 Ignore files or directories.
 When building the database,
@@ -114,14 +121,16 @@ Default: !local cd9660 fdesc kernfs procfs
 .It Sy searchpath Ar directory ...
 Specify base directories to be put in the database.
 .Pp
-Default: /
+Default:
+.Pa /
 .It Sy workdir Ar directory
 Specify the working directory of locate.updatedb,
 in which a temporary file is placed.
 The temporary file is a list of all files,
 and you should specify a directory that has enough space to hold it.
 .Pp
-Default: /tmp
+Default:
+.Pa /tmp
 .El
 .Pp
 Refer to

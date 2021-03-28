@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.331 2019/11/10 21:16:33 chs Exp $ */
+/*	$NetBSD: machdep.c,v 1.336 2021/01/24 07:36:54 mrg Exp $ */
 
 /*-
  * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.331 2019/11/10 21:16:33 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.336 2021/01/24 07:36:54 mrg Exp $");
 
 #include "opt_compat_netbsd.h"
 #include "opt_compat_sunos.h"
@@ -92,7 +92,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.331 2019/11/10 21:16:33 chs Exp $");
 #include <sys/kernel.h>
 #include <sys/conf.h>
 #include <sys/file.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/mbuf.h>
 #include <sys/mount.h>
 #include <sys/msgbuf.h>
@@ -138,8 +138,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.331 2019/11/10 21:16:33 chs Exp $");
 #if NPOWER > 0
 #include <sparc/dev/power.h>
 #endif
-
-extern paddr_t avail_end;
 
 kmutex_t fpu_mtx;
 
@@ -322,7 +320,7 @@ cpu_startup(void)
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	pmap_redzone();
@@ -819,7 +817,6 @@ cpu_reboot(int howto, char *user_boot_string)
 #endif
 	boothowto = howto;
 	if ((howto & RB_NOSYNC) == 0 && waittime < 0) {
-		extern struct lwp lwp0;
 
 		/* XXX protect against curlwp->p_stats.foo refs in sync() */
 		if (curlwp == NULL)
@@ -966,8 +963,6 @@ dumpsys(void)
 	int error = 0;
 	struct memarr *mp;
 	int nmem;
-	extern struct memarr pmemarr[];
-	extern int npmemarr;
 
 	/* copy registers to memory */
 	snapshot(cpuinfo.curpcb);
@@ -1249,6 +1244,14 @@ module_init_md(void)
 }
 #endif
 
+static size_t 
+_bus_dmamap_mapsize(int const nsegments)
+{       
+	KASSERT(nsegments > 0);
+	return sizeof(struct sparc_bus_dmamap) +
+	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
+}
+
 /*
  * Common function for DMA map creation.  May be called by bus-specific
  * DMA map creation functions.
@@ -1260,7 +1263,6 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 {
 	struct sparc_bus_dmamap *map;
 	void *mapstore;
-	size_t mapsize;
 
 	/*
 	 * Allocate and initialize the DMA map.  The end of the map
@@ -1274,13 +1276,10 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	 * The bus_dmamap_t includes one bus_dma_segment_t, hence
 	 * the (nsegments - 1).
 	 */
-	mapsize = sizeof(struct sparc_bus_dmamap) +
-	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
-	if ((mapstore = malloc(mapsize, M_DMAMAP,
-	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)) == NULL)
+	if ((mapstore = kmem_zalloc(_bus_dmamap_mapsize(nsegments),
+	    (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP)) == NULL)
 		return (ENOMEM);
 
-	memset(mapstore, 0, mapsize);
 	map = (struct sparc_bus_dmamap *)mapstore;
 	map->_dm_size = size;
 	map->_dm_segcnt = nsegments;
@@ -1304,7 +1303,7 @@ void
 _bus_dmamap_destroy(bus_dma_tag_t t, bus_dmamap_t map)
 {
 
-	free(map, M_DMAMAP);
+	kmem_free(map, _bus_dmamap_mapsize(map->_dm_segcnt));
 }
 
 /*
@@ -1371,8 +1370,8 @@ _bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size,
 	low = vm_first_phys;
 	high = vm_first_phys + vm_num_phys - PAGE_SIZE;
 
-	if ((mlist = malloc(sizeof(*mlist), M_DEVBUF,
-	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)) == NULL)
+	if ((mlist = kmem_alloc(sizeof(*mlist),
+	    (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP)) == NULL)
 		return (ENOMEM);
 
 	/*
@@ -1381,7 +1380,7 @@ _bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size,
 	error = uvm_pglistalloc(size, low, high, 0, 0,
 				mlist, nsegs, (flags & BUS_DMA_NOWAIT) == 0);
 	if (error) {
-		free(mlist, M_DEVBUF);
+		kmem_free(mlist, sizeof(*mlist));
 		return (error);
 	}
 
@@ -1414,6 +1413,7 @@ _bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size,
 void
 _bus_dmamem_free(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs)
 {
+	struct pglist *mlist = segs[0]._ds_mlist;
 
 	if (nsegs != 1)
 		panic("bus_dmamem_free: nsegs = %d", nsegs);
@@ -1421,8 +1421,8 @@ _bus_dmamem_free(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs)
 	/*
 	 * Return the list of pages back to the VM system.
 	 */
-	uvm_pglistfree(segs[0]._ds_mlist);
-	free(segs[0]._ds_mlist, M_DEVBUF);
+	uvm_pglistfree(mlist);
+	kmem_free(mlist, sizeof(*mlist));
 }
 
 /*
@@ -2793,8 +2793,7 @@ bus_space_tag_alloc(bus_space_tag_t parent, void *cookie)
 {
 	struct sparc_bus_space_tag *sbt;
 
-	sbt = malloc(sizeof(struct sparc_bus_space_tag),
-		     M_DEVBUF, M_WAITOK|M_ZERO);
+	sbt = kmem_zalloc(sizeof(*sbt), KM_SLEEP);
 
 	if (parent) {
 		memcpy(sbt, parent, sizeof(*sbt));
@@ -3012,7 +3011,7 @@ sparc_mainbus_intr_establish(bus_space_tag_t t, int pil, int level,
 {
 	struct intrhand *ih;
 
-	ih = malloc(sizeof(struct intrhand), M_DEVBUF, M_WAITOK);
+	ih = kmem_alloc(sizeof(struct intrhand), KM_SLEEP);
 	ih->ih_fun = handler;
 	ih->ih_arg = arg;
 	intr_establish(pil, level, ih, fastvec, false);
@@ -3119,8 +3118,6 @@ mm_md_physacc(paddr_t pa, vm_prot_t prot)
 int
 mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 {
-	extern vaddr_t prom_vstart;
-	extern vaddr_t prom_vend;
 	const vaddr_t v = (vaddr_t)ptr;
 
 	*handled = (v >= MSGBUF_VA && v < MSGBUF_VA + PAGE_SIZE) ||

@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_signal.c,v 1.81 2019/08/23 08:31:11 maxv Exp $	*/
+/*	$NetBSD: linux_signal.c,v 1.83 2020/05/23 23:42:41 ad Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1998 The NetBSD Foundation, Inc.
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_signal.c,v 1.81 2019/08/23 08:31:11 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_signal.c,v 1.83 2020/05/23 23:42:41 ad Exp $");
 
 #define COMPAT_LINUX 1
 
@@ -749,10 +749,6 @@ linux_do_tkill(struct lwp *l, int tgid, int tid, int signum)
 		return EINVAL;
 	signum = linux_to_native_signo[signum];
 
-	if (tgid == -1) {
-		tgid = tid;
-	}
-
 	KSI_INIT(&ksi);
 	ksi.ksi_signo = signum;
 	ksi.ksi_code = SI_LWP;
@@ -760,10 +756,13 @@ linux_do_tkill(struct lwp *l, int tgid, int tid, int signum)
 	ksi.ksi_uid = kauth_cred_geteuid(l->l_cred);
 	ksi.ksi_lid = tid;
 
-	mutex_enter(proc_lock);
-	p = proc_find(tgid);
+	mutex_enter(&proc_lock);
+	if (tgid != -1)
+		p = proc_find(tgid);
+	else
+		p = proc_find_lwpid(tid);
 	if (p == NULL) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		return ESRCH;
 	}
 	mutex_enter(p->p_lock);
@@ -774,7 +773,7 @@ linux_do_tkill(struct lwp *l, int tgid, int tid, int signum)
 	else if (signum != 0)
 		kpsignal2(p, &ksi);
 	mutex_exit(p->p_lock);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return error;
 }

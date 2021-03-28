@@ -1,4 +1,4 @@
-/* $NetBSD: asm.h,v 1.36 2017/01/14 21:58:17 christos Exp $ */
+/* $NetBSD: asm.h,v 1.44 2020/09/04 03:53:12 thorpej Exp $ */
 
 /*
  * Copyright (c) 1991,1990,1989,1994,1995,1996 Carnegie Mellon University
@@ -643,7 +643,9 @@ label:	ASCIZ msg;						\
  * Kernel RCS ID tag and copyright macros
  */
 #define	__SECTIONSTRING(_sec, _str)				\
-	.pushsection _sec ; .asciz _str ; .popsection
+	.pushsection _sec,"MS",@progbits,1;			\
+	.asciz _str;						\
+	.popsection
 
 #ifdef _KERNEL
 
@@ -660,42 +662,29 @@ label:	ASCIZ msg;						\
 /*
  * Get various per-cpu values.  A pointer to our cpu_info structure
  * is stored in SysValue.  These macros clobber v0, t0, t8..t11.
+ * SET_CURLWP also clobbers a0.
  *
  * All return values are in v0.
  */
-#define	GET_CPUINFO		call_pal PAL_OSF1_rdval
-
 #define	GET_CURLWP							\
-	call_pal PAL_OSF1_rdval					;	\
-	addq	v0, CPU_INFO_CURLWP, v0
+	call_pal PAL_OSF1_rdval
 
-#define	GET_FPCURLWP							\
-	call_pal PAL_OSF1_rdval					;	\
-	addq	v0, CPU_INFO_FPCURLWP, v0
-
-#define	GET_CURPCB							\
-	call_pal PAL_OSF1_rdval					;	\
-	addq	v0, CPU_INFO_CURPCB, v0
-
-#define	GET_IDLE_PCB(reg)						\
-	call_pal PAL_OSF1_rdval					;	\
-	ldq	reg, CPU_INFO_IDLE_PCB_PADDR(v0)
+#define	SET_CURLWP(r)							\
+	ldq	v0, L_CPU(r)					;	\
+	mov	r, a0						;	\
+	stq	r, CPU_INFO_CURLWP(v0)				;	\
+	call_pal PAL_OSF1_wrval
 
 #else	/* if not MULTIPROCESSOR... */
 
 IMPORT(cpu_info_primary, CPU_INFO_SIZEOF)
 
-#define	GET_CPUINFO		lda v0, cpu_info_primary
+#define	GET_CURLWP		lda v0, cpu_info_primary	;	\
+				ldq v0, CPU_INFO_CURLWP(v0)
 
-#define	GET_CURLWP		lda v0, cpu_info_primary + CPU_INFO_CURLWP
+#define	SET_CURLWP(r)		lda v0, cpu_info_primary 	;	\
+				stq r, CPU_INFO_CURLWP(v0)
 
-#define	GET_FPCURLWP		lda v0, cpu_info_primary + CPU_INFO_FPCURLWP
-
-#define	GET_CURPCB		lda v0, cpu_info_primary + CPU_INFO_CURPCB
-
-#define	GET_IDLE_PCB(reg)						\
-	lda	reg, cpu_info_primary				;	\
-	ldq	reg, CPU_INFO_IDLE_PCB_PADDR(reg)
 #endif /* MULTIPROCESSOR */
 #else
 #define	RCSID(_s)		__SECTIONSTRING(.ident, _s)

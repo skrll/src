@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.64 2019/09/29 23:45:00 mrg Exp $
+# $NetBSD: Makefile,v 1.68 2020/07/01 13:49:26 jruoho Exp $
 
 NOMAN=		# defined
 
@@ -26,9 +26,12 @@ TESTS_SH+=	t_umountstress
 TESTS_SH+=	t_ps_strings
 TESTS_SH+=	t_trapsignal
 TESTS_SH+=	t_interp
+TESTS_SH+=	t_magic_symlinks
+TESTS_SH+=	t_nointerpreter
 TESTS_SH+=	t_origin
 TESTS_SH+=	t_procpath
 TESTS_SH+=	t_fexecve
+TESTS_SH+=	t_fpufork
 
 BINDIR=		${TESTSDIR}
 PROGS=		h_fexecve
@@ -36,6 +39,7 @@ PROGS+=		h_ps_strings1
 PROGS+=		h_ps_strings2
 PROGS+=		h_segv
 PROGS+=		h_getprocpath
+PROGS+=		h_fpufork
 
 SCRIPTSDIR=	${TESTSDIR}
 SCRIPTS=	h_interpreter.sh
@@ -49,11 +53,9 @@ TESTS_SUBDIRS+=	tty
 TESTS_C+=	t_extattrctl
 TESTS_C+=	t_filedesc
 TESTS_C+=	t_rnd
-LDADD.t_extattrctl+= -lrumpvfs -lrump -lrumpuser
-LDADD.t_extattrctl+= -lrump -lpthread
+LDADD.t_extattrctl+= ${LIBRUMPBASE}
 LDADD.t_filedesc+=  ${LDADD.t_rnd}
-LDADD.t_rnd+=  -lrumpvfs -lrumpdev_rnd -lrumpdev -lrump -lrumpuser
-LDADD.t_rnd+=  -lrump -lpthread
+LDADD.t_rnd+=  -lrumpdev_rnd -lrumpdev ${LIBRUMPBASE}
 
 .endif
 

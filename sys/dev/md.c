@@ -1,4 +1,4 @@
-/*	$NetBSD: md.c,v 1.82 2019/08/29 16:20:48 hannken Exp $	*/
+/*	$NetBSD: md.c,v 1.85 2020/05/14 08:34:18 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1995 Gordon W. Ross, Leo Weppelman.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: md.c,v 1.82 2019/08/29 16:20:48 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: md.c,v 1.85 2020/05/14 08:34:18 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_md.h"
@@ -128,10 +128,10 @@ const struct cdevsw md_cdevsw = {
 	.d_mmap = nommap,
 	.d_kqfilter = nokqfilter,
 	.d_discard = nodiscard,
-	.d_flag = D_DISK
+	.d_flag = D_DISK | D_MPSAFE
 };
 
-static struct dkdriver mddkdriver = {
+static const struct dkdriver mddkdriver = {
 	.d_strategy = mdstrategy,
 	.d_minphys = minphys
 };
@@ -572,7 +572,7 @@ md_set_disklabel(struct md_softc *sc)
 	dg->dg_secsize = lp->d_secsize;
 	dg->dg_secperunit = lp->d_secperunit;
 	dg->dg_nsectors = lp->d_nsectors;
-	dg->dg_ntracks = lp->d_ntracks = 64;;
+	dg->dg_ntracks = lp->d_ntracks = 64;
 	dg->dg_ncylinders = lp->d_ncylinders;
 
 	disk_set_info(sc->sc_dev, &sc->sc_dkdev, NULL);

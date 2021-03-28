@@ -1,6 +1,6 @@
 /* $SourceForge: bktr_core.c,v 1.6 2003/03/11 23:11:22 thomasklausner Exp $ */
 
-/*	$NetBSD: bktr_core.c,v 1.56 2019/02/03 03:19:27 mrg Exp $	*/
+/*	$NetBSD: bktr_core.c,v 1.58 2020/05/23 23:42:42 ad Exp $	*/
 /* $FreeBSD: src/sys/dev/bktr/bktr_core.c,v 1.114 2000/10/31 13:09:56 roger Exp$ */
 
 /*
@@ -98,7 +98,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bktr_core.c,v 1.56 2019/02/03 03:19:27 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bktr_core.c,v 1.58 2020/05/23 23:42:42 ad Exp $");
 
 #include "opt_bktr.h"		/* Include any kernel config options */
 
@@ -958,12 +958,12 @@ bktr_softintr(void *cookie)
 
 	bktr = cookie;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if (bktr->proc && !(bktr->signal & METEOR_SIG_MODE_MASK)) {
 		psignal(bktr->proc,
 		    bktr->signal&(~METEOR_SIG_MODE_MASK));
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }
 
 /*
@@ -977,9 +977,9 @@ video_open(bktr_ptr_t bktr)
 	if (bktr->flags & METEOR_OPEN)		/* device is busy */
 		return(EBUSY);
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	bktr->proc = NULL;
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	bktr->flags |= METEOR_OPEN;
 
@@ -1592,9 +1592,9 @@ video_ioctl(bktr_ptr_t bktr, int unit, ioctl_cmd_t cmd, void *arg,
 		break;
 
 	case METEORSSIGNAL:
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		if(*(int *)arg == 0 || *(int *)arg >= NSIG) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return(EINVAL);
 			break;
 		}
@@ -1604,7 +1604,7 @@ video_ioctl(bktr_ptr_t bktr, int unit, ioctl_cmd_t cmd, void *arg,
 #else
 		bktr->proc = l->l_proc;
 #endif
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		break;
 
 	case METEORGSIGNAL:
@@ -2977,7 +2977,7 @@ rgb_prog(bktr_ptr_t bktr, char i_flag, int cols, int rows, int interlace)
 
 	buffer = target_buffer;
 
-	/* contruct sync : for video packet format */
+	/* construct sync : for video packet format */
 	*dma_prog++ = htole32(OP_SYNC | BKTR_RESYNC | BKTR_FM1);
 
 	/* sync, mode indicator packed data */
@@ -3132,7 +3132,7 @@ yuvpack_prog(bktr_ptr_t bktr, char i_flag,
 
 	buffer = target_buffer;
 
-	/* contruct sync : for video packet format */
+	/* construct sync : for video packet format */
 	/* sync, mode indicator packed data */
 	*dma_prog++ = htole32(OP_SYNC | BKTR_RESYNC | BKTR_FM1);
 	*dma_prog++ = htole32(0);  /* NULL WORD */
@@ -3255,7 +3255,7 @@ yuv422_prog(bktr_ptr_t bktr, char i_flag,
 
 	t1 = buffer;
 
-	/* contruct sync : for video packet format */
+	/* construct sync : for video packet format */
 	*dma_prog++ = htole32(OP_SYNC | BKTR_RESYNC | BKTR_FM3); /*sync, mode indicator packed data*/
 	*dma_prog++ = htole32(0);  /* NULL WORD */
 

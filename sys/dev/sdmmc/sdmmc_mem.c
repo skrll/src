@@ -1,4 +1,4 @@
-/*	$NetBSD: sdmmc_mem.c,v 1.70 2019/10/28 06:31:39 mlelstv Exp $	*/
+/*	$NetBSD: sdmmc_mem.c,v 1.72 2020/05/11 09:51:47 jdc Exp $	*/
 /*	$OpenBSD: sdmmc_mem.c,v 1.10 2009/01/09 10:55:22 jsg Exp $	*/
 
 /*
@@ -45,7 +45,7 @@
 /* Routines for SD/MMC memory cards. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sdmmc_mem.c,v 1.70 2019/10/28 06:31:39 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sdmmc_mem.c,v 1.72 2020/05/11 09:51:47 jdc Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sdmmc.h"
@@ -676,7 +676,7 @@ sdmmc_mem_send_if_cond(struct sdmmc_softc *sc, uint32_t ocr, uint32_t *ocrp)
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.c_arg = ocr;
-	cmd.c_flags = SCF_CMD_BCR | SCF_RSP_R7 | SCF_RSP_SPI_R7;
+	cmd.c_flags = SCF_CMD_BCR | SCF_RSP_R7 | SCF_RSP_SPI_R7 | SCF_TOUT_OK;
 	cmd.c_opcode = SD_SEND_IF_COND;
 
 	error = sdmmc_mmc_command(sc, &cmd);
@@ -833,9 +833,14 @@ sdmmc_mem_sd_init(struct sdmmc_softc *sc, struct sdmmc_function *sf)
 		DPRINTF(("%s: switch func mode 0\n", SDMMCDEVNAME(sc)));
 		error = sdmmc_mem_sd_switch(sf, 0, 1, 0, &status);
 		if (error) {
-			aprint_error_dev(sc->sc_dev,
-			    "switch func mode 0 failed\n");
-			return error;
+			if (error == ENOTSUP) {
+				/* Not supported by controller */
+				goto skipswitchfuncs;
+			} else {
+				aprint_error_dev(sc->sc_dev,
+				    "switch func mode 0 failed\n");
+				return error;
+			}
 		}
 
 		support_func = SFUNC_STATUS_GROUP(&status, 1);
@@ -887,6 +892,7 @@ sdmmc_mem_sd_init(struct sdmmc_softc *sc, struct sdmmc_function *sf)
 			delay(25);
 		}
 	}
+skipswitchfuncs:
 
 	/* update bus clock */
 	if (sc->sc_busclk > sf->csd.tran_speed)

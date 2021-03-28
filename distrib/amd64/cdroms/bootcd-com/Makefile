@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.6 2019/05/15 13:47:41 christos Exp $
+#	$NetBSD: Makefile,v 1.8 2021/02/17 08:49:55 dbj Exp $
 #
 
 .include "${.CURDIR}/../Makefile.cdrom"

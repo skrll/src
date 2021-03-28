@@ -1,4 +1,4 @@
-/*	$NetBSD: db_xxx.c,v 1.71 2015/02/27 00:47:30 ozaki-r Exp $	*/
+/*	$NetBSD: db_xxx.c,v 1.75 2020/05/23 23:42:42 ad Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1991, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_xxx.c,v 1.71 2015/02/27 00:47:30 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_xxx.c,v 1.75 2020/05/23 23:42:42 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_kgdb.h"
@@ -50,6 +50,7 @@ __KERNEL_RCSID(0, "$NetBSD: db_xxx.c,v 1.71 2015/02/27 00:47:30 ozaki-r Exp $");
 #endif
 
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/proc.h>
@@ -107,7 +108,7 @@ db_kill_proc(db_expr_t addr, bool haddr,
 	       /*NOTREACHED*/
 	}
 	/* We might stop when the mutex is held or when not */
-	t = mutex_tryenter(proc_lock);
+	t = mutex_tryenter(&proc_lock);
 #ifdef DIAGNOSTIC
 	if (!t) {
 	       db_error("could not acquire proc_lock mutex\n");
@@ -117,7 +118,7 @@ db_kill_proc(db_expr_t addr, bool haddr,
 	p = proc_find((pid_t)pid);
 	if (p == NULL) {
 		if (t)
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 		db_error("no such proc\n");
 		/*NOTREACHED*/
 	}
@@ -130,9 +131,9 @@ db_kill_proc(db_expr_t addr, bool haddr,
 	kpsignal2(p, &ksi);
 	mutex_exit(p->p_lock);
 	if (t)
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 #else
-	db_printf("This command is not currently supported.\n");
+	db_kernelonly();
 #endif
 }
 
@@ -173,12 +174,12 @@ db_show_files_cmd(db_expr_t addr, bool haddr,
 	p = (struct proc *) (uintptr_t) addr;
 
 	fdp = p->p_fd;
-	dt = fdp->fd_dt;
+	dt = atomic_load_consume(&fdp->fd_dt);
 	for (i = 0; i < dt->dt_nfiles; i++) {
 		if ((ff = dt->dt_ff[i]) == NULL)
 			continue;
 
-		fp = ff->ff_file;
+		fp = atomic_load_consume(&ff->ff_file);
 
 		/* Only look at vnodes... */
 		if (fp != NULL && fp->f_type == DTYPE_VNODE

@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -133,7 +133,7 @@ n=`expr $n + 1`
 
 echo_i "checking policy.conf parser ($n)"
 ret=0
-${PYTHON} testpolicy.py policy.sample > policy.out
+PYTHONPATH="../../../python:$PYTHONPATH" ${PYTHON} testpolicy.py policy.sample > policy.out
 $DOS2UNIX policy.out > /dev/null 2>&1
 cmp -s policy.good policy.out || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi

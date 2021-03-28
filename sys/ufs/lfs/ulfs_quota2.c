@@ -1,4 +1,4 @@
-/*	$NetBSD: ulfs_quota2.c,v 1.31 2017/06/10 05:29:36 maya Exp $	*/
+/*	$NetBSD: ulfs_quota2.c,v 1.33 2020/12/05 17:40:00 thorpej Exp $	*/
 /*  from NetBSD: ufs_quota2.c,v 1.40 2015/03/28 19:24:05 maxv Exp Exp  */
 /*  from NetBSD: ffs_quota2.c,v 1.5 2015/02/22 14:12:48 maxv Exp  */
 
@@ -29,7 +29,7 @@
   */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ulfs_quota2.c,v 1.31 2017/06/10 05:29:36 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ulfs_quota2.c,v 1.33 2020/12/05 17:40:00 thorpej Exp $");
 
 #include <sys/buf.h>
 #include <sys/param.h>
@@ -43,7 +43,6 @@ __KERNEL_RCSID(0, "$NetBSD: ulfs_quota2.c,v 1.31 2017/06/10 05:29:36 maya Exp $"
 #include <sys/kauth.h>
 #include <sys/quota.h>
 #include <sys/quotactl.h>
-#include <sys/timevar.h>
 
 #include <ufs/lfs/lfs.h>
 #include <ufs/lfs/lfs_accessors.h>
@@ -1598,7 +1597,8 @@ lfs_quota2_mount(struct mount *mp)
 
         if (fs->lfs_quota_flags & FS_Q2_DO_TYPE(ULFS_USRQUOTA) &&
 	    ump->um_quotas[ULFS_USRQUOTA] == NULLVP) {
-		error = VFS_VGET(mp, fs->lfs_quotaino[ULFS_USRQUOTA], &vp);
+		error = VFS_VGET(mp, fs->lfs_quotaino[ULFS_USRQUOTA],
+		    LK_EXCLUSIVE, &vp);
 		if (error) {
 			printf("%s: can't vget() user quota inode: %d\n",
 			    mp->mnt_stat.f_mntonname, error);
@@ -1613,7 +1613,8 @@ lfs_quota2_mount(struct mount *mp)
 	}
         if (fs->lfs_quota_flags & FS_Q2_DO_TYPE(ULFS_GRPQUOTA) &&
 	    ump->um_quotas[ULFS_GRPQUOTA] == NULLVP) {
-		error = VFS_VGET(mp, fs->lfs_quotaino[ULFS_GRPQUOTA], &vp);
+		error = VFS_VGET(mp, fs->lfs_quotaino[ULFS_GRPQUOTA],
+		    LK_EXCLUSIVE, &vp);
 		if (error) {
 			vn_close(ump->um_quotas[ULFS_USRQUOTA],
 			    FREAD|FWRITE, l->l_cred);

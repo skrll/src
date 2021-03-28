@@ -1,4 +1,4 @@
-/*	$NetBSD: exec.c,v 1.53 2018/07/25 14:42:50 kre Exp $	*/
+/*	$NetBSD: exec.c,v 1.55 2021/02/16 15:30:12 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)exec.c	8.4 (Berkeley) 6/8/95";
 #else
-__RCSID("$NetBSD: exec.c,v 1.53 2018/07/25 14:42:50 kre Exp $");
+__RCSID("$NetBSD: exec.c,v 1.55 2021/02/16 15:30:12 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -667,6 +667,10 @@ loop:
 			cmdp = &loc_cmd;
 		} else
 			cmdp = cmdlookup(name, 1);
+
+		if (cmdp->cmdtype == CMDFUNCTION)
+			cmdp = &loc_cmd;
+
 		cmdp->cmdtype = CMDNORMAL;
 		cmdp->param.index = idx;
 		INTON;
@@ -679,6 +683,7 @@ loop:
 	if (act & DO_ERR)
 		outfmt(out2, "%s: %s\n", name, errmsg(e, E_EXEC));
 	entry->cmdtype = CMDUNKNOWN;
+	entry->u.index = idx + 1;
 	return;
 
 builtin_success:
@@ -700,8 +705,10 @@ success:
 		entry->lineno = cmdp->lineno;
 		entry->lno_frel = cmdp->fn_ln1;
 		entry->u = cmdp->param;
-	} else
+	} else {
 		entry->cmdtype = CMDUNKNOWN;
+		entry->u.index = -1;
+	}
 }
 
 

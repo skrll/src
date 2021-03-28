@@ -1,7 +1,8 @@
-/*	$NetBSD: kern_turnstile.c,v 1.35 2019/12/16 19:22:15 ad Exp $	*/
+/*	$NetBSD: kern_turnstile.c,v 1.40 2020/05/23 20:45:10 ad Exp $	*/
 
 /*-
- * Copyright (c) 2002, 2006, 2007, 2009, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2002, 2006, 2007, 2009, 2019, 2020
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -60,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_turnstile.c,v 1.35 2019/12/16 19:22:15 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_turnstile.c,v 1.40 2020/05/23 20:45:10 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/lockdebug.h>
@@ -79,15 +80,13 @@ __KERNEL_RCSID(0, "$NetBSD: kern_turnstile.c,v 1.35 2019/12/16 19:22:15 ad Exp $
 #define	TS_HASH(obj)	(((uintptr_t)(obj) >> 6) & TS_HASH_MASK)
 
 static tschain_t	turnstile_chains[TS_HASH_SIZE] __cacheline_aligned;
-pool_cache_t		turnstile_cache __read_mostly;
+struct pool		turnstile_pool;
 extern turnstile_t	turnstile0;
 
 static union {
 	kmutex_t	lock;
 	uint8_t		pad[COHERENCY_UNIT];
 } turnstile_locks[TS_HASH_SIZE] __cacheline_aligned;
-
-static int		turnstile_ctor(void *, void *, int);
 
 /*
  * turnstile_init:
@@ -104,11 +103,10 @@ turnstile_init(void)
 		mutex_init(&turnstile_locks[i].lock, MUTEX_DEFAULT, IPL_SCHED);
 	}
 
-	turnstile_cache = pool_cache_init(sizeof(turnstile_t), coherency_unit,
-	    0, 0, "tstile", NULL, IPL_NONE, turnstile_ctor, NULL, NULL);
-	KASSERT(turnstile_cache != NULL);
+	pool_init(&turnstile_pool, sizeof(turnstile_t), coherency_unit,
+	    0, 0, "tstile", NULL, IPL_NONE);
 
-	(void)turnstile_ctor(NULL, &turnstile0, 0);
+	turnstile_ctor(&turnstile0);
 }
 
 /*
@@ -116,15 +114,13 @@ turnstile_init(void)
  *
  *	Constructor for turnstiles.
  */
-static int
-turnstile_ctor(void *arg, void *obj, int flags)
+void
+turnstile_ctor(turnstile_t *ts)
 {
-	turnstile_t *ts = obj;
 
 	memset(ts, 0, sizeof(*ts));
 	sleepq_init(&ts->ts_sleepq[TS_READER_Q]);
 	sleepq_init(&ts->ts_sleepq[TS_WRITER_Q]);
-	return (0);
 }
 
 /*
@@ -397,8 +393,8 @@ turnstile_block(turnstile_t *ts, int q, wchan_t obj, syncobj_t *sobj)
 		 */
 		ts = l->l_ts;
 		KASSERT(TS_ALL_WAITERS(ts) == 0);
-		KASSERT(TAILQ_EMPTY(&ts->ts_sleepq[TS_READER_Q]) &&
-			TAILQ_EMPTY(&ts->ts_sleepq[TS_WRITER_Q]));
+		KASSERT(LIST_EMPTY(&ts->ts_sleepq[TS_READER_Q]) &&
+			LIST_EMPTY(&ts->ts_sleepq[TS_WRITER_Q]));
 		ts->ts_obj = obj;
 		ts->ts_inheritor = NULL;
 		LIST_INSERT_HEAD(tc, ts, ts_chain);
@@ -416,8 +412,8 @@ turnstile_block(turnstile_t *ts, int q, wchan_t obj, syncobj_t *sobj)
 
 		KASSERT(ts->ts_obj == obj);
 		KASSERT(TS_ALL_WAITERS(ts) != 0);
-		KASSERT(!TAILQ_EMPTY(&ts->ts_sleepq[TS_READER_Q]) ||
-			!TAILQ_EMPTY(&ts->ts_sleepq[TS_WRITER_Q]));
+		KASSERT(!LIST_EMPTY(&ts->ts_sleepq[TS_READER_Q]) ||
+			!LIST_EMPTY(&ts->ts_sleepq[TS_WRITER_Q]));
 	}
 
 	sq = &ts->ts_sleepq[q];
@@ -428,7 +424,7 @@ turnstile_block(turnstile_t *ts, int q, wchan_t obj, syncobj_t *sobj)
 	obase = l->l_kpribase;
 	if (obase < PRI_KTHREAD)
 		l->l_kpribase = PRI_KTHREAD;
-	sleepq_enqueue(sq, obj, "tstile", sobj);
+	sleepq_enqueue(sq, obj, "tstile", sobj, false);
 
 	/*
 	 * Disable preemption across this entire block, as we may drop
@@ -476,7 +472,7 @@ turnstile_wakeup(turnstile_t *ts, int q, int count, lwp_t *nl)
 
 	if (nl != NULL) {
 #if defined(DEBUG) || defined(LOCKDEBUG)
-		TAILQ_FOREACH(l, sq, l_sleepchain) {
+		LIST_FOREACH(l, sq, l_sleepchain) {
 			if (l == nl)
 				break;
 		}
@@ -486,7 +482,7 @@ turnstile_wakeup(turnstile_t *ts, int q, int count, lwp_t *nl)
 		turnstile_remove(ts, nl, q);
 	} else {
 		while (count-- > 0) {
-			l = TAILQ_FIRST(sq);
+			l = LIST_FIRST(sq);
 			KASSERT(l != NULL);
 			turnstile_remove(ts, l, q);
 		}
@@ -536,37 +532,33 @@ turnstile_print(volatile void *obj, void (*pr)(const char *, ...))
 	turnstile_t *ts;
 	tschain_t *tc;
 	sleepq_t *rsq, *wsq;
-	kmutex_t *lock;
 	u_int hash;
 	lwp_t *l;
 
 	hash = TS_HASH(obj);
 	tc = &turnstile_chains[hash];
-	lock = &turnstile_locks[hash].lock;
 
 	LIST_FOREACH(ts, tc, ts_chain)
 		if (ts->ts_obj == obj)
 			break;
 
-	(*pr)("Turnstile chain at %p with mutex %p.\n", tc, lock);
 	if (ts == NULL) {
-		(*pr)("=> No active turnstile for this lock.\n");
+		(*pr)("Turnstile: no active turnstile for this lock.\n");
 		return;
 	}
 
 	rsq = &ts->ts_sleepq[TS_READER_Q];
 	wsq = &ts->ts_sleepq[TS_WRITER_Q];
 
-	(*pr)("=> Turnstile at %p (wrq=%p, rdq=%p).\n", ts, rsq, wsq);
-
+	(*pr)("Turnstile:\n");
 	(*pr)("=> %d waiting readers:", TS_WAITERS(ts, TS_READER_Q));
-	TAILQ_FOREACH(l, rsq, l_sleepchain) {
+	LIST_FOREACH(l, rsq, l_sleepchain) {
 		(*pr)(" %p", l);
 	}
 	(*pr)("\n");
 
 	(*pr)("=> %d waiting writers:", TS_WAITERS(ts, TS_WRITER_Q));
-	TAILQ_FOREACH(l, wsq, l_sleepchain) {
+	LIST_FOREACH(l, wsq, l_sleepchain) {
 		(*pr)(" %p", l);
 	}
 	(*pr)("\n");

@@ -1,4 +1,4 @@
-/*	$NetBSD: ieee80211_node.c,v 1.78 2019/12/19 15:54:21 jakllsch Exp $	*/
+/*	$NetBSD: ieee80211_node.c,v 1.81 2020/11/30 05:33:32 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001 Atsushi Onoe
@@ -37,7 +37,7 @@
 __FBSDID("$FreeBSD: src/sys/net80211/ieee80211_node.c,v 1.65 2005/08/13 17:50:21 sam Exp $");
 #endif
 #ifdef __NetBSD__
-__KERNEL_RCSID(0, "$NetBSD: ieee80211_node.c,v 1.78 2019/12/19 15:54:21 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ieee80211_node.c,v 1.81 2020/11/30 05:33:32 msaitoh Exp $");
 #endif
 
 #ifdef _KERNEL_OPT
@@ -484,7 +484,7 @@ ieee80211_reset_bss(struct ieee80211com *ic)
 	ieee80211_node_table_reset(&ic->ic_sta);
 
 	ni = ieee80211_alloc_node(&ic->ic_scan, ic->ic_myaddr);
-	IASSERT(ni != NULL, ("unable to setup inital BSS node"));
+	IASSERT(ni != NULL, ("unable to setup initial BSS node"));
 	obss = ic->ic_bss;
 	ic->ic_bss = ieee80211_ref_node(ni);
 	if (obss != NULL) {
@@ -1381,7 +1381,7 @@ ieee80211_init_neighbor(struct ieee80211com *ic, struct ieee80211_node *ni,
 /*
  * Do node discovery in adhoc mode on receipt of a beacon
  * or probe response frame.  Note that for the driver's
- * benefit we we treat this like an association so the
+ * benefit we treat this like an association so the
  * driver has an opportunity to setup its private state.
  */
 struct ieee80211_node *
@@ -2136,7 +2136,7 @@ void
 ieee80211_dump_node(struct ieee80211_node_table *nt,
     struct ieee80211_node *ni)
 {
-	printf("0x%p: mac %s refcnt %d\n", ni,
+	printf("%p: mac %s refcnt %d\n", ni,
 		ether_sprintf(ni->ni_macaddr), ieee80211_node_refcnt(ni));
 	printf("\tscangen %u authmode %u flags 0x%x\n",
 		ni->ni_scangen, ni->ni_authmode, ni->ni_flags);

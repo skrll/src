@@ -1,4 +1,4 @@
-/* $NetBSD: ofwoea_machdep.c,v 1.45 2018/07/15 05:16:44 maxv Exp $ */
+/* $NetBSD: ofwoea_machdep.c,v 1.56 2021/02/27 02:52:48 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,15 +30,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.45 2018/07/15 05:16:44 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.56 2021/02/27 02:52:48 thorpej Exp $");
 
-#include "opt_ppcarch.h"
-#include "opt_compat_netbsd.h"
+#include "ksyms.h"
+#include "wsdisplay.h"
+
+#ifdef _KERNEL_OPT
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_modular.h"
-
-#include "wsdisplay.h"
+#include "opt_multiprocessor.h"
+#include "opt_oea.h"
+#include "opt_ofwoea.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -64,12 +69,9 @@ __KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.45 2018/07/15 05:16:44 maxv Exp
 #include <powerpc/oea/cpufeat.h>
 #include <powerpc/include/oea/spr.h>
 #include <powerpc/ofw_cons.h>
+#include <powerpc/ofw_machdep.h>
 #include <powerpc/spr.h>
 #include <powerpc/pic/picvar.h>
-
-#include "opt_oea.h"
-
-#include "ksyms.h"
 
 #ifdef DDB
 #include <machine/db_machdep.h>
@@ -79,8 +81,6 @@ __KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.45 2018/07/15 05:16:44 maxv Exp
 #ifdef KGDB
 #include <sys/kgdb.h>
 #endif
-
-#include "opt_ofwoea.h"
 
 #ifdef ofppc
 extern struct model_data modeldata;
@@ -98,19 +98,21 @@ typedef struct _rangemap {
 	int type;
 } rangemap_t;
 
-struct ofw_translations {
-	vaddr_t va;
-	int len;
-#if defined (PMAC_G5)
-	register64_t pa;
-#else
-	register_t pa;
-#endif
-	int mode;
-}__attribute__((packed));
+struct OF_translation ofw_translations[OFW_MAX_TRANSLATIONS];
 
+/*
+ * Data structures holding OpenFirmware's translations when running
+ * in virtual-mode.
+ *
+ * When we call into OpenFirmware, we point the calling CPU's
+ * cpu_info::ci_battable at ofw_battable[].  For now, this table
+ * is empty, which will ensure that any DSI exceptions that occur
+ * during the firmware call will not erroneously load kernel BAT
+ * mappings that could clobber the firmware's translations.
+ */
 struct pmap ofw_pmap;
-struct ofw_translations ofmap[32];
+struct bat ofw_battable[BAT_VA2IDX(0xffffffff)+1];
+
 char bootpath[256];
 char model_name[64];
 #if NKSYMS || defined(DDB) || defined(MODULAR)
@@ -127,14 +129,14 @@ u_int timebase_freq = TIMEBASE_FREQ;
 u_int timebase_freq = 0;
 #endif
 
+int ofw_quiesce;
+
 extern int ofwmsr;
-extern int chosen;
 extern uint32_t ticks_per_sec;
 extern uint32_t ns_per_tick;
 extern uint32_t ticks_per_intr;
 
-static int save_ofmap(struct ofw_translations *, int);
-static void restore_ofmap(struct ofw_translations *, int);
+static void restore_ofmap(void);
 static void set_timebase(void);
 
 extern void cpu_spinstart(u_int);
@@ -143,17 +145,7 @@ extern volatile u_int cpu_spinstart_ack;
 void
 ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 {
-	int ofmaplen, node, l;
 	register_t scratch;
-
-#if defined(MULTIPROCESSOR) && defined(ofppc)
-	char cpupath[32];
-	int i;
-#endif
-
-	/* initialze bats */
-	if ((oeacpufeat & OEACPU_NOBAT) == 0)
-		ofwoea_batinit();
 
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	/* get info of kernel symbol table from bootloader */
@@ -164,35 +156,26 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 	    startsym = endsym = NULL;
 #endif
 
-	/* get model name and perform model-specific actions */
-	memset(model_name, 0, sizeof(model_name));
-	node = OF_finddevice("/");
-	if (node != -1) {
-		l = OF_getprop(node, "model", model_name, sizeof(model_name));
-		if (l == -1)
-			OF_getprop(node, "name", model_name,
-			    sizeof(model_name));
-		model_init();
-	}
-
-	if (strncmp(model_name, "PowerMac11,", 11) == 0 ||
-	    strncmp(model_name, "PowerMac7,", 10) == 0) 
-		OF_quiesce();
-
 	/* Initialize bus_space */
 	ofwoea_bus_space_init();
 
 	ofwoea_consinit();
 
+	if (ofw_quiesce)
+		OF_quiesce();
+
 #if defined(MULTIPROCESSOR) && defined(ofppc)
-	for (i=1; i < CPU_MAXNUM; i++) {
+	char cpupath[32];
+	int i, l, node;
+
+	for (i = 1; i < CPU_MAXNUM; i++) {
 		snprintf(cpupath, sizeof(cpupath), "/cpus/@%x", i);
 		node = OF_finddevice(cpupath);
 		if (node <= 0)
 			continue;
 		aprint_verbose("Starting up CPU %d %s\n", i, cpupath);
 		OF_start_cpu(node, (u_int)cpu_spinstart, i);
-		for (l=0; l < 100000000; l++) {
+		for (l = 0; l < 100000000; l++) {
 			if (cpu_spinstart_ack == i) {
 				aprint_verbose("CPU %d spun up.\n", i);
 				break;
@@ -201,19 +184,6 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 		}
 	}
 #endif
-
-	oea_init(pic_ext_intr);
-
-	ofmaplen = save_ofmap(NULL, 0);
-	if (ofmaplen > 0)
-		save_ofmap(ofmap, ofmaplen);
-
-/*
- * XXX
- * we need to do this here instead of earlier on in ofwinit() for some reason
- * At least some versions of Apple OF 2.0.1 hang if we do this earlier
- */ 
-	ofwmsr &= ~PSL_IP;
 
 	/* Parse the args string */
 	if (args) {
@@ -234,6 +204,15 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 			bootpath[len] = 0;
 	}
 
+	oea_init(pic_ext_intr);
+
+	/*
+	 * Now that we've installed our own exception vectors,
+	 * ensure that exceptions that happen while running
+	 * firmware code fall into ours.
+	 */
+	ofwmsr &= ~PSL_IP;
+
 	uvm_md_init();
 
 	pmap_bootstrap(startkernel, endkernel);
@@ -245,6 +224,7 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 	if (oeacpufeat & OEACPU_64_BRIDGE) {
 		vaddr_t va;
 		paddr_t pa;
+		vsize_t size;
 		int i;
 
 		pmap_setup_segment0_map(0, msgbuf_paddr, msgbuf_paddr,
@@ -252,12 +232,22 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 
 		/* Map OFW code+data */
 
-		for (i = 0; i < ofmaplen / sizeof(struct ofw_translations); i++) {
-			if (ofmap[i].va < 0xff800000)
+		for (i = 0; i < __arraycount(ofw_translations); i++) {
+			va = ofw_translations[i].virt;
+			size = ofw_translations[i].size;
+			pa = ofw_translations[i].phys;
+			/* XXX mode */
+
+			if (size == 0) {
+				/* No more, all done! */
+				break;
+			}
+
+			if (va < 0xff800000)
 				continue;
 
-			for (va = ofmap[i].va, pa = ofmap[i].pa;
-			    va < ofmap[i].va + ofmap[i].len;
+
+			for (; va < (ofw_translations[i].virt + size);
 			    va += PAGE_SIZE, pa += PAGE_SIZE) {
 				pmap_enter(pmap_kernel(), va, pa, VM_PROT_ALL,
 				    VM_PROT_ALL | PMAP_WIRED);
@@ -293,7 +283,7 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 	    : "=r"(scratch)
 	    : "K"(PSL_IR|PSL_DR|PSL_ME|PSL_RI));
 
-	restore_ofmap(ofmap, ofmaplen);
+	restore_ofmap();
 
 	rascons_finalize();
 
@@ -364,33 +354,11 @@ found:
 	mtmsr(msr);
 }
 
-static int
-save_ofmap(struct ofw_translations *map, int maxlen)
-{
-	int mmui, mmu, len;
-
-	OF_getprop(chosen, "mmu", &mmui, sizeof mmui);
-	mmu = OF_instance_to_package(mmui);
-
-	if (map) {
-		memset(map, 0, maxlen); /* to be safe */
-		len = OF_getprop(mmu, "translations", map, maxlen);
-	} else
-		len = OF_getproplen(mmu, "translations");
-
-	if (len < 0)
-		len = 0;
-	return len;
-}
-
-
-/* The PMAC_G5 code here needs to be replaced by code that looks for the
-   size_cells and does the right thing automatically.
-*/
 void
-restore_ofmap(struct ofw_translations *map, int len)
+restore_ofmap(void)
 {
-	int n = len / sizeof(struct ofw_translations);
+	vaddr_t va, size;
+	paddr_t pa;
 	int i;
 
 	pmap_pinit(&ofw_pmap);
@@ -404,131 +372,30 @@ restore_ofmap(struct ofw_translations *map, int len)
 #endif
 #endif
 
-	for (i = 0; i < n; i++) {
-#if defined (PMAC_G5)
-		register64_t pa = map[i].pa;
-#else
-		register_t pa = map[i].pa;
-#endif
-		vaddr_t va = map[i].va;
-		size_t length = map[i].len;
+	for (i = 0; i < __arraycount(ofw_translations); i++) {
+		va = ofw_translations[i].virt;
+		size = ofw_translations[i].size;
+		pa = ofw_translations[i].phys;
+		/* XXX mode */
 
-		if (va < 0xf0000000) /* XXX */
+		if (size == 0) {
+			/* No more, all done! */
+			break;
+		}
+
+		if (va < 0xf0000000)	/* XXX */
 			continue;
 
-		while (length > 0) {
-			pmap_enter(&ofw_pmap, va, (paddr_t)pa, VM_PROT_ALL,
+		while (size > 0) {
+			pmap_enter(&ofw_pmap, va, pa, VM_PROT_ALL,
 			    VM_PROT_ALL|PMAP_WIRED);
 			pa += PAGE_SIZE;
 			va += PAGE_SIZE;
-			length -= PAGE_SIZE;
+			size -= PAGE_SIZE;
 		}
 	}
 	pmap_update(&ofw_pmap);
 }
-
-
-
-/*
- * Scan the device tree for ranges, and return them as bitmap 0..15
- */
-#if !defined(macppc) && defined(PPC_OEA)
-static u_int16_t
-ranges_bitmap(int node, u_int16_t bitmap)
-{
-	int child, mlen, acells, scells, reclen, i, j;
-	u_int32_t addr, len, map[160];
-
-	for (child = OF_child(node); child; child = OF_peer(child)) {
-		mlen = OF_getprop(child, "ranges", map, sizeof(map));
-		if (mlen == -1)
-			goto noranges;
-
-		j = OF_getprop(child, "#address-cells", &acells,
-		    sizeof(acells));
-		if (j == -1)
-			goto noranges;
-
-		j = OF_getprop(child, "#size-cells", &scells,
-		    sizeof(scells));
-		if (j == -1)
-			goto noranges;
-
-#ifdef ofppc
-		reclen = acells + modeldata.ranges_offset + scells;
-#else
-		reclen = acells + 1 + scells;
-#endif
-
-		for (i=0; i < (mlen/4)/reclen; i++) {
-			addr = map[reclen * i + acells];
-			len = map[reclen * i + reclen - 1];
-			for (j = 0; j < len / 0x10000000; j++)
-				bitmap |= 1 << ((addr+j*0x10000000) >>28);
-			bitmap |= 1 << (addr >> 28);
-		}
-noranges:
-		bitmap |= ranges_bitmap(child, bitmap);
-		continue;
-	}
-	return bitmap;
-}
-#endif /* !macppc && PPC_OEA */
-
-void
-ofwoea_batinit(void)
-{
-#if defined (PPC_OEA)
-
-#ifdef macppc
-	/*
-	 * cover PCI and register space but not the firmware ROM
-	 */
-#ifdef PPC_OEA601
-
-        /*
-	 * use segment registers for the 601
-	 */
-	if ((mfpvr() >> 16 ) == MPC601)
-	    oea_batinit(
-		0x80000000, BAT_BL_256M,
-		0x90000000, BAT_BL_256M,
-		0xa0000000, BAT_BL_256M,
-		0xb0000000, BAT_BL_256M,
-		0xf0000000, BAT_BL_256M,
-		0);
-	else
-#endif
-	/*
-	 * map to bats
-	 */
-	oea_batinit(0x80000000, BAT_BL_1G,
-		    0xf0000000, BAT_BL_128M,
-		    0xf8000000, BAT_BL_64M,
-		    0xfe000000, BAT_BL_8M,	/* Grackle IO */
-		    0);
-#else
-	uint16_t bitmap;
-	int node, i;
-
-	node = OF_finddevice("/");
-
-	bitmap = ranges_bitmap(node, 0);
-	oea_batinit(0);
-
-	for (i=1; i < 0x10; i++) {
-		/* skip the three vital SR regions */
-		if (i == USER_SR || i == KERNEL_SR || i == KERNEL2_SR)
-			continue;
-		if (bitmap & (1 << i)) {
-			oea_iobat_add(0x10000000 * i, BAT_BL_256M);
-			DPRINTF("Batmapped 256M at 0x%x\n", 0x10000000 * i);
-		}
-	}
-#endif
-#endif /* OEA */
-}
-
 
 /* we define these partially, as we will fill the rest in later */
 struct powerpc_bus_space genppc_isa_io_space_tag = {

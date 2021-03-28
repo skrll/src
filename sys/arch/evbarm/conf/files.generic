@@ -1,4 +1,4 @@
-#	$NetBSD: files.generic,v 1.9 2019/10/26 14:57:27 jmcneill Exp $
+#	$NetBSD: files.generic,v 1.11 2020/12/23 14:42:38 skrll Exp $
 #
 # A generic (aarch32) kernel configuration info
 #
@@ -21,7 +21,7 @@ include "arch/arm/altera/files.altera"
 include "arch/arm/amlogic/files.meson"
 include "arch/arm/broadcom/files.bcm2835"
 include "arch/arm/nvidia/files.tegra"
-include "arch/arm/nxp/files.imx6"
+include "arch/arm/nxp/files.imx"
 include "arch/arm/samsung/files.exynos"
 include "arch/arm/sunxi/files.sunxi"
 include "arch/arm/ti/files.ti"

@@ -1,4 +1,4 @@
-/*	$NetBSD: rump.c,v 1.338 2019/12/15 14:21:34 pgoyette Exp $	*/
+/*	$NetBSD: rump.c,v 1.353 2021/01/17 22:32:25 chs Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rump.c,v 1.338 2019/12/15 14:21:34 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rump.c,v 1.353 2021/01/17 22:32:25 chs Exp $");
 
 #include <sys/systm.h>
 #define ELFSIZE ARCH_ELFSIZE
@@ -114,16 +114,7 @@ static  char rump_msgbuf[16*1024] __aligned(256);
 
 bool rump_ttycomponent = false;
 
-pool_cache_t pnbuf_cache;
-
-static void
-rump_aiodone_worker(struct work *wk, void *dummy)
-{
-	struct buf *bp = (struct buf *)wk;
-
-	KASSERT(&bp->b_work == wk);
-	bp->b_iodone(bp);
-}
+extern pool_cache_t pnbuf_cache;
 
 static int rump_inited;
 
@@ -138,6 +129,7 @@ rump_proc_vfs_init_fn rump_proc_vfs_init = (void *)nullop;
 rump_proc_vfs_release_fn rump_proc_vfs_release = (void *)nullop;
 
 static void add_linkedin_modules(const struct modinfo *const *, size_t);
+static void add_static_evcnt(struct evcnt *);
 
 static pid_t rspo_wrap_getpid(void) {
 	return rump_sysproxy_hyp_getpid();
@@ -226,10 +218,10 @@ RUMP_COMPONENT(RUMP_COMPONENT_POSTINIT)
 #endif /* RUMP_USE_CTOR */
 
 int
-rump_init(void)
+rump_init_callback(void (*cpuinit_callback) (void))
 {
 	char buf[256];
-	struct timespec ts;
+	struct timespec bts;
 	int64_t sec;
 	long nsec;
 	struct lwp *l, *initlwp;
@@ -239,7 +231,7 @@ rump_init(void)
 	if (rump_inited)
 		return 0;
 	else if (rump_inited == -1)
-		panic("rump_init: host process restart required");
+		panic("%s: host process restart required", __func__);
 	else
 		rump_inited = 1;
 
@@ -265,19 +257,20 @@ rump_init(void)
 	}
 
 	if (rumpuser_getparam(RUMPUSER_PARAM_NCPU, buf, sizeof(buf)) != 0)
-		panic("mandatory hypervisor configuration (NCPU) missing");
+		panic("%s: mandatory hypervisor configuration (NCPU) missing",
+		    __func__);
 	numcpu = strtoll(buf, NULL, 10);
 	if (numcpu < 1) {
-		panic("rump kernels are not lightweight enough for \"%d\" CPUs",
-		    numcpu);
+		panic("%s: rump kernels are not lightweight enough for %d CPUs",
+		    __func__, numcpu);
 	}
 
 	rump_thread_init();
 	rump_cpus_bootstrap(&numcpu);
 
 	rumpuser_clock_gettime(RUMPUSER_CLOCK_RELWALL, &sec, &nsec);
-	boottime.tv_sec = sec;
-	boottime.tv_nsec = nsec;
+	bts.tv_sec = sec;
+	bts.tv_nsec = nsec;
 
 	initmsgbuf(rump_msgbuf, sizeof(rump_msgbuf));
 	aprint_verbose("%s%s", copyright, version);
@@ -329,10 +322,6 @@ rump_init(void)
 #endif /* RUMP_USE_CTOR */
 
 	rnd_init();
-	cprng_init();
-	kern_cprng = cprng_strong_create("kernel", IPL_VM,
-	    CPRNG_INIT_ANY|CPRNG_REKEY_ANY);
-
 	rump_hyperentropy_init();
 
 	procinit();
@@ -369,8 +358,7 @@ rump_init(void)
 	ktrinit();
 #endif
 
-	ts = boottime;
-	tc_setclock(&ts);
+	tc_setclock(&bts);
 
 	extern krwlock_t exec_lock;
 	rw_init(&exec_lock);
@@ -384,6 +372,7 @@ rump_init(void)
 			rump_cpu_attach(ci);
 			ncpu++;
 		}
+		snprintf(ci->ci_cpuname, sizeof ci->ci_cpuname, "cpu%d", i);
 
 		callout_init_cpu(ci);
 		softint_init(ci);
@@ -400,9 +389,13 @@ rump_init(void)
 	ncpuonline = ncpu;
 
 	/* Once all CPUs are detected, initialize the per-CPU cprng_fast.  */
+	cprng_init();
 	cprng_fast_init();
 
 	mp_online = true;
+
+	if (cpuinit_callback)
+		(*cpuinit_callback)();
 
 	/* CPUs are up.  allow kernel threads to run */
 	rump_thread_allow(NULL);
@@ -419,19 +412,19 @@ rump_init(void)
 	resource_init();
 	procinit_sysctl();
 	time_init();
-	time_init2();
+	config_init();
 
 	/* start page baroness */
 	if (rump_threads) {
 		if (kthread_create(PRI_PGDAEMON, KTHREAD_MPSAFE, NULL,
 		    uvm_pageout, NULL, &uvm.pagedaemon_lwp, "pdaemon") != 0)
-			panic("pagedaemon create failed");
+			panic("%s: pagedaemon create failed", __func__);
 	} else
 		uvm.pagedaemon_lwp = NULL; /* doesn't match curlwp */
 
 	/* process dso's */
 	rumpuser_dl_bootstrap(add_linkedin_modules,
-	    rump_kernelfsym_load, rump_component_load);
+	    rump_kernelfsym_load, rump_component_load, add_static_evcnt);
 
 	rump_component_addlocal();
 	rump_component_init(RUMP_COMPONENT_KERN);
@@ -460,20 +453,15 @@ rump_init(void)
 
 	cold = 0;
 
-	/* aieeeedondest */
-	if (rump_threads) {
-		if (workqueue_create(&uvm.aiodone_queue, "aiodoned",
-		    rump_aiodone_worker, NULL, 0, 0, WQ_MPSAFE))
-			panic("aiodoned");
-	}
-
 	sysctl_finalize();
 
 	module_init_class(MODULE_CLASS_ANY);
 
 	if (rumpuser_getparam(RUMPUSER_PARAM_HOSTNAME,
 	    hostname, MAXHOSTNAMELEN) != 0) {
-		panic("mandatory hypervisor configuration (HOSTNAME) missing");
+		panic(
+		    "%s: mandatory hypervisor configuration (HOSTNAME) missing",
+		    __func__);
 	}
 	hostnamelen = strlen(hostname);
 
@@ -487,11 +475,11 @@ rump_init(void)
 	 * (note: must be done after vfsinit to get cwdi)
 	 */
 	initlwp = rump__lwproc_alloclwp(NULL);
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	initproc = proc_find_raw(1);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	if (initproc == NULL)
-		panic("where in the world is initproc?");
+		panic("%s: where in the world is initproc?", __func__);
 	strlcpy(initproc->p_comm, "rumplocal", sizeof(initproc->p_comm));
 
 	rump_component_init(RUMP_COMPONENT_POSTINIT);
@@ -513,6 +501,13 @@ rump_init(void)
 
 	return 0;
 }
+
+int
+rump_init(void)
+{
+	return rump_init_callback(NULL);
+}
+
 /* historic compat */
 __strong_alias(rump__init,rump_init);
 
@@ -610,14 +605,22 @@ rump_component_count(enum rump_component_type type)
 void
 rump_component_init(enum rump_component_type type)
 {
-	const struct rump_component *rc, *rc_safe;
+	struct rump_component *rc, *rc_next, rc_marker;
 
 	KASSERT(curlwp == bootlwp);
 	KASSERT(!compinited[type]);
-	LIST_FOREACH_SAFE(rc, &rchead, rc_entries, rc_safe) {
+
+	rc_marker.rc_type = RUMP_COMPONENT_MAX;
+	rc_marker.rc_init = NULL;
+	for (rc = LIST_FIRST(&rchead); rc != NULL; rc = rc_next) {
 		if (rc->rc_type == type) {
+			LIST_INSERT_AFTER(rc, &rc_marker, rc_entries);
 			rc->rc_init();
 			LIST_REMOVE(rc, rc_entries);
+			rc_next = LIST_NEXT(&rc_marker, rc_entries);
+			LIST_REMOVE(&rc_marker, rc_entries);
+		} else {
+			rc_next = LIST_NEXT(rc, rc_entries);
 		}
 	}
 	compinited[type] = 1;
@@ -658,6 +661,16 @@ add_linkedin_modules(const struct modinfo * const *mip, size_t nmodinfo)
 {
 
 	module_builtin_add(mip, nmodinfo, false);
+}
+
+/*
+ * Add an evcnt.
+ */
+static void
+add_static_evcnt(struct evcnt *ev)
+{
+
+	evcnt_attach_static(ev);
 }
 
 int
@@ -763,7 +776,9 @@ rump_syscall(int num, void *data, size_t dlen, register_t *retval)
 	p = curproc;
 	e = p->p_emul;
 #ifndef __HAVE_MINIMAL_EMUL
-	KASSERT(num > 0 && num < e->e_nsysent);
+	num &= e->e_nsysent - 1;
+#else
+	num &= SYS_NSYSENT - 1;
 #endif
 	callp = e->e_sysent + num;
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: start.S,v 1.5 2019/12/14 17:24:30 skrll Exp $	*/
+/*	$NetBSD: start.S,v 1.11 2020/09/15 09:28:20 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -31,32 +31,53 @@
 #include <sys/cdefs.h>
 
 #include <aarch64/asm.h>
+#include "assym.h"
 
-RCSID("$NetBSD: start.S,v 1.5 2019/12/14 17:24:30 skrll Exp $")
-
-/* load far effective address (pc relative) */
-.macro	ADDR, reg, addr
-	adrp	\reg, \addr
-	add	\reg, \reg, #:lo12:\addr
-.endm
+RCSID("$NetBSD: start.S,v 1.11 2020/09/15 09:28:20 ryo Exp $")
 
 /*
- * Padding at start of kernel image to make room for 64-byte header (non-ELF booting)
+ * Padding at start of kernel image to make room for 64-byte header
+ * (non-ELF booting)
  */
-.space	64, 0x0
+	.space	64, 0x0
 
 /*
  * Kernel start routine for aarch64 boards.
  */
 	.global start
 start:
+	mrs	x8, CurrentEL
+	lsr	x8, x8, #2
+	cmp	x8, #0x2
+	b.lo	1f
+
+	mrs	x8, sctlr_el2
+#ifdef __AARCH64EB__
+	orr	x8, x8, #SCTLR_EE	/* set: Big Endian */
+#else
+	bic	x8, x8, #SCTLR_EE	/* clear: Little Endian */
+#endif
+	msr	sctlr_el2, x8
+	isb
+
+1:
+	mrs	x8, sctlr_el1
+#ifdef __AARCH64EB__
+	orr	x8, x8, #(SCTLR_EE | SCTLR_E0E)	/* set: Big Endian */
+#else
+	bic	x8, x8, #(SCTLR_EE | SCTLR_E0E)	/* clear: Little Endian */
+#endif
+	msr	sctlr_el1, x8
+	isb
+
+
 	adr	x9, start
 	ldr	x10, =start
 
 	sub	x10, x10, x9
 
 	/* address of kern_vtopdiff (relative) */
-	ADDR	x8, kern_vtopdiff
+	adrl	x8, kern_vtopdiff
 	str	x10, [x8]	/* kern_vtopdiff = start(virt) - start(phys) */
 
 	/*
@@ -64,7 +85,7 @@ start:
 	 */
 
 	/* address of uboot_args (relative) */
-	ADDR	x8, uboot_args
+	adrl	x8, uboot_args
 	str	x0, [x8, #(8*0)]
 	str	x1, [x8, #(8*1)]
 	str	x2, [x8, #(8*2)]
@@ -73,8 +94,13 @@ start:
 	/*
 	 * ARM64 boot protocol has FDT address in x0 *
 	 */
-	ADDR	x8, fdt_addr_r
+	adrl	x8, fdt_addr_r
 	str	x0, [x8]
+
+	adrl	x8, pmapboot_pagebase
+	ldr	x9, =ARM_BOOTSTRAP_LxPT
+	sub	x9, x9, x10
+	str	x9, [x8]
 
 	b	aarch64_start		/* aarch64_start() @ aarch64/locore.S */
 

@@ -1,7 +1,7 @@
-/*	$NetBSD: sys_select.c,v 1.50 2019/11/22 20:04:03 ad Exp $	*/
+/*	$NetBSD: sys_select.c,v 1.55 2020/12/11 01:25:29 thorpej Exp $	*/
 
 /*-
- * Copyright (c) 2007, 2008, 2009, 2010, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2008, 2009, 2010, 2019, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -84,7 +84,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_select.c,v 1.50 2019/11/22 20:04:03 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_select.c,v 1.55 2020/12/11 01:25:29 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -136,8 +136,14 @@ static const int sel_flag[] = {
 	POLLRDBAND
 };
 
-static syncobj_t select_sobj = {
-	.sobj_flag	= SOBJ_SLEEPQ_FIFO,
+/* 
+ * LWPs are woken using the sleep queue only due to a collision, the case
+ * with the maximum Suck Factor.  Save the cost of sorting for named waiters
+ * by inserting in LIFO order.  In the future it would be preferable to not
+ * enqueue LWPs at all, unless subject to a collision.
+ */
+syncobj_t select_sobj = {
+	.sobj_flag	= SOBJ_SLEEPQ_LIFO,
 	.sobj_unsleep	= sleepq_unsleep,
 	.sobj_changepri	= sleepq_changepri,
 	.sobj_lendpri	= sleepq_lendpri,
@@ -315,7 +321,7 @@ state_check:
 		l->l_selflag = SEL_BLOCKING;
 		l->l_kpriority = true;
 		sleepq_enter(&sc->sc_sleepq, l, lock);
-		sleepq_enqueue(&sc->sc_sleepq, sc, opname, &select_sobj);
+		sleepq_enqueue(&sc->sc_sleepq, sc, opname, &select_sobj, true);
 		error = sleepq_block(timo, true);
 		if (error != 0) {
 			break;
@@ -354,7 +360,7 @@ selcommon(register_t *retval, int nd, fd_set *u_in, fd_set *u_ou,
 
 	if (nd < 0)
 		return (EINVAL);
-	nf = curlwp->l_fd->fd_dt->dt_nfiles;
+	nf = atomic_load_consume(&curlwp->l_fd->fd_dt)->dt_nfiles;
 	if (nd > nf) {
 		/* forgiving; slightly wrong */
 		nd = nf;
@@ -659,6 +665,28 @@ selrecord(lwp_t *selector, struct selinfo *sip)
 		sip->sel_collision |= sc->sc_mask;
 		KASSERT(sip->sel_cluster != NULL);
 	}
+}
+
+/*
+ * Record a knote.
+ *
+ * The caller holds the same lock as for selrecord().
+ */
+void
+selrecord_knote(struct selinfo *sip, struct knote *kn)
+{
+	SLIST_INSERT_HEAD(&sip->sel_klist, kn, kn_selnext);
+}
+
+/*
+ * Remove a knote.
+ *
+ * The caller holds the same lock as for selrecord().
+ */
+void
+selremove_knote(struct selinfo *sip, struct knote *kn)
+{
+	SLIST_REMOVE(&sip->sel_klist, kn, knote, kn_selnext);
 }
 
 /*

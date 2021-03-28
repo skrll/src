@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_fauvar.h,v 1.1 2015/04/29 08:32:01 hikaru Exp $	*/
+/*	$NetBSD: octeon_fauvar.h,v 1.4 2020/06/23 05:14:18 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -29,42 +29,44 @@
 #ifndef _OCTEON_FAUVAR_H_
 #define _OCTEON_FAUVAR_H_
 
+#include <mips/cavium/octeonreg.h>
+
 /* ---- API */
 
-struct octeon_fau_desc {
+struct octfau_desc {
 	/* offset in scratch buffer */
 	size_t		fd_scroff;	/* XXX offset_t */
 	/* FAU register number */
 	size_t		fd_regno;	/* XXX offset_t */
 };
 
-void		octeon_fau_op_init(struct octeon_fau_desc *, size_t, size_t);
-uint64_t	octeon_fau_op_save(struct octeon_fau_desc *);
-void		octeon_fau_op_restore(struct octeon_fau_desc *, uint64_t);
-int64_t		octeon_fau_op_inc_8(struct octeon_fau_desc *, int64_t);
-int32_t		octeon_fau_op_inc_4(struct octeon_fau_desc *, int32_t);
-int16_t		octeon_fau_op_inc_2(struct octeon_fau_desc *, int16_t);
-int8_t		octeon_fau_op_inc_1(struct octeon_fau_desc *, int8_t);
-int64_t		octeon_fau_op_incwait_8(struct octeon_fau_desc *, int);
-int32_t		octeon_fau_op_incwait_4(struct octeon_fau_desc *, int);
-int16_t		octeon_fau_op_incwait_2(struct octeon_fau_desc *, int);
-int8_t		octeon_fau_op_incwait_1(struct octeon_fau_desc *, int);
-int64_t		octeon_fau_op_get_8(struct octeon_fau_desc *);
-int32_t		octeon_fau_op_get_4(struct octeon_fau_desc *);
-int16_t		octeon_fau_op_get_2(struct octeon_fau_desc *);
-int8_t		octeon_fau_op_get_1(struct octeon_fau_desc *);
-int64_t		octeon_fau_op_getwait_8(struct octeon_fau_desc *);
-int32_t		octeon_fau_op_getwait_4(struct octeon_fau_desc *);
-int16_t		octeon_fau_op_getwait_2(struct octeon_fau_desc *);
-int8_t		octeon_fau_op_getwait_1(struct octeon_fau_desc *);
-void		octeon_fau_op_add_8(struct octeon_fau_desc *, int64_t);
-void		octeon_fau_op_add_4(struct octeon_fau_desc *, int32_t);
-void		octeon_fau_op_add_2(struct octeon_fau_desc *, int16_t);
-void		octeon_fau_op_add_1(struct octeon_fau_desc *, int8_t);
-void		octeon_fau_op_set_8(struct octeon_fau_desc *, int64_t);
-void		octeon_fau_op_set_4(struct octeon_fau_desc *, int32_t);
-void		octeon_fau_op_set_2(struct octeon_fau_desc *, int16_t);
-void		octeon_fau_op_set_1(struct octeon_fau_desc *, int8_t);
+void		octfau_op_init(struct octfau_desc *, size_t, size_t);
+uint64_t	octfau_op_save(struct octfau_desc *);
+void		octfau_op_restore(struct octfau_desc *, uint64_t);
+int64_t		octfau_op_inc_8(struct octfau_desc *, int64_t);
+int32_t		octfau_op_inc_4(struct octfau_desc *, int32_t);
+int16_t		octfau_op_inc_2(struct octfau_desc *, int16_t);
+int8_t		octfau_op_inc_1(struct octfau_desc *, int8_t);
+int64_t		octfau_op_incwait_8(struct octfau_desc *, int);
+int32_t		octfau_op_incwait_4(struct octfau_desc *, int);
+int16_t		octfau_op_incwait_2(struct octfau_desc *, int);
+int8_t		octfau_op_incwait_1(struct octfau_desc *, int);
+int64_t		octfau_op_get_8(struct octfau_desc *);
+int32_t		octfau_op_get_4(struct octfau_desc *);
+int16_t		octfau_op_get_2(struct octfau_desc *);
+int8_t		octfau_op_get_1(struct octfau_desc *);
+int64_t		octfau_op_getwait_8(struct octfau_desc *);
+int32_t		octfau_op_getwait_4(struct octfau_desc *);
+int16_t		octfau_op_getwait_2(struct octfau_desc *);
+int8_t		octfau_op_getwait_1(struct octfau_desc *);
+void		octfau_op_add_8(struct octfau_desc *, int64_t);
+void		octfau_op_add_4(struct octfau_desc *, int32_t);
+void		octfau_op_add_2(struct octfau_desc *, int16_t);
+void		octfau_op_add_1(struct octfau_desc *, int8_t);
+void		octfau_op_set_8(struct octfau_desc *, int64_t);
+void		octfau_op_set_4(struct octfau_desc *, int32_t);
+void		octfau_op_set_2(struct octfau_desc *, int16_t);
+void		octfau_op_set_1(struct octfau_desc *, int8_t);
 
 /* ---- old API */
 
@@ -87,16 +89,11 @@ typedef enum {
  * `scraddr' parameter of IOBDMA operation is actually `index';
  */
 static inline void
-octeon_fau_op_iobdma(int index, uint64_t args)
+octfau_op_iobdma(int index, uint64_t args)
 {
-	uint64_t value;
+	uint64_t value = IOBDMA_CREATE(FAU_MAJOR_DID, FAU_SUB_DID,
+	    index, POW_IOBDMA_LEN, args);
 
-	value =
-	    ((uint64_t)(index & 0xff) << 56) |
-	    ((uint64_t)1 << 48) |
-	    ((uint64_t)(CN30XXFAU_MAJORDID & 0x1f) << 43) |
-	    ((uint64_t)(CN30XXFAU_SUBDID & 0x7) << 40) |
-	    ((uint64_t)args & 0xfffffffffULL);
 	octeon_iobdma_write_8(value);
 }
 
@@ -105,32 +102,31 @@ octeon_fau_op_iobdma(int index, uint64_t args)
 /* IOBDMA Store Data for FAU Operations */
 
 static inline void
-octeon_fau_op_iobdma_store_data(int scraddr, int incval, int tagwait,
+octfau_op_iobdma_store_data(int scraddr, int incval, int tagwait,
     int size, int reg)
 {
-	uint64_t args;
+	uint64_t args =
+	    __SHIFTIN(incval, POW_IOBDMA_INCVAL) |
+	    __SHIFTIN(tagwait, POW_IOBDMA_TAGWAIT) |
+	    __SHIFTIN(size, POW_IOBDMA_SIZE) |
+	    __SHIFTIN(reg, POW_IOBDMA_REG);
 
-	args =
-	    ((uint64_t)(incval & 0x3fffff) << 14) |
-	    ((uint64_t)(tagwait & 0x1) << 13) |  
-	    ((uint64_t)(size & 0x3) << 11) |  
-	    ((uint64_t)(reg & 0x7ff) << 0);
-	/*
-	 * `scraddr' parameter of IOBDMA operation is actually `index';
-	 */
-	octeon_fau_op_iobdma((int)((uint32_t)scraddr >> 3) /* XXX */, args);
+	/* `scraddr' parameter of IOBDMA operation is actually `index' */
+	octfau_op_iobdma(scraddr / sizeof(uint64_t), args);
 }
 
 static inline void
-octeon_fau_op_inc_fetch_8(struct octeon_fau_desc *fd, int64_t v)
+octfau_op_inc_fetch_8(struct octfau_desc *fd, int64_t v)
 {
-	octeon_fau_op_iobdma_store_data(fd->fd_scroff, v, 0, OCT_FAU_OP_SIZE_64/* XXX */,
-	    fd->fd_regno);
+
+	octfau_op_iobdma_store_data(fd->fd_scroff, v, 0,
+	    OCT_FAU_OP_SIZE_64/* XXX */, fd->fd_regno);
 }
 
 static inline int64_t
-octeon_fau_op_inc_read_8(struct octeon_fau_desc *fd)
+octfau_op_inc_read_8(struct octfau_desc *fd)
 {
+
 	OCTEON_SYNCIOBDMA;
 	return octeon_cvmseg_read_8(fd->fd_scroff);
 }

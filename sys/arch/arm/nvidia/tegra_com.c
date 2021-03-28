@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_com.c,v 1.12 2019/10/13 06:11:31 skrll Exp $ */
+/* $NetBSD: tegra_com.c,v 1.15 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: tegra_com.c,v 1.12 2019/10/13 06:11:31 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: tegra_com.c,v 1.15 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -51,11 +51,11 @@ __KERNEL_RCSID(1, "$NetBSD: tegra_com.c,v 1.12 2019/10/13 06:11:31 skrll Exp $")
 static int tegra_com_match(device_t, cfdata_t, void *);
 static void tegra_com_attach(device_t, device_t, void *);
 
-static const char * const compatible[] = {
-	"nvidia,tegra210-uart",
-	"nvidia,tegra124-uart",
-	"nvidia,tegra20-uart",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "nvidia,tegra210-uart" },
+	{ .compat = "nvidia,tegra124-uart" },
+	{ .compat = "nvidia,tegra20-uart" },
+	DEVICE_COMPAT_EOL
 };
 
 struct tegra_com_softc {
@@ -74,7 +74,7 @@ tegra_com_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -83,8 +83,8 @@ tegra_com_attach(device_t parent, device_t self, void *aux)
 	struct tegra_com_softc * const tsc = device_private(self);
 	struct com_softc * const sc = &tsc->tsc_sc;
 	struct fdt_attach_args * const faa = aux;
+	bus_space_tag_t bst = faa->faa_bst;
 	bus_space_handle_t bsh;
-	bus_space_tag_t bst;
 	char intrstr[128];
 	bus_addr_t addr;
 	bus_size_t size;
@@ -98,17 +98,7 @@ tegra_com_attach(device_t parent, device_t self, void *aux)
 
 	if (of_getprop_uint32(faa->faa_phandle, "reg-shift", &reg_shift)) {
 		/* missing or bad reg-shift property, assume 2 */
-		bst = faa->faa_a4x_bst;
-	} else {
-		if (reg_shift == 2) {
-			bst = faa->faa_a4x_bst;
-		} else if (reg_shift == 0) {
-			bst = faa->faa_bst;
-		} else {
-			aprint_error(": unsupported reg-shift value %d\n",
-			    reg_shift);
-			return;
-		}
+		reg_shift = 2;
 	}
 
 	sc->sc_dev = self;
@@ -130,7 +120,7 @@ tegra_com_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	com_init_regs(&sc->sc_regs, bst, bsh, addr);
+	com_init_regs_stride(&sc->sc_regs, bst, bsh, addr, reg_shift);
 
 	com_attach_subr(sc);
 	aprint_naive("\n");
@@ -140,8 +130,8 @@ tegra_com_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	tsc->tsc_ih = fdtbus_intr_establish(faa->faa_phandle, 0, IPL_SERIAL,
-	    FDT_INTR_MPSAFE, comintr, sc);
+	tsc->tsc_ih = fdtbus_intr_establish_xname(faa->faa_phandle, 0,
+	    IPL_SERIAL, FDT_INTR_MPSAFE, comintr, sc, device_xname(self));
 	if (tsc->tsc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt on %s\n",
 		    intrstr);
@@ -156,16 +146,19 @@ tegra_com_attach(device_t parent, device_t self, void *aux)
 static int
 tegra_com_console_match(int phandle)
 {
-	return of_match_compatible(phandle, compatible);
+	return of_compatible_match(phandle, compat_data);
 }
 
 static void
 tegra_com_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 {
 	const int phandle = faa->faa_phandle;
-	bus_space_tag_t bst = faa->faa_a4x_bst;
+	bus_space_tag_t bst = faa->faa_bst;
+	bus_space_handle_t dummy_bsh;
+	struct com_regs regs;
 	bus_addr_t addr;
 	tcflag_t flags;
+	u_int reg_shift;
 	int speed;
 
 	fdtbus_get_reg(phandle, 0, &addr, NULL);
@@ -174,7 +167,15 @@ tegra_com_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 		speed = 115200;	/* default */
 	flags = fdtbus_get_stdout_flags();
 
-	if (comcnattach(bst, addr, speed, uart_freq, COM_TYPE_TEGRA, flags))
+	if (of_getprop_uint32(faa->faa_phandle, "reg-shift", &reg_shift)) {
+		/* missing or bad reg-shift property, assume 2 */
+		reg_shift = 2;
+	}
+
+	memset(&dummy_bsh, 0, sizeof(dummy_bsh));
+	com_init_regs_stride(&regs, bst, dummy_bsh, addr, reg_shift);
+
+	if (comcnattach1(&regs, speed, uart_freq, COM_TYPE_TEGRA, flags))
 		panic("Cannot initialize tegra com console");
 }
 

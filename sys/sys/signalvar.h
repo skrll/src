@@ -1,4 +1,4 @@
-/*	$NetBSD: signalvar.h,v 1.100 2019/11/20 19:37:54 pgoyette Exp $	*/
+/*	$NetBSD: signalvar.h,v 1.103 2020/11/01 18:51:03 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1991, 1993
@@ -85,6 +85,7 @@ struct sigctx {
 	void		*ps_sigcode;	/* address of signal trampoline */
 	sigset_t	 ps_sigignore;	/* Signals being ignored. */
 	sigset_t	 ps_sigcatch;	/* Signals being caught by user. */
+	sigset_t	 ps_sigpass;	/* Signals evading the debugger. */
 };
 
 /* additional signal action values, used only temporarily/internally */
@@ -137,6 +138,7 @@ struct coredump_iostate;
  * Machine-independent functions:
  */
 int	coredump_netbsd(struct lwp *, struct coredump_iostate *);
+int	coredump_netbsd32(struct lwp *, struct coredump_iostate *);
 int	real_coredump_netbsd(struct lwp *, struct coredump_iostate *);
 void	execsigs(struct proc *);
 int	issignal(struct lwp *);
@@ -154,7 +156,7 @@ void	setsigvec(struct proc *, int, struct sigaction *);
 int	killpg1(struct lwp *, struct ksiginfo *, int, int);
 void	proc_unstop(struct proc *p);
 void	eventswitch(int, int, int);
-
+void	eventswitchchild(struct proc *, int, int);
 
 int	sigaction1(struct lwp *, int, const struct sigaction *,
 	    struct sigaction *, const void *, int);

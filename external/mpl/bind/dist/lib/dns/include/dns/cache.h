@@ -1,23 +1,22 @@
-/*	$NetBSD: cache.h,v 1.3 2019/01/09 16:55:12 christos Exp $	*/
+/*	$NetBSD: cache.h,v 1.5 2021/02/19 16:42:16 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
 #ifndef DNS_CACHE_H
 #define DNS_CACHE_H 1
 
 /*****
- ***** Module Info
- *****/
+***** Module Info
+*****/
 
 /*! \file dns/cache.h
  * \brief
@@ -46,7 +45,6 @@
 
 #include <stdbool.h>
 
-#include <isc/json.h>
 #include <isc/lang.h>
 #include <isc/stats.h>
 #include <isc/stdtime.h>
@@ -157,7 +155,6 @@ dns_cache_attachdb(dns_cache_t *cache, dns_db_t **dbp);
  *\li	*dbp is attached to the database.
  */
 
-
 isc_result_t
 dns_cache_setfilename(dns_cache_t *cache, const char *filename);
 /*%<
@@ -221,18 +218,6 @@ dns_cache_clean(dns_cache_t *cache, isc_stdtime_t now);
  * references.
  */
 
-void
-dns_cache_setcleaninginterval(dns_cache_t *cache, unsigned int interval);
-/*%<
- * Set the periodic cache cleaning interval to 'interval' seconds.
- */
-
-unsigned int
-dns_cache_getcleaninginterval(dns_cache_t *cache);
-/*%<
- * Get the periodic cache cleaning interval to 'interval' seconds.
- */
-
 const char *
 dns_cache_getname(dns_cache_t *cache);
 /*%<
@@ -272,6 +257,28 @@ dns_cache_getservestalettl(dns_cache_t *cache);
  *\li	'cache' to be valid.
  */
 
+void
+dns_cache_setservestalerefresh(dns_cache_t *cache, dns_ttl_t interval);
+/*%<
+ * Sets the length of time to wait before attempting to refresh a rrset
+ * if a previous attempt in doing so has failed.
+ * During this time window if stale rrset are available in cache they
+ * will be directly returned to client.
+ *
+ * Requires:
+ *\li	'cache' to be valid.
+ */
+
+dns_ttl_t
+dns_cache_getservestalerefresh(dns_cache_t *cache);
+/*%<
+ * Gets the 'stale-refresh-time' value, set by a previous call to
+ * 'dns_cache_setservestalerefresh'.
+ *
+ * Requires:
+ *\li	'cache' to be valid.
+ */
+
 isc_result_t
 dns_cache_flush(dns_cache_t *cache);
 /*%<
@@ -283,8 +290,7 @@ dns_cache_flush(dns_cache_t *cache);
  */
 
 isc_result_t
-dns_cache_flushnode(dns_cache_t *cache, const dns_name_t *name,
-		    bool tree);
+dns_cache_flushnode(dns_cache_t *cache, const dns_name_t *name, bool tree);
 /*
  * Flush a given name from the cache.  If 'tree' is true, then
  * also flush all names under 'name'.
@@ -335,19 +341,19 @@ dns_cache_updatestats(dns_cache_t *cache, isc_result_t result);
 
 #ifdef HAVE_LIBXML2
 int
-dns_cache_renderxml(dns_cache_t *cache, xmlTextWriterPtr writer);
+dns_cache_renderxml(dns_cache_t *cache, void *writer0);
 /*
  * Render cache statistics and status in XML for 'writer'.
  */
 #endif /* HAVE_LIBXML2 */
 
-#ifdef HAVE_JSON
+#ifdef HAVE_JSON_C
 isc_result_t
-dns_cache_renderjson(dns_cache_t *cache, json_object *cstats);
+dns_cache_renderjson(dns_cache_t *cache, void *cstats0);
 /*
  * Render cache statistics and status in JSON
  */
-#endif /* HAVE_JSON */
+#endif /* HAVE_JSON_C */
 
 ISC_LANG_ENDDECLS
 

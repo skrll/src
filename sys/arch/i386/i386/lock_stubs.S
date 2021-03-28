@@ -1,4 +1,4 @@
-/*	$NetBSD: lock_stubs.S,v 1.32 2019/12/08 20:00:56 ad Exp $	*/
+/*	$NetBSD: lock_stubs.S,v 1.35 2020/05/01 09:40:47 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: lock_stubs.S,v 1.32 2019/12/08 20:00:56 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lock_stubs.S,v 1.35 2020/05/01 09:40:47 maxv Exp $");
 
 #include "opt_lockdebug.h"
 
@@ -223,7 +223,6 @@ ENTRY(rw_tryenter)
 	jmp	3b
 END(rw_tryenter)
 
-#ifndef XENPV
 
 /*
  * void mutex_spin_enter(kmutex_t *mtx);
@@ -254,10 +253,12 @@ ENTRY(mutex_spin_enter)
 LABEL(mutex_spin_enter_end)
 END(mutex_spin_enter)
 
+#ifndef XENPV
 /*
- * Release a spin mutex and post a store fence.
+ * Release a spin mutex and post a store fence. Must occupy 96 bytes.
  */
 ENTRY(mutex_spin_exit)
+	HOTPATCH(HP_NAME_MUTEX_EXIT, 96)
 	movl	4(%esp), %edx
 	movl	CPUVAR(MTX_OLDSPL), %ecx
 	incl	CPUVAR(MTX_COUNT)
@@ -271,14 +272,16 @@ ENTRY(mutex_spin_exit)
 	movl	%ecx, CPUVAR(ILEVEL)
 	sti
 1:	ret
-	.space 32
+	.space	32, 0xCC
 	.align	32
-LABEL(mutex_spin_exit_end)
 END(mutex_spin_exit)
+#else  /* XENPV */
+STRONG_ALIAS(mutex_spin_exit, i686_mutex_spin_exit)
+#endif	/* !XENPV */
 
 /*
  * Patch for i686 CPUs where cli/sti is prohibitively expensive.
- * Must be the same size as mutex_spin_exit().
+ * Must be the same size as mutex_spin_exit(), that is, 96 bytes.
  */
 ENTRY(i686_mutex_spin_exit)
 	mov	4(%esp),%edx
@@ -300,23 +303,15 @@ ENTRY(i686_mutex_spin_exit)
 2:
 	popl	%ebx
 	movl	%ecx,4(%esp)
-LABEL(i686_mutex_spin_exit_patch)
-	jmp	_C_LABEL(Xspllower)
-	.space 16
+
+	/* The reference must be absolute, hence the indirect jump. */
+	movl	$Xspllower,%eax
+	jmp	*%eax
+
+	.space	16, 0xCC
 	.align	32
 LABEL(i686_mutex_spin_exit_end)
 END(i686_mutex_spin_exit)
-
-#else	/* !XENPV */
-
-/* For now; strong alias not working for some reason. */
-ENTRY(mutex_spin_enter)
-	jmp	_C_LABEL(mutex_vector_enter)
-
-ENTRY(mutex_spin_exit)
-	jmp	_C_LABEL(mutex_vector_exit)
-
-#endif	/* !XENPV */
 
 #endif	/* !LOCKDEBUG */
 

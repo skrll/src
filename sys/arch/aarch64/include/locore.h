@@ -1,4 +1,4 @@
-/* $NetBSD: locore.h,v 1.5 2018/07/09 09:09:47 jmcneill Exp $ */
+/* $NetBSD: locore.h,v 1.9 2021/03/01 11:29:14 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -58,9 +58,12 @@
 #define cpsie(psw)		daif_enable((psw))
 #define cpsid(psw)		daif_disable((psw))
 
-
-#define ENABLE_INTERRUPT()	daif_enable(DAIF_I|DAIF_F)
-#define DISABLE_INTERRUPT()	daif_disable(DAIF_I|DAIF_F)
+#define ENABLE_INTERRUPT()						\
+	reg_daifclr_write((DAIF_I|DAIF_F) >> DAIF_SETCLR_SHIFT)
+#define DISABLE_INTERRUPT()						\
+	reg_daifset_write((DAIF_I|DAIF_F) >> DAIF_SETCLR_SHIFT)
+#define DISABLE_INTERRUPT_SAVE()					\
+	daif_disable(DAIF_I|DAIF_F)
 
 #define DAIF_MASK		(DAIF_D|DAIF_A|DAIF_I|DAIF_F)
 
@@ -78,24 +81,14 @@ static inline register_t __unused
 daif_disable(register_t psw)
 {
 	register_t oldpsw = reg_daif_read();
-	if (!__builtin_constant_p(psw)) {
-		reg_daif_write(oldpsw | psw);
-	} else {
-		reg_daifset_write((psw & DAIF_MASK) >> DAIF_SETCLR_SHIFT);
+	if ((oldpsw & psw) != psw) {
+		if (!__builtin_constant_p(psw)) {
+			reg_daif_write(oldpsw | psw);
+		} else {
+			reg_daifset_write((psw & DAIF_MASK) >> DAIF_SETCLR_SHIFT);
+		}
 	}
 	return oldpsw;
-}
-
-static inline void
-arm_dsb(void)
-{
-	__asm __volatile("dsb sy" ::: "memory");
-}
-
-static inline void
-arm_isb(void)
-{
-	__asm __volatile("isb" ::: "memory");
 }
 
 #endif /* _LOCORE */

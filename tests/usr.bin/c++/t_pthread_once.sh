@@ -1,4 +1,4 @@
-#	$NetBSD: t_pthread_once.sh,v 1.2 2019/01/08 00:22:11 christos Exp $
+#	$NetBSD: t_pthread_once.sh,v 1.4 2020/10/13 06:49:27 rin Exp $
 #
 # Copyright (c) 2018 The NetBSD Foundation, Inc.
 # All rights reserved.

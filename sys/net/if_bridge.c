@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bridge.c,v 1.165 2019/08/05 13:30:21 msaitoh Exp $	*/
+/*	$NetBSD: if_bridge.c,v 1.179 2021/02/19 14:51:59 christos Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -80,10 +80,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.165 2019/08/05 13:30:21 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.179 2021/02/19 14:51:59 christos Exp $");
 
 #ifdef _KERNEL_OPT
-#include "opt_bridge_ipf.h"
 #include "opt_inet.h"
 #include "opt_net_mpsafe.h"
 #endif /* _KERNEL_OPT */
@@ -114,19 +113,16 @@ __KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.165 2019/08/05 13:30:21 msaitoh Exp 
 #include <net/if_bridgevar.h>
 #include <net/ether_sw_offload.h>
 
-#if defined(BRIDGE_IPF)
 /* Used for bridge_ip[6]_checkbasic */
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/ip_private.h>		/* XXX */
-
 #include <netinet/ip6.h>
 #include <netinet6/in6_var.h>
 #include <netinet6/ip6_var.h>
 #include <netinet6/ip6_private.h>	/* XXX */
-#endif /* BRIDGE_IPF */
 
 /*
  * Size of the route hash table.  Must be a power of two.
@@ -314,7 +310,6 @@ static int	bridge_ioctl_gma(struct bridge_softc *, void *);
 static int	bridge_ioctl_sma(struct bridge_softc *, void *);
 static int	bridge_ioctl_sifprio(struct bridge_softc *, void *);
 static int	bridge_ioctl_sifcost(struct bridge_softc *, void *);
-#if defined(BRIDGE_IPF)
 static int	bridge_ioctl_gfilt(struct bridge_softc *, void *);
 static int	bridge_ioctl_sfilt(struct bridge_softc *, void *);
 static int	bridge_ipf(void *, struct mbuf **, struct ifnet *, int);
@@ -322,7 +317,6 @@ static int	bridge_ip_checkbasic(struct mbuf **mp);
 # ifdef INET6
 static int	bridge_ip6_checkbasic(struct mbuf **mp);
 # endif /* INET6 */
-#endif /* BRIDGE_IPF */
 
 struct bridge_control {
 	int	(*bc_func)(struct bridge_softc *, void *);
@@ -373,10 +367,10 @@ static const struct bridge_control bridge_control_table[] = {
 [BRDGSIFPRIO] = {bridge_ioctl_sifprio, sizeof(struct ifbreq), BC_F_COPYIN|BC_F_SUSER}, 
 
 [BRDGSIFCOST] = {bridge_ioctl_sifcost, sizeof(struct ifbreq), BC_F_COPYIN|BC_F_SUSER}, 
-#if defined(BRIDGE_IPF)
+
 [BRDGGFILT] = {bridge_ioctl_gfilt, sizeof(struct ifbrparam), BC_F_COPYOUT},
 [BRDGSFILT] = {bridge_ioctl_sfilt, sizeof(struct ifbrparam), BC_F_COPYIN|BC_F_SUSER},
-#endif /* BRIDGE_IPF */
+
 [BRDGGIFS] = {bridge_ioctl_gifs, sizeof(struct ifbifconf), BC_F_XLATEIN|BC_F_XLATEOUT},
 [BRDGRTS] = {bridge_ioctl_rts, sizeof(struct ifbaconf), BC_F_XLATEIN|BC_F_XLATEOUT},
 };
@@ -444,9 +438,8 @@ bridge_clone_create(struct if_clone *ifc, int unit)
 
 	if_initname(ifp, ifc->ifc_name, unit);
 	ifp->if_softc = sc;
-	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
 #ifdef NET_MPSAFE
-	ifp->if_extflags |= IFEF_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_mtu = ETHERMTU;
 	ifp->if_ioctl = bridge_ioctl;
@@ -471,6 +464,14 @@ bridge_clone_create(struct if_clone *ifc, int unit)
 
 		return error;
 	}
+
+	/*
+	 * Set the link state to down.
+	 * When interfaces are added the link state will reflect
+	 * the best link state of the combined interfaces.
+	 */
+	ifp->if_link_state = LINK_STATE_DOWN;
+
 	if_alloc_sadl(ifp);
 	if_register(ifp);
 
@@ -640,6 +641,14 @@ bridge_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			error = 0;
 		break;
 
+        case SIOCGIFCAP:
+	    {
+		struct ifcapreq *ifcr = (struct ifcapreq *)data;
+                ifcr->ifcr_capabilities = sc->sc_capenable;
+                ifcr->ifcr_capenable = sc->sc_capenable;
+		break;
+	    }
+
 	default:
 		error = ifioctl_common(ifp, cmd, data);
 		break;
@@ -779,19 +788,45 @@ void
 bridge_calc_csum_flags(struct bridge_softc *sc)
 {
 	struct bridge_iflist *bif;
-	struct ifnet *ifs;
+	struct ifnet *ifs = NULL;
 	int flags = ~0;
+	int capenable = ~0;
 
 	BRIDGE_LOCK(sc);
 	BRIDGE_IFLIST_READER_FOREACH(bif, sc) {
 		ifs = bif->bif_ifp;
 		flags &= ifs->if_csum_flags_tx;
+		capenable &= ifs->if_capenable;
 	}
 	sc->sc_csum_flags_tx = flags;
+	sc->sc_capenable = (ifs != NULL) ? capenable : 0;
 	BRIDGE_UNLOCK(sc);
-#ifdef DEBUG
-	printf("%s: 0x%x\n", __func__, flags);
-#endif
+}
+
+/*
+ * bridge_calc_link_state:
+ *
+ *	Calculate the link state based on each member interface.
+ */
+void
+bridge_calc_link_state(struct bridge_softc *sc)
+{
+	struct bridge_iflist *bif;
+	struct ifnet *ifs;
+	int link_state = LINK_STATE_DOWN;
+
+	BRIDGE_LOCK(sc);
+	BRIDGE_IFLIST_READER_FOREACH(bif, sc) {
+		ifs = bif->bif_ifp;
+		if (ifs->if_link_state == LINK_STATE_UP) {
+			link_state = LINK_STATE_UP;
+			break;
+		}
+		if (ifs->if_link_state == LINK_STATE_UNKNOWN)
+			link_state = LINK_STATE_UNKNOWN;
+	}
+	if_link_state_change(&sc->sc_if, link_state);
+	BRIDGE_UNLOCK(sc);
 }
 
 static int
@@ -833,8 +868,15 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 	switch (ifs->if_type) {
 	case IFT_ETHER:
 		if (sc->sc_if.if_mtu != ifs->if_mtu) {
-			error = EINVAL;
-			goto out;
+			/* Change MTU of added interface to bridge MTU */
+			struct ifreq ifr;
+			memset(&ifr, 0, sizeof(ifr));
+			ifr.ifr_mtu = sc->sc_if.if_mtu;
+			IFNET_LOCK(ifs);
+			error = ether_ioctl(ifs, SIOCSIFMTU, &ifr);
+			IFNET_UNLOCK(ifs);
+			if (error != 0)
+				goto out;
 		}
 		/* FALLTHROUGH */
 	case IFT_L2TP:
@@ -872,6 +914,7 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 	BRIDGE_UNLOCK(sc);
 
 	bridge_calc_csum_flags(sc);
+	bridge_calc_link_state(sc);
 
 	if (sc->sc_if.if_flags & IFF_RUNNING)
 		bstp_initialization(sc);
@@ -918,6 +961,7 @@ bridge_ioctl_del(struct bridge_softc *sc, void *arg)
 
 	bridge_rtdelete(sc, ifs);
 	bridge_calc_csum_flags(sc);
+	bridge_calc_link_state(sc);
 
 	if (sc->sc_if.if_flags & IFF_RUNNING)
 		bstp_initialization(sc);
@@ -1298,7 +1342,6 @@ bridge_ioctl_sifprio(struct bridge_softc *sc, void *arg)
 	return 0;
 }
 
-#if defined(BRIDGE_IPF)
 static int
 bridge_ioctl_gfilt(struct bridge_softc *sc, void *arg)
 {
@@ -1334,7 +1377,6 @@ bridge_ioctl_sfilt(struct bridge_softc *sc, void *arg)
 
 	return 0;
 }
-#endif /* BRIDGE_IPF */
 
 static int
 bridge_ioctl_sifcost(struct bridge_softc *sc, void *arg)
@@ -1461,14 +1503,16 @@ bridge_enqueue(struct bridge_softc *sc, struct ifnet *dst_ifp, struct mbuf *m,
 	error = if_transmit_lock(dst_ifp, m);
 	if (error) {
 		/* mbuf is already freed */
-		sc->sc_if.if_oerrors++;
+		if_statinc(&sc->sc_if, if_oerrors);
 		return;
 	}
 
-	sc->sc_if.if_opackets++;
-	sc->sc_if.if_obytes += len;
+	net_stat_ref_t nsr = IF_STAT_GETREF(&sc->sc_if);
+	if_statinc_ref(nsr, if_opackets);
+	if_statadd_ref(nsr, if_obytes, len);
 	if (mflags & M_MCAST)
-		sc->sc_if.if_omcasts++;
+		if_statinc_ref(nsr, if_omcasts);
+	IF_STAT_PUTREF(&sc->sc_if);
 }
 
 /*
@@ -1497,11 +1541,7 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *sa,
 	 * IFEF_MPSAFE here.
 	 */
 
-	if (m->m_len < ETHER_HDR_LEN) {
-		m = m_pullup(m, ETHER_HDR_LEN);
-		if (m == NULL)
-			return 0;
-	}
+	KASSERT(m->m_len >= ETHER_HDR_LEN);
 
 	eh = mtod(m, struct ether_header *);
 	sc = ifp->if_bridge;
@@ -1649,7 +1689,7 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *sa,
 			} else {
 				mc = m_copypacket(m, M_DONTWAIT);
 				if (mc == NULL) {
-					sc->sc_if.if_oerrors++;
+					if_statinc(&sc->sc_if, if_oerrors);
 					goto next;
 				}
 			}
@@ -1667,7 +1707,8 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *sa,
 				} else {
 					mc = m_copypacket(m, M_DONTWAIT);
 					if (mc == NULL) {
-						sc->sc_if.if_oerrors++;
+						if_statinc(&sc->sc_if,
+						    if_oerrors);
 						goto next;
 					}
 				}
@@ -1750,8 +1791,7 @@ bridge_forward(struct bridge_softc *sc, struct mbuf *m)
 		goto out;
 	}
 
-	sc->sc_if.if_ipackets++;
-	sc->sc_if.if_ibytes += m->m_pkthdr.len;
+	if_statadd2(&sc->sc_if, if_ipackets, 1, if_ibytes, m->m_pkthdr.len);
 
 	/*
 	 * Look up the bridge_iflist.
@@ -1819,7 +1859,7 @@ bridge_forward(struct bridge_softc *sc, struct mbuf *m)
 		}
 	} else {
 		/* ...forward it to all interfaces. */
-		sc->sc_if.if_imcasts++;
+		if_statinc(&sc->sc_if, if_imcasts);
 		dst_if = NULL;
 	}
 
@@ -2081,7 +2121,7 @@ bridge_broadcast(struct bridge_softc *sc, struct ifnet *src_if,
 		if (dst_if != src_if) {
 			mc = m_copypacket(m, M_DONTWAIT);
 			if (mc == NULL) {
-				sc->sc_if.if_oerrors++;
+				if_statinc(&sc->sc_if, if_oerrors);
 				goto next;
 			}
 			/*
@@ -2099,9 +2139,15 @@ bridge_broadcast(struct bridge_softc *sc, struct ifnet *src_if,
 		if (bmcast) {
 			mc = m_copypacket(m, M_DONTWAIT);
 			if (mc == NULL) {
-				sc->sc_if.if_oerrors++;
+				if_statinc(&sc->sc_if, if_oerrors);
 				goto next;
 			}
+			/*
+			 * Before enqueueing this packet to the destination
+			 * interface, clear any in-bound checksum flags to
+			 * prevent them from being misused as out-bound flags.
+			 */
+			mc->m_pkthdr.csum_flags = 0;
 
 			m_set_rcvif(mc, dst_if);
 			mc->m_flags &= ~M_PROMISC;
@@ -2617,7 +2663,6 @@ bridge_rtnode_destroy(struct bridge_rtnode *brt)
 	pool_put(&bridge_rtnode_pool, brt);
 }
 
-#if defined(BRIDGE_IPF)
 extern pfil_head_t *inet_pfil_hook;                 /* XXX */
 extern pfil_head_t *inet6_pfil_hook;                /* XXX */
 
@@ -2761,18 +2806,10 @@ bridge_ip_checkbasic(struct mbuf **mp)
 	if (*mp == NULL)
 		return -1;
 
-	if (IP_HDR_ALIGNED_P(mtod(m, void *)) == 0) {
-		if ((m = m_copyup(m, sizeof(struct ip),
-			(max_linkhdr + 3) & ~3)) == NULL) {
-			/* XXXJRT new stat, please */
-			ip_statinc(IP_STAT_TOOSMALL);
-			goto bad;
-		}
-	} else if (__predict_false(m->m_len < sizeof (struct ip))) {
-		if ((m = m_pullup(m, sizeof (struct ip))) == NULL) {
-			ip_statinc(IP_STAT_TOOSMALL);
-			goto bad;
-		}
+	if (M_GET_ALIGNED_HDR(&m, struct ip, true) != 0) {
+		/* XXXJRT new stat, please */
+		ip_statinc(IP_STAT_TOOSMALL);
+		goto bad;
 	}
 	ip = mtod(m, struct ip *);
 	if (ip == NULL) goto bad;
@@ -2863,22 +2900,12 @@ bridge_ip6_checkbasic(struct mbuf **mp)
 	 * it.  Otherwise, if it is aligned, make sure the entire base
 	 * IPv6 header is in the first mbuf of the chain.
 	 */
-	if (IP6_HDR_ALIGNED_P(mtod(m, void *)) == 0) {
+	if (M_GET_ALIGNED_HDR(&m, struct ip6_hdr, true) != 0) {
 		struct ifnet *inifp = m_get_rcvif_NOMPSAFE(m);
-		if ((m = m_copyup(m, sizeof(struct ip6_hdr),
-		                  (max_linkhdr + 3) & ~3)) == NULL) {
-			/* XXXJRT new stat, please */
-			ip6_statinc(IP6_STAT_TOOSMALL);
-			in6_ifstat_inc(inifp, ifs6_in_hdrerr);
-			goto bad;
-		}
-	} else if (__predict_false(m->m_len < sizeof(struct ip6_hdr))) {
-		struct ifnet *inifp = m_get_rcvif_NOMPSAFE(m);
-		if ((m = m_pullup(m, sizeof(struct ip6_hdr))) == NULL) {
-			ip6_statinc(IP6_STAT_TOOSMALL);
-			in6_ifstat_inc(inifp, ifs6_in_hdrerr);
-			goto bad;
-		}
+		/* XXXJRT new stat, please */
+		ip6_statinc(IP6_STAT_TOOSMALL);
+		in6_ifstat_inc(inifp, ifs6_in_hdrerr);
+		goto bad;
 	}
 
 	ip6 = mtod(m, struct ip6_hdr *);
@@ -2898,4 +2925,3 @@ bridge_ip6_checkbasic(struct mbuf **mp)
 	return -1;
 }
 # endif /* INET6 */
-#endif /* BRIDGE_IPF */

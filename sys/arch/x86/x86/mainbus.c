@@ -1,4 +1,4 @@
-/* $NetBSD: mainbus.c,v 1.3 2019/02/14 08:18:25 cherry Exp $ */
+/* $NetBSD: mainbus.c,v 1.5 2020/08/01 12:36:35 jdolecek Exp $ */
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -28,28 +28,28 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.3 2019/02/14 08:18:25 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.5 2020/08/01 12:36:35 jdolecek Exp $");
+
+#include "opt_acpi.h"
+#include "opt_mpbios.h"
+#include "opt_pcifixup.h"
+#include "opt_pci.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/reboot.h>
 
-#include <dev/pci/pcivar.h>
-
 #include <machine/cpuvar.h>
 #include <machine/mpbiosvar.h>
 #include <machine/mpacpi.h>
+#include <xen/hypervisor.h>
 
 #include "pci.h"
 #include "isa.h"
 #include "isadma.h"
 #include "acpica.h"
 #include "ipmi.h"
-
-#include "opt_acpi.h"
-#include "opt_mpbios.h"
-#include "opt_pcifixup.h"
 
 #if NACPICA > 0
 #include <dev/acpi/acpivar.h>
@@ -62,6 +62,7 @@ __KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.3 2019/02/14 08:18:25 cherry Exp $");
 #endif
 
 #if NPCI > 0
+#include <dev/pci/pcivar.h>
 #if defined(PCI_BUS_FIXUP)
 #include <arch/x86/pci/pci_bus_fixup.h>
 #if defined(PCI_ADDR_FIXUP)
@@ -94,10 +95,6 @@ void i386_mainbus_attach(device_t, device_t, void *);
 
 #if defined(__x86_64__) && !defined(XENPV)
 void amd64_mainbus_attach(device_t, device_t, void *);
-#endif
-
-#if defined(XEN)
-void xen_mainbus_attach(device_t, device_t, void *);
 #endif
 
 static int
@@ -220,21 +217,29 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal("\n");
 
+#if defined(XENPVHVM)
+	xen_hvm_init(); /* before attaching CPUs */
+#endif
+
 #if defined(XENPV)
 	if (xendomain_is_dom0()) {
 #endif /* XENPV */
 		x86_cpubus_attach(self);
 
-#if defined(__i386__) && !defined(XENPV)
-		i386_mainbus_attach(parent, self, aux);
-#elif defined(__x86_64__) && !defined(XENPV)
-		amd64_mainbus_attach(parent, self, aux);
-#endif
 #if defined(XENPV)
 	}
 #endif /* XENPV */
 #if defined(XEN)
+	/*
+	 * before isa/pci probe, so that PV devices are not probed again
+	 * as emulated
+	 */
 	xen_mainbus_attach(parent, self, aux);
+#endif
+#if defined(__i386__) && !defined(XENPV)
+	i386_mainbus_attach(parent, self, aux);
+#elif defined(__x86_64__) && !defined(XENPV)
+	amd64_mainbus_attach(parent, self, aux);
 #endif
 }
 

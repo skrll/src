@@ -1,4 +1,4 @@
-/*	$NetBSD: ptyfs.h,v 1.14 2014/08/15 13:40:39 hannken Exp $	*/
+/*	$NetBSD: ptyfs.h,v 1.16 2020/11/27 14:43:57 christos Exp $	*/
 
 /*
  * Copyright (c) 1993
@@ -140,7 +140,7 @@ struct ptyfs_args {
 
 #define UIO_MX 32
 
-#define PTYFS_FILENO(pty, type) \
+#define PTYFS_FILENO(type, pty) \
     ((type == PTYFSroot) ? 2 : \
      ((((pty) + 1) * 2 + (((type) == PTYFSpts) ? 1 : 2))))
 
@@ -168,7 +168,7 @@ void ptyfs_itimes(struct ptyfsnode *, const struct timespec *,
 extern int (**ptyfs_vnodeop_p)(void *);
 extern struct vfsops ptyfs_vfsops;
 
-int	ptyfs_root(struct mount *, struct vnode **);
+int	ptyfs_root(struct mount *, int, struct vnode **);
 
 #endif /* _KERNEL */
 #endif /* _FS_PTYFS_PTYFS_H_ */

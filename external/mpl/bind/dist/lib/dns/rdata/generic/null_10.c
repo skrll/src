@@ -1,11 +1,11 @@
-/*	$NetBSD: null_10.c,v 1.4 2019/11/27 05:48:42 christos Exp $	*/
+/*	$NetBSD: null_10.c,v 1.6 2021/02/19 16:42:17 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -108,8 +108,9 @@ tostruct_null(ARGS_TOSTRUCT) {
 	dns_rdata_toregion(rdata, &r);
 	null->length = r.length;
 	null->data = mem_maybedup(mctx, r.base, r.length);
-	if (null->data == NULL)
+	if (null->data == NULL) {
 		return (ISC_R_NOMEMORY);
+	}
 
 	null->mctx = mctx;
 	return (ISC_R_SUCCESS);
@@ -122,11 +123,13 @@ freestruct_null(ARGS_FREESTRUCT) {
 	REQUIRE(null != NULL);
 	REQUIRE(null->common.rdtype == dns_rdatatype_null);
 
-	if (null->mctx == NULL)
+	if (null->mctx == NULL) {
 		return;
+	}
 
-	if (null->data != NULL)
+	if (null->data != NULL) {
 		isc_mem_free(null->mctx, null->data);
+	}
 	null->mctx = NULL;
 }
 
@@ -154,7 +157,6 @@ digest_null(ARGS_DIGEST) {
 
 static inline bool
 checkowner_null(ARGS_CHECKOWNER) {
-
 	REQUIRE(type == dns_rdatatype_null);
 
 	UNUSED(name);
@@ -167,7 +169,6 @@ checkowner_null(ARGS_CHECKOWNER) {
 
 static inline bool
 checknames_null(ARGS_CHECKNAMES) {
-
 	REQUIRE(rdata->type == dns_rdatatype_null);
 
 	UNUSED(rdata);
@@ -182,4 +183,4 @@ casecompare_null(ARGS_COMPARE) {
 	return (compare_null(rdata1, rdata2));
 }
 
-#endif	/* RDATA_GENERIC_NULL_10_C */
+#endif /* RDATA_GENERIC_NULL_10_C */

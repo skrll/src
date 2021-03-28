@@ -1,16 +1,15 @@
-/*	$NetBSD: callbacks.h,v 1.2 2018/08/12 13:02:35 christos Exp $	*/
+/*	$NetBSD: callbacks.h,v 1.4 2021/02/19 16:42:16 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 #ifndef DNS_CALLBACKS_H
 #define DNS_CALLBACKS_H 1
@@ -32,8 +31,8 @@ ISC_LANG_BEGINDECLS
  ***	Types
  ***/
 
-#define DNS_CALLBACK_MAGIC	ISC_MAGIC('C','L','L','B')
-#define DNS_CALLBACK_VALID(cb)	ISC_MAGIC_VALID(cb, DNS_CALLBACK_MAGIC)
+#define DNS_CALLBACK_MAGIC     ISC_MAGIC('C', 'L', 'L', 'B')
+#define DNS_CALLBACK_VALID(cb) ISC_MAGIC_VALID(cb, DNS_CALLBACK_MAGIC)
 
 struct dns_rdatacallbacks {
 	unsigned int magic;
@@ -54,23 +53,23 @@ struct dns_rdatacallbacks {
 	 * to pass back information obtained from the file header
 	 */
 	dns_rawdatafunc_t rawdata;
-	dns_zone_t *zone;
+	dns_zone_t *	  zone;
 
 	/*%
 	 * dns_load_master / dns_rdata_fromtext call this to issue a error.
 	 */
-	void	(*error)(struct dns_rdatacallbacks *, const char *, ...);
+	void (*error)(struct dns_rdatacallbacks *, const char *, ...);
 	/*%
 	 * dns_load_master / dns_rdata_fromtext call this to issue a warning.
 	 */
-	void	(*warn)(struct dns_rdatacallbacks *, const char *, ...);
+	void (*warn)(struct dns_rdatacallbacks *, const char *, ...);
 	/*%
 	 * Private data handles for use by the above callback functions.
 	 */
-	void	*add_private;
-	void	*deserialize_private;
-	void	*error_private;
-	void	*warn_private;
+	void *add_private;
+	void *deserialize_private;
+	void *error_private;
+	void *warn_private;
 };
 
 /***

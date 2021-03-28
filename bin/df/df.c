@@ -1,4 +1,4 @@
-/*	$NetBSD: df.c,v 1.95 2019/09/22 22:59:37 christos Exp $ */
+/*	$NetBSD: df.c,v 1.98 2021/01/03 01:43:12 ginsbach Exp $ */
 
 /*
  * Copyright (c) 1980, 1990, 1993, 1994
@@ -45,7 +45,7 @@ __COPYRIGHT(
 #if 0
 static char sccsid[] = "@(#)df.c	8.7 (Berkeley) 4/2/94";
 #else
-__RCSID("$NetBSD: df.c,v 1.95 2019/09/22 22:59:37 christos Exp $");
+__RCSID("$NetBSD: df.c,v 1.98 2021/01/03 01:43:12 ginsbach Exp $");
 #endif
 #endif /* not lint */
 
@@ -67,23 +67,28 @@ __RCSID("$NetBSD: df.c,v 1.95 2019/09/22 22:59:37 christos Exp $");
 #include <util.h>
 
 static char	*getmntpt(const char *);
+static void	 addstat(struct statvfs *, const struct statvfs *);
 static void	 prtstat(const struct statvfs *, int);
 static int	 selected(const char *, size_t);
 static void	 maketypelist(char *);
 static size_t	 regetmntinfo(struct statvfs **, size_t);
 __dead static void usage(void);
-static void	 prthumanval(int64_t, const char *);
+static void	 prthumanval(int64_t, int);
 static void	 prthuman(const struct statvfs *, int64_t, int64_t);
 
-static int	 aflag, gflag, hflag, iflag, lflag, nflag, Pflag, Wflag;
+static int	 aflag, cflag, gflag, hflag, iflag, lflag, nflag, Pflag, Wflag;
 static long	 usize;
 static char	**typelist;
+
+#define WIDTH_INODE	10
+#define WIDTH_BLKSIZE	12
+static int blksize_width = WIDTH_BLKSIZE;
 
 int
 main(int argc, char *argv[])
 {
 	struct stat stbuf;
-	struct statvfs *mntbuf;
+	struct statvfs *mntbuf, totals;
 	int ch, maxwidth, width;
 	size_t i, mntcount;
 	char *mntpt;
@@ -91,10 +96,13 @@ main(int argc, char *argv[])
 	setprogname(argv[0]);
 	(void)setlocale(LC_ALL, "");
 
-	while ((ch = getopt(argc, argv, "aGghiklmnPt:W")) != -1)
+	while ((ch = getopt(argc, argv, "acGghiklmnPt:W")) != -1)
 		switch (ch) {
 		case 'a':
 			aflag = 1;
+			break;
+		case 'c':
+			cflag = 1;
 			break;
 		case 'g':
 			hflag = 0;
@@ -203,15 +211,28 @@ main(int argc, char *argv[])
 		}
 	}
 
+	if (cflag) {
+		memset(&totals, 0, sizeof(totals));
+		totals.f_bsize = DEV_BSIZE;
+		strlcpy(totals.f_mntfromname, "total",
+			sizeof(totals.f_mntfromname));
+	}
+
 	maxwidth = 0;
 	for (i = 0; i < mntcount; i++) {
 		width = (int)strlen(Wflag && mntbuf[i].f_mntfromlabel[0] ?
 		    mntbuf[i].f_mntfromlabel : mntbuf[i].f_mntfromname);
 		if (width > maxwidth)
 			maxwidth = width;
+		if (cflag)
+			addstat(&totals, &mntbuf[i]);
 	}
 	for (i = 0; i < mntcount; i++)
 		prtstat(&mntbuf[i], maxwidth);
+
+	if (cflag)
+		prtstat(&totals, maxwidth);
+
 	return 0;
 }
 
@@ -328,7 +349,7 @@ regetmntinfo(struct statvfs **mntbufp, size_t mntcount)
 }
 
 static void
-prthumanval(int64_t bytes, const char *pad)
+prthumanval(int64_t bytes, int width)
 {
 	char buf[6];
 
@@ -336,16 +357,16 @@ prthumanval(int64_t bytes, const char *pad)
 	    bytes, "", HN_AUTOSCALE,
 	    HN_B | HN_NOSPACE | HN_DECIMAL);
 
-	(void)printf("%s %6s", pad, buf);
+	(void)printf("%*s", width, buf);
 }
 
 static void
 prthuman(const struct statvfs *sfsp, int64_t used, int64_t bavail)
 {
 
-	prthumanval((int64_t)(sfsp->f_blocks * sfsp->f_frsize), "   ");
-	prthumanval((int64_t)(used * sfsp->f_frsize), "    ");
-	prthumanval((int64_t)(bavail * sfsp->f_frsize), "    ");
+	prthumanval((int64_t)(sfsp->f_blocks * sfsp->f_frsize), blksize_width);
+	prthumanval((int64_t)(used * sfsp->f_frsize), 1 + blksize_width);
+	prthumanval((int64_t)(bavail * sfsp->f_frsize), 1 + blksize_width);
 }
 
 /*
@@ -356,6 +377,22 @@ prthuman(const struct statvfs *sfsp, int64_t used, int64_t bavail)
 	(((fsbs) != 0 && (uint64_t)(fsbs) < (uint64_t)(bs)) ?	\
 	    (int64_t)(num) / (int64_t)((bs) / (fsbs)) :		\
 	    (int64_t)(num) * (int64_t)((fsbs) / (bs)))
+
+static void
+addstat(struct statvfs *totalfsp, const struct statvfs *sfsp)
+{
+	uint64_t frsize;
+
+	frsize = sfsp->f_frsize / totalfsp->f_frsize;
+	totalfsp->f_blocks += sfsp->f_blocks * frsize;
+	totalfsp->f_bfree += sfsp->f_bfree * frsize;
+	totalfsp->f_bavail += sfsp->f_bavail * frsize;
+	totalfsp->f_bresvd += sfsp->f_bresvd * frsize;
+	totalfsp->f_files += sfsp->f_files;
+	totalfsp->f_ffree += sfsp->f_ffree;
+	totalfsp->f_favail += sfsp->f_favail;
+	totalfsp->f_fresvd += sfsp->f_fresvd;
+}
 
 /*
  * Print out status about a filesystem.
@@ -444,10 +481,19 @@ prtstat(const struct statvfs *sfsp, int maxwidth)
 			if (hflag) {
 				header = "Size";
 				headerlen = (int)strlen(header);
+				blksize_width = 6;
 			} else
 				header = getbsize(&headerlen, &blocksize);
 			break;
 		}
+
+		if (blocksize >= 1024 * 1024)
+			blksize_width -= 3;
+		if (blocksize >= 1024 * 1024 * 1024)
+			blksize_width -= 3;
+		if (blksize_width < headerlen)
+			blksize_width = headerlen;
+
 		if (Pflag) {
 			/*
 			 * either:
@@ -461,12 +507,16 @@ prtstat(const struct statvfs *sfsp, int maxwidth)
 			(void)printf("Filesystem %s Used Available Capacity "
 			    "Mounted on\n", header);
 		} else {
-			(void)printf("%-*.*s %s       Used      Avail %%Cap",
-			    maxwidth - (headerlen - 10),
-			    maxwidth - (headerlen - 10),
-			    "Filesystem", header);
-			if (iflag)
-				(void)printf("    iUsed   iAvail %%iCap");
+			(void)printf("%-*.*s %*s %*s %*s %%Cap",
+			    maxwidth, maxwidth, "Filesystem",
+			    blksize_width, header,
+			    blksize_width, "Used",
+			    blksize_width, "Avail");
+			if (iflag) {
+				(void)printf(" %*s %*s %%iCap",
+				    WIDTH_INODE, "iUsed",
+				    WIDTH_INODE, "iAvail");
+			}
 			(void)printf(" Mounted on\n");
 		}
 	}
@@ -502,18 +552,20 @@ prtstat(const struct statvfs *sfsp, int maxwidth)
 	if (hflag)
 		prthuman(sfsp, used, bavail);
 	else
-		(void)printf("%10" PRId64 " %10" PRId64 " %10" PRId64,
+		(void)printf("%*" PRId64 " %*" PRId64 " %*" PRId64,
+		    blksize_width,
 		    fsbtoblk(sfsp->f_blocks, sfsp->f_frsize, blocksize),
-		    fsbtoblk(used, sfsp->f_frsize, blocksize),
-		    fsbtoblk(bavail, sfsp->f_frsize, blocksize));
+		    blksize_width, fsbtoblk(used, sfsp->f_frsize, blocksize),
+		    blksize_width, fsbtoblk(bavail, sfsp->f_frsize, blocksize));
 	(void)printf(" %3s%%",
 	    availblks == 0 ? full :
 	    strspct(pb, sizeof(pb), used, availblks, 0));
 	if (iflag) {
 		inodes = sfsp->f_files;
 		used = inodes - sfsp->f_ffree;
-		(void)printf(" %8jd %8jd %4s%%",
-		    (intmax_t)used, (intmax_t)sfsp->f_ffree,
+		(void)printf(" %*jd %*jd %4s%%",
+		    WIDTH_INODE, (intmax_t)used,
+		    WIDTH_INODE, (intmax_t)sfsp->f_ffree,
 		    inodes == 0 ? (used == 0 ? empty : full) :
 		    strspct(pb, sizeof(pb), used, inodes, 0));
 	}

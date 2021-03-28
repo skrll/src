@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.5 2019/06/01 12:42:28 maxv Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.8 2021/02/26 02:18:29 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
 #define	MAXDSIZ		(1536*1024*1024)	/* max data size */
 #endif
 #ifndef	DFLSSIZ
-#define	DFLSSIZ		(16*1024*1024)		/* initial stack size limit */
+#define	DFLSSIZ		(4*1024*1024)		/* initial stack size limit */
 #endif
 #ifndef	MAXSSIZ
 #define	MAXSSIZ		(120*1024*1024)		/* max stack size */
@@ -79,9 +79,6 @@
 /*
  * Virtual memory related constants, all in bytes
  */
-#ifndef MAXTSIZ32
-#define	MAXTSIZ32	MAXTSIZ			/* max text size */
-#endif
 #ifndef DFLDSIZ32
 #define	DFLDSIZ32	DFLDSIZ			/* initial data size limit */
 #endif
@@ -109,12 +106,12 @@
 #define VM_MIN_ADDRESS		((vaddr_t)0x00000000)
 #ifdef _LP64	/* Sv39 */
 #define VM_MAXUSER_ADDRESS	((vaddr_t)0x0000004000000000 - 16 * PAGE_SIZE)
-#define VM_MIN_KERNEL_ADDRESS	((vaddr_t)0xFFFFFFC000000000)
-#define VM_MAX_KERNEL_ADDRESS	((vaddr_t)0xFFFFFFD000000000) /* MIN + 64GB */
+#define VM_MIN_KERNEL_ADDRESS	((vaddr_t)0xffffffc000000000)
+#define VM_MAX_KERNEL_ADDRESS	((vaddr_t)0xffffffd000000000) /* MIN + 64GB */
 #else		/* Sv32 */
-#define VM_MAXUSER_ADDRESS	((vaddr_t)-0x7fffffff-1)/* 0xFFFFFFFF80000000 */
-#define VM_MIN_KERNEL_ADDRESS	((vaddr_t)-0x7fffffff-1)/* 0xFFFFFFFF80000000 */
-#define VM_MAX_KERNEL_ADDRESS	((vaddr_t)-0x40000000)	/* 0xFFFFFFFFC0000000 */
+#define VM_MAXUSER_ADDRESS	((vaddr_t)-0x7fffffff-1)/* 0xffffffff80000000 */
+#define VM_MIN_KERNEL_ADDRESS	((vaddr_t)-0x7fffffff-1)/* 0xffffffff80000000 */
+#define VM_MAX_KERNEL_ADDRESS	((vaddr_t)-0x40000000)	/* 0xffffffffc0000000 */
 #endif
 #define VM_MAX_ADDRESS		VM_MAXUSER_ADDRESS
 #define VM_MAXUSER_ADDRESS32	((vaddr_t)(1UL << 31))/* 0x0000000080000000 */

@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.28 2017/10/22 00:59:28 maya Exp $	*/
+/*	$NetBSD: autoconf.c,v 1.30 2020/05/02 16:44:34 bouyer Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -46,7 +46,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.28 2017/10/22 00:59:28 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.30 2020/05/02 16:44:34 bouyer Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_intrdebug.h"
@@ -60,8 +60,13 @@ __KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.28 2017/10/22 00:59:28 maya Exp $");
 #include <machine/pte.h>
 #include <machine/cpufunc.h>
 
+#include "acpica.h"
 #include "ioapic.h"
 #include "lapic.h"
+
+#if NACPICA > 0
+#include <dev/acpi/acpi_srat.h>
+#endif
 
 #if NIOAPIC > 0
 #include <machine/i82093var.h>
@@ -87,7 +92,14 @@ extern void platform_init(void);
 void
 cpu_configure(void)
 {
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH)
+		xen_startrtclock();
+	else
+		startrtclock();
+#else
 	startrtclock();
+#endif
 
 #if NBIOS32 > 0
 	efi_init();
@@ -110,6 +122,11 @@ cpu_configure(void)
 
 #ifdef MULTIPROCESSOR
 	cpu_init_idle_lwps();
+#endif
+
+#if NACPICA > 0
+	/* Load NUMA memory regions into UVM. */
+	acpisrat_load_uvm();
 #endif
 
 	spl0();

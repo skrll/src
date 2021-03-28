@@ -1,4 +1,4 @@
-$NetBSD: usbdevs,v 1.774 2019/10/06 17:22:29 martin Exp $
+$NetBSD: usbdevs,v 1.790 2021/02/03 23:23:42 thorpej Exp $
 
 /*-
  * Copyright (c) 1998-2004 The NetBSD Foundation, Inc.
@@ -153,6 +153,7 @@ vendor PANASONIC	0x04da	Panasonic (Matsushita)
 vendor HUANHSIN		0x04dc	Huan Hsin
 vendor SHARP		0x04dd	Sharp
 vendor IIYAMA		0x04e1	Iiyama
+vendor EXAR		0x04e2	Exar
 vendor SHUTTLE		0x04e6	Shuttle Technology
 vendor SAMSUNG		0x04e8	Samsung Electronics
 vendor ANNABOOKS	0x04ed	Annabooks
@@ -249,6 +250,7 @@ vendor AVISION		0x0638	Avision
 vendor TEAC		0x0644	TEAC
 vendor SGI		0x065e	Silicon Graphics
 vendor SANWASUPPLY	0x0663	Sanwa Supply
+vendor WAYTECH		0x0665	WayTech Development, Inc.
 vendor LINKSYS		0x066b	Linksys
 vendor ACERSA		0x066e	Acer Semiconductor America
 vendor SIGMATEL		0x066f	Sigmatel
@@ -537,6 +539,7 @@ vendor ANYDATA		0x16d5	AnyDATA Inc.
 vendor JABLOTRON	0x16d6	Jablotron
 vendor LINKSYS4		0x1737	Linksys
 vendor SENAO		0x1740	Senao
+vendor ASMEDIA		0x174c	ASMedia
 vendor ASUSTEK2		0x1761	ASUSTeK Computer
 vendor SWEEX2		0x177f	Sweex
 vendor MISC		0x1781	Misc Vendors
@@ -577,6 +580,7 @@ vendor ARDUINO		0x2341	Arduino SA
 vendor TPLINK		0x2357	TP-Link
 vendor WMR		0x2405	West Mountain Radio
 vendor TRIPPLITE	0x2478	Tripp-Lite
+vendor HAILUCK		0x258a	HAILUCK Co., Ltd
 vendor HIROSE		0x2631	Hirose Electric
 vendor NHJ		0x2770	NHJ
 vendor PLANEX		0x2c02	Planex Communications
@@ -800,6 +804,7 @@ product ALCATELT ST121G		0x0121	SpeedTouch 121g
 /* Alcor Micro, Inc. products */
 product ALCOR2 KBD_HUB		0x2802	Kbd Hub
 
+product ALCOR AU6366		0x6366	AU6366 USB2.0 Single LUN Multiple Flash Card Reader Controller
 product ALCOR MA_KBD_HUB	0x9213	MacAlly Kbd Hub
 product ALCOR AU9814		0x9215	AU9814 Hub
 product ALCOR SM_KBD		0x9410	MicroConnectors/StrongMan Keyboard
@@ -928,6 +933,9 @@ product ASIX AX88772		0x7720	AX88772 USB 2.0 10/100 ethernet controller
 product ASIX AX88772A		0x772a	AX88772A USB 2.0 10/100 Ethernet adapter
 product ASIX AX88772B		0x772b	AX88772B USB 2.0 10/100 Ethernet adapter
 product ASIX AX88772B_1		0x7e2b	AX88772B1 USB 2.0 10/100 Ethernet adapter
+
+/* ASMedia products */
+product ASMEDIA ASM1051	0x55aa	ASM1051,1053,1153 SATA Bridge
 
 /* ASUSTeK computer products */
 product ASUSTEK RT2570		0x1706	RT2570
@@ -1165,6 +1173,7 @@ product CHIC CYPRESS		0x0003	Cypress USB Mouse
 
 /* Chicony products */
 product CHICONY KB8933		0x0001	KB-8933 keyboard
+product CHICONY OPTMOUSE0939	0x0939	USB Optical Mouse
 product CHICONY RTL8188CUS_1	0xaff7	RTL8188CUS
 product CHICONY RTL8188CUS_2	0xaff8	RTL8188CUS
 product CHICONY RTL8188CUS_3	0xaff9	RTL8188CUS
@@ -1172,6 +1181,7 @@ product CHICONY RTL8188CUS_4	0xaffa	RTL8188CUS
 product CHICONY RTL8188CUS_5	0xaffb	RTL8188CUS
 product CHICONY RTL8188CUS_6	0xaffc	RTL8188CUS
 product CHICONY2 TWINKLECAM	0x600d	TwinkleCam USB camera
+product CHICONY2 BWC35HL01	0x602c	Buffalo WBC-35H/L01
 
 /* CH Products */
 product CHPRODUCTS PROTHROTTLE	0x00f1	Pro Throttle
@@ -1396,6 +1406,7 @@ product DLINK RTL8192CU_4	0x330b	RTL8192CU
 product DLINK DWA131B		0x330d	DWA-131 rev B
 product DLINK DWA125D1		0x330f	DWA-125 rev D1
 product DLINK DWA131E		0x3319	DWA-131 rev E
+product DLINK DWA121B1		0x331b	DWA-121 rev B1
 product DLINK DWL122		0x3700	Wireless DWL122
 product DLINK DWLG120		0x3701	DWL-G120
 product DLINK DWL120F		0x3702	DWL-120 rev F
@@ -1422,8 +1433,10 @@ product DLINK DSB650TX_PNA	0x4003	1/10/100 ethernet adapter
 product DLINK DSB650TX3		0x400b	10/100 ethernet adapter
 product DLINK DSB650TX2		0x4102	10/100 ethernet adapter
 product DLINK DSB650		0xabc1	10/100 ethernet adapter
+product DLINK DWM157E_CD	0xa407	DWM-157 CD-ROM Mode
 product DLINK DWM157_CD		0xa707	DWM-157 CD-ROM Mode
 product DLINK DWM157		0x7d02	DWM-157 LTE
+product DLINK DWM157E		0x7d0e	DWM-157 LTE
 product DLINK DWM222_CD		0xab00	DWM-222 CD-ROM Mode
 product DLINK DWM222		0x7e35	DWM-222 LTE
 product DLINK DWR510_CD		0xa805	DWR-510 CD-ROM Mode
@@ -1486,6 +1499,8 @@ product EDIMAX EW7718		0x7718	EW-7718
 product EDIMAX EW7722UTN	0x7722	EW-7722UTn
 product EDIMAX RTL8188CU	0x7811	RTL8188CU
 product EDIMAX RTL8192CU	0x7822	RTL8192CU
+product EDIMAX EW7811UTC_1	0xa811	EW-7811UTC
+product EDIMAX EW7811UTC_2	0xa812	EW-7811UTC
 product EDIMAX ELECOM_WDC433SU2M 0xb711	ELECOM WDC-433SU2M
 
 /* eGalax Products */
@@ -1572,6 +1587,11 @@ product EPSON 1670		0x011f	Perfection 1670 scanner
 
 /* e-TEK Labs products */
 product ETEK 1COM		0x8007	Serial port
+
+/* Exar products */
+product EXAR XR21V1410		0x1410	XR21V1410 1 channel UART
+product EXAR XR21V1412		0x1412	XR21V1412 2 channel UART
+product EXAR XR21V1414		0x1414	XR21V1414 4 channel UART
 
 /* Extended Systems products */
 product EXTENDED XTNDACCESS	0x0100	XTNDAccess IrDA
@@ -1731,6 +1751,9 @@ product GUILLEMOT RTL8192CU	0xe035	RTL8192CU
 product HAGIWARA FGSM		0x0002	FlashGate SmartMedia Card Reader
 product HAGIWARA FGCF		0x0003	FlashGate CompactFlash Card Reader
 product HAGIWARA FG		0x0005	FlashGate
+
+/* HAILUCK Co., Ltd products */
+product HAILUCK KEYBOARD	0x001e	Keyboard
 
 /* HAL Corporation products */
 product HAL IMR001		0x0011	Crossam2+USB IR commander
@@ -1910,6 +1933,12 @@ product INTEL TESTBOARD		0x9890	82930 test board
 
 product INTEL2 RMH		0x0020	Rate Matching Hub
 product INTEL2 RMH2		0x0024	Rate Matching Hub
+product INTEL2 RMH3		0x8000	Rate Matching Hub
+product INTEL2 RMH4		0x8001	Rate Matching Hub
+product INTEL2 RMH5		0x8002	Rate Matching Hub
+product INTEL2 RMH6		0x8008	Rate Matching Hub
+product INTEL2 RMH7		0x8009	Rate Matching Hub
+product INTEL2 RMH8		0x800a	Rate Matching Hub
 product INTEL2 N_6235_BT	0x07da	Advanced-N 6235 Combo Bluetooth
 
 /* Intersil products */
@@ -2115,6 +2144,7 @@ product LINKSYS4 WUSB600NV2	0x0079	WUSB600N v2
 product LINUXFOUNDATION ROOT_HUB_11	0x0001	1.1 root hub
 product LINUXFOUNDATION ROOT_HUB_20	0x0002	2.0 root hub
 product LINUXFOUNDATION ROOT_HUB_30	0x0003	3.0 root hub
+product LINUXFOUNDATION USB3DEBUG	0x0010	USB 3.0 debug port
 
 /* Lite-On Technology */
 product LITEON AR9271		0x4605	AR9271
@@ -2202,6 +2232,9 @@ product MCT ML_4500		0x0302	ML-4500
 
 /* MediaGear products */
 product MEDIAGEAR READER9IN1	0x5003	USB2.0 9 in 1 Reader
+
+/* WayTech Development, Inc. products */
+product WAYTECH USB2SERIAL	0x5161	USB to Serial
 
 /* Meinberg Funkuhren products */
 product MEINBERG USB5131	0x0301	USB 5131 DCF77 - Radio Clock
@@ -2315,6 +2348,8 @@ product MICROSOFT XBOX_CONTROLLER_S12	0x0289	Xbox Controller S (1.2)
 product MICROSOFT XBOX_360_WIRELESS_RECEIVER 0x0291 Xbox 360 Wireless Receiver
 product MICROSOFT 24GHZ_XCVR10		0x071d	2.4GHz Transceiver V1.0
 product MICROSOFT 24GHZ_XCVR20		0x071f	2.4GHz Transceiver V2.0
+product MICROSOFT 24GHZ_XCVR70		0x0745	2.4GHz Transceiver V7.0
+product MICROSOFT 24GHZ_XCVR80		0x07b2	2.4GHz Transceiver V8.0
 product MICROSOFT CM6000		0x077d	Comfort Mouse 6000
 
 
@@ -2620,6 +2655,8 @@ product PEGATRON RT3072		0x0011	RT3072
 
 /* Future Bits products */
 product FUTUREBITS 4PI		0x6019	4Pi reprap
+/* Moonbase Otago share vendor ID with Future Bits products */
+product	FUTUREBITS ONERNG	0x6086	OneRNG Random Number Generator
 
 /* Pen Driver */
 product PEN USBDISKPRO		0x0120	USB Disk Pro
@@ -3365,7 +3402,9 @@ product TOSHIBA HSDPA_MODEM_EU870DT1	0x1302	HSDPA 3G Modem Card
 
 /* TP-Link products */
 product TPLINK RTL8192CU	0x0100	RTL8192CU
-product TPLINK RTL8192EU	0x0109	RTL8192EU
+product	TPLINK WN821NV5		0x0107	TL-WN821N v5
+product	TPLINK WN822NV4		0x0108	TL-WN822N v4
+product	TPLINK WN823NV2		0x0109	TL-WN823N v2
 product TPLINK RTL8188EU	0x010c	RTL8188EU
 product	TPLINK T4UV2		0x010d  Archer T4U ver 2
 product	TPLINK T4UHV2		0x010e  Archer T4UH ver 2

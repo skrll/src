@@ -1,4 +1,4 @@
-/* $NetBSD: tprof_armv8.c,v 1.4 2018/07/17 00:42:48 christos Exp $ */
+/* $NetBSD: tprof_armv8.c,v 1.6 2020/10/30 18:54:37 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tprof_armv8.c,v 1.4 2018/07/17 00:42:48 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tprof_armv8.c,v 1.6 2020/10/30 18:54:37 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -37,7 +37,7 @@ __KERNEL_RCSID(0, "$NetBSD: tprof_armv8.c,v 1.4 2018/07/17 00:42:48 christos Exp
 #include <dev/tprof/tprof.h>
 
 #include <arm/armreg.h>
-#include <arm/locore.h>
+#include <arm/cpufunc.h>
 
 #include <dev/tprof/tprof_armv8.h>
 
@@ -70,7 +70,7 @@ static void
 armv8_pmu_set_pmevtyper(u_int counter, uint64_t val)
 {
 	reg_pmselr_el0_write(counter);
-	arm_isb();
+	isb();
 	reg_pmxevtyper_el0_write(val);
 }
 
@@ -78,7 +78,7 @@ static void
 armv8_pmu_set_pmevcntr(u_int counter, uint32_t val)
 {
 	reg_pmselr_el0_write(counter);
-	arm_isb();
+	isb();
 	reg_pmxevcntr_el0_write(val);
 }
 
@@ -86,12 +86,7 @@ static void
 armv8_pmu_start_cpu(void *arg1, void *arg2)
 {
 	const uint32_t counter_mask = __BIT(armv8_pmu_counter);
-	uint64_t pmcr, pmevtyper;
-
-	/* Enable performance monitor */
-	pmcr = reg_pmcr_el0_read();
-	pmcr |= PMCR_E;
-	reg_pmcr_el0_write(pmcr);
+	uint64_t pmevtyper;
 
 	/* Disable event counter */
 	reg_pmcntenclr_el0_write(counter_mask);
@@ -122,18 +117,12 @@ static void
 armv8_pmu_stop_cpu(void *arg1, void *arg2)
 {
 	const uint32_t counter_mask = __BIT(armv8_pmu_counter);
-	uint32_t pmcr;
 
 	/* Disable overflow interrupts */
 	reg_pmintenclr_el1_write(counter_mask);
 
 	/* Disable event counter */
 	reg_pmcntenclr_el0_write(counter_mask);
-
-	/* Disable performance monitor */
-	pmcr = reg_pmcr_el0_read();
-	pmcr &= ~PMCR_E;
-	reg_pmcr_el0_write(pmcr);
 }
 
 static uint64_t
@@ -226,11 +215,8 @@ armv8_pmu_init(void)
 	/* Disable interrupts */
 	reg_pmintenclr_el1_write(~0U);
 
-	/* Disable counters */
-	reg_pmcntenclr_el0_write(~0U);
-
-	/* Disable performance monitor */
-	reg_pmcr_el0_write(0);
+	/* Disable event counters */
+	reg_pmcntenclr_el0_write(PMCNTEN_P);
 
 	return tprof_backend_register("tprof_armv8", &tprof_armv8_pmu_ops,
 	    TPROF_BACKEND_VERSION);

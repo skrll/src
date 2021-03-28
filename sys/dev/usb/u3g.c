@@ -1,4 +1,4 @@
-/*	$NetBSD: u3g.c,v 1.37 2019/05/09 02:43:35 mrg Exp $	*/
+/*	$NetBSD: u3g.c,v 1.41 2020/06/05 08:02:32 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: u3g.c,v 1.37 2019/05/09 02:43:35 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: u3g.c,v 1.41 2020/06/05 08:02:32 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -114,6 +114,7 @@ struct u3g_softc {
 	struct usbd_device *	sc_udev;
 	bool			sc_dying;	/* We're going away */
 	int			sc_ifaceno;	/* Device interface number */
+	struct usbd_interface	*sc_iface;	/* Device interface */
 
 	struct u3g_com {
 		device_t	c_dev;		/* Child ucom(4) handle */
@@ -162,7 +163,7 @@ static void u3g_close(void *, int);
 static void u3g_read(void *, int, u_char **, uint32_t *);
 static void u3g_write(void *, int, u_char *, u_char *, uint32_t *);
 
-struct ucom_methods u3g_methods = {
+static const struct ucom_methods u3g_methods = {
 	.ucom_get_status = u3g_get_status,
 	.ucom_set = u3g_set,
 	.ucom_open = u3g_open,
@@ -255,6 +256,10 @@ static const struct usb_devno u3g_devs[] = {
 	/* 4G Systems */
 	{ USB_VENDOR_LONGCHEER, USB_PRODUCT_LONGCHEER_XSSTICK_P14 },
 	{ USB_VENDOR_LONGCHEER, USB_PRODUCT_LONGCHEER_XSSTICK_W14 },
+
+	/* DLink */
+	{ USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DWM157 },
+	{ USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DWM157E },
 };
 
 /*
@@ -267,20 +272,11 @@ static int
 u3g_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usbif_attach_arg *uiaa = aux;
-	struct usbd_interface *iface;
+	struct usbd_interface *iface = uiaa->uiaa_iface;
 	usb_interface_descriptor_t *id;
-	usbd_status error;
 
 	if (!usb_lookup(u3g_devs, uiaa->uiaa_vendor, uiaa->uiaa_product))
 		return UMATCH_NONE;
-
-	error = usbd_device2interface_handle(uiaa->uiaa_device,
-	    uiaa->uiaa_ifaceno, &iface);
-	if (error) {
-		printf("u3g_match: failed to get interface, err=%s\n",
-		    usbd_errstr(error));
-		return UMATCH_NONE;
-	}
 
 	id = usbd_get_interface_descriptor(iface);
 	if (id == NULL) {
@@ -298,6 +294,16 @@ u3g_match(device_t parent, cfdata_t match, void *aux)
 		return UMATCH_NONE;
 
 	/*
+	 * Sierra Wireless modems use the vendor-specific class also for
+	 * Direct IP or QMI interfaces, which we should avoid attaching to.
+	 */
+	if (uiaa->uiaa_vendor == USB_VENDOR_SIERRA &&
+	    id->bInterfaceClass == UICLASS_VENDOR &&
+	    uiaa->uiaa_product == USB_PRODUCT_SIERRA_USB305 &&
+	     uiaa->uiaa_ifaceno >= 7)
+		return UMATCH_NONE;
+
+	/*
 	 * 3G modems generally report vendor-specific class
 	 *
 	 * XXX: this may be too generalised.
@@ -312,7 +318,7 @@ u3g_attach(device_t parent, device_t self, void *aux)
 	struct u3g_softc *sc = device_private(self);
 	struct usbif_attach_arg *uiaa = aux;
 	struct usbd_device *dev = uiaa->uiaa_device;
-	struct usbd_interface *iface;
+	struct usbd_interface *iface = uiaa->uiaa_iface;
 	usb_interface_descriptor_t *id;
 	usb_endpoint_descriptor_t *ed;
 	struct ucom_attach_args ucaa;
@@ -325,13 +331,6 @@ u3g_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_dying = false;
 	sc->sc_udev = dev;
-
-	error = usbd_device2interface_handle(dev, uiaa->uiaa_ifaceno, &iface);
-	if (error) {
-		aprint_error_dev(self, "failed to get interface, err=%s\n",
-		    usbd_errstr(error));
-		return;
-	}
 
 	id = usbd_get_interface_descriptor(iface);
 
@@ -348,6 +347,7 @@ u3g_attach(device_t parent, device_t self, void *aux)
 	ucaa.ucaa_bulkin = ucaa.ucaa_bulkout = -1;
 
 	sc->sc_ifaceno = uiaa->uiaa_ifaceno;
+	sc->sc_iface = uiaa->uiaa_iface;
 	intr_address = -1;
 	intr_size = 0;
 
@@ -571,10 +571,8 @@ static int
 u3g_open(void *arg, int portno)
 {
 	struct u3g_softc *sc = arg;
-	usb_device_request_t req;
 	usb_endpoint_descriptor_t *ed;
 	usb_interface_descriptor_t *id;
-	struct usbd_interface *ih;
 	usbd_status err;
 	struct u3g_com *com = &sc->sc_com[portno];
 	int i, nin;
@@ -582,27 +580,18 @@ u3g_open(void *arg, int portno)
 	if (sc->sc_dying)
  		return EIO;
 
-	err = usbd_device2interface_handle(sc->sc_udev, sc->sc_ifaceno, &ih);
-	if (err)
-		return EIO;
-
-	id = usbd_get_interface_descriptor(ih);
+	id = usbd_get_interface_descriptor(sc->sc_iface);
 
 	for (nin = i = 0; i < id->bNumEndpoints; i++) {
-		ed = usbd_interface2endpoint_descriptor(ih, i);
+		ed = usbd_interface2endpoint_descriptor(sc->sc_iface, i);
 		if (ed == NULL)
 			return EIO;
 
 		if (UE_GET_DIR(ed->bEndpointAddress) == UE_DIR_IN &&
 		    UE_GET_XFERTYPE(ed->bmAttributes) == UE_BULK &&
 		    nin++ == portno) {
-			/* Issue ENDPOINT_HALT request */
-			req.bmRequestType = UT_WRITE_ENDPOINT;
-			req.bRequest = UR_CLEAR_FEATURE;
-			USETW(req.wValue, UF_ENDPOINT_HALT);
-			USETW(req.wIndex, ed->bEndpointAddress);
-			USETW(req.wLength, 0);
-			err = usbd_do_request(sc->sc_udev, &req, 0);
+			err = usbd_clear_endpoint_feature(sc->sc_udev,
+			    ed->bEndpointAddress, UF_ENDPOINT_HALT);
 			if (err)
 				return EIO;
 		}

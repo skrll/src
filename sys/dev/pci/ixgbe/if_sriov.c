@@ -119,7 +119,7 @@ ixgbe_process_vf_ack(struct adapter *adapter, struct ixgbe_vf *vf)
 		ixgbe_send_vf_nack(adapter, vf, 0);
 }
 
-static inline boolean_t
+static inline bool
 ixgbe_vf_mac_changed(struct ixgbe_vf *vf, const uint8_t *mac)
 {
 	return (bcmp(mac, vf->ether_addr, ETHER_ADDR_LEN) != 0);
@@ -264,7 +264,7 @@ ixgbe_clear_vfmbmem(struct ixgbe_hw *hw, struct ixgbe_vf *vf)
 } /* ixgbe_clear_vfmbmem */
 
 
-static boolean_t
+static bool
 ixgbe_vf_frame_size_compatible(struct adapter *adapter, struct ixgbe_vf *vf)
 {
 
@@ -643,9 +643,10 @@ ixgbe_handle_mbx(void *context, int pending)
 	struct ixgbe_vf *vf;
 	int i;
 
+	KASSERT(mutex_owned(&adapter->core_mtx));
+
 	hw = &adapter->hw;
 
-	IXGBE_CORE_LOCK(adapter);
 	for (i = 0; i < adapter->num_vfs; i++) {
 		vf = &adapter->vfs[i];
 
@@ -660,7 +661,6 @@ ixgbe_handle_mbx(void *context, int pending)
 				ixgbe_process_vf_ack(adapter, vf);
 		}
 	}
-	IXGBE_CORE_UNLOCK(adapter);
 } /* ixgbe_handle_mbx */
 
 int

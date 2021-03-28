@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_quirks.c,v 1.20 2011/11/14 02:44:59 jmcneill Exp $ */
+/* $NetBSD: acpi_quirks.c,v 1.22 2020/12/06 11:38:28 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
@@ -64,7 +64,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: acpi_quirks.c,v 1.20 2011/11/14 02:44:59 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_quirks.c,v 1.22 2020/12/06 11:38:28 jmcneill Exp $");
 
 #include "opt_acpi.h"
 
@@ -84,7 +84,7 @@ ACPI_MODULE_NAME	("acpi_quirks")
 
 static int acpi_quirks_revcmp(uint32_t, uint32_t, int);
 
-static struct acpi_quirk acpi_quirks[] = {
+static const struct acpi_quirk acpi_quirks[] = {
 
 	{ ACPI_SIG_FADT, "ASUS  ", 0x30303031, AQ_LTE, "CUV4X-D ",
 	  ACPI_QUIRK_BROKEN },
@@ -152,7 +152,7 @@ int
 acpi_find_quirks(void)
 {
 	ACPI_TABLE_HEADER fadt, dsdt, xsdt, *hdr;
-	struct acpi_quirk *aq;
+	const struct acpi_quirk *aq;
 	ACPI_STATUS rv;
 	size_t i, len;
 
@@ -211,61 +211,3 @@ acpi_find_quirks(void)
 
 	return 0;
 }
-
-/*
- * Add or delete a string to the list that should return
- * true when _OSI is being queried. The defaults are:
- *
- *	"Windows 2000"		# Windows 2000
- *	"Windows 2001"		# Windows XP
- *	"Windows 2001 SP1"	# Windows XP SP1
- *	"Windows 2001.1"	# Windows Server 2003
- *	"Windows 2001 SP2"	# Windows XP SP2
- *	"Windows 2001.1 SP1"	# Windows Server 2003 SP1
- *	"Windows 2006"		# Windows Vista
- *	"Windows 2006.1"	# Windows Server 2008
- *	"Windows 2006 SP1"	# Windows Vista SP1
- *	"Windows 2006 SP2"	# Windows Vista SP2
- *	"Windows 2009"		# Windows 7 and Server 2008
- */
-int
-acpi_quirks_osi_add(const char *str)
-{
-	ACPI_STATUS rv;
-
-	if (str == NULL || *str == '\0')
-		return EINVAL;
-
-	rv = AcpiInstallInterface(__UNCONST(str));
-
-	return (rv != AE_OK) ? EIO : 0;
-}
-
-int
-acpi_quirks_osi_del(const char *str)
-{
-	ACPI_STATUS rv;
-
-	if (str == NULL || *str == '\0')
-		return EINVAL;
-
-	rv = AcpiRemoveInterface(__UNCONST(str));
-
-	return (rv != AE_OK) ? EIO : 0;
-}
-
-#if 0
-static void
-acpi_quirks_osi_linux(void)
-{
-	(void)acpi_quirks_osi_add("Linux");
-}
-
-static void
-acpi_quirks_osi_vista(void)
-{
-	(void)acpi_quirks_osi_del("Windows 2006");
-	(void)acpi_quirks_osi_del("Windows 2006 SP1");
-	(void)acpi_quirks_osi_del("Windows 2006 SP2");
-}
-#endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: mutex.h,v 1.21 2019/11/29 22:55:33 riastradh Exp $	*/
+/*	$NetBSD: mutex.h,v 1.25 2020/12/01 14:53:47 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2007 The NetBSD Foundation, Inc.
@@ -43,22 +43,15 @@
  * So, what we have done is implement simple mutexes using a compare-and-swap.
  * We support pre-ARMv6 by implementing CAS as a restartable atomic sequence
  * that is checked by the IRQ vector.
- * 
+ *
  */
-
-#ifndef __MUTEX_PRIVATE
-
-struct kmutex {
-	uintptr_t	mtx_pad1;
-};
-
-#else	/* __MUTEX_PRIVATE */
 
 struct kmutex {
 	union {
 		/* Adaptive mutex */
 		volatile uintptr_t	mtxa_owner;	/* 0-3 */
 
+#ifdef _KERNEL
 		/* Spin mutex */
 		struct {
 			/*
@@ -71,8 +64,11 @@ struct kmutex {
 			__cpu_simple_lock_t	mtxs_lock;
 			volatile uint8_t	mtxs_unused;
 		} s;
+#endif
 	} u;
 };
+
+#ifdef __MUTEX_PRIVATE
 
 #define	mtx_owner		u.mtxa_owner
 #define	mtx_ipl			u.s.mtxs_ipl
@@ -86,10 +82,6 @@ struct kmutex {
 
 #define	MUTEX_CAS(p, o, n)		\
     (atomic_cas_ulong((volatile unsigned long *)(p), (o), (n)) == (o))
-#ifdef MULTIPROCESSOR
-#define	MUTEX_SMT_PAUSE()		__asm __volatile("wfe")
-#define	MUTEX_SMT_WAKE()		__asm __volatile("sev")
-#endif
 
 #endif	/* __MUTEX_PRIVATE */
 

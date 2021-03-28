@@ -1,4 +1,4 @@
-/*	$NetBSD: if_enet.c,v 1.29 2019/11/29 17:20:30 ryo Exp $	*/
+/*	$NetBSD: if_enet.c,v 1.33 2020/12/31 02:16:14 uwe Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_enet.c,v 1.29 2019/11/29 17:20:30 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_enet.c,v 1.33 2020/12/31 02:16:14 uwe Exp $");
 
 #include "vlan.h"
 
@@ -247,7 +247,7 @@ enet_attach_common(device_t self)
 	ifmedia_init(&mii->mii_media, 0, ether_mediachange, enet_mediastatus);
 
 	/* try to attach PHY */
-	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY, MII_OFFSET_ANY, 0);
+	mii_attach(self, mii, 0xffffffff, sc->sc_phyid, MII_OFFSET_ANY, 0);
 	if (LIST_FIRST(&mii->mii_phys) == NULL) {
 		ifmedia_add(&mii->mii_media, IFM_ETHER | IFM_MANUAL, 0, NULL);
 		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_MANUAL);
@@ -381,9 +381,10 @@ enet_tick(void *arg)
 #endif
 
 	/* update counters */
-	ifp->if_ierrors += ENET_REG_READ(sc, ENET_RMON_R_UNDERSIZE);
-	ifp->if_ierrors += ENET_REG_READ(sc, ENET_RMON_R_FRAG);
-	ifp->if_ierrors += ENET_REG_READ(sc, ENET_RMON_R_JAB);
+	if_statadd(ifp, if_ierrors,
+	    (uint64_t)ENET_REG_READ(sc, ENET_RMON_R_UNDERSIZE) +
+	    (uint64_t)ENET_REG_READ(sc, ENET_RMON_R_FRAG) +
+	    (uint64_t)ENET_REG_READ(sc, ENET_RMON_R_JAB));
 
 	/* clear counters */
 	ENET_REG_WRITE(sc, ENET_MIBC, ENET_MIBC_MIB_CLEAR);
@@ -461,7 +462,7 @@ enet_tx_intr(void *arg)
 			bus_dmamap_unload(sc->sc_dmat,
 			    txs->txs_dmamap);
 			m_freem(txs->txs_mbuf);
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 		}
 
 		/* checking error */
@@ -488,7 +489,7 @@ enet_tx_intr(void *arg)
 					    "flags2=%s\n", idx, flagsbuf);
 				}
 #endif /* DEBUG_ENET */
-				ifp->if_oerrors++;
+				if_statinc(ifp, if_oerrors);
 			}
 		}
 
@@ -589,7 +590,7 @@ enet_rx_intr(void *arg)
 					    idx, flags1buf, flags2buf, amount);
 				}
 #endif /* DEBUG_ENET */
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				m_freem(m0);
 
 			} else {
@@ -873,7 +874,7 @@ enet_start(struct ifnet *ifp)
 			DEVICE_DPRINTF(
 			    "TX descriptor is full. dropping packet\n");
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			break;
 		}
 
@@ -929,7 +930,7 @@ enet_watchdog(struct ifnet *ifp)
 	s = splnet();
 
 	device_printf(sc->sc_dev, "watchdog timeout\n");
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	/* salvage packets left in descriptors */
 	enet_tx_intr(sc);
@@ -1135,7 +1136,7 @@ enet_miibus_statchg(struct ifnet *ifp)
 
 	if ((ife->ifm_media & IFM_FDX) != 0) {
 		tcr |= ENET_TCR_FDEN;	/* full duplex */
-		rcr &= ~ENET_RCR_DRT;;	/* enable receive on transmit */
+		rcr &= ~ENET_RCR_DRT;	/* enable receive on transmit */
 	} else {
 		tcr &= ~ENET_TCR_FDEN;	/* half duplex */
 		rcr |= ENET_RCR_DRT;	/* disable receive on transmit */
@@ -1322,7 +1323,7 @@ enet_drain_txbuf(struct enet_softc *sc)
 			    txs->txs_dmamap);
 			m_freem(txs->txs_mbuf);
 
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 		}
 		sc->sc_tx_free++;
 	}
@@ -1843,7 +1844,7 @@ enet_init_regs(struct enet_softc *sc, int init)
 	    sc->sc_rxdesc_dmamap->dm_mapsize, BUS_DMASYNC_PREWRITE);
 
 	/* enable interrupts */
-	val = ENET_EIMR | ENET_EIR_TXF | ENET_EIR_RXF | ENET_EIR_EBERR;
+	val = ENET_EIR_TXF | ENET_EIR_RXF | ENET_EIR_EBERR;
 	if (sc->sc_imxtype == 7)
 		val |= ENET_EIR_TXF2 | ENET_EIR_RXF2 | ENET_EIR_TXF1 |
 		    ENET_EIR_RXF1;

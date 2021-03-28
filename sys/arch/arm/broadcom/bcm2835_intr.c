@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_intr.c,v 1.27 2019/11/29 17:44:27 thorpej Exp $	*/
+/*	$NetBSD: bcm2835_intr.c,v 1.37 2021/01/27 03:10:19 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2015, 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.27 2019/11/29 17:44:27 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.37 2021/01/27 03:10:19 thorpej Exp $");
 
 #define _INTR_PRIVATE
 
@@ -83,7 +83,7 @@ static void bcm2836mp_send_ipi(struct pic_softc *, const kcpuset_t *, u_long);
 
 static int bcm2835_icu_fdt_decode_irq(u_int *);
 static void *bcm2835_icu_fdt_establish(device_t, u_int *, int, int,
-    int (*)(void *), void *);
+    int (*)(void *), void *, const char *);
 static void bcm2835_icu_fdt_disestablish(device_t, void *);
 static bool bcm2835_icu_fdt_intrstr(device_t, u_int *, char *, size_t);
 
@@ -91,12 +91,18 @@ static int bcm2835_icu_intr(void *);
 
 static int bcm2836mp_icu_fdt_decode_irq(u_int *);
 static void *bcm2836mp_icu_fdt_establish(device_t, u_int *, int, int,
-    int (*)(void *), void *);
+    int (*)(void *), void *, const char *);
 static void bcm2836mp_icu_fdt_disestablish(device_t, void *);
 static bool bcm2836mp_icu_fdt_intrstr(device_t, u_int *, char *, size_t);
 
 static int  bcm2835_icu_match(device_t, cfdata_t, void *);
 static void bcm2835_icu_attach(device_t, device_t, void *);
+
+static int bcm2835_int_base;
+static int bcm2836mp_int_base[BCM2836_NCPUS];
+
+#define	BCM2835_INT_BASE		bcm2835_int_base
+#define	BCM2836_INT_BASECPUN(n)		bcm2836mp_int_base[(n)]
 
 static void
 bcm2835_set_priority(struct pic_softc *pic, int ipl)
@@ -248,20 +254,21 @@ static const char * const bcm2836mp_sources[BCM2836_NIRQPERCPU] = {
 CFATTACH_DECL_NEW(bcmicu, sizeof(struct bcm2835icu_softc),
     bcm2835_icu_match, bcm2835_icu_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "brcm,bcm2708-armctrl-ic",	.value = 0 },
+	{ .compat = "brcm,bcm2709-armctrl-ic",	.value = 0 },
+	{ .compat = "brcm,bcm2835-armctrl-ic",	.value = 0 },
+	{ .compat = "brcm,bcm2836-armctrl-ic",	.value = 0 },
+	{ .compat = "brcm,bcm2836-l1-intc",	.value = 1 },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 bcm2835_icu_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-	    "brcm,bcm2708-armctrl-ic",
-	    "brcm,bcm2709-armctrl-ic",
-	    "brcm,bcm2835-armctrl-ic",
-	    "brcm,bcm2836-armctrl-ic",
-	    "brcm,bcm2836-l1-intc",
-	    NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -270,6 +277,7 @@ bcm2835_icu_attach(device_t parent, device_t self, void *aux)
 	struct bcm2835icu_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	struct fdtbus_interrupt_controller_func *ifuncs;
+	const struct device_compatible_entry *dce;
 	const int phandle = faa->faa_phandle;
 	bus_addr_t addr;
 	bus_size_t size;
@@ -292,8 +300,10 @@ bcm2835_icu_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ioh = ioh;
 	sc->sc_phandle = phandle;
 
-	const char * const local_intc[] = { "brcm,bcm2836-l1-intc", NULL };
-	if (of_match_compatible(faa->faa_phandle, local_intc)) {
+	dce = of_compatible_lookup(faa->faa_phandle, compat_data);
+	KASSERT(dce != NULL);
+
+	if (dce->value != 0) {
 #if defined(MULTIPROCESSOR)
 		aprint_normal(": Multiprocessor");
 #endif
@@ -314,7 +324,7 @@ bcm2835_icu_attach(device_t parent, device_t self, void *aux)
 		bcmicu_sc = sc;
 		sc->sc_ioh = ioh;
 		sc->sc_phandle = phandle;
-		pic_add(&bcm2835_pic, BCM2835_INT_BASE);
+		bcm2835_int_base = pic_add(&bcm2835_pic, PIC_IRQBASE_ALLOC);
 		ifuncs = &bcm2835icu_fdt_funcs;
 	}
 
@@ -461,7 +471,7 @@ bcm2835_icu_fdt_decode_irq(u_int *specifier)
 
 static void *
 bcm2835_icu_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
-    int (*func)(void *), void *arg)
+    int (*func)(void *), void *arg, const char *xname)
 {
 	struct bcm2835icu_softc * const sc = device_private(dev);
 	struct bcm2835icu_irq *firq;
@@ -487,11 +497,11 @@ bcm2835_icu_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 		firq->intr_irq = irq;
 		TAILQ_INIT(&firq->intr_handlers);
 		if (arg == NULL) {
-			firq->intr_ih = intr_establish(irq, ipl,
-			    IST_LEVEL | iflags, func, NULL);
+			firq->intr_ih = intr_establish_xname(irq, ipl,
+			    IST_LEVEL | iflags, func, NULL, xname);
 		} else {
-			firq->intr_ih = intr_establish(irq, ipl,
-			    IST_LEVEL | iflags, bcm2835_icu_intr, firq);
+			firq->intr_ih = intr_establish_xname(irq, ipl,
+			    IST_LEVEL | iflags, bcm2835_icu_intr, firq, xname);
 		}
 		if (firq->intr_ih == NULL) {
 			kmem_free(firq, sizeof(*firq));
@@ -707,9 +717,9 @@ bcm2836mp_pic_find_pending_irqs(struct pic_softc *pic)
 	    BCM2836_LOCAL_INTC_IRQPENDINGN(cpuid));
 
 	lpending &= ~BCM2836_INTBIT_GPUPENDING;
-	if (lpending & BCM2836MP_ALL_IRQS) {
-		ipl |= pic_mark_pending_sources(pic, 0 /* BCM2836_INT_LOCALBASE */,
-		    lpending & BCM2836MP_ALL_IRQS);
+	const uint32_t allirqs = lpending & BCM2836MP_ALL_IRQS;
+	if (allirqs) {
+		ipl |= pic_mark_pending_sources(pic, 0, allirqs);
 	}
 
 	return ipl;
@@ -827,7 +837,7 @@ bcm2836mp_intr_init(void *priv, struct cpu_info *ci)
 	snprintf(suffix, sizeof(suffix), "#%lu", cpuid);
 	strlcat(pic->pic_name, suffix, sizeof(pic->pic_name));
 #endif
-	pic_add(pic, BCM2836_INT_BASECPUN(cpuid));
+	bcm2836mp_int_base[cpuid] = pic_add(pic, PIC_IRQBASE_ALLOC);
 
 #if defined(MULTIPROCESSOR)
 	intr_establish(BCM2836_INT_MAILBOX0_CPUN(cpuid), IPL_HIGH,
@@ -858,7 +868,7 @@ bcm2836mp_icu_fdt_decode_irq(u_int *specifier)
 
 static void *
 bcm2836mp_icu_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
-    int (*func)(void *), void *arg)
+    int (*func)(void *), void *arg, const char *xname)
 {
 	int iflags = (flags & FDT_INTR_MPSAFE) ? IST_MPSAFE : 0;
 	struct bcm2836mp_interrupt *bip;
@@ -885,13 +895,14 @@ bcm2836mp_icu_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 	bip->bi_arg = arg;
 
 	/*
-	 * If we're not cold and the BPs have been started then we can register the
-	 * interupt for all CPUs now, e.g. PMU
+	 * If we're not cold and the BPs have been started then we can
+	 * register the interrupt for all CPUs now, e.g. PMU
 	 */
 	if (!cold) {
 		for (cpuid_t cpuid = 0; cpuid < BCM2836_NCPUS; cpuid++) {
-			ih = intr_establish(BCM2836_INT_BASECPUN(cpuid) + irq, ipl,
-			    IST_LEVEL | iflags, func, arg);
+			ih = intr_establish_xname(
+			    BCM2836_INT_BASECPUN(cpuid) + irq, ipl,
+			    IST_LEVEL | iflags, func, arg, xname);
 			if (!ih) {
 				kmem_free(bip, sizeof(*bip));
 				return NULL;
@@ -909,8 +920,8 @@ bcm2836mp_icu_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 	 * delay until bcm2836mp_intr_init is called for each AP, e.g.
 	 * gtmr
 	 */
-	ih = intr_establish(BCM2836_INT_BASECPUN(0) + irq, ipl,
-	    IST_LEVEL | iflags, func, arg);
+	ih = intr_establish_xname(BCM2836_INT_BASECPUN(0) + irq, ipl,
+	    IST_LEVEL | iflags, func, arg, xname);
 	if (!ih) {
 		kmem_free(bip, sizeof(*bip));
 		return NULL;

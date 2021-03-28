@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.133 2019/12/03 15:20:59 riastradh Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.148 2021/02/19 03:28:53 christos Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,13 +31,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.133 2019/12/03 15:20:59 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.148 2021/02/19 03:28:53 christos Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
 #include "opt_splash.h"
 #include "opt_kaslr.h"
 #include "opt_svs.h"
+#include "opt_xen.h"
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -94,9 +95,20 @@ void (*x86_cpu_idle)(void);
 static bool x86_cpu_idle_ipi;
 static char x86_cpu_idle_text[16];
 
+static bool x86_user_ldt_enabled __read_mostly = false;
+
 #ifdef XEN
-char module_machine_amd64_xen[] = "amd64-xen";
-char module_machine_i386pae_xen[] = "i386pae-xen";
+
+#include <xen/xen.h>
+#include <xen/hypervisor.h>
+#endif
+
+#ifndef XENPV
+void (*delay_func)(unsigned int) = i8254_delay;
+void (*x86_initclock_func)(void) = i8254_initclocks;
+#else /* XENPV */
+void (*delay_func)(unsigned int) = xen_delay;
+void (*x86_initclock_func)(void) = xen_initclocks;
 #endif
 
 
@@ -210,15 +222,6 @@ module_init_md(void)
 	struct btinfo_modulelist *biml;
 	struct bi_modulelist_entry *bi, *bimax;
 
-	/* setup module path for XEN kernels */
-#ifdef XEN
-#ifdef __x86_64__
-	module_machine = module_machine_amd64_xen;
-#else
-	module_machine = module_machine_i386pae_xen;
-#endif
-#endif
-
 	biml = lookup_bootinfo(BTINFO_MODULELIST);
 	if (biml == NULL) {
 		aprint_debug("No module info at boot\n");
@@ -306,7 +309,11 @@ cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 #ifdef __HAVE_PREEMPTION
 	if ((flags & RESCHED_KPREEMPT) != 0) {
 		if ((flags & RESCHED_REMOTE) != 0) {
+#ifdef XENPV
+			xen_send_ipi(ci, XEN_IPI_KPREEMPT);
+#else
 			x86_send_ipi(ci, X86_IPI_KPREEMPT);
+#endif
 		} else {
 			softint_trigger(1 << SIR_PREEMPT);
 		}
@@ -457,8 +464,7 @@ x86_cpu_idle_init(void)
 {
 
 #ifndef XENPV
-	if ((cpu_feature[1] & CPUID2_MONITOR) == 0 ||
-	    cpu_vendor == CPUVENDOR_AMD)
+	if ((cpu_feature[1] & CPUID2_MONITOR) == 0)
 		x86_cpu_idle_set(x86_cpu_idle_halt, "halt", true);
 	else
 		x86_cpu_idle_set(x86_cpu_idle_mwait, "mwait", false);
@@ -668,7 +674,7 @@ x86_parse_clusters(struct btinfo_memmap *bim)
 		type = bim->entry[x].type;
 #ifdef DEBUG_MEMLOAD
 		printf("MEMMAP: 0x%016" PRIx64 "-0x%016" PRIx64
-		    ", size=0x%016" PRIx64 ", type=%d(%s)\n",
+		    "\n\tsize=0x%016" PRIx64 ", type=%d(%s)\n",
 		    addr, addr + size - 1, size, type,
 		    (type == BIM_Memory) ?  "Memory" :
 		    (type == BIM_Reserved) ?  "Reserved" :
@@ -827,6 +833,45 @@ x86_load_region(uint64_t seg_start, uint64_t seg_end)
 	}
 }
 
+#ifdef XEN
+static void
+x86_add_xen_clusters(void)
+{
+	if (hvm_start_info->memmap_entries > 0) {
+		struct hvm_memmap_table_entry *map_entry;
+		map_entry = (void *)((uintptr_t)hvm_start_info->memmap_paddr + KERNBASE);
+		for (int i = 0; i < hvm_start_info->memmap_entries; i++) {
+			if (map_entry[i].size < PAGE_SIZE)
+				continue;
+			switch(map_entry[i].type) {
+			case XEN_HVM_MEMMAP_TYPE_RAM:
+				x86_add_cluster(map_entry[i].addr,
+				    map_entry[i].size, BIM_Memory);
+				break;
+			case XEN_HVM_MEMMAP_TYPE_ACPI:
+				x86_add_cluster(map_entry[i].addr,
+				    map_entry[i].size, BIM_ACPI);
+				break;
+			}
+		}
+	} else {
+		struct xen_memory_map memmap;
+		static struct _xen_mmap {
+			struct btinfo_memmap bim;
+			struct bi_memmap_entry map[128]; /* same as FreeBSD */
+		} __packed xen_mmap;
+		int err;
+
+		memmap.nr_entries = 128;
+		set_xen_guest_handle(memmap.buffer, &xen_mmap.bim.entry[0]);
+		if ((err = HYPERVISOR_memory_op(XENMEM_memory_map, &memmap))
+		    < 0)
+			panic("XENMEM_memory_map %d", err);
+		xen_mmap.bim.num = memmap.nr_entries;
+		x86_parse_clusters(&xen_mmap.bim);
+	}
+}
+#endif /* XEN */
 /*
  * init_x86_clusters: retrieve the memory clusters provided by the BIOS, and
  * initialize mem_clusters.
@@ -841,6 +886,12 @@ init_x86_clusters(void)
 	 * Check to see if we have a memory map from the BIOS (passed to us by
 	 * the boot program).
 	 */
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH) {
+		x86_add_xen_clusters();
+	}
+#endif /* XEN */
+
 #ifdef i386
 	extern int biosmem_implicit;
 	biem = lookup_bootinfo(BTINFO_EFIMEMMAP);
@@ -908,27 +959,98 @@ init_x86_vm(paddr_t pa_kend)
 		seg_start1 = 0;
 		seg_end1 = 0;
 
+#ifdef DEBUG_MEMLOAD
+		printf("segment %" PRIx64 " - %" PRIx64 "\n",
+		    seg_start, seg_end);
+#endif
+
 		/* Skip memory before our available starting point. */
-		if (seg_end <= lowmem_rsvd)
+		if (seg_end <= lowmem_rsvd) {
+#ifdef DEBUG_MEMLOAD
+			printf("discard segment below starting point "
+			    "%" PRIx64 " - %" PRIx64 "\n", seg_start, seg_end);
+#endif
 			continue;
+		}
 
 		if (seg_start <= lowmem_rsvd && lowmem_rsvd < seg_end) {
 			seg_start = lowmem_rsvd;
-			if (seg_start == seg_end)
+			if (seg_start == seg_end) {
+#ifdef DEBUG_MEMLOAD
+				printf("discard segment below starting point "
+				    "%" PRIx64 " - %" PRIx64 "\n",
+				    seg_start, seg_end);
+
+
+#endif
 				continue;
+			}
 		}
 
 		/*
 		 * If this segment contains the kernel, split it in two, around
 		 * the kernel.
+		 *  [seg_start                       seg_end]
+		 *             [pa_kstart  pa_kend]
 		 */
 		if (seg_start <= pa_kstart && pa_kend <= seg_end) {
+#ifdef DEBUG_MEMLOAD
+			printf("split kernel overlapping to "
+			    "%" PRIx64 " - %" PRIxPADDR " and "
+			    "%" PRIxPADDR " - %" PRIx64 "\n",
+			    seg_start, pa_kstart, pa_kend, seg_end);
+#endif
 			seg_start1 = pa_kend;
 			seg_end1 = seg_end;
 			seg_end = pa_kstart;
 			KASSERT(seg_end < seg_end1);
 		}
 
+		/*
+		 * Discard a segment inside the kernel
+		 *  [pa_kstart                       pa_kend]
+		 *             [seg_start  seg_end]
+		 */
+		if (pa_kstart < seg_start && seg_end < pa_kend) {
+#ifdef DEBUG_MEMLOAD
+			printf("discard complete kernel overlap "
+			    "%" PRIx64 " - %" PRIx64 "\n", seg_start, seg_end);
+#endif
+			continue;
+		}
+
+		/*
+		 * Discard leading hunk that overlaps the kernel
+		 *  [pa_kstart             pa_kend]
+		 *            [seg_start            seg_end]
+		 */
+		if (pa_kstart < seg_start &&
+		    seg_start < pa_kend &&
+		    pa_kend < seg_end) {
+#ifdef DEBUG_MEMLOAD
+			printf("discard leading kernel overlap "
+			    "%" PRIx64 " - %" PRIxPADDR "\n",
+			    seg_start, pa_kend);
+#endif
+			seg_start = pa_kend;
+		}
+
+		/*
+		 * Discard trailing hunk that overlaps the kernel
+		 *             [pa_kstart            pa_kend]
+		 *  [seg_start              seg_end]
+		 */
+		if (seg_start < pa_kstart &&
+		    pa_kstart < seg_end &&
+		    seg_end < pa_kend) {
+#ifdef DEBUG_MEMLOAD
+			printf("discard trailing kernel overlap "
+			    "%" PRIxPADDR " - %" PRIx64 "\n",
+			    pa_kstart, seg_end);
+#endif
+			seg_end = pa_kstart;
+		}
+		
 		/* First hunk */
 		if (seg_start != seg_end) {
 			x86_load_region(seg_start, seg_end);
@@ -1058,9 +1180,14 @@ x86_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 
 	switch (action) {
 	case KAUTH_MACHDEP_IOPERM_GET:
+		result = KAUTH_RESULT_ALLOW;
+		break;
+
 	case KAUTH_MACHDEP_LDT_GET:
 	case KAUTH_MACHDEP_LDT_SET:
-		result = KAUTH_RESULT_ALLOW;
+		if (x86_user_ldt_enabled) {
+			result = KAUTH_RESULT_ALLOW;
+		}
 		break;
 
 	default:
@@ -1090,6 +1217,13 @@ x86_startup(void)
 #if !defined(XENPV)
 	nmi_init();
 #endif
+}
+
+const char *
+get_booted_kernel(void)
+{
+	const struct btinfo_bootpath *bibp = lookup_bootinfo(BTINFO_BOOTPATH);
+	return bibp ? bibp->bootpath : NULL;
 }
 
 /* 
@@ -1180,10 +1314,14 @@ sysctl_machdep_tsc_enable(SYSCTLFN_ARGS)
 static const char * const vm_guest_name[VM_LAST] = {
 	[VM_GUEST_NO] =		"none",
 	[VM_GUEST_VM] =		"generic",
-	[VM_GUEST_XEN] =	"Xen",
+	[VM_GUEST_XENPV] =	"XenPV",
+	[VM_GUEST_XENPVH] =	"XenPVH",
+	[VM_GUEST_XENHVM] =	"XenHVM",
+	[VM_GUEST_XENPVHVM] =	"XenPVHVM",
 	[VM_GUEST_HV] =		"Hyper-V",
 	[VM_GUEST_VMWARE] =	"VMware",
 	[VM_GUEST_KVM] =	"KVM",
+	[VM_GUEST_VIRTUALBOX] =	"VirtualBox",
 };
 
 static int
@@ -1191,7 +1329,7 @@ sysctl_machdep_hypervisor(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node;
 	const char *t = NULL;
-	char buf[8];
+	char buf[64];
 
 	node = *rnode;
 	node.sysctl_data = buf;
@@ -1302,7 +1440,14 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       CTL_CREATE, CTL_EOL);
 #endif
 
-#ifndef XEN
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "user_ldt",
+		       SYSCTL_DESCR("Whether USER_LDT is enabled"),
+		       NULL, 0, &x86_user_ldt_enabled, 0,
+		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+#ifndef XENPV
 	void sysctl_speculation_init(struct sysctllog **);
 	sysctl_speculation_init(clog);
 #endif
@@ -1351,3 +1496,39 @@ intr_findpic(int num)
 }
 #endif
 
+void
+cpu_initclocks(void)
+{
+
+	/*
+	 * Re-calibrate TSC on boot CPU using most accurate time source,
+	 * thus making accurate TSC available for x86_initclock_func().
+	 */
+	cpu_get_tsc_freq(curcpu());
+
+	/* Now start the clocks on this CPU (the boot CPU). */
+	(*x86_initclock_func)();
+}
+
+int
+x86_cpu_is_lcall(const void *ip)
+{
+        static const uint8_t lcall[] = { 0x9a, 0, 0, 0, 0 };
+	int error;
+        const size_t sz = sizeof(lcall) + 2;
+        uint8_t tmp[sizeof(lcall) + 2];
+
+	if ((error = copyin(ip, tmp, sz)) != 0)
+		return error;
+
+	if (memcmp(tmp, lcall, sizeof(lcall)) != 0 || tmp[sz - 1] != 0)
+		return EINVAL;
+
+	switch (tmp[sz - 2]) {
+        case (uint8_t)0x07: /* NetBSD */
+	case (uint8_t)0x87: /* BSD/OS */
+		return 0;
+	default:
+		return EINVAL;
+        }
+}

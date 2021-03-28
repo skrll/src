@@ -1,4 +1,4 @@
-/*	$NetBSD: if_atu.c,v 1.68 2019/12/05 03:11:41 msaitoh Exp $ */
+/*	$NetBSD: if_atu.c,v 1.73 2020/08/28 19:02:19 riastradh Exp $ */
 /*	$OpenBSD: if_atu.c,v 1.48 2004/12/30 01:53:21 dlg Exp $ */
 /*
  * Copyright (c) 2003, 2004
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_atu.c,v 1.68 2019/12/05 03:11:41 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_atu.c,v 1.73 2020/08/28 19:02:19 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -325,7 +325,7 @@ atu_usb_request(struct atu_softc *sc, uint8_t type,
 #ifdef ATU_DEBUG
 	if (atudebug) {
 		if (type & UT_READ) {
-			DPRINTFN(20, ("%s: transfered 0x%x bytes in\n",
+			DPRINTFN(20, ("%s: transferred %#x bytes in\n",
 			    device_xname(sc->atu_dev), total_len));
 		} else {
 			if (total_len != length)
@@ -719,7 +719,7 @@ atu_initial_config(struct atu_softc *sc)
 		DPRINTF(("%s: could not get regdomain!\n",
 		    device_xname(sc->atu_dev)));
 	} else {
-		DPRINTF(("%s: in reg domain 0x%x according to the "
+		DPRINTF(("%s: in reg domain %#x according to the "
 		    "adapter\n", device_xname(sc->atu_dev), reg_domain));
 	}
 
@@ -1456,7 +1456,10 @@ atu_complete_attach(struct atu_softc *sc)
 	ic->ic_newstate = atu_newstate;
 
 	/* setup ifmedia interface */
-	ieee80211_media_init(ic, atu_media_change, atu_media_status);
+	/* XXX media locking needs revisiting */
+	mutex_init(&sc->sc_media_mtx, MUTEX_DEFAULT, IPL_SOFTUSB);
+	ieee80211_media_init_with_lock(ic,
+	    atu_media_change, atu_media_status, &sc->sc_media_mtx);
 
 	usb_init_task(&sc->sc_task, atu_task, sc, 0);
 
@@ -1676,6 +1679,10 @@ atu_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		DPRINTF(("%s: atu_rxeof: too short\n",
 		    device_xname(sc->atu_dev)));
 		goto done;
+	} else if (len > MCLBYTES) {
+		DPRINTF(("%s: atu_rxeof: too long\n",
+		    device_xname(sc->atu_dev)));
+		goto done;
 	}
 
 	h = (struct atu_rx_hdr *)c->atu_buf;
@@ -1689,12 +1696,12 @@ atu_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	wh = mtod(m, struct ieee80211_frame_min *);
 	ni = ieee80211_find_rxnode(ic, wh);
 
-	ifp->if_ipackets++;
+	if_statinc(ifp, if_ipackets);
 
 	s = splnet();
 
 	if (atu_newbuf(sc, c, NULL) == ENOBUFS) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		goto done1; /* XXX if we can't allocate, why restart it? */
 	}
 
@@ -1754,9 +1761,9 @@ atu_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	usbd_get_xfer_status(c->atu_xfer, NULL, NULL, NULL, &err);
 
 	if (err)
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 	else
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 
 	s = splnet();
 	SLIST_INSERT_HEAD(&sc->atu_cdata.atu_tx_free, c, atu_list);
@@ -1945,7 +1952,7 @@ bad:
 			    atu_list);
 			cd->atu_tx_inuse--;
 			splx(s);
-			/* ifp_if_oerrors++; */
+			/* if_statinc(ifp, if_oerrors); */
 			if (ni != NULL)
 				ieee80211_free_node(ni);
 			continue;
@@ -2183,7 +2190,7 @@ atu_watchdog(struct ifnet *ifp)
 
 	sc = ifp->if_softc;
 	s = splnet();
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	DPRINTF(("%s: watchdog timeout\n", device_xname(sc->atu_dev)));
 
 	/*

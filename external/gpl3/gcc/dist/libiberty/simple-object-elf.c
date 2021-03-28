@@ -1,5 +1,5 @@
 /* simple-object-elf.c -- routines to manipulate ELF object files.
-   Copyright (C) 2010-2018 Free Software Foundation, Inc.
+   Copyright (C) 2010-2019 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Google.
 
 This program is free software; you can redistribute it and/or modify it
@@ -544,6 +544,14 @@ simple_object_elf_match (unsigned char header[SIMPLE_OBJECT_MATCH_HEADER_LEN],
   if (eor->shstrndx >= eor->shnum)
     {
       *errmsg = "invalid ELF shstrndx >= shnum";
+      *err = 0;
+      XDELETE (eor);
+      return NULL;
+    }
+
+  if (eor->shstrndx == 0)
+    {
+      *errmsg = "invalid ELF shstrndx == 0";
       *err = 0;
       XDELETE (eor);
       return NULL;

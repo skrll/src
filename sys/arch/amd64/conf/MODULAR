@@ -1,11 +1,9 @@
-# $NetBSD: MODULAR,v 1.12 2019/06/17 03:31:57 christos Exp $
+# $NetBSD: MODULAR,v 1.19 2021/01/20 13:22:08 nia Exp $
 #
 # Try to exclude all the drivers in GENERIC that have been modularized
 # XXX: incomplete
 
 include "arch/amd64/conf/GENERIC"
-options 	MODULAR		# new style module(7) framework
-options 	MODULAR_DEFAULT_AUTOLOAD
 
 -no acpicpu*	at cpu?
 -no est0		at cpu0
@@ -22,15 +20,13 @@ options 	MODULAR_DEFAULT_AUTOLOAD
 -no options 	COMPAT_40	# NetBSD 4.0,
 -no options 	COMPAT_50	# NetBSD 5.0,
 -no options 	COMPAT_60	# NetBSD 6.0,
--no options 	COMPAT_70	# NetBSD 7.0, and
--no options 	COMPAT_80	# NetBSD 8.0 binary compatibility.
+-no options 	COMPAT_70	# NetBSD 7.0,
+-no options 	COMPAT_80	# NetBSD 8.0, and
+-no options 	COMPAT_90	# NetBSD 9.0 binary compatibility.
 -no options 	COMPAT_43	# and 4.3BSD
 #options 	COMPAT_386BSD_MBRPART # recognize old partition ID
 
--no options 	COMPAT_OSSAUDIO
 -no options 	COMPAT_NETBSD32
--no options 	COMPAT_LINUX
--no options 	COMPAT_LINUX32	# req. COMPAT_LINUX and COMPAT_NETBSD32
 -no options 	EXEC_ELF32
 -no options 	COMPAT_BSDPTY	# /dev/[pt]ty?? ptys.
 
@@ -74,7 +70,6 @@ options 	MODULAR_DEFAULT_AUTOLOAD
 -no file-system PROCFS		# /proc
 -no file-system PTYFS		# /dev/ptm support
 -no file-system PUFFS		# Userspace file systems (e.g. ntfs-3g & sshfs)
--no file-system SMBFS		# experimental - CIFS; also needs nsmb (below)
 -no file-system TMPFS		# Efficient memory file-system
 -no file-system UDF		# experimental - OSTA UDF CD/DVD file-system
 -no file-system UMAPFS		# NULLFS + uid and gid remapping
@@ -86,6 +81,9 @@ options 	MODULAR_DEFAULT_AUTOLOAD
 -no options 	PPP_DEFLATE	# Deflate compression support for PPP
 
 -no options	AIO
+
+-no options	PTRACE
+-no options	COREDUMP
 
 -no acpiacad*	at acpi?		# ACPI AC Adapter
 -no acpibat*	at acpi?		# ACPI Battery
@@ -133,13 +131,14 @@ options 	MODULAR_DEFAULT_AUTOLOAD
 -no pseudo-device	ppp			# Point-to-Point Protocol
 -no pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
 -no pseudo-device	sl			# Serial Line IP
--no pseudo-device	strip			# Starmode Radio IP (Metricom)
 -no pseudo-device	tun			# network tunneling over tty
 -no pseudo-device	tap			# virtual Ethernet
 -no pseudo-device	gre			# generic L3 over IP tunnel
 -no pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 -no pseudo-device	faith			# IPv[46] tcp relay translation i/f
 -no pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
+
+-no pseudo-device	vether			# Virtual Ethernet for bridge
 -no pseudo-device	vlan			# IEEE 802.1q encapsulation
 -no pseudo-device	agr			# IEEE 802.3ad link aggregation
 -no pseudo-device	l2tp			# L2TPv3 interface
@@ -154,9 +153,6 @@ options 	MODULAR_DEFAULT_AUTOLOAD
 -no pseudo-device	clockctl		# user control of clock subsystem
 -no pseudo-device	vcoda			# coda minicache <-> venus comm.
 -no pseudo-device	autofs			# experimental - AUTOFS
-
-# a pseudo device needed for SMBFS
--no pseudo-device	nsmb			# experimental - SMB requester
 
 # pseudo audio device driver
 -no pseudo-device	pad

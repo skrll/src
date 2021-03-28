@@ -1,18 +1,17 @@
-#	$NetBSD: Makefile,v 1.3 2019/09/09 14:40:39 christos Exp $
+#	$NetBSD: Makefile,v 1.5 2021/02/19 16:42:08 christos Exp $
 
 LDADD+=-lns
 DPADD+=${LIBNS}
 
-.include <bsd.own.mk>
+.include <bsd.init.mk>
 
 PROG=	named
 MAN=	named.8 named.conf.5
 BINDIR=	/usr/sbin
 
-.include "${.CURDIR}/../Makefile.inc"
-
 DIST=${IDIST}/bin/named
 CPPFLAGS+=-I${DIST}/include -I${DIST}/unix/include -DCONFIGARGS=\"defaults\"
+CPPFLAGS+=-I${LIBUVDIR}/dist/include
 CPPFLAGS+=-DNO_VERSION_DATE -DPRODUCT=\"BIND\" -DSRCID=\"${SRCID}\"
 CPPFLAGS+=-DDESCRIPTION=\"\(Extended\ Support\ Version\)\"
 CPPFLAGS+=-DBUILDER=\"make\"	# I am tempted to say Bob
@@ -29,7 +28,7 @@ COPTS.${f}.c+=  -fno-strict-aliasing
 
 CWARNFLAGS.clang+=	-Wno-tautological-constant-out-of-range-compare
 
-.PATH: ${DIST}/unix ${DIST}
+.PATH: ${DIST}/unix ${DIST} ${IDIST}/doc/man
 
 SRCS_UNIX=	os.c dlz_dlopen_driver.c
 SRCS=	builtin.c config.c control.c controlconf.c \

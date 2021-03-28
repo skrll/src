@@ -1,4 +1,4 @@
-/*	$NetBSD: lm75.c,v 1.34 2019/02/20 18:19:46 macallan Exp $	*/
+/*	$NetBSD: lm75.c,v 1.42 2021/03/01 04:40:39 rin Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.34 2019/02/20 18:19:46 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.42 2021/03/01 04:40:39 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -49,18 +49,11 @@ __KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.34 2019/02/20 18:19:46 macallan Exp $");
 #include <dev/i2c/i2cvar.h>
 #include <dev/i2c/lm75reg.h>
 
-#ifdef macppc
-#define HAVE_OF 1
-#endif
-
-#ifdef HAVE_OF
-#include <dev/ofw/openfirm.h>
-#endif
-
 struct lmtemp_softc {
 	device_t sc_dev;
 	i2c_tag_t sc_tag;
 	int sc_address;
+	prop_dictionary_t sc_prop;
 
 	struct sysmon_envsys *sc_sme;
 	envsys_data_t sc_sensor;
@@ -101,24 +94,31 @@ static void	lmtemp_setlim_lm77(struct sysmon_envsys *, envsys_data_t *,
 static void	lmtemp_setup_sysctl(struct lmtemp_softc *);
 static int	sysctl_lm75_temp(SYSCTLFN_ARGS);
 
+enum {
+	lmtemp_lm75 = 0,
+	lmtemp_ds75 = 1,
+	lmtemp_lm77 = 2,
+};
+
 static const struct device_compatible_entry compat_data[] = {
-	{ "i2c-lm75",			0 },
-	{ "lm75",			0 },
-	{ "ds1775",			0 },
+	{ .compat = "national,lm75",	.value = lmtemp_lm75 },
+	{ .compat = "i2c-lm75",		.value = lmtemp_lm75 },
+	{ .compat = "lm75",		.value = lmtemp_lm75 },
+
+	/* XXX Linux treats ds1775 and ds75 differently. */
+	{ .compat = "dallas,ds1775",	.value = lmtemp_ds75 },
+	{ .compat = "ds1775",		.value = lmtemp_ds75 },
+
+	{ .compat = "national,lm77",	.value = lmtemp_lm77 },
+
 	/*
 	 * see XXX in _attach() below: add code once non-lm75 matches are
 	 * added here!
 	 */
-	{ NULL,				0 }
+	DEVICE_COMPAT_EOL
 };
 
-enum {
-	lmtemp_lm75 = 0,
-	lmtemp_ds75,
-	lmtemp_lm77,
-};
 static const struct {
-	int lmtemp_type;
 	const char *lmtemp_name;
 	int lmtemp_addrmask;
 	int lmtemp_addr;
@@ -129,18 +129,36 @@ static const struct {
 	void (*lmtemp_setlim)(struct sysmon_envsys *, envsys_data_t *,
 		sysmon_envsys_lim_t *, uint32_t *);
 } lmtemptbl[] = {
-	{ lmtemp_lm75,	"LM75",	LM75_ADDRMASK,	LM75_ADDR,
-	    lmtemp_decode_lm75,	lmtemp_encode_lm75,
-	    lmtemp_getlim_lm75,	lmtemp_setlim_lm75 },
-	{ lmtemp_ds75,	"DS75",	LM75_ADDRMASK,	LM75_ADDR,
-	    lmtemp_decode_ds75,	lmtemp_encode_ds75,
-	    lmtemp_getlim_lm75,	lmtemp_setlim_lm75 },
-	{ lmtemp_lm77,	"LM77",	LM77_ADDRMASK,	LM77_ADDR,
-	    lmtemp_decode_lm77, lmtemp_encode_lm77,
-	    lmtemp_getlim_lm77,	lmtemp_setlim_lm77 },
-	{ -1,		NULL,	 0,		0,
-	    NULL,		NULL,
-	    NULL,		NULL }
+[lmtemp_lm75] =
+	{
+		.lmtemp_name = "LM75",
+		.lmtemp_addrmask = LM75_ADDRMASK,
+		.lmtemp_addr = LM75_ADDR,
+		.lmtemp_decode = lmtemp_decode_lm75,
+		.lmtemp_encode = lmtemp_encode_lm75,
+		.lmtemp_getlim = lmtemp_getlim_lm75,
+		.lmtemp_setlim = lmtemp_setlim_lm75,
+	},
+[lmtemp_ds75] =
+	{
+		.lmtemp_name = "DS75",
+		.lmtemp_addrmask = LM75_ADDRMASK,
+		.lmtemp_addr = LM75_ADDR,
+		.lmtemp_decode = lmtemp_decode_ds75,
+		.lmtemp_encode = lmtemp_encode_ds75,
+		.lmtemp_getlim = lmtemp_getlim_lm75,
+		.lmtemp_setlim = lmtemp_setlim_lm75,
+	},
+[lmtemp_lm77] =
+	{
+		.lmtemp_name = "LM77",
+		.lmtemp_addrmask = LM77_ADDRMASK,
+		.lmtemp_addr = LM77_ADDR,
+		.lmtemp_decode = lmtemp_decode_lm77,
+		.lmtemp_encode = lmtemp_encode_lm77,
+		.lmtemp_getlim = lmtemp_getlim_lm77,
+		.lmtemp_setlim = lmtemp_setlim_lm77,
+	},
 };
 
 static int
@@ -155,11 +173,14 @@ lmtemp_match(device_t parent, cfdata_t cf, void *aux)
 	/*
 	 * Indirect config - not much we can do!
 	 */
-	for (i = 0; lmtemptbl[i].lmtemp_type != -1 ; i++)
-		if (lmtemptbl[i].lmtemp_type == cf->cf_flags)
+	for (i = 0; i < __arraycount(lmtemptbl); i++) {
+		if (i == cf->cf_flags) {
 			break;
-	if (lmtemptbl[i].lmtemp_type == -1)
+		}
+	}
+	if (i == __arraycount(lmtemptbl)) {
 		return 0;
+	}
 
 	if ((ia->ia_addr & lmtemptbl[i].lmtemp_addrmask) ==
 	    lmtemptbl[i].lmtemp_addr)
@@ -173,26 +194,28 @@ lmtemp_attach(device_t parent, device_t self, void *aux)
 {
 	struct lmtemp_softc *sc = device_private(self);
 	struct i2c_attach_args *ia = aux;
+	const struct device_compatible_entry *dce;
 	char name[64];
+	const char *desc;
 	int i;
 
 	sc->sc_dev = self;
-	if (ia->ia_name == NULL) {
-		for (i = 0; lmtemptbl[i].lmtemp_type != -1 ; i++)
-			if (lmtemptbl[i].lmtemp_type ==
-			    device_cfdata(self)->cf_flags)
-				break;
+	dce = iic_compatible_lookup(ia, compat_data);
+	if (dce != NULL) {
+		i = (int)dce->value;
 	} else {
-		if (strcmp(ia->ia_name, "ds1775") == 0) {
-			i = 1;	/* LMTYPE_DS75 */
-		} else {
-			/* XXX - add code when adding other direct matches! */
-			i = 0;
+		for (i = 0; i < __arraycount(lmtemptbl); i++) {
+			if (i == device_cfdata(self)->cf_flags) {
+				break;
+			}
 		}
+		KASSERT(i < __arraycount(lmtemptbl));
 	}
 
 	sc->sc_tag = ia->ia_tag;
 	sc->sc_address = ia->ia_addr;
+	sc->sc_prop = ia->ia_prop;
+	prop_object_retain(sc->sc_prop);
 
 	aprint_naive(": Temperature Sensor\n");
 	if (ia->ia_name) {
@@ -206,7 +229,7 @@ lmtemp_attach(device_t parent, device_t self, void *aux)
 	sc->sc_lmtemp_decode = lmtemptbl[i].lmtemp_decode;
 	sc->sc_lmtemp_encode = lmtemptbl[i].lmtemp_encode;
 
-	iic_acquire_bus(sc->sc_tag, I2C_F_POLL);
+	iic_acquire_bus(sc->sc_tag, 0);
 
 	/* Read temperature limit(s) and remember initial value(s). */
 	if (i == lmtemp_lm77) {
@@ -214,28 +237,28 @@ lmtemp_attach(device_t parent, device_t self, void *aux)
 		    &sc->sc_scrit, 1) != 0) {
 			aprint_error_dev(self,
 			    "unable to read low register\n");
-			iic_release_bus(sc->sc_tag, I2C_F_POLL);
+			iic_release_bus(sc->sc_tag, 0);
 			return;
 		}
 		if (lmtemp_temp_read(sc, LM77_REG_TLOW_SET_POINT,
 		    &sc->sc_smin, 1) != 0) {
 			aprint_error_dev(self,
 			    "unable to read low register\n");
-			iic_release_bus(sc->sc_tag, I2C_F_POLL);
+			iic_release_bus(sc->sc_tag, 0);
 			return;
 		}
 		if (lmtemp_temp_read(sc, LM77_REG_THIGH_SET_POINT,
 		    &sc->sc_smax, 1) != 0) {
 			aprint_error_dev(self,
 			    "unable to read high register\n");
-			iic_release_bus(sc->sc_tag, I2C_F_POLL);
+			iic_release_bus(sc->sc_tag, 0);
 			return;
 		}
 	} else {	/* LM75 or compatible */
 		if (lmtemp_temp_read(sc, LM75_REG_TOS_SET_POINT,
 		    &sc->sc_smax, 1) != 0) {
 			aprint_error_dev(self, "unable to read Tos register\n");
-			iic_release_bus(sc->sc_tag, I2C_F_POLL);
+			iic_release_bus(sc->sc_tag, 0);
 			return;
 		}
 	}
@@ -247,27 +270,25 @@ lmtemp_attach(device_t parent, device_t self, void *aux)
 	/* Set the configuration of the LM75 to defaults. */
 	if (lmtemp_config_write(sc, LM75_CONFIG_FAULT_QUEUE_4) != 0) {
 		aprint_error_dev(self, "unable to write config register\n");
-		iic_release_bus(sc->sc_tag, I2C_F_POLL);
+		iic_release_bus(sc->sc_tag, 0);
 		return;
 	}
-	iic_release_bus(sc->sc_tag, I2C_F_POLL);
+	iic_release_bus(sc->sc_tag, 0);
 
 	sc->sc_sme = sysmon_envsys_create();
 	/* Initialize sensor data. */
 	sc->sc_sensor.units =  ENVSYS_STEMP;
 	sc->sc_sensor.state =  ENVSYS_SINVALID;
-	sc->sc_sensor.flags =  ENVSYS_FMONLIMITS;
+	sc->sc_sensor.flags =  ENVSYS_FMONLIMITS | ENVSYS_FHAS_ENTROPY;
 
 	(void)strlcpy(name,
 	    ia->ia_name? ia->ia_name : device_xname(self),
 	    sizeof(sc->sc_sensor.desc));
-#ifdef HAVE_OF
-	int ch;
-	ch = OF_child(ia->ia_cookie);
-	if (ch != 0) {
-		OF_getprop(ch, "location", name, 64);
+
+	if (prop_dictionary_get_cstring_nocopy(sc->sc_prop, "s00", &desc)) {
+		strncpy(name, desc, 64);
 	}
-#endif
+
 	(void)strlcpy(sc->sc_sensor.desc, name,
 	    sizeof(sc->sc_sensor.desc));
 	if (sysmon_envsys_sensor_attach(sc->sc_sme, &sc->sc_sensor)) {
@@ -297,7 +318,7 @@ lmtemp_config_write(struct lmtemp_softc *sc, uint8_t val)
 	cmdbuf[1] = val;
 
 	return iic_exec(sc->sc_tag, I2C_OP_WRITE_WITH_STOP,
-	    sc->sc_address, cmdbuf, 1, &cmdbuf[1], 1, I2C_F_POLL);
+	    sc->sc_address, cmdbuf, 1, &cmdbuf[1], 1, 0);
 }
 
 static int
@@ -309,7 +330,7 @@ lmtemp_temp_write(struct lmtemp_softc *sc, uint8_t reg, uint32_t val, int degc)
 	sc->sc_lmtemp_encode(val, &cmdbuf[1], degc);
 
 	return iic_exec(sc->sc_tag, I2C_OP_WRITE_WITH_STOP,
-	    sc->sc_address, cmdbuf, 1, &cmdbuf[1], 2, I2C_F_POLL);
+	    sc->sc_address, cmdbuf, 1, &cmdbuf[1], 2, 0);
 }
 
 static int
@@ -596,12 +617,12 @@ sysctl_lm75_temp(SYSCTLFN_ARGS)
 
 			temp = *(int *)node.sysctl_data;
 			sc->sc_tmax = temp;
-			iic_acquire_bus(sc->sc_tag, I2C_F_POLL);
+			iic_acquire_bus(sc->sc_tag, 0);
 			lmtemp_temp_write(sc, LM75_REG_THYST_SET_POINT,
 			    sc->sc_tmax - 5, 1);
 			lmtemp_temp_write(sc, LM75_REG_TOS_SET_POINT,
 			    sc->sc_tmax, 1);
-			iic_release_bus(sc->sc_tag, I2C_F_POLL);
+			iic_release_bus(sc->sc_tag, 0);
 
 			/* Synchronise envsys - calls lmtemp_getlim_lm75() */
 			sysmon_envsys_update_limits(sc->sc_sme, &sc->sc_sensor);

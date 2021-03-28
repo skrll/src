@@ -1,31 +1,27 @@
-/*	$NetBSD: iterated_hash.c,v 1.3 2019/01/09 16:55:14 christos Exp $	*/
+/*	$NetBSD: iterated_hash.c,v 1.5 2021/02/19 16:42:19 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
-#include <config.h>
-
 #include <stdio.h>
 
-#include <isc/md.h>
 #include <isc/iterated_hash.h>
+#include <isc/md.h>
 #include <isc/util.h>
 
 int
-isc_iterated_hash(unsigned char *out,
-		  const unsigned int hashalg, const int iterations,
-		  const unsigned char *salt, const int saltlength,
-		  const unsigned char *in, const int inlength)
-{
+isc_iterated_hash(unsigned char *out, const unsigned int hashalg,
+		  const int iterations, const unsigned char *salt,
+		  const int saltlength, const unsigned char *in,
+		  const int inlength) {
 	isc_md_t *md;
 	isc_result_t result;
 	int n = 0;

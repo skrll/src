@@ -1075,12 +1075,12 @@ static struct debug_flag {
 	{ 'w',	DBG_WAIT	},	/* waits for processes to finish */
 	{ 'x',	DBG_EXPAND	},	/* word expansion ${} $() $(( )) */
 	{ 'z',	DBG_ERRS	},	/* error control, jumps, cleanup */
-
+ 
 	{ '0',	DBG_U0		},	/* ad-hoc temp debug flag #0 */
 	{ '1',	DBG_U1		},	/* ad-hoc temp debug flag #1 */
 	{ '2',	DBG_U2		},	/* ad-hoc temp debug flag #2 */
 	{ '3',	DBG_U3		},	/* ad-hoc temp debug flag #3 */
-
+ 
 	{ '@',	DBG_LINE	},	/* prefix trace lines with line# */
 	{ '$',	DBG_PID		},	/* prefix trace lines with sh pid */
 	{ '^',	DBG_NEST	},	/* show shell nesting level */

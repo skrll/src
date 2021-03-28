@@ -42,6 +42,8 @@
 
 #include <uvm/uvm_extern.h>
 
+#include <arm/cpufunc.h>
+
 #include <arch/arm/broadcom/bcm2835_mbox.h>
 #include <arch/arm/broadcom/bcm2835var.h>
 
@@ -56,6 +58,9 @@
 #include "vchiq_2835.h"
 #include "vchiq_netbsd.h"
 #include "vchiq_connected.h"
+
+#define VCPAGE_OFFSET 0x0fff
+#define VCPAGE_SHIFT  12
 
 #define MAX_FRAGMENTS (VCHIQ_NUM_CURRENT_BULKS * 2)
 
@@ -146,7 +151,7 @@ vchiq_platform_init(VCHIQ_STATE_T *state)
 	vchiq_log_info(vchiq_arm_log_level,
 	    "%s: slot_phys = %lx\n", __func__, slot_phys);
 
-	WARN_ON(((int)slot_mem & (PAGE_SIZE - 1)) != 0);
+	WARN_ON(((uintptr_t)slot_mem & (PAGE_SIZE - 1)) != 0);
 
 	vchiq_slot_zero = vchiq_init_slots(slot_mem, slot_mem_size);
 	if (!vchiq_slot_zero) {
@@ -178,7 +183,7 @@ vchiq_platform_init(VCHIQ_STATE_T *state)
 	}
 
 	/* Send the base address of the slots to VideoCore */
-	dsb(); /* Ensure all writes have completed */
+	dsb(sy); /* Ensure all writes have completed */
 
 	bus_dmamap_sync(dma_tag, dma_map, 0, slot_mem_size,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
@@ -187,12 +192,12 @@ vchiq_platform_init(VCHIQ_STATE_T *state)
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
 	vchiq_log_info(vchiq_arm_log_level,
-		"vchiq_init - done (slots %x, phys %x)",
-		(unsigned int)vchiq_slot_zero, (unsigned int)slot_phys);
+		"vchiq_init - done (slots %p, phys %x)",
+		vchiq_slot_zero, (unsigned int)slot_phys);
 
 	vchiq_call_connected_callbacks();
 
-   return 0;
+	return 0;
 
 failed_vchiq_init:
 failed_init_slots:
@@ -355,7 +360,7 @@ vchiq_prepare_bulk_data(VCHIQ_BULK_T *bulk, VCHI_MEM_HANDLE_T memhandle,
 	pagelist->type = (dir == VCHIQ_BULK_RECEIVE) ?
 	    PAGELIST_READ : PAGELIST_WRITE;
 	pagelist->length = size;
-	pagelist->offset = va & L2_S_OFFSET;
+	pagelist->offset = va & VCPAGE_OFFSET;
 
 	/*
 	 * busdma already coalesces contiguous pages for us
@@ -363,10 +368,10 @@ vchiq_prepare_bulk_data(VCHIQ_BULK_T *bulk, VCHI_MEM_HANDLE_T memhandle,
 	for (int i = 0; i < bi->dmamap->dm_nsegs; i++) {
 		bus_addr_t addr = bi->dmamap->dm_segs[i].ds_addr;
 		bus_size_t len = bi->dmamap->dm_segs[i].ds_len;
-		bus_size_t off = addr & L2_S_OFFSET;
-		int npgs = ((off + len + L2_S_OFFSET) >> L2_S_SHIFT);
+		bus_size_t off = addr & VCPAGE_OFFSET;
+		int npgs = ((off + len + VCPAGE_OFFSET) >> VCPAGE_SHIFT);
 
-		pagelist->addrs[i] = addr & ~L2_S_OFFSET;
+		pagelist->addrs[i] = addr & ~VCPAGE_OFFSET;
 		pagelist->addrs[i] |= npgs - 1;
 	}
 
@@ -443,7 +448,7 @@ vchiq_complete_bulk(VCHIQ_BULK_T *bulk)
 		PAGELIST_T *pagelist = bi->pagelist;
 
 		vchiq_log_trace(vchiq_arm_log_level,
-			"free_pagelist - %x, %d", (unsigned int)pagelist, actual);
+			"free_pagelist - %p, %d", pagelist, actual);
 
 		bus_dmamap_sync(dma_tag, bi->pagelist_map, 0,
 		    bi->pagelist_size, BUS_DMASYNC_POSTWRITE);

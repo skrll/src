@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - DHCP client daemon
- * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2020 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -90,7 +90,11 @@ const struct token * dhcp_auth_validate(struct authstate *,
     const void *, size_t, int, int,
     const void *, size_t);
 
-ssize_t dhcp_auth_encode(struct auth *, const struct token *,
+struct dhcpcd_ctx;
+ssize_t dhcp_auth_encode(struct dhcpcd_ctx *, struct auth *,
+    const struct token *,
     void *, size_t, int, int,
     void *, size_t);
+
+int auth_get_rdm_monotonic(uint64_t *rdm);
 #endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.103 2019/12/01 15:34:45 ad Exp $ */
+/*	$NetBSD: cpu.h,v 1.109 2021/01/24 07:36:54 mrg Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -175,8 +175,6 @@ struct xpmsg {
  */
 
 struct cpu_info {
-	struct cpu_data ci_data;	/* MI per-cpu data */
-
 	/*
 	 * Primary Inter-processor message area.  Keep this aligned
 	 * to a cache line boundary if possible, as the structure
@@ -374,7 +372,7 @@ struct cpu_info {
 	 * unrecoverable faults end up here.
 	 */
 	void		(*memerr)(unsigned, u_int, u_int, struct trapframe *);
-	void		(*idlespin)(struct cpu_info *);
+	void		(*idlespin)(void);
 	/* Module Control Registers */
 	/*bus_space_handle_t*/ long ci_mbusport;
 	/*bus_space_handle_t*/ long ci_mxccregs;
@@ -395,7 +393,14 @@ struct cpu_info {
 	struct evcnt ci_xpmsg_bogus;
 	struct evcnt ci_intrcnt[16];
 	struct evcnt ci_sintrcnt[16];
+
+	struct cpu_data ci_data;	/* MI per-cpu data */
 };
+
+#endif /* _KERNEL || _KMEMUSER */
+
+/* Kernel only things. */
+#if defined(_KERNEL)
 
 /*
  * definitions of cpu-dependent requirements
@@ -408,10 +413,6 @@ struct cpu_info {
 
 #define	cpu_number()		(cpuinfo.ci_cpuid)
 
-#endif /* _KERNEL || _KMEMUSER */
-
-/* Kernel only things. */
-#if defined(_KERNEL)
 void	cpu_proc_fork(struct proc *, struct proc *);
 
 #if defined(MULTIPROCESSOR)
@@ -488,6 +489,9 @@ extern int sparc_ncpus;
 
 /* Provide %pc of a lwp */
 #define LWP_PC(l)       ((l)->l_md.md_tf->tf_pc)
+
+/* Hardware cross-call mutex */
+extern kmutex_t xpmsg_mutex;
 
 /*
  * Interrupt handler chains.  Interrupt handlers should return 0 for

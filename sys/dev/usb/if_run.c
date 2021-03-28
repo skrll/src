@@ -1,4 +1,4 @@
-/*	$NetBSD: if_run.c,v 1.34 2019/12/19 15:17:30 gson Exp $	*/
+/*	$NetBSD: if_run.c,v 1.42 2020/06/24 21:06:39 jdolecek Exp $	*/
 /*	$OpenBSD: if_run.c,v 1.90 2012/03/24 15:11:04 jsg Exp $	*/
 
 /*-
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_run.c,v 1.34 2019/12/19 15:17:30 gson Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_run.c,v 1.42 2020/06/24 21:06:39 jdolecek Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -41,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_run.c,v 1.34 2019/12/19 15:17:30 gson Exp $");
 #include <sys/module.h>
 #include <sys/conf.h>
 #include <sys/device.h>
+#include <sys/atomic.h>
 
 #include <sys/bus.h>
 #include <machine/endian.h>
@@ -648,6 +649,19 @@ run_attach(device_t parent, device_t self, void *aux)
 	sc->mac_ver = ver >> 16;
 	sc->mac_rev = ver & 0xffff;
 
+       /*
+	* Per the comment in run_write_region_1(), "the WRITE_REGION_1
+	* command is not stable on RT2860", but WRITE_REGION_1 calls
+	* of up to 64 bytes have been tested and found to work with
+	* mac_ver 0x5390, and they reduce the run time of "ifconfig
+	* run0 up" from 30 seconds to a couple of seconds on OHCI.
+	* Enable WRITE_REGION_1 for the tested version only.  As other
+	* versions are tested and found to work, they can be added
+	* here.
+	*/
+	if (sc->mac_ver == 0x5390)
+		sc->sc_flags |= RUN_USE_BLOCK_WRITE;
+
 	/* retrieve RF rev. no and various other things from EEPROM */
 	run_read_eeprom(sc);
 
@@ -732,7 +746,11 @@ run_attach(device_t parent, device_t self, void *aux)
 	/* override state transition machine */
 	sc->sc_newstate = ic->ic_newstate;
 	ic->ic_newstate = run_newstate;
-	ieee80211_media_init(ic, run_media_change, ieee80211_media_status);
+
+	/* XXX media locking needs revisiting */
+	mutex_init(&sc->sc_media_mtx, MUTEX_DEFAULT, IPL_SOFTUSB);
+	ieee80211_media_init_with_lock(ic,
+	    run_media_change, ieee80211_media_status, &sc->sc_media_mtx);
 
 	bpf_attach2(ifp, DLT_IEEE802_11_RADIO,
 	    sizeof(struct ieee80211_frame) + IEEE80211_RADIOTAP_HDRLEN,
@@ -913,7 +931,7 @@ run_free_tx_ring(struct run_softc *sc, int qid)
 	}
 }
 
-static int
+static int __noinline
 run_load_microcode(struct run_softc *sc)
 {
 	usb_device_request_t req;
@@ -985,7 +1003,7 @@ run_load_microcode(struct run_softc *sc)
 	return 0;
 }
 
-static int
+static int __noinline
 run_reset(struct run_softc *sc)
 {
 	usb_device_request_t req;
@@ -998,7 +1016,7 @@ run_reset(struct run_softc *sc)
 	return usbd_do_request(sc->sc_udev, &req, NULL);
 }
 
-static int
+static int __noinline
 run_read(struct run_softc *sc, uint16_t reg, uint32_t *val)
 {
 	uint32_t tmp;
@@ -1038,40 +1056,52 @@ run_write_2(struct run_softc *sc, uint16_t reg, uint16_t val)
 	return usbd_do_request(sc->sc_udev, &req, NULL);
 }
 
-static int
+static int __noinline
 run_write(struct run_softc *sc, uint16_t reg, uint32_t val)
 {
-	int error;
-
-	if ((error = run_write_2(sc, reg, val & 0xffff)) == 0)
-		error = run_write_2(sc, reg + 2, val >> 16);
-	return error;
+	uint32_t tmp = htole32(val);
+	return run_write_region_1(sc, reg, (uint8_t *)&tmp, sizeof(tmp));
 }
 
 static int
 run_write_region_1(struct run_softc *sc, uint16_t reg, const uint8_t *buf,
     int len)
 {
-#if 1
-	int i, error = 0;
-	/*
-	 * NB: the WRITE_REGION_1 command is not stable on RT2860.
-	 * We thus issue multiple WRITE_2 commands instead.
-	 */
-	KASSERT((len & 1) == 0);
-	for (i = 0; i < len && error == 0; i += 2)
-		error = run_write_2(sc, reg + i, buf[i] | buf[i + 1] << 8);
+	int error = 0;
+	if (sc->sc_flags & RUN_USE_BLOCK_WRITE) {
+		usb_device_request_t req;
+		/*
+		 * NOTE: It appears the WRITE_REGION_1 command cannot be
+		 * passed a huge amount of data, which will crash the
+		 * firmware. Limit amount of data passed to 64 bytes at a
+		 * time.
+		 */
+		while (len > 0) {
+			int delta = MIN(len, 64);
+			req.bmRequestType = UT_WRITE_VENDOR_DEVICE;
+			req.bRequest = RT2870_WRITE_REGION_1;
+			USETW(req.wValue, 0);
+			USETW(req.wIndex, reg);
+			USETW(req.wLength, delta);
+			error = usbd_do_request(sc->sc_udev, &req,
+			    __UNCONST(buf));
+			if (error != 0)
+				break;
+			reg += delta;
+			buf += delta;
+			len -= delta;
+		}
+	} else {
+		/*
+		 * NB: the WRITE_REGION_1 command is not stable on RT2860.
+		 * We thus issue multiple WRITE_2 commands instead.
+		 */
+		int i;
+		KASSERT((len & 1) == 0);
+		for (i = 0; i < len && error == 0; i += 2)
+			error = run_write_2(sc, reg + i, buf[i] | buf[i + 1] << 8);
+	}
 	return error;
-#else
-	usb_device_request_t req;
-
-	req.bmRequestType = UT_WRITE_VENDOR_DEVICE;
-	req.bRequest = RT2870_WRITE_REGION_1;
-	USETW(req.wValue, 0);
-	USETW(req.wIndex, reg);
-	USETW(req.wLength, len);
-	return usbd_do_request(sc->sc_udev, &req, __UNCONST(buf));
-#endif
 }
 
 static int
@@ -1079,8 +1109,25 @@ run_set_region_4(struct run_softc *sc, uint16_t reg, uint32_t val, int count)
 {
 	int error = 0;
 
-	for (; count > 0 && error == 0; count--, reg += 4)
-		error = run_write(sc, reg, val);
+	if (sc->sc_flags & RUN_USE_BLOCK_WRITE) {
+		while (count > 0) {
+			int i, delta;
+			uint32_t tmp[16];
+
+			delta = MIN(count, __arraycount(tmp));
+			for (i = 0; i < delta; i++)
+				tmp[i] = htole32(val);
+			error = run_write_region_1(sc, reg, (uint8_t *)tmp,
+			    delta * sizeof(uint32_t));
+			if (error != 0)
+				break;
+			reg += delta * sizeof(uint32_t);
+			count -= delta;
+		}
+	} else {
+		for (; count > 0 && error == 0; count--, reg += 4)
+			error = run_write(sc, reg, val);
+	}
 	return error;
 }
 
@@ -1784,10 +1831,11 @@ run_task(void *arg)
 	while (ring->next != ring->cur) {
 		cmd = &ring->cmd[ring->next];
 		splx(s);
+		membar_consumer();
 		/* callback */
 		cmd->cb(sc, cmd->data);
 		s = splusb();
-		ring->queued--;
+		atomic_dec_uint(&ring->queued);
 		ring->next = (ring->next + 1) % RUN_HOST_CMD_RING_COUNT;
 	}
 	wakeup(ring);
@@ -1810,10 +1858,11 @@ run_do_async(struct run_softc *sc, void (*cb)(struct run_softc *, void *),
 	cmd->cb = cb;
 	KASSERT(len <= sizeof(cmd->data));
 	memcpy(cmd->data, arg, len);
+	membar_producer();
 	ring->cur = (ring->cur + 1) % RUN_HOST_CMD_RING_COUNT;
 
 	/* if there is no pending command already, schedule a task */
-	if (++ring->queued == 1)
+	if (atomic_inc_uint_nv(&ring->queued) == 1)
 		usb_add_task(sc->sc_udev, &sc->sc_task, USB_TASKQ_DRIVER);
 	splx(s);
 }
@@ -2154,7 +2203,7 @@ run_calibrate_cb(struct run_softc *sc, void *arg)
 
 	s = splnet();
 	/* count failed TX as errors */
-	ifp->if_oerrors += le32toh(sta[0]) & 0xffff;
+	if_statadd(ifp, if_oerrors, le32toh(sta[0]) & 0xffff);
 
 	sc->amn.amn_retrycnt =
 	    (le32toh(sta[0]) & 0xffff) +	/* failed TX count */
@@ -2263,7 +2312,7 @@ run_rx_frame(struct run_softc *sc, uint8_t *buf, int dmalen)
 	flags = le32toh(rxd->flags);
 
 	if (__predict_false(flags & (RT2860_RX_CRCERR | RT2860_RX_ICVERR))) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -2272,7 +2321,7 @@ run_rx_frame(struct run_softc *sc, uint8_t *buf, int dmalen)
 	if (__predict_false((flags & RT2860_RX_MICERR))) {
 		/* report MIC failures to net80211 for TKIP */
 		ieee80211_notify_michael_failure(ic, wh, 0/* XXX */);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	
@@ -2292,13 +2341,14 @@ run_rx_frame(struct run_softc *sc, uint8_t *buf, int dmalen)
 	/* could use m_devget but net80211 wants contig mgmt frames */
 	MGETHDR(m, M_DONTWAIT, MT_DATA);
 	if (__predict_false(m == NULL)) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	if (len > MHLEN) {
-		MCLGET(m, M_DONTWAIT);
+		if (__predict_true(len <= MCLBYTES))
+			MCLGET(m, M_DONTWAIT);
 		if (__predict_false(!(m->m_flags & M_EXT))) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			m_freem(m);
 			return;
 		}
@@ -2461,13 +2511,13 @@ run_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 			device_xname(sc->sc_dev), usbd_errstr(status)));
 		if (status == USBD_STALLED)
 			usbd_clear_endpoint_stall_async(txq->pipeh);
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		splx(s);
 		return;
 	}
 
 	sc->sc_tx_timer = 0;
-	ifp->if_opackets++;
+	if_statinc(ifp, if_opackets);
 	ifp->if_flags &= ~IFF_OACTIVE;
 	run_start(ifp);
 	splx(s);
@@ -2668,7 +2718,7 @@ run_start(struct ifnet *ifp)
 			break;
 		if (m->m_len < (int)sizeof(*eh) &&
 		    (m = m_pullup(m, sizeof(*eh))) == NULL) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2676,7 +2726,7 @@ run_start(struct ifnet *ifp)
 		ni = ieee80211_find_txnode(ic, eh->ether_dhost);
 		if (ni == NULL) {
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2684,7 +2734,7 @@ run_start(struct ifnet *ifp)
 
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 sendit:
@@ -2692,7 +2742,7 @@ sendit:
 
 		if (run_tx(sc, m, ni) != 0) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2713,7 +2763,7 @@ run_watchdog(struct ifnet *ifp)
 		if (--sc->sc_tx_timer == 0) {
 			device_printf(sc->sc_dev, "device timeout\n");
 			/* run_init(ifp); XXX needs a process context! */
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return;
 		}
 		ifp->if_timer = 1;

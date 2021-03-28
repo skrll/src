@@ -1,4 +1,4 @@
-/*	$NetBSD: pic_uic.c,v 1.4 2013/11/19 12:46:43 kiyohara Exp $	*/
+/*	$NetBSD: pic_uic.c,v 1.8 2021/02/27 20:43:58 rin Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -36,7 +36,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic_uic.c,v 1.4 2013/11/19 12:46:43 kiyohara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic_uic.c,v 1.8 2021/02/27 20:43:58 rin Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_ppcarch.h"
+#include "opt_uic.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -51,7 +56,6 @@ __KERNEL_RCSID(0, "$NetBSD: pic_uic.c,v 1.4 2013/11/19 12:46:43 kiyohara Exp $")
 #include <powerpc/ibm4xx/cpu.h>
 
 #include <powerpc/pic/picvar.h>
-
 
 /*
  * Number of interrupts (hard + soft), irq number legality test,
@@ -213,7 +217,8 @@ extern struct pic_ops pic_uic1;
 static void
 uic1_finish_setup(struct pic_ops *pic)
 {
-	intr_establish(30, IST_LEVEL, IPL_HIGH, pic_handle_intr, &pic_uic1);
+	intr_establish_xname(30, IST_LEVEL, IPL_HIGH, pic_handle_intr,
+	    &pic_uic1, "uic1");
 }
 
 struct uic uic1 = {
@@ -268,7 +273,8 @@ extern struct pic_ops pic_uic2;
 static void
 uic2_finish_setup(struct pic_ops *pic)
 {
-	intr_establish(28, IST_LEVEL, IPL_HIGH, pic_handle_intr, &pic_uic2);
+	intr_establish_xname(28, IST_LEVEL, IPL_HIGH, pic_handle_intr,
+	    &pic_uic2, "uic2");
 }
 
 static struct uic uic2 = {
@@ -294,12 +300,6 @@ struct pic_ops pic_uic2 = {
 
 #endif /* MULTIUIC */
 #endif /* !PPC_IBM403 */
-
-/* Write External Enable Immediate */
-#define	wrteei(en) 		__asm volatile ("wrteei %0" : : "K"(en))
-
-/* Enforce In Order Execution of I/O */
-#define	eieio() 		__asm volatile ("eieio")
 
 /*
  * Set up interrupt mapping array.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2011-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -41,7 +41,6 @@ static void ill_handler(int sig)
  * Following subroutines could have been inlined, but it's not all
  * ARM compilers support inline assembler...
  */
-#if __ARM_MAX_ARCH__>=7
 void _armv7_neon_probe(void);
 void _armv8_aes_probe(void);
 void _armv8_sha1_probe(void);
@@ -51,15 +50,12 @@ void _armv8_pmull_probe(void);
 void _armv8_sha512_probe(void);
 # endif
 uint32_t _armv7_tick(void);
-#endif
 
 uint32_t OPENSSL_rdtsc(void)
 {
-#if __ARM_MAX_ARCH__>=7
     if (OPENSSL_armcap_P & ARMV7_TICK)
         return _armv7_tick();
     else
-#endif
         return 0;
 }
 
@@ -71,6 +67,23 @@ void OPENSSL_cpuid_setup(void) __attribute__ ((constructor));
 #  if __GLIBC_PREREQ(2, 16)
 #   include <sys/auxv.h>
 #   define OSSL_IMPLEMENT_GETAUXVAL
+#  endif
+# endif
+# if defined(__FreeBSD__)
+#  include <sys/param.h>
+#  if __FreeBSD_version >= 1200000
+#   include <sys/auxv.h>
+#   define OSSL_IMPLEMENT_GETAUXVAL
+
+static unsigned long getauxval(unsigned long key)
+{
+  unsigned long val = 0ul;
+
+  if (elf_aux_info((int)key, &val, sizeof(val)) != 0)
+    return 0ul;
+
+  return val;
+}
 #  endif
 # endif
 
@@ -206,13 +219,11 @@ void OPENSSL_cpuid_setup(void)
     }
 # endif
 
-#if __ARM_MAX_ARCH__>=7
     /* Things that getauxval didn't tell us */
     if (sigsetjmp(ill_jmp, 1) == 0) {
         _armv7_tick();
         OPENSSL_armcap_P |= ARMV7_TICK;
     }
-#endif
 
     sigaction(SIGILL, &ill_oact, NULL);
     sigprocmask(SIG_SETMASK, &oset, NULL);

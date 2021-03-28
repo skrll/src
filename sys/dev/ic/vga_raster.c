@@ -1,4 +1,4 @@
-/*	$NetBSD: vga_raster.c,v 1.46 2019/12/01 14:18:51 ad Exp $	*/
+/*	$NetBSD: vga_raster.c,v 1.48 2020/04/24 22:31:36 ad Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 Bang Jun-Young
@@ -56,7 +56,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vga_raster.c,v 1.46 2019/12/01 14:18:51 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vga_raster.c,v 1.48 2020/04/24 22:31:36 ad Exp $");
 
 #include "opt_vga.h"
 #include "opt_wsmsgattrs.h" /* for WSDISPLAY_CUSTOM_OUTPUT */
@@ -396,8 +396,7 @@ vga_raster_init(struct vga_config *vc, bus_space_tag_t iot,
 		panic("vga_raster_init: couldn't map 6845 io");
 
 	if (bus_space_map(vh->vh_memt, 0xa0000, 0x20000,
-	    BUS_SPACE_MAP_CACHEABLE | BUS_SPACE_MAP_PREFETCHABLE,
-	    &vh->vh_allmemh))
+	    BUS_SPACE_MAP_CACHEABLE, &vh->vh_allmemh))
 		panic("vga_init: couldn't map memory");
 
 	if (bus_space_subregion(vh->vh_memt, vh->vh_allmemh, 0, 0x10000,
@@ -440,7 +439,7 @@ vga_raster_init_screen(struct vga_config *vc, struct vgascreen *scr,
     const struct wsscreen_descr *type, int existing, long *attrp)
 {
 	int cpos;
-	int res;
+	int res __diagused;
 	struct vga_handle *vh;
 
 	scr->cfg = vc;
@@ -513,10 +512,7 @@ vga_raster_init_screen(struct vga_config *vc, struct vgascreen *scr,
 	else
 #endif
 	res = vga_raster_allocattr(scr, 0, 0, 0, attrp);
-#ifdef DIAGNOSTIC
-	if (res)
-		panic("vga_raster_init_screen: attribute botch");
-#endif
+	KASSERTMSG(res == 0, "attribute botch");
 
 	vc->nscreens++;
 	LIST_INSERT_HEAD(&vc->screens, scr, next);

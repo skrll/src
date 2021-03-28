@@ -1,4 +1,4 @@
-/*	$NetBSD: autofs_vnops.c,v 1.4 2019/11/26 16:17:31 tkusumi Exp $	*/
+/*	$NetBSD: autofs_vnops.c,v 1.6 2020/05/16 18:31:48 christos Exp $	*/
 /*-
  * Copyright (c) 2017 The NetBSD Foundation, Inc.
  * Copyright (c) 2016 The DragonFly Project
@@ -34,7 +34,7 @@
  *
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autofs_vnops.c,v 1.4 2019/11/26 16:17:31 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autofs_vnops.c,v 1.6 2020/05/16 18:31:48 christos Exp $");
 
 #include "autofs.h"
 
@@ -183,7 +183,7 @@ mounted:
 		autofs_node_uncache(anp);
 	}
 
-	error = VFS_ROOT(vp->v_mountedhere, newvp);
+	error = VFS_ROOT(vp->v_mountedhere, LK_EXCLUSIVE, newvp);
 	if (error) {
 		AUTOFS_WARN("VFS_ROOT() failed with error %d", error);
 		return error;
@@ -591,6 +591,7 @@ static const struct vnodeopv_entry_desc autofs_vnodeop_entries[] = {
 	{ &vop_open_desc,	autofs_open },
 	{ &vop_close_desc,	autofs_close },
 	{ &vop_access_desc,	autofs_access },
+	{ &vop_accessx_desc,	genfs_accessx },
 	{ &vop_getattr_desc,	autofs_getattr },
 	{ &vop_fsync_desc,	autofs_fsync },
 	{ &vop_mkdir_desc,	autofs_mkdir },

@@ -1,4 +1,4 @@
-/* $NetBSD: smbus_acpi.c,v 1.13 2010/07/29 11:03:09 jruoho Exp $ */
+/* $NetBSD: smbus_acpi.c,v 1.15 2021/01/29 15:49:55 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: smbus_acpi.c,v 1.13 2010/07/29 11:03:09 jruoho Exp $");
+__KERNEL_RCSID(0, "$NetBSD: smbus_acpi.c,v 1.15 2021/01/29 15:49:55 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -73,7 +73,6 @@ struct acpi_smbus_softc {
 	struct callout		sc_callout;
 	struct i2c_controller	sc_i2c_tag;
 	device_t		sc_dv;
-	kmutex_t		sc_i2c_mutex;
 	int			sc_poll_alert;
 };
 
@@ -81,8 +80,6 @@ static int	acpi_smbus_match(device_t, cfdata_t, void *);
 static void	acpi_smbus_attach(device_t, device_t, void *);
 static int	acpi_smbus_detach(device_t, int);
 static int	acpi_smbus_poll_alert(ACPI_HANDLE, int *);
-static int	acpi_smbus_acquire_bus(void *, int);
-static void	acpi_smbus_release_bus(void *, int);
 static int	acpi_smbus_exec(void *, i2c_op_t, i2c_addr_t, const void *,
 				size_t, void *, size_t, int);
 static void	acpi_smbus_alerts(struct acpi_smbus_softc *);
@@ -115,9 +112,9 @@ struct SMB_INFO {
 	struct SMB_DEVICE device[1];
 };
 
-static const char * const smbus_acpi_ids[] = {
-	"SMBUS01",	/* SMBus CMI v1.0 */
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "SMBUS01" },	/* SMBus CMI v1.0 */
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(acpismbus, sizeof(struct acpi_smbus_softc),
@@ -127,14 +124,13 @@ static int
 acpi_smbus_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct acpi_attach_args *aa = aux;
+	int ret;
 
-	if (aa->aa_node->ad_type != ACPI_TYPE_DEVICE)
+	ret = acpi_compatible_match(aa, compat_data);
+	if (ret == 0)
 		return 0;
 
-	if (acpi_match_hid(aa->aa_node->ad_devinfo, smbus_acpi_ids) == 0)
-		return 0;
-
-	return acpi_smbus_poll_alert(aa->aa_node->ad_handle, NULL);
+	return acpi_smbus_poll_alert(aa->aa_node->ad_handle, NULL) ? ret : 0;
 }
 
 static void
@@ -151,11 +147,8 @@ acpi_smbus_attach(device_t parent, device_t self, void *aux)
 	sc->sc_poll_alert = 2;
 
 	/* Attach I2C bus. */
-	mutex_init(&sc->sc_i2c_mutex, MUTEX_DEFAULT, IPL_NONE);
-
+	iic_tag_init(&sc->sc_i2c_tag);
 	sc->sc_i2c_tag.ic_cookie = sc;
-	sc->sc_i2c_tag.ic_acquire_bus = acpi_smbus_acquire_bus;
-	sc->sc_i2c_tag.ic_release_bus = acpi_smbus_release_bus;
 	sc->sc_i2c_tag.ic_exec = acpi_smbus_exec;
 
 	(void)acpi_smbus_poll_alert(aa->aa_node->ad_handle,&sc->sc_poll_alert);
@@ -194,7 +187,7 @@ acpi_smbus_detach(device_t self, int flags)
 	callout_halt(&sc->sc_callout, NULL);
 	callout_destroy(&sc->sc_callout);
 
-	mutex_destroy(&sc->sc_i2c_mutex);
+	iic_tag_fini(&sc->sc_i2c_tag);
 
 	return 0;
 }
@@ -259,23 +252,6 @@ out:
 	return (ACPI_FAILURE(rv)) ? 0 : 1;
 }
 
-static int
-acpi_smbus_acquire_bus(void *cookie, int flags)
-{
-        struct acpi_smbus_softc *sc = cookie;
-
-        mutex_enter(&sc->sc_i2c_mutex);
-
-        return 0;
-}
-
-static void
-acpi_smbus_release_bus(void *cookie, int flags)
-{
-        struct acpi_smbus_softc *sc = cookie;
-
-        mutex_exit(&sc->sc_i2c_mutex);
-}
 static int
 acpi_smbus_exec(void *cookie, i2c_op_t op, i2c_addr_t addr,
 	const void *cmdbuf, size_t cmdlen, void *buf, size_t len, int flags)

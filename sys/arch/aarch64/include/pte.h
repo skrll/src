@@ -1,4 +1,4 @@
-/* $NetBSD: pte.h,v 1.10 2019/09/11 18:23:31 skrll Exp $ */
+/* $NetBSD: pte.h,v 1.12 2020/02/29 21:34:37 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -65,6 +65,7 @@ typedef uint64_t pt_entry_t;	/* L3(4k) table entry */
 #define LX_BLKPAG_PXN		__BIT(53)	/* Privileged Execute Never */
 #define LX_BLKPAG_CONTIG	__BIT(52)	/* Hint of TLB cache */
 #define LX_BLKPAG_DBM		__BIT(51)	/* Dirty Bit Modifier (V8.1) */
+#define LX_BLKPAG_GP		__BIT(50)	/* Guarded Page (V8.5) */
 #define LX_TBL_PA		__BITS(47, 12)
 #define LX_BLKPAG_OA		__BITS(47, 12)
 #define LX_BLKPAG_NG		__BIT(11)	/* Not Global */
@@ -133,8 +134,6 @@ typedef uint64_t pt_entry_t;	/* L3(4k) table entry */
 #define Ln_ENTRIES_SHIFT	9
 #define Ln_ENTRIES		(1 << Ln_ENTRIES_SHIFT)
 #define Ln_TABLE_SIZE		(8 << Ln_ENTRIES_SHIFT)
-
-#define TTBR_SEL_VA		__BIT(63)	/* which TTBR is selected */
 
 #elif defined(__arm__)
 

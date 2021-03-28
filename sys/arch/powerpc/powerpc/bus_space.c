@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_space.c,v 1.36 2013/07/09 20:33:03 matt Exp $	*/
+/*	$NetBSD: bus_space.c,v 1.38 2020/07/06 10:31:24 rin Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
@@ -30,10 +30,14 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus_space.c,v 1.36 2013/07/09 20:33:03 matt Exp $");
-
 #define _POWERPC_BUS_SPACE_PRIVATE
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: bus_space.c,v 1.38 2020/07/06 10:31:24 rin Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>

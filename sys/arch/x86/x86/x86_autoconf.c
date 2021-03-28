@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_autoconf.c,v 1.79 2019/11/10 21:16:34 chs Exp $	*/
+/*	$NetBSD: x86_autoconf.c,v 1.84 2020/07/09 22:45:54 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_autoconf.c,v 1.79 2019/11/10 21:16:34 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_autoconf.c,v 1.84 2020/07/09 22:45:54 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -54,11 +54,13 @@ __KERNEL_RCSID(0, "$NetBSD: x86_autoconf.c,v 1.79 2019/11/10 21:16:34 chs Exp $"
 #include <machine/bootinfo.h>
 #include <machine/pio.h>
 
+#include <xen/xen.h>
+
 #include <dev/i2c/i2cvar.h>
 
 #include "acpica.h"
 #include "wsdisplay.h"
-#ifndef XEN
+#ifndef XENPV
 #include "hyperv.h"
 #endif
 
@@ -99,6 +101,7 @@ is_valid_disk(device_t dv)
 		device_is_a(dv, "sd") ||
 		device_is_a(dv, "wd") ||
 		device_is_a(dv, "ld") ||
+		device_is_a(dv, "xbd") ||
 		device_is_a(dv, "ed"));
 }
 
@@ -534,6 +537,12 @@ findroot(void)
 void
 cpu_bootconf(void)
 {
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH) {
+		xen_bootconf();
+		return;
+	}
+#endif
 	findroot();
 	matchbiosdisks();
 }
@@ -560,25 +569,25 @@ device_register(device_t dev, void *aux)
 	 */
 	if (device_is_a(dev, "iic") &&
 	    device_is_a(dev->dv_parent, "imcsmb")) {
-		static const char *imcsmb_device_whitelist[] = {
+		static const char *imcsmb_device_permitlist[] = {
 			"spdmem",
 			"sdtemp",
 			NULL,
 		};
-		prop_array_t whitelist = prop_array_create();
+		prop_array_t permitlist = prop_array_create();
 		prop_dictionary_t props = device_properties(dev);
 		int i;
 
-		for (i = 0; imcsmb_device_whitelist[i] != NULL; i++) {
-			prop_string_t pstr = prop_string_create_cstring_nocopy(
-			    imcsmb_device_whitelist[i]);
-			(void) prop_array_add(whitelist, pstr);
+		for (i = 0; imcsmb_device_permitlist[i] != NULL; i++) {
+			prop_string_t pstr = prop_string_create_nocopy(
+			    imcsmb_device_permitlist[i]);
+			(void) prop_array_add(permitlist, pstr);
 			prop_object_release(pstr);
 		}
 		(void) prop_dictionary_set(props,
-					   I2C_PROP_INDIRECT_DEVICE_WHITELIST,
-					   whitelist);
-		(void) prop_dictionary_set_cstring_nocopy(props,
+					   I2C_PROP_INDIRECT_DEVICE_PERMITLIST,
+					   permitlist);
+		(void) prop_dictionary_set_string_nocopy(props,
 					   I2C_PROP_INDIRECT_PROBE_STRATEGY,
 					   I2C_PROBE_STRATEGY_NONE);
 	}

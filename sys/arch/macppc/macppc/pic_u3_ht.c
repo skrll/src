@@ -1,3 +1,4 @@
+/*	$NetBSD: pic_u3_ht.c,v 1.10 2021/01/26 14:49:41 thorpej Exp $	*/
 /*-
  * Copyright (c) 2013 Phileas Fogg
  * All rights reserved.
@@ -25,6 +26,7 @@
  */
 
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pic_u3_ht.c,v 1.10 2021/01/26 14:49:41 thorpej Exp $");
 
 #include "opt_openpic.h"
 #include "opt_interrupt.h"
@@ -45,7 +47,7 @@
 #include <machine/autoconf.h>
 #include <arch/powerpc/pic/picvar.h>
 
-#ifdef U3_HT_PIC_DEPUG
+#ifdef U3_HT_PIC_DEBUG
 #define DPRINTF aprint_error
 #else
 #define DPRINTF if (0) printf
@@ -138,11 +140,11 @@ int init_u3_ht(void)
 	if (u4 == -1)
 		return FALSE;
 
-	if (of_compatible(u4, u3_compat) == -1)
+	if (! of_compatible(u4, u3_compat))
 		return FALSE;
 
 	pic = OF_child(u4);
- 	while ((pic != 0) && (of_compatible(pic, pic_compat) == -1))
+ 	while ((pic != 0) && !of_compatible(pic, pic_compat))
  		pic = OF_peer(pic);
 
 	if ((pic == -1) || (pic == 0))

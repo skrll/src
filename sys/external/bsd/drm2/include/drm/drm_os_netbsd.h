@@ -1,4 +1,4 @@
-/*	$NetBSD: drm_os_netbsd.h,v 1.15 2019/11/05 23:29:28 jmcneill Exp $	*/
+/*	$NetBSD: drm_os_netbsd.h,v 1.17 2020/02/14 04:36:56 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -41,6 +41,14 @@
 #define	CONFIG_X86_PAT	1
 #endif
 
+#if defined(__arm__)
+#define CONFIG_ARM	1
+#endif
+
+#if defined(__aarch64__)
+#define CONFIG_ARM64	1
+#endif
+
 /*
  * Nothing meaningfully depends on this; defining this avoids patching
  * away some conditionalization in drmP.h.
@@ -68,7 +76,6 @@
 #endif
 
 #include <drm/drm_agp_netbsd.h>
-#include <drm/drm_auth_netbsd.h>
 #include <drm/drm_irq_netbsd.h>
 #include <drm/drm_wait_netbsd.h>
 

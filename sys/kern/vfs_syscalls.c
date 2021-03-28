@@ -1,7 +1,7 @@
-/*	$NetBSD: vfs_syscalls.c,v 1.537 2019/09/26 01:34:16 christos Exp $	*/
+/*	$NetBSD: vfs_syscalls.c,v 1.549 2021/02/17 17:39:08 dholland Exp $	*/
 
 /*-
- * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2009, 2019, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls.c,v 1.537 2019/09/26 01:34:16 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls.c,v 1.549 2021/02/17 17:39:08 dholland Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_fileassoc.h"
@@ -296,7 +296,7 @@ mount_update(struct lwp *l, struct vnode *vp, const char *path, int flags,
 	if (error)
 		goto out;
 
-	mutex_enter(&mp->mnt_updating);
+	mutex_enter(mp->mnt_updating);
 
 	mp->mnt_flag &= ~MNT_OP_FLAGS;
 	mp->mnt_flag |= flags & MNT_OP_FLAGS;
@@ -348,7 +348,7 @@ mount_update(struct lwp *l, struct vnode *vp, const char *path, int flags,
 		if ((mp->mnt_iflag & IMNT_ONWORKLIST) != 0)
 			vfs_syncer_remove_from_worklist(mp);
 	}
-	mutex_exit(&mp->mnt_updating);
+	mutex_exit(mp->mnt_updating);
 	vfs_resume(mp);
 
 	if ((error == 0) && !(saved_flags & MNT_EXTATTR) && 
@@ -445,12 +445,12 @@ mount_getargs(struct lwp *l, struct vnode *vp, const char *path, int flags,
 	if (vfs_busy(mp))
 		return EPERM;
 
-	mutex_enter(&mp->mnt_updating);
+	mutex_enter(mp->mnt_updating);
 	mp->mnt_flag &= ~MNT_OP_FLAGS;
 	mp->mnt_flag |= MNT_GETARGS;
 	error = VFS_MOUNT(mp, path, data, data_len);
 	mp->mnt_flag &= ~MNT_OP_FLAGS;
-	mutex_exit(&mp->mnt_updating);
+	mutex_exit(mp->mnt_updating);
 
 	vfs_unbusy(mp);
 	return (error);
@@ -655,7 +655,7 @@ do_sys_sync(struct lwp *l)
 
 	mountlist_iterator_init(&iter);
 	while ((mp = mountlist_iterator_next(iter)) != NULL) {
-		mutex_enter(&mp->mnt_updating);
+		mutex_enter(mp->mnt_updating);
 		if ((mp->mnt_flag & MNT_RDONLY) == 0) {
 			asyncflag = mp->mnt_flag & MNT_ASYNC;
 			mp->mnt_flag &= ~MNT_ASYNC;
@@ -663,13 +663,79 @@ do_sys_sync(struct lwp *l)
 			if (asyncflag)
 				 mp->mnt_flag |= MNT_ASYNC;
 		}
-		mutex_exit(&mp->mnt_updating);
+		mutex_exit(mp->mnt_updating);
 	}
 	mountlist_iterator_destroy(iter);
 #ifdef DEBUG
 	if (syncprt)
 		vfs_bufstats();
 #endif /* DEBUG */
+}
+
+static bool
+sync_vnode_filter(void *cookie, vnode_t *vp)
+{
+
+	if (vp->v_numoutput > 0) {
+		++*(int *)cookie;
+	}
+	return false;
+}
+
+int
+vfs_syncwait(void)
+{
+	int nbusy, nbusy_prev, iter;
+	struct vnode_iterator *vniter;
+	mount_iterator_t *mpiter;
+	struct mount *mp;
+
+	for (nbusy_prev = 0, iter = 0; iter < 20;) {
+		nbusy = 0;
+		mountlist_iterator_init(&mpiter);
+		while ((mp = mountlist_iterator_next(mpiter)) != NULL) {
+			vnode_t *vp __diagused;
+			vfs_vnode_iterator_init(mp, &vniter);
+			vp = vfs_vnode_iterator_next(vniter,
+			    sync_vnode_filter, &nbusy);
+			KASSERT(vp == NULL);
+			vfs_vnode_iterator_destroy(vniter);
+		}
+		mountlist_iterator_destroy(mpiter);
+
+		if (nbusy == 0)
+			break;
+		if (nbusy_prev == 0)
+			nbusy_prev = nbusy;
+		printf("%d ", nbusy);
+		kpause("syncwait", false, MAX(1, hz / 25 * iter), NULL);
+		if (nbusy >= nbusy_prev) /* we didn't flush anything */
+			iter++;
+		else
+			nbusy_prev = nbusy;
+	}
+
+	if (nbusy) {
+#if defined(DEBUG) || defined(DEBUG_HALT_BUSY)
+		printf("giving up\nPrinting vnodes for busy buffers\n");
+		mountlist_iterator_init(&mpiter);
+		while ((mp = mountlist_iterator_next(mpiter)) != NULL) {
+			vnode_t *vp;
+			vfs_vnode_iterator_init(mp, &vniter);
+			vp = vfs_vnode_iterator_next(vniter,
+			    NULL, NULL);
+			mutex_enter(vp->v_interlock);
+			if (vp->v_numoutput > 0)
+				vprint(NULL, vp);
+			mutex_exit(vp->v_interlock);
+			vrele(vp);
+			vfs_vnode_iterator_destroy(vniter);
+		}
+		mountlist_iterator_destroy(mpiter);
+#endif
+	}
+
+	return nbusy;
 }
 
 /* ARGSUSED */
@@ -1101,7 +1167,17 @@ dostatvfs(struct mount *mp, struct statvfs *sp, struct lwp *l, int flags,
     int root)
 {
 	struct cwdinfo *cwdi = l->l_proc->p_cwdi;
+	bool chrooted;
 	int error = 0;
+
+	KASSERT(l == curlwp);
+
+	/*
+	 * This is safe unlocked.  cwdi_rdir never goes non-NULL -> NULL,
+	 * since it would imply chroots can be escaped.  Just make sure this
+	 * routine is self-consistent.
+	 */
+	chrooted = (atomic_load_relaxed(&cwdi->cwdi_rdir) != NULL);
 
 	/*
 	 * If MNT_NOWAIT or MNT_LAZY is specified, do not
@@ -1111,19 +1187,16 @@ dostatvfs(struct mount *mp, struct statvfs *sp, struct lwp *l, int flags,
 	if (flags == MNT_NOWAIT	|| flags == MNT_LAZY ||
 	    (flags != MNT_WAIT && flags != 0)) {
 		memcpy(sp, &mp->mnt_stat, sizeof(*sp));
-		goto done;
+	} else {
+		/* Get the filesystem stats now */
+		memset(sp, 0, sizeof(*sp));
+		if ((error = VFS_STATVFS(mp, sp)) != 0)
+			return error;
+		if (!chrooted)
+			(void)memcpy(&mp->mnt_stat, sp, sizeof(mp->mnt_stat));
 	}
 
-	/* Get the filesystem stats now */
-	memset(sp, 0, sizeof(*sp));
-	if ((error = VFS_STATVFS(mp, sp)) != 0) {
-		return error;
-	}
-
-	if (cwdi->cwdi_rdir == NULL)
-		(void)memcpy(&mp->mnt_stat, sp, sizeof(mp->mnt_stat));
-done:
-	if (cwdi->cwdi_rdir != NULL) {
+	if (chrooted) {
 		size_t len;
 		char *bp;
 		char c;
@@ -1344,7 +1417,7 @@ sys_fchdir(struct lwp *l, const struct sys_fchdir_args *uap, register_t *retval)
 	vp = fp->f_vnode;
 
 	vref(vp);
-	vn_lock(vp,  LK_EXCLUSIVE | LK_RETRY);
+	vn_lock(vp, LK_SHARED | LK_RETRY);
 	if (vp->v_type != VDIR)
 		error = ENOTDIR;
 	else
@@ -1358,7 +1431,7 @@ sys_fchdir(struct lwp *l, const struct sys_fchdir_args *uap, register_t *retval)
 		vput(vp);
 		if (error != 0)
 			goto out;
-		error = VFS_ROOT(mp, &tdp);
+		error = VFS_ROOT(mp, LK_SHARED, &tdp);
 		vfs_unbusy(mp);
 		if (error)
 			goto out;
@@ -1393,7 +1466,6 @@ sys_fchdir(struct lwp *l, const struct sys_fchdir_args *uap, register_t *retval)
 int
 sys_fchroot(struct lwp *l, const struct sys_fchroot_args *uap, register_t *retval)
 {
-	struct proc *p = l->l_proc;
 	struct vnode	*vp;
 	file_t	*fp;
 	int		 error, fd = SCARG(uap, fd);
@@ -1405,7 +1477,7 @@ sys_fchroot(struct lwp *l, const struct sys_fchroot_args *uap, register_t *retva
 	if ((error = fd_getvnode(fd, &fp)) != 0)
 		return error;
 	vp = fp->f_vnode;
-	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	vn_lock(vp, LK_SHARED | LK_RETRY);
 	if (vp->v_type != VDIR)
 		error = ENOTDIR;
 	else
@@ -1414,8 +1486,7 @@ sys_fchroot(struct lwp *l, const struct sys_fchroot_args *uap, register_t *retva
 	if (error)
 		goto out;
 	vref(vp);
-
-	change_root(p->p_cwdi, vp, l);
+	change_root(vp);
 
  out:
 	fd_putfile(fd);
@@ -1458,20 +1529,17 @@ sys_chroot(struct lwp *l, const struct sys_chroot_args *uap, register_t *retval)
 	/* {
 		syscallarg(const char *) path;
 	} */
-	struct proc *p = l->l_proc;
 	int error;
 	struct vnode *vp;
 
 	if ((error = kauth_authorize_system(l->l_cred, KAUTH_SYSTEM_CHROOT,
 	    KAUTH_REQ_SYSTEM_CHROOT_CHROOT, NULL, NULL, NULL)) != 0)
 		return (error);
-	if ((error = chdir_lookup(SCARG(uap, path), UIO_USERSPACE,
-				  &vp, l)) != 0)
-		return (error);
 
-	change_root(p->p_cwdi, vp, l);
-
-	return (0);
+	error = chdir_lookup(SCARG(uap, path), UIO_USERSPACE, &vp, l);
+	if (error == 0)
+		change_root(vp);
+	return error;
 }
 
 /*
@@ -1479,10 +1547,12 @@ sys_chroot(struct lwp *l, const struct sys_chroot_args *uap, register_t *retval)
  * NB: callers need to properly authorize the change root operation.
  */
 void
-change_root(struct cwdinfo *cwdi, struct vnode *vp, struct lwp *l)
+change_root(struct vnode *vp)
 {
-	struct proc *p = l->l_proc;
 	kauth_cred_t ncred;
+	struct lwp *l = curlwp;
+	struct proc *p = l->l_proc;
+	struct cwdinfo *cwdi = p->p_cwdi;
 
 	ncred = kauth_cred_alloc();
 
@@ -1532,7 +1602,7 @@ chdir_lookup(const char *path, int where, struct vnode **vpp, struct lwp *l)
 	if (error) {
 		return error;
 	}
-	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF | TRYEMULROOT, pb);
+	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF | LOCKSHARED | TRYEMULROOT, pb);
 	if ((error = namei(&nd)) != 0) {
 		pathbuf_destroy(pb);
 		return error;
@@ -1831,7 +1901,7 @@ vfs_fhtovp(fhandle_t *fhp, struct vnode **vpp)
 		error = EOPNOTSUPP;
 		goto out;
 	}
-	error = VFS_FHTOVP(mp, FHANDLE_FILEID(fhp), vpp);
+	error = VFS_FHTOVP(mp, FHANDLE_FILEID(fhp), LK_EXCLUSIVE, vpp);
 out:
 	return error;
 }
@@ -2286,10 +2356,12 @@ do_sys_mknodat(struct lwp *l, int fdat, const char *pathname, mode_t mode,
 			error = EINVAL;
 			break;
 		}
+
+		if (error == 0 && optype == VOP_MKNOD_DESCOFFSET &&
+		    vattr.va_rdev == VNOVAL)
+			error = EINVAL;
 	}
-	if (error == 0 && optype == VOP_MKNOD_DESCOFFSET
-	    && vattr.va_rdev == VNOVAL)
-		error = EINVAL;
+
 	if (!error) {
 		switch (optype) {
 		case VOP_WHITEOUT_DESCOFFSET:
@@ -2996,7 +3068,7 @@ do_sys_accessat(struct lwp *l, int fdat, const char *path,
 		return EINVAL;
 	}
 
-	nd_flag = FOLLOW | LOCKLEAF | TRYEMULROOT;
+	nd_flag = FOLLOW | LOCKLEAF | LOCKSHARED | TRYEMULROOT;
 	if (flags & AT_SYMLINK_NOFOLLOW)
 		nd_flag &= ~FOLLOW;
 
@@ -3160,34 +3232,55 @@ sys_fstatat(struct lwp *l, const struct sys_fstatat_args *uap,
 	return copyout(&sb, SCARG(uap, buf), sizeof(sb));
 }
 
+static int
+kern_pathconf(register_t *retval, const char *path, int name, int flag)
+{
+	int error;
+	struct pathbuf *pb;
+	struct nameidata nd;
+
+	error = pathbuf_copyin(path, &pb);
+	if (error) {
+		return error;
+	}
+	NDINIT(&nd, LOOKUP, flag | LOCKLEAF | TRYEMULROOT, pb);
+	if ((error = namei(&nd)) != 0) {
+		pathbuf_destroy(pb);
+		return error;
+	}
+	error = VOP_PATHCONF(nd.ni_vp, name, retval);
+	vput(nd.ni_vp);
+	pathbuf_destroy(pb);
+	return error;
+}
+
 /*
  * Get configurable pathname variables.
  */
 /* ARGSUSED */
 int
-sys_pathconf(struct lwp *l, const struct sys_pathconf_args *uap, register_t *retval)
+sys_pathconf(struct lwp *l, const struct sys_pathconf_args *uap,
+    register_t *retval)
 {
 	/* {
 		syscallarg(const char *) path;
 		syscallarg(int) name;
 	} */
-	int error;
-	struct pathbuf *pb;
-	struct nameidata nd;
+	return kern_pathconf(retval, SCARG(uap, path), SCARG(uap, name), 
+	    FOLLOW);
+}
 
-	error = pathbuf_copyin(SCARG(uap, path), &pb);
-	if (error) {
-		return error;
-	}
-	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF | TRYEMULROOT, pb);
-	if ((error = namei(&nd)) != 0) {
-		pathbuf_destroy(pb);
-		return (error);
-	}
-	error = VOP_PATHCONF(nd.ni_vp, SCARG(uap, name), retval);
-	vput(nd.ni_vp);
-	pathbuf_destroy(pb);
-	return (error);
+/* ARGSUSED */
+int
+sys_lpathconf(struct lwp *l, const struct sys_lpathconf_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(const char *) path;
+		syscallarg(int) name;
+	} */
+	return kern_pathconf(retval, SCARG(uap, path), SCARG(uap, name), 
+	    NOFOLLOW);
 }
 
 /*
@@ -3222,7 +3315,7 @@ do_sys_readlinkat(struct lwp *l, int fdat, const char *path, char *buf,
 	if (error) {
 		return error;
 	}
-	NDINIT(&nd, LOOKUP, NOFOLLOW | LOCKLEAF | TRYEMULROOT, pb);
+	NDINIT(&nd, LOOKUP, NOFOLLOW | LOCKLEAF | LOCKSHARED | TRYEMULROOT, pb);
 	if ((error = fd_nameiat(l, fdat, &nd)) != 0) {
 		pathbuf_destroy(pb);
 		return error;
@@ -4060,8 +4153,7 @@ sys_fsync(struct lwp *l, const struct sys_fsync_args *uap, register_t *retval)
  * Sync a range of file data.  API modeled after that found in AIX.
  *
  * FDATASYNC indicates that we need only save enough metadata to be able
- * to re-read the written data.  Note we duplicate AIX's requirement that
- * the file be open for writing.
+ * to re-read the written data.
  */
 /* ARGSUSED */
 int
@@ -4106,11 +4198,12 @@ sys_fsync_range(struct lwp *l, const struct sys_fsync_range_args *uap, register_
 	/* If length == 0, we do the whole file, and s = e = 0 will do that */
 	if (len) {
 		s = SCARG(uap, start);
-		e = s + len;
-		if (e < s) {
+		if (s < 0 || len < 0 || len > OFF_T_MAX - s) {
 			error = EINVAL;
 			goto out;
 		}
+		e = s + len;
+		KASSERT(s <= e);
 	} else {
 		e = 0;
 		s = 0;
@@ -4142,10 +4235,6 @@ sys_fdatasync(struct lwp *l, const struct sys_fdatasync_args *uap, register_t *r
 	/* fd_getvnode() will use the descriptor for us */
 	if ((error = fd_getvnode(SCARG(uap, fd), &fp)) != 0)
 		return (error);
-	if ((fp->f_flag & FWRITE) == 0) {
-		fd_putfile(SCARG(uap, fd));
-		return (EBADF);
-	}
 	vp = fp->f_vnode;
 	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	error = VOP_FSYNC(vp, fp->f_cred, FSYNC_WAIT|FSYNC_DATAONLY, 0, 0);
@@ -4326,6 +4415,8 @@ do_sys_renameat(struct lwp *l, int fromfd, const char *from, int tofd,
 	KASSERT(tdvp != NULL);
 	KASSERT((tdvp == tvp) || (VOP_ISLOCKED(tdvp) == LK_EXCLUSIVE));
 
+	if (fvp->v_type == VDIR)
+		tnd.ni_cnd.cn_flags |= WILLBEDIR;
 	/*
 	 * Make sure neither tdvp nor tvp is locked.
 	 */
@@ -4616,6 +4707,7 @@ do_sys_mkdirat(struct lwp *l, int fdat, const char *path, mode_t mode,
 	vattr.va_type = VDIR;
 	/* We will read cwdi->cwdi_cmask unlocked. */
 	vattr.va_mode = (mode & ACCESSPERMS) &~ p->p_cwdi->cwdi_cmask;
+	nd.ni_cnd.cn_flags |= WILLBEDIR;
 	error = VOP_MKDIR(nd.ni_dvp, &nd.ni_vp, &nd.ni_cnd, &vattr);
 	if (!error)
 		vrele(nd.ni_vp);
@@ -4674,21 +4766,15 @@ sys_umask(struct lwp *l, const struct sys_umask_args *uap, register_t *retval)
 	/* {
 		syscallarg(mode_t) newmask;
 	} */
-	struct proc *p = l->l_proc;
-	struct cwdinfo *cwdi;
 
 	/*
-	 * cwdi->cwdi_cmask will be read unlocked elsewhere.  What's
-	 * important is that we serialize changes to the mask.  The
-	 * rw_exit() will issue a write memory barrier on our behalf,
-	 * and force the changes out to other CPUs (as it must use an
-	 * atomic operation, draining the local CPU's store buffers).
+	 * cwdi->cwdi_cmask will be read unlocked elsewhere, and no kind of
+	 * serialization with those reads is required.  It's important to
+	 * return a coherent answer for the caller of umask() though, and
+	 * the atomic operation accomplishes that.
 	 */
-	cwdi = p->p_cwdi;
-	rw_enter(&cwdi->cwdi_lock, RW_WRITER);
-	*retval = cwdi->cwdi_cmask;
-	cwdi->cwdi_cmask = SCARG(uap, newmask) & ALLPERMS;
-	rw_exit(&cwdi->cwdi_lock);
+	*retval = atomic_swap_uint(&curproc->p_cwdi->cwdi_cmask,
+	    SCARG(uap, newmask) & ALLPERMS);
 
 	return (0);
 }
@@ -4699,7 +4785,7 @@ dorevoke(struct vnode *vp, kauth_cred_t cred)
 	struct vattr vattr;
 	int error, fs_decision;
 
-	vn_lock(vp, LK_SHARED | LK_RETRY);
+	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	error = VOP_GETATTR(vp, &vattr, cred);
 	VOP_UNLOCK(vp);
 	if (error != 0)

@@ -1,4 +1,4 @@
-/*	$NetBSD: kobj_machdep.c,v 1.3 2019/12/01 20:27:26 jmcneill Exp $	*/
+/*	$NetBSD: kobj_machdep.c,v 1.6 2020/12/11 18:03:33 skrll Exp $	*/
 
 /*
  * Copyright (c) 2018 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kobj_machdep.c,v 1.3 2019/12/01 20:27:26 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kobj_machdep.c,v 1.6 2020/12/11 18:03:33 skrll Exp $");
 
 #define ELFSIZE		ARCH_ELFSIZE
 
@@ -43,7 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: kobj_machdep.c,v 1.3 2019/12/01 20:27:26 jmcneill Ex
 #include <sys/tree.h>
 #include <sys/xcall.h>
 
-#include <aarch64/cpufunc.h>
+#include <arm/cpufunc.h>
 
 /* #define KOBJ_MACHDEP_DEBUG */
 
@@ -184,7 +184,7 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data,
 	old = *where;
 #ifdef DDB
 	snprintf(disasmbuf, sizeof(disasmbuf), "%08x %s",
-	    *insn, strdisasm((vaddr_t)insn));
+	    le32toh(*insn), strdisasm((vaddr_t)insn), 0);
 #endif
 #endif /* KOBJ_MACHDEP_DEBUG */
 
@@ -247,7 +247,8 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data,
 		}
 		val &= WIDTHMASK(12);
 		val >>= shift;
-		*insn = (*insn & ~__BITS(21,10)) | (val << 10);
+		*insn = htole32(
+		    (le32toh(*insn) & ~__BITS(21,10)) | (val << 10));
 		break;
 
 	case R_AARCH64_ADR_PREL_PG_HI21_NC:
@@ -268,8 +269,9 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data,
 		}
 		immlo = val & WIDTHMASK(2);
 		immhi = (val >> 2) & WIDTHMASK(19);
-		*insn = (*insn & ~(__BITS(30,29) | __BITS(23,5))) |
-		    (immlo << 29) | (immhi << 5);
+		*insn = htole32((le32toh(*insn) &
+		    ~(__BITS(30,29) | __BITS(23,5))) |
+		    (immlo << 29) | (immhi << 5));
 		break;
 
 	case R_AARCH_JUMP26:
@@ -291,7 +293,7 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data,
 			break;
 		}
 		val &= WIDTHMASK(26);
-		*insn = (*insn & ~__BITS(25,0)) | val;
+		*insn = htole32((le32toh(*insn) & ~__BITS(25,0)) | val);
 		break;
 
 	case R_AARCH64_PREL64:
@@ -348,7 +350,7 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data,
 #ifdef DDB
 	printf("%s:    insn %s\n", __func__, disasmbuf);
 	printf("%s:      -> %08x %s\n", __func__,
-	    *insn, strdisasm((vaddr_t)insn));
+	    le32toh(*insn), strdisasm((vaddr_t)insn, 0));
 #endif
 	printf("\n");
 #endif /* KOBJ_MACHDEP_DEBUG */

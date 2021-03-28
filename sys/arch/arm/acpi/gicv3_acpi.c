@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3_acpi.c,v 1.5 2019/10/14 11:00:13 jmcneill Exp $ */
+/* $NetBSD: gicv3_acpi.c,v 1.8 2020/12/23 11:05:08 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3_acpi.c,v 1.5 2019/10/14 11:00:13 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3_acpi.c,v 1.8 2020/12/23 11:05:08 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -91,7 +91,7 @@ gicv3_acpi_match(device_t parent, cfdata_t cf, void *aux)
 
 	switch (gicd->Version) {
 	case ACPI_MADT_GIC_VERSION_NONE:
-		return __SHIFTOUT(reg_id_aa64pfr0_el1_read(), ID_AA64PFR0_EL1_GIC) == 1;
+		return __SHIFTOUT(reg_id_aa64pfr0_el1_read(), ID_AA64PFR0_EL1_GIC) != 0;
 	case ACPI_MADT_GIC_VERSION_V3:
 	case ACPI_MADT_GIC_VERSION_V4:
 		return 1;
@@ -303,7 +303,8 @@ gicv3_acpi_map_gits(ACPI_SUBTABLE_HEADER *hdrp, void *aux)
 		return AE_OK;
 	}
 
-	aprint_normal_dev(sc->sc_gic.sc_dev, "ITS #%#x at 0x%" PRIx64 "\n", gits->TranslationId, gits->BaseAddress);
+	aprint_normal_dev(sc->sc_gic.sc_dev, "ITS #%d at 0x%" PRIx64 "\n",
+	    gits->TranslationId, gits->BaseAddress);
 
 	gicv3_its_init(&sc->sc_gic, bsh, gits->BaseAddress, gits->TranslationId);
 

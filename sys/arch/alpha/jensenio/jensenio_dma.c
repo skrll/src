@@ -1,7 +1,7 @@
-/* $NetBSD: jensenio_dma.c,v 1.5 2012/02/06 02:14:14 matt Exp $ */
+/* $NetBSD: jensenio_dma.c,v 1.7 2020/10/14 00:59:50 thorpej Exp $ */
 
 /*-
- * Copyright (c) 2000 The NetBSD Foundation, Inc.
+ * Copyright (c) 2000, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -47,7 +47,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: jensenio_dma.c,v 1.5 2012/02/06 02:14:14 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: jensenio_dma.c,v 1.7 2020/10/14 00:59:50 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -65,7 +65,22 @@ __KERNEL_RCSID(0, "$NetBSD: jensenio_dma.c,v 1.5 2012/02/06 02:14:14 matt Exp $"
 
 #include <alpha/jensenio/jenseniovar.h>
 
+#include <machine/alpha.h>
+
 bus_dma_tag_t jensenio_dma_get_tag(bus_dma_tag_t, alpha_bus_t);
+
+void
+jensenio_page_physload(unsigned long const start_pfn,
+    unsigned long const end_pfn)
+{
+	/*
+	 * The Jensen does not have SGMAP DMA.  For this reason, we
+	 * need to protect the first 16MB of RAM from random allocations
+	 * in order to give ISA DMA a snowball's chance of working.
+	 */
+	alpha_page_physload_sheltered(start_pfn, end_pfn,
+	    0, alpha_btop(0x1000000));
+}
 
 void
 jensenio_dma_init(struct jensenio_config *jcp)
@@ -123,12 +138,6 @@ jensenio_dma_init(struct jensenio_config *jcp)
 	t->_dmamem_map = _bus_dmamem_map;
 	t->_dmamem_unmap = _bus_dmamem_unmap;
 	t->_dmamem_mmap = _bus_dmamem_mmap;
-
-	/* XXX XXX BEGIN XXX XXX */
-	{							/* XXX */
-		extern paddr_t alpha_XXX_dmamap_or;		/* XXX */
-		alpha_XXX_dmamap_or = 0;			/* XXX */
-	}
 }
 
 /*

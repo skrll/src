@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_sem.c,v 1.58 2019/12/17 18:16:05 ad Exp $	*/
+/*	$NetBSD: uipc_sem.c,v 1.60 2020/12/14 23:12:12 chs Exp $	*/
 
 /*-
  * Copyright (c) 2011, 2019 The NetBSD Foundation, Inc.
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_sem.c,v 1.58 2019/12/17 18:16:05 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_sem.c,v 1.60 2020/12/14 23:12:12 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -110,6 +110,7 @@ static kauth_listener_t	ksem_listener;
 static int		ksem_sysinit(void);
 static int		ksem_sysfini(bool);
 static int		ksem_modcmd(modcmd_t, void *);
+static void		ksem_release(ksem_t *, int);
 static int		ksem_close_fop(file_t *);
 static int		ksem_stat_fop(file_t *, struct stat *);
 static int		ksem_read_fop(file_t *, off_t *, struct uio *,
@@ -365,6 +366,7 @@ ksem_lookup_pshared(intptr_t id)
 static void
 ksem_alloc_pshared_id(ksem_t *ksem)
 {
+	ksem_t *ksem0;
 	uint32_t try;
 
 	KASSERT(ksem->ks_pshared_proc != NULL);
@@ -374,10 +376,11 @@ ksem_alloc_pshared_id(ksem_t *ksem)
 		try = (cprng_fast32() & ~KSEM_MARKER_MASK) |
 		    KSEM_PSHARED_MARKER;
 
-		if (ksem_lookup_pshared_locked(try) == NULL) {
+		if ((ksem0 = ksem_lookup_pshared_locked(try)) == NULL) {
 			/* Got it! */
 			break;
 		}
+		ksem_release(ksem0, -1);
 	}
 	ksem->ks_pshared_id = try;
 	u_long bucket = KSEM_PSHARED_HASH(ksem->ks_pshared_id);
@@ -466,8 +469,6 @@ ksem_create(lwp_t *l, const char *name, ksem_t **ksret, mode_t mode, u_int val)
 		len = 0;
 	}
 
-	chgsemcnt(kauth_cred_getuid(l->l_cred), 1);
-
 	ks = kmem_zalloc(sizeof(ksem_t), KM_SLEEP);
 	mutex_init(&ks->ks_lock, MUTEX_DEFAULT, IPL_NONE);
 	cv_init(&ks->ks_cv, "psem");
@@ -480,8 +481,9 @@ ksem_create(lwp_t *l, const char *name, ksem_t **ksret, mode_t mode, u_int val)
 	uc = l->l_cred;
 	ks->ks_uid = kauth_cred_geteuid(uc);
 	ks->ks_gid = kauth_cred_getegid(uc);
-
+	chgsemcnt(ks->ks_uid, 1);
 	atomic_inc_uint(&nsems_total);
+
 	*ksret = ks;
 	return 0;
 }
@@ -491,6 +493,9 @@ ksem_free(ksem_t *ks)
 {
 
 	KASSERT(!cv_has_waiters(&ks->ks_cv));
+
+	chgsemcnt(ks->ks_uid, -1);
+	atomic_dec_uint(&nsems_total);
 
 	if (ks->ks_pshared_id) {
 		KASSERT(ks->ks_pshared_proc == NULL);
@@ -503,9 +508,6 @@ ksem_free(ksem_t *ks)
 	mutex_destroy(&ks->ks_lock);
 	cv_destroy(&ks->ks_cv);
 	kmem_free(ks, sizeof(ksem_t));
-
-	atomic_dec_uint(&nsems_total);
-	chgsemcnt(kauth_cred_getuid(curproc->p_cred), -1);
 }
 
 #define	KSEM_ID_IS_PSHARED(id)		\

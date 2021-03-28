@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_smireg.h,v 1.1 2015/04/29 08:32:01 hikaru Exp $	*/
+/*	$NetBSD: octeon_smireg.h,v 1.3 2020/06/23 05:18:02 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -33,30 +33,26 @@
 #ifndef _OCTEON_SMIREG_H_
 #define _OCTEON_SMIREG_H_
 
-#define	SMI_CMD					0x0001180000001800ULL
-#define	SMI_WR_DAT				0x0001180000001808ULL
-#define	SMI_RD_DAT				0x0001180000001810ULL
-#define	SMI_CLK					0x0001180000001818ULL
-#define	SMI_EN					0x0001180000001820ULL
+#define	SMI_CMD_OFFSET			0x00ULL
+#define	SMI_WR_DAT_OFFSET		0x08ULL
+#define	SMI_RD_DAT_OFFSET		0x10ULL
+#define	SMI_CLK_OFFSET			0x18ULL
+#define	SMI_EN_OFFSET			0x20ULL
 
-#define	SMI_CMD_OFFSET				0x00ULL
-#define	SMI_WR_DAT_OFFSET			0x08ULL
-#define	SMI_RD_DAT_OFFSET			0x10ULL
-#define	SMI_CLK_OFFSET				0x18ULL
-#define	SMI_EN_OFFSET				0x20ULL
-
-#define SMI_BASE				0x0001180000001800ULL
-#define SMI_SIZE				0x028ULL
+#define SMI_BASE			0x0001180000001800ULL
+#define SMI_SIZE			0x040ULL
+/* XXX - support 1 SMI unit for direct attach; some CPUs have 4 SMIs */
+#define SMI_NUNITS			1
 
 /* SMI CMD */
 #define SMI_CMD_63_17			UINT64_C(0xfffffffffffe0000)
 #define SMI_CMD_PHY_OP			UINT64_C(0x0000000000010000)
+#define   SMI_CMD_PHY_OP_READ		  1
+#define   SMI_CMD_PHY_OP_WRITE		  0
 #define SMI_CMD_15_13			UINT64_C(0x000000000000e000)
 #define SMI_CMD_PHY_ADR			UINT64_C(0x0000000000001f00)
-#define  SMI_CMD_PHY_ADR_SHIFT		8
 #define SMI_CMD_7_5			UINT64_C(0x00000000000000e0)
 #define SMI_CMD_REG_ADR			UINT64_C(0x000000000000001f)
-#define  SMI_CMD_REG_ADR_SHIFT		0
 
 /* SMI_WR_DAT */
 #define SMI_WR_DAT_63_18		UINT64_C(0xfffffffffffc0000)

@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -21,4 +21,4 @@ keyname2=`$KEYGEN -q -a NSEC3RSASHA1 -b 1024 -f KSK -n zone $zone`
 
 cat $infile $keyname1.key $keyname2.key > $zonefile
 
-$SIGNER -o $zone $zonefile > /dev/null 2>&1
+$SIGNER -o $zone $zonefile > /dev/null

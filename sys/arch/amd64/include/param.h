@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.33 2019/11/14 16:23:52 maxv Exp $	*/
+/*	$NetBSD: param.h,v 1.38 2020/06/29 09:56:51 jdolecek Exp $	*/
 
 #ifdef __x86_64__
 
@@ -11,8 +11,8 @@
 #include <machine/cpu.h>
 #if defined(_KERNEL_OPT)
 #include "opt_kasan.h"
-#include "opt_kleak.h"
 #include "opt_kmsan.h"
+#include "opt_svs.h"
 #endif
 #endif
 
@@ -68,12 +68,12 @@
 #define	SSIZE		1		/* initial stack size/NBPG */
 #define	SINCR		1		/* increment of stack/NBPG */
 
-#if defined(KASAN) || defined(KLEAK) || defined(KMSAN)
+#if defined(KASAN) || defined(KMSAN)
 #define	UPAGES		8
-#elif defined(DIAGNOSTIC)
-#define	UPAGES		5		/* pages of u-area (1 for redzone) */
+#elif defined(SVS)
+#define	UPAGES		6		/* 1 page used internally by SVS */
 #else
-#define	UPAGES		4		/* pages of u-area */
+#define	UPAGES		5		/* pages of u-area (1 for redzone) */
 #endif
 #define	USPACE		(UPAGES * NBPG)	/* total size of u-area */
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_syscall.c,v 1.19 2019/10/06 15:11:17 uwe Exp $	*/
+/*	$NetBSD: kern_syscall.c,v 1.21 2020/08/31 19:51:30 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_syscall.c,v 1.19 2019/10/06 15:11:17 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_syscall.c,v 1.21 2020/08/31 19:51:30 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_modular.h"
@@ -181,13 +181,13 @@ syscall_disestablish(const struct emul *em, const struct syscall_package *sp)
 	 * if anyone is still using the system call.
 	 */
 	for (i = 0; sp[i].sp_call != NULL; i++) {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		LIST_FOREACH(l, &alllwp, l_list) {
 			if (l->l_sysent == &sy[sp[i].sp_code]) {
 				break;
 			}
 		}
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		if (l == NULL) {
 			continue;
 		}
@@ -236,11 +236,16 @@ int
 trace_enter(register_t code, const struct sysent *sy, const void *args)
 {
 	int error = 0;
+#if defined(PTRACE) || defined(KDTRACE_HOOKS)
+	struct proc *p = curlwp->l_proc;
+#endif
 
 #ifdef KDTRACE_HOOKS
 	if (sy->sy_entry) {
-		struct emul *e = curlwp->l_proc->p_emul;
-		(*e->e_dtrace_syscall)(sy->sy_entry, code, sy, args, NULL, 0);
+		struct emul *e = p->p_emul;
+		if (e->e_dtrace_syscall)
+			(*e->e_dtrace_syscall)(sy->sy_entry, code, sy, args,
+			    NULL, 0);
 	}
 #endif
 
@@ -251,7 +256,7 @@ trace_enter(register_t code, const struct sysent *sy, const void *args)
 	ktrsyscall(code, args, sy->sy_narg);
 
 #ifdef PTRACE
-	if ((curlwp->l_proc->p_slflag & (PSL_SYSCALL|PSL_TRACED)) ==
+	if ((p->p_slflag & (PSL_SYSCALL|PSL_TRACED)) ==
 	    (PSL_SYSCALL|PSL_TRACED)) {
 		proc_stoptrace(TRAP_SCE, code, args, NULL, 0);
 		if (curlwp->l_proc->p_slflag & PSL_SYSCALLEMU) {
@@ -280,8 +285,10 @@ trace_exit(register_t code, const struct sysent *sy, const void *args,
 
 #ifdef KDTRACE_HOOKS
 	if (sy->sy_return) {
-		(*p->p_emul->e_dtrace_syscall)(sy->sy_return, code, sy, args,
-		    rval, error);
+		struct emul *e = p->p_emul;
+		if (e->e_dtrace_syscall)
+			(*p->p_emul->e_dtrace_syscall)(sy->sy_return, code, sy,
+			    args, rval, error);
 	}
 #endif
 

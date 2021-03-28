@@ -1,4 +1,4 @@
-/*	$NetBSD: ugensa.c,v 1.40 2019/09/14 12:48:51 maxv Exp $	*/
+/*	$NetBSD: ugensa.c,v 1.43 2020/07/04 08:07:02 ryoon Exp $	*/
 
 /*
  * Copyright (c) 2004, 2005 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ugensa.c,v 1.40 2019/09/14 12:48:51 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ugensa.c,v 1.43 2020/07/04 08:07:02 ryoon Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -94,8 +94,8 @@ static const struct ugensa_type ugensa_devs[] = {
 	{{ USB_VENDOR_DELL, USB_PRODUCT_DELL_HSDPA }, 0 },
 	{{ USB_VENDOR_NOVATEL, USB_PRODUCT_NOVATEL_FLEXPACKGPS }, 0 },
 	{{ USB_VENDOR_QUALCOMM_K, USB_PRODUCT_QUALCOMM_K_CDMA_MSM_K }, 0 },
-	{{ USB_VENDOR_SIERRA, USB_PRODUCT_SIERRA_USB305 }, 0 },
 	{{ USB_VENDOR_ZTE, USB_PRODUCT_ZTE_AC8700 }, 0 },
+	{{ USB_VENDOR_LINUXFOUNDATION, USB_PRODUCT_LINUXFOUNDATION_USB3DEBUG}, 0 },
 
 	/*
 	 * The following devices are untested, but they are purported to
@@ -124,7 +124,7 @@ ugensa_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usb_attach_arg *uaa = aux;
 
-	DPRINTFN(20,("ugensa: vendor=0x%x, product=0x%x\n",
+	DPRINTFN(20,("ugensa: vendor=%#x, product=%#x\n",
 		     uaa->uaa_vendor, uaa->uaa_product));
 
 	return ugensa_lookup(uaa->uaa_vendor, uaa->uaa_product) != NULL ?
@@ -235,7 +235,7 @@ ugensa_attach(device_t parent, device_t self, void *aux)
 	sc->sc_init_state = UGENSA_INIT_INITED;
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, sc->sc_udev, sc->sc_dev);
 
-	DPRINTF(("ugensa: in=0x%x out=0x%x\n", ucaa.ucaa_bulkin,
+	DPRINTF(("ugensa: in=%#x out=%#x\n", ucaa.ucaa_bulkin,
 	    ucaa.ucaa_bulkout));
 	sc->sc_subdev = config_found_sm_loc(self, "ucombus", NULL, &ucaa,
 					    ucomprint, ucomsubmatch);

@@ -1,4 +1,4 @@
-/*	$NetBSD: gic.c,v 1.38 2018/11/16 23:25:09 jmcneill Exp $	*/
+/*	$NetBSD: gic.c,v 1.46 2021/02/23 10:03:04 jmcneill Exp $	*/
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -34,7 +34,7 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.38 2018/11/16 23:25:09 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.46 2021/02/23 10:03:04 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -46,7 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.38 2018/11/16 23:25:09 jmcneill Exp $");
 #include <sys/atomic.h>
 
 #include <arm/armreg.h>
-#include <arm/atomic.h>
 #include <arm/cpufunc.h>
 #include <arm/locore.h>
 
@@ -224,27 +223,12 @@ armgic_set_priority(struct pic_softc *pic, int ipl)
 {
 	struct armgic_softc * const sc = PICTOSOFTC(pic);
 	struct cpu_info * const ci = curcpu();
-	const uint32_t newpri = armgic_ipl_to_priority(ipl);
-	const uint32_t curpri = gicc_read(sc, GICC_PMR);
 
-	/*
-	 * If an interrupt occurs between the PMR read and raising the PMR
-	 * there is no matter as it'll return it to the same value
-	 *
-	 * GIC priorities with lower values block higher priority interrupts
-	 */
-	if (newpri < curpri) {
-		/* raising ipl */
-		gicc_write(sc, GICC_PMR, newpri);
-		arm_dsb();
-		arm_isb();
-		ci->ci_cpl = ipl;
-	} else if (newpri >= curpri) {
-		/* lowering ipl */
-		ci->ci_cpl = ipl;
-		arm_dsb();
-		arm_isb();
-		gicc_write(sc, GICC_PMR, newpri);
+	const uint32_t priority = armgic_ipl_to_priority(ipl);
+	if (priority > ci->ci_hwpl) {
+		/* Lowering priority mask */
+		ci->ci_hwpl = priority;
+		gicc_write(sc, GICC_PMR, priority);
 	}
 }
 
@@ -343,6 +327,15 @@ armgic_irq_handler(void *tf)
 
 	ci->ci_data.cpu_nintr++;
 
+	const uint32_t priority = armgic_ipl_to_priority(old_ipl);
+	if (ci->ci_hwpl != priority) {
+		ci->ci_hwpl = priority;
+		gicc_write(sc, GICC_PMR, priority);
+		if (old_ipl == IPL_HIGH) {
+			return;
+		}
+	}
+
 	for (;;) {
 		uint32_t iar = gicc_read(sc, GICC_IAR);
 		uint32_t irq = __SHIFTOUT(iar, GICC_IAR_IRQ);
@@ -375,13 +368,11 @@ armgic_irq_handler(void *tf)
 		if (__predict_true(ipl > ci->ci_cpl)) {
 			/* raising ipl */
 			gicc_write(sc, GICC_PMR, armgic_ipl_to_priority(ipl));
-			arm_dsb();
-			arm_isb();
-			ci->ci_cpl = ipl;
+			ci->ci_hwpl = ci->ci_cpl = ipl;
 		}
-		cpsie(I32_bit);
+		ENABLE_INTERRUPT();
 		pic_dispatch(is, tf);
-		cpsid(I32_bit);
+		DISABLE_INTERRUPT();
 		gicc_write(sc, GICC_EOIR, iar);
 #ifdef DEBUG
 		n++;
@@ -426,7 +417,7 @@ armgic_establish_irq(struct pic_softc *pic, struct intrsource *is)
 		 * There are 4 irqs per TARGETS register.  For now bind
 		 * to the primary cpu.
 		 */
-		targets &= ~(0xff << byte_shift);
+		targets &= ~(0xffU << byte_shift);
 #if 0
 #ifdef MULTIPROCESSOR
 		if (is->is_mpsafe) {
@@ -441,11 +432,11 @@ armgic_establish_irq(struct pic_softc *pic, struct intrsource *is)
 		 * There are 16 irqs per CFG register.  10=EDGE 00=LEVEL
 		 */
 		uint32_t new_cfg = cfg;
-		uint32_t old_cfg = (cfg >> twopair_shift) & 3;
-		if (is->is_type == IST_LEVEL && (old_cfg & 2) != 0) {
-			new_cfg &= ~(3 << twopair_shift);
+		uint32_t old_cfg = (cfg >> twopair_shift) & __BITS(1, 0);
+		if (is->is_type == IST_LEVEL && (old_cfg & __BIT(1)) != 0) {
+			new_cfg &= ~(__BITS(1, 0) << twopair_shift);
 		} else if (is->is_type == IST_EDGE && (old_cfg & 2) == 0) {
-			new_cfg |= 2 << twopair_shift;
+			new_cfg |= __BIT(1) << twopair_shift;
 		}
 		if (new_cfg != cfg) {
 			gicd_write(sc, cfg_reg, new_cfg);
@@ -466,7 +457,7 @@ armgic_establish_irq(struct pic_softc *pic, struct intrsource *is)
 	 */
 	const bus_size_t priority_reg = GICD_IPRIORITYRn(is->is_irq / 4);
 	uint32_t priority = gicd_read(sc, priority_reg);
-	priority &= ~(0xff << byte_shift);
+	priority &= ~(0xffU << byte_shift);
 	priority |= armgic_ipl_to_priority(is->is_ipl) << byte_shift;
 	gicd_write(sc, priority_reg, priority);
 }
@@ -539,9 +530,10 @@ armgic_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 			    sc->sc_enabled_local);
 		}
 	}
+	ci->ci_hwpl = armgic_ipl_to_priority(ci->ci_cpl);
 	gicc_write(sc, GICC_PMR, armgic_ipl_to_priority(ci->ci_cpl));	// set PMR
 	gicc_write(sc, GICC_CTRL, GICC_CTRL_V1_Enable);	// enable interrupt
-	cpsie(I32_bit);					// allow IRQ exceptions
+	ENABLE_INTERRUPT();				// allow IRQ exceptions
 }
 
 void
@@ -551,7 +543,7 @@ armgic_ipi_send(struct pic_softc *pic, const kcpuset_t *kcp, u_long ipi)
 
 #if 0
 	if (ipi == IPI_NOP) {
-		__asm __volatile("sev");
+		sev();
 		return;
 	}
 #endif
@@ -581,8 +573,6 @@ armgic_match(device_t parent, cfdata_t cf, void *aux)
 	struct mpcore_attach_args * const mpcaa = aux;
 
 	if (strcmp(cf->cf_name, mpcaa->mpcaa_name) != 0)
-		return 0;
-	if (!CPU_ID_CORTEX_P(cputype) || CPU_ID_CORTEX_A8_P(cputype))
 		return 0;
 
 	return 1;
@@ -670,7 +660,7 @@ armgic_attach(device_t parent, device_t self, void *aux)
 	armgic_set_priority(&sc->sc_pic, ci->ci_cpl);	// set PMR
 	gicd_write(sc, GICD_CTRL, GICD_CTRL_Enable);	// enable Distributer
 	gicc_write(sc, GICC_CTRL, GICC_CTRL_V1_Enable);	// enable CPU interrupts
-	cpsie(I32_bit);					// allow interrupt exceptions
+	ENABLE_INTERRUPT();				// allow interrupt exceptions
 
 	/*
 	 * For each line that isn't valid, we set the intrsource for it to

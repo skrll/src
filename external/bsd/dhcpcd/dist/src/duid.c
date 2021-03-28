@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - DHCP client daemon
- * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2020 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -28,9 +28,6 @@
 
 #define	UUID_LEN	36
 #define	DUID_TIME_EPOCH 946684800
-#define	DUID_LLT	1
-#define	DUID_LL		3
-#define	DUID_UUID	4
 
 #include <sys/param.h>
 #include <sys/socket.h>
@@ -118,51 +115,52 @@ duid_make_uuid(uint8_t *d)
 	return l;
 }
 
-static size_t
-duid_make(uint8_t *d, const struct interface *ifp, uint16_t type)
+size_t
+duid_make(void *d, const struct interface *ifp, uint16_t type)
 {
 	uint8_t *p;
 	uint16_t u16;
 	time_t t;
 	uint32_t u32;
 
+	if (ifp->hwlen == 0)
+		return 0;
+
 	p = d;
 	u16 = htons(type);
-	memcpy(p, &u16, 2);
-	p += 2;
-	u16 = htons(ifp->family);
-	memcpy(p, &u16, 2);
-	p += 2;
+	memcpy(p, &u16, sizeof(u16));
+	p += sizeof(u16);
+	u16 = htons(ifp->hwtype);
+	memcpy(p, &u16, sizeof(u16));
+	p += sizeof(u16);
 	if (type == DUID_LLT) {
 		/* time returns seconds from jan 1 1970, but DUID-LLT is
 		 * seconds from jan 1 2000 modulo 2^32 */
 		t = time(NULL) - DUID_TIME_EPOCH;
 		u32 = htonl((uint32_t)t & 0xffffffff);
-		memcpy(p, &u32, 4);
-		p += 4;
+		memcpy(p, &u32, sizeof(u32));
+		p += sizeof(u32);
 	}
 	/* Finally, add the MAC address of the interface */
 	memcpy(p, ifp->hwaddr, ifp->hwlen);
 	p += ifp->hwlen;
-	return (size_t)(p - d);
+	return (size_t)(p - (uint8_t *)d);
 }
 
 #define DUID_STRLEN DUID_LEN * 3
 static size_t
-duid_get(uint8_t **d, const struct interface *ifp)
+duid_get(struct dhcpcd_ctx *ctx, const struct interface *ifp)
 {
-	FILE *fp;
 	uint8_t *data;
-	size_t len;
-	int x = 0;
+	size_t len, slen;
 	char line[DUID_STRLEN];
 	const struct interface *ifp2;
 
 	/* If we already have a DUID then use it as it's never supposed
 	 * to change once we have one even if the interfaces do */
-	if ((len = read_hwaddr_aton(&data, DUID)) != 0) {
+	if ((len = dhcp_read_hwaddr_aton(ctx, &data, DUID)) != 0) {
 		if (len <= DUID_LEN) {
-			*d = data;
+			ctx->duid = data;
 			return len;
 		}
 		logerrx("DUID too big (max %u): %s", DUID_LEN, DUID);
@@ -176,13 +174,22 @@ duid_get(uint8_t **d, const struct interface *ifp)
 		}
 	}
 
-	/* Regardless of what happens we will create a DUID to use. */
-	*d = data;
-
 	/* No file? OK, lets make one based the machines UUID */
-	len = duid_make_uuid(data);
-	if (len > 0)
+	if (ifp == NULL) {
+		if (ctx->duid_type != DUID_DEFAULT &&
+		    ctx->duid_type != DUID_UUID)
+			len = 0;
+		else
+			len = duid_make_uuid(data);
+		if (len == 0)
+			free(data);
+		else
+			ctx->duid = data;
 		return len;
+	}
+
+	/* Regardless of what happens we will create a DUID to use. */
+	ctx->duid = data;
 
 	/* No UUID? OK, lets make one based on our interface */
 	if (ifp->hwlen == 0) {
@@ -196,33 +203,34 @@ duid_get(uint8_t **d, const struct interface *ifp)
 			logwarnx("picked interface %s to generate a DUID",
 			    ifp->name);
 		} else {
-			logwarnx("no interfaces have a fixed hardware "
-			    "address");
+			if (ctx->duid_type != DUID_LL)
+				logwarnx("no interfaces have a fixed hardware "
+				    "address");
 			return duid_make(data, ifp, DUID_LL);
 		}
 	}
 
-	if (!(fp = fopen(DUID, "w"))) {
-		logerr("%s", DUID);
-		return duid_make(data, ifp, DUID_LL);
+	len = duid_make(data, ifp,
+	    ctx->duid_type == DUID_LL ? DUID_LL : DUID_LLT);
+	hwaddr_ntoa(data, len, line, sizeof(line));
+	slen = strlen(line);
+	if (slen < sizeof(line) - 2) {
+		line[slen++] = '\n';
+		line[slen] = '\0';
 	}
-	len = duid_make(data, ifp, DUID_LLT);
-	x = fprintf(fp, "%s\n", hwaddr_ntoa(data, len, line, sizeof(line)));
-	if (fclose(fp) == EOF)
-		x = -1;
-	/* Failed to write the duid? scrub it, we cannot use it */
-	if (x < 1) {
-		logerr("%s", DUID);
-		unlink(DUID);
-		return duid_make(data, ifp, DUID_LL);
+	if (dhcp_writefile(ctx, DUID, 0640, line, slen) == -1) {
+		logerr("%s: cannot write duid", __func__);
+		if (ctx->duid_type != DUID_LL)
+			return duid_make(data, ifp, DUID_LL);
 	}
 	return len;
 }
 
-size_t duid_init(const struct interface *ifp)
+size_t
+duid_init(struct dhcpcd_ctx *ctx, const struct interface *ifp)
 {
 
-	if (ifp->ctx->duid == NULL)
-		ifp->ctx->duid_len = duid_get(&ifp->ctx->duid, ifp);
-	return ifp->ctx->duid_len;
+	if (ctx->duid == NULL)
+		ctx->duid_len = duid_get(ctx, ifp);
+	return ctx->duid_len;
 }

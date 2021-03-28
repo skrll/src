@@ -1,4 +1,4 @@
-/* $NetBSD: imxuart.c,v 1.22 2019/11/10 21:16:23 chs Exp $ */
+/* $NetBSD: imxuart.c,v 1.26 2020/11/20 18:16:40 thorpej Exp $ */
 
 /*
  * Copyright (c) 2009, 2010  Genetec Corporation.  All rights reserved.
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imxuart.c,v 1.22 2019/11/10 21:16:23 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imxuart.c,v 1.26 2020/11/20 18:16:40 thorpej Exp $");
 
 #include "opt_imxuart.h"
 #include "opt_ddb.h"
@@ -148,7 +148,7 @@ __KERNEL_RCSID(0, "$NetBSD: imxuart.c,v 1.22 2019/11/10 21:16:23 chs Exp $");
 #include <sys/kernel.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/timepps.h>
 #include <sys/vnode.h>
 #include <sys/kauth.h>
@@ -354,8 +354,8 @@ imxuart_attach_subr(struct imxuart_softc *sc)
 	tp->t_hwiflow = imxuhwiflow;
 
 	sc->sc_tty = tp;
-	sc->sc_rbuf = malloc(sizeof (*sc->sc_rbuf) * imxuart_rbuf_size,
-	    M_DEVBUF, M_WAITOK);
+	sc->sc_rbuf = kmem_alloc(sizeof (*sc->sc_rbuf) * imxuart_rbuf_size,
+	    KM_SLEEP);
 	sc->sc_rbuf_size = imxuart_rbuf_size;
 	sc->sc_rbuf_in = sc->sc_rbuf_out = 0;
 	sc->sc_txfifo_len = 32;
@@ -542,7 +542,7 @@ imxuart_detach(device_t self, int flags)
 	}
 
 	/* Free the receive buffer. */
-	free(sc->sc_rbuf, M_DEVBUF);
+	kmem_free(sc->sc_rbuf, sizeof(*sc->sc_rbuf) * sc->sc_rbuf_size);
 
 	/* Detach and free the tty. */
 	tty_detach(sc->sc_tty);
@@ -1459,9 +1459,11 @@ imxustart(struct tty *tp)
 	space = imxuart_txfifo_space(sc);
 	n = MIN(sc->sc_tbc, space);
 
-	bus_space_write_multi_1(iot, ioh, IMX_UTXD, sc->sc_tba, n);
-	sc->sc_tbc -= n;
-	sc->sc_tba += n;
+	if (n > 0) {
+		bus_space_write_multi_1(iot, ioh, IMX_UTXD, sc->sc_tba, n);
+		sc->sc_tbc -= n;
+		sc->sc_tba += n;
+	}
 
 	/* Enable transmit completion interrupts */
 	imxuart_control_txint(sc, true);
@@ -2081,8 +2083,6 @@ imxuart_load_pendings(struct imxuart_softc *sc)
 	sc->sc_pending = 0;
 }
 
-#if defined(IMXUARTCONSOLE) || defined(KGDB)
-
 /*
  * The following functions are polled getc and putc routines, shared
  * by the console and kgdb glue.
@@ -2169,7 +2169,6 @@ imxuart_common_putc(dev_t dev, struct imxuart_regs *regsp, int c)
 
 	splx(s);
 }
-#endif /* defined(IMXUARTCONSOLE) || defined(KGDB) */
 
 /*
  * Initialize UART
@@ -2186,30 +2185,36 @@ imxuart_init(struct imxuart_regs *regsp, int rate, tcflag_t cflag, int domap)
 	     IMX_UART_SIZE, 0, &regsp->ur_ioh)) != 0)
 		return error;
 
-	if (imxuspeed(rate, &ratio) < 0)
-		return EINVAL;
+	if (imxuart_freq != 0) {
+		if (imxuspeed(rate, &ratio) < 0)
+			return EINVAL;
 
-	/* UBIR must updated before UBMR */
-	bus_space_write_4(regsp->ur_iot, regsp->ur_ioh,
-	    IMX_UBIR, ratio.numerator);
-	bus_space_write_4(regsp->ur_iot, regsp->ur_ioh,
-	    IMX_UBMR, ratio.modulator);
-
+		/* UBIR must updated before UBMR */
+		bus_space_write_4(regsp->ur_iot, regsp->ur_ioh,
+		    IMX_UBIR, ratio.numerator);
+		bus_space_write_4(regsp->ur_iot, regsp->ur_ioh,
+		    IMX_UBMR, ratio.modulator);
+	}
 
 	/* XXX: DTREN, DPEC */
 	bus_space_write_4(regsp->ur_iot, regsp->ur_ioh, IMX_UCR3,
 	    IMX_UCR3_DSR|IMX_UCR3_RXDMUXSEL);
 
-	ufcr = (8 << IMX_UFCR_TXTL_SHIFT) | (rfdiv << IMX_UFCR_RFDIV_SHIFT) |
-		(1 << IMX_UFCR_RXTL_SHIFT);
-	/* XXX: keep DCE/DTE bit */
-	ufcr |= bus_space_read_4(regsp->ur_iot, regsp->ur_ioh, IMX_UFCR) &
-		IMX_UFCR_DCEDTE;
-
+	ufcr = bus_space_read_4(regsp->ur_iot, regsp->ur_ioh, IMX_UFCR);
+	ufcr &= ~IMX_UFCR_TXTL;
+	ufcr |= (8 << IMX_UFCR_TXTL_SHIFT);
+	ufcr &= ~IMX_UFCR_RXTL;
+	ufcr |= (1 << IMX_UFCR_RXTL_SHIFT);
+	if (imxuart_freq != 0) {
+		ufcr &= ~IMX_UFCR_RFDIV;
+		ufcr |= (rfdiv << IMX_UFCR_RFDIV_SHIFT);
+	}
 	bus_space_write_4(regsp->ur_iot, regsp->ur_ioh, IMX_UFCR, ufcr);
 
-	bus_space_write_4(regsp->ur_iot, regsp->ur_ioh, IMX_ONEMS,
-	    imxuart_freq / imxuart_freqdiv / 1000);
+	if (imxuart_freq != 0) {
+		bus_space_write_4(regsp->ur_iot, regsp->ur_ioh, IMX_ONEMS,
+		    imxuart_freq / imxuart_freqdiv / 1000);
+	}
 
 	bus_space_write_4(regsp->ur_iot, regsp->ur_ioh, IMX_UCR2,
 			  IMX_UCR2_IRTS|
@@ -2228,7 +2233,6 @@ imxuart_init(struct imxuart_regs *regsp, int rate, tcflag_t cflag, int domap)
 }
 
 
-#ifdef	IMXUARTCONSOLE
 /*
  * Following are all routines needed for UART to act as console
  */
@@ -2286,8 +2290,6 @@ imxucnpollc(dev_t dev, int on)
 	imxuart_readahead_in = 0;
 	imxuart_readahead_out = 0;
 }
-
-#endif	/* IMXUARTCONSOLE */
 
 #ifdef KGDB
 int

@@ -1,20 +1,17 @@
-/*	$NetBSD: dbiterator.c,v 1.3 2019/01/09 16:55:11 christos Exp $	*/
+/*	$NetBSD: dbiterator.c,v 1.5 2021/02/19 16:42:15 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
 /*! \file */
-
-#include <config.h>
 
 #include <stdbool.h>
 
@@ -94,8 +91,7 @@ dns_dbiterator_next(dns_dbiterator_t *iterator) {
 
 isc_result_t
 dns_dbiterator_current(dns_dbiterator_t *iterator, dns_dbnode_t **nodep,
-		       dns_name_t *name)
-{
+		       dns_name_t *name) {
 	/*
 	 * Return the current node.
 	 */
@@ -120,7 +116,6 @@ dns_dbiterator_pause(dns_dbiterator_t *iterator) {
 
 isc_result_t
 dns_dbiterator_origin(dns_dbiterator_t *iterator, dns_name_t *name) {
-
 	/*
 	 * Return the origin to which returned node names are relative.
 	 */

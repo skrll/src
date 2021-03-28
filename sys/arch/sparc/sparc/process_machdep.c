@@ -1,4 +1,4 @@
-/*	$NetBSD: process_machdep.c,v 1.19 2016/12/30 17:54:43 christos Exp $ */
+/*	$NetBSD: process_machdep.c,v 1.21 2021/01/24 07:36:54 mrg Exp $ */
 
 /*
  * Copyright (c) 1993 The Regents of the University of California.
@@ -95,7 +95,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: process_machdep.c,v 1.19 2016/12/30 17:54:43 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: process_machdep.c,v 1.21 2021/01/24 07:36:54 mrg Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -103,10 +103,12 @@ __KERNEL_RCSID(0, "$NetBSD: process_machdep.c,v 1.19 2016/12/30 17:54:43 christo
 #include <sys/kernel.h>
 #include <sys/proc.h>
 #include <sys/vnode.h>
+#include <sys/ptrace.h>
+
 #include <machine/psl.h>
 #include <machine/reg.h>
 #include <machine/frame.h>
-#include <sys/ptrace.h>
+#include <machine/trap.h>
 
 int
 process_read_regs(struct lwp *l, struct reg *regs)
@@ -121,6 +123,9 @@ int
 process_write_regs(struct lwp *l, const struct reg *regs)
 {
 	int	psr = l->l_md.md_tf->tf_psr & ~PSR_ICC;
+
+	if (((regs->r_pc | regs->r_npc) & 0x03) != 0)
+		return EINVAL;
 
 	memcpy(l->l_md.md_tf, regs, sizeof(*regs));
 	l->l_md.md_tf->tf_psr = psr | (regs->r_psr & PSR_ICC);
@@ -140,12 +145,13 @@ int
 process_set_pc(struct lwp *l, void *addr)
 {
 
+	if (((u_int)addr & 0x03) != 0)
+		return EINVAL;
+
 	l->l_md.md_tf->tf_pc = (u_int)addr;
 	l->l_md.md_tf->tf_npc = (u_int)addr + 4;
 	return 0;
 }
-
-extern struct fpstate	initfpstate;
 
 int
 process_read_fpregs(struct lwp *l, struct fpreg *regs, size_t *sz)

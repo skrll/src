@@ -1,4 +1,4 @@
-/*	$NetBSD: ufs_extern.h,v 1.83 2016/10/28 20:38:12 jdolecek Exp $	*/
+/*	$NetBSD: ufs_extern.h,v 1.86 2020/05/16 18:31:54 christos Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993, 1994
@@ -61,7 +61,7 @@ extern pool_cache_t ufs_direct_cache;	/* memory pool for directs */
 
 __BEGIN_DECLS
 #define	ufs_abortop	genfs_abortop
-int	ufs_access(void *);
+int	ufs_accessx(void *);
 int	ufs_advlock(void *);
 int	ufs_bmap(void *);
 int	ufs_close(void *);
@@ -111,7 +111,8 @@ int	ufs_getlbns(struct vnode *, daddr_t, struct indir *, int *);
 /* ufs_inode.c */
 int	ufs_reclaim(struct vnode *);
 int	ufs_balloc_range(struct vnode *, off_t, off_t, kauth_cred_t, int);
-int	ufs_truncate_retry(struct vnode *, uint64_t, kauth_cred_t);
+int	ufs_truncate_all(struct vnode *);
+int	ufs_truncate_retry(struct vnode *, int, uint64_t, kauth_cred_t);
 
 /* ufs_lookup.c */
 void	ufs_dirbad(struct inode *, doff_t, const char *);
@@ -176,10 +177,10 @@ void	ufs_init(void);
 void	ufs_reinit(void);
 void	ufs_done(void);
 int	ufs_start(struct mount *, int);
-int	ufs_root(struct mount *, struct vnode **);
-int	ufs_vget(struct mount *, ino_t, struct vnode **);
+int	ufs_root(struct mount *, int, struct vnode **);
+int	ufs_vget(struct mount *, ino_t, int, struct vnode **);
 int	ufs_quotactl(struct mount *, struct quotactl_args *);
-int	ufs_fhtovp(struct mount *, struct ufid *, struct vnode **);
+int	ufs_fhtovp(struct mount *, struct ufid *, int, struct vnode **);
 
 /* ufs_vnops.c */
 void	ufs_vinit(struct mount *, int (**)(void *),

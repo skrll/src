@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_rng.c,v 1.10 2019/11/01 15:01:27 taca Exp $ */
+/* $NetBSD: cpu_rng.c,v 1.19 2020/07/30 17:26:23 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015 The NetBSD Foundation, Inc.
@@ -30,14 +30,25 @@
  */
 
 /*
- * The VIA RNG code in this file is inspired by Jason Wright and
- * Theo de Raadt's OpenBSD version but has been rewritten in light of
- * comments from Henric Jungheim on the tech@openbsd.org mailing list.
+ * For reference on VIA XSTORERNG, see the VIA PadLock Programming
+ * Guide (`VIA PPG'), August 4, 2005.
+ * http://linux.via.com.tw/support/beginDownload.action?eleid=181&fid=261
+ *
+ * For reference on Intel RDRAND/RDSEED, see the Intel Digital Random
+ * Number Generator Software Implementation Guide (`Intel DRNG SIG'),
+ * Revision 2.1, October 17, 2018.
+ * https://software.intel.com/sites/default/files/managed/98/4a/DRNG_Software_Implementation_Guide_2.1.pdf
+ *
+ * For reference on AMD RDRAND/RDSEED, which are designed to be
+ * compatible with Intel RDRAND/RDSEED, see the somewhat less detailed
+ * AMD Random Number Generator documentation, 2017-06-27.
+ * https://www.amd.com/system/files/TechDocs/amd-random-number-generator.pdf
  */
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/cpu.h>
+#include <sys/rndsource.h>
 #include <sys/sha2.h>
 
 #include <x86/specialreg.h>
@@ -45,40 +56,65 @@
 #include <machine/cpufunc.h>
 #include <machine/cpuvar.h>
 #include <machine/cpu_rng.h>
+#include <machine/limits.h>
 
-static enum {
+static enum cpu_rng_mode {
 	CPU_RNG_NONE = 0,
 	CPU_RNG_RDRAND,
 	CPU_RNG_RDSEED,
+	CPU_RNG_RDSEED_RDRAND,
 	CPU_RNG_VIA
 } cpu_rng_mode __read_mostly = CPU_RNG_NONE;
 
-static bool has_rdrand;
+static const char *const cpu_rng_name[] = {
+	[CPU_RNG_RDRAND] = "rdrand",
+	[CPU_RNG_RDSEED] = "rdseed",
+	[CPU_RNG_RDSEED_RDRAND] = "rdrand/rdseed",
+	[CPU_RNG_VIA] = "via",
+};
 
-bool
-cpu_rng_init(void)
+static struct krndsource cpu_rng_source __read_mostly;
+
+static enum cpu_rng_mode
+cpu_rng_detect(void)
 {
+	bool has_rdseed = (cpu_feature[5] & CPUID_SEF_RDSEED);
+	bool has_rdrand = (cpu_feature[1] & CPUID2_RDRAND);
+	bool has_viarng = (cpu_feature[4] & CPUID_VIA_HAS_RNG);
 
-	if (cpu_feature[5] & CPUID_SEF_RDSEED) {
-		cpu_rng_mode = CPU_RNG_RDSEED;
-		aprint_normal("cpu_rng: RDSEED\n");
-		return true;
-	} else if (cpu_feature[1] & CPUID2_RDRAND) {
-		cpu_rng_mode = CPU_RNG_RDRAND;
-		aprint_normal("cpu_rng: RDRAND\n");
-		return true;
-	} else if (cpu_feature[4] & CPUID_VIA_HAS_RNG) {
-		cpu_rng_mode = CPU_RNG_VIA;
-		aprint_normal("cpu_rng: VIA\n");
-		return true;
-	}
-	return false;
+	if (has_rdseed && has_rdrand)
+		return CPU_RNG_RDSEED_RDRAND;
+	else if (has_rdseed)
+		return CPU_RNG_RDSEED;
+	else if (has_rdrand)
+		return CPU_RNG_RDRAND;
+	else if (has_viarng)
+		return CPU_RNG_VIA;
+	else
+		return CPU_RNG_NONE;
 }
 
 static size_t
-cpu_rng_rdrand(cpu_rng_t *out)
+cpu_rng_rdrand(uint64_t *out)
 {
 	uint8_t rndsts;
+
+	/*
+	 * XXX The Intel DRNG SIG recommends (Sec. 5.2.1 `Retry
+	 * recommendations', p. 22) that we retry up to ten times
+	 * before giving up and panicking because something must be
+	 * seriously awry with the CPU.
+	 *
+	 * XXX The Intel DRNG SIG also recommends (Sec. 5.2.6
+	 * `Generating Seeds from RDRAND', p. 28) drawing 1024 64-bit
+	 * samples (or, 512 128-bit samples) in order to guarantee that
+	 * the CPU has drawn an independent sample from the physical
+	 * entropy source, since the AES CTR_DRBG behind RDRAND will be
+	 * used to generate at most 511 128-bit samples before it is
+	 * reseeded from the physical entropy source.  It is unclear
+	 * whether the same considerations about RDSEED starvation
+	 * apply to this advice.
+	 */
 
 #ifdef __i386__
 	uint32_t lo, hi;
@@ -102,19 +138,27 @@ cpu_rng_rdrand(cpu_rng_t *out)
 }
 
 static size_t
-cpu_rng_rdseed(cpu_rng_t *out)
+cpu_rng_rdseed(uint64_t *out)
 {
 	uint8_t rndsts;
+
+	/*
+	 * XXX The Intel DRNG SIG recommends (Sec. 5.3.1 `Retry
+	 * recommendations', p. 22) that we consider retrying up to 100
+	 * times, separated by PAUSE, but offers no guarantees about
+	 * success after that many retries.  In particular, userland
+	 * threads could starve the kernel by issuing RDSEED.
+	 */
 
 #ifdef __i386__
 	uint32_t lo, hi;
 
 	__asm __volatile("rdseed %0; setc %1" : "=r"(lo), "=qm"(rndsts));
         if (rndsts != 1)
-		goto exhausted;
+		return 0;
 	__asm __volatile("rdseed %0; setc %1" : "=r"(hi), "=qm"(rndsts));
 	if (rndsts != 1)
-		goto exhausted;
+		return 0;
 
 	*out = (uint64_t)lo | ((uint64_t)hi << 32);
 	explicit_memset(&lo, 0, sizeof(lo));
@@ -123,128 +167,166 @@ cpu_rng_rdseed(cpu_rng_t *out)
 	__asm __volatile("rdseed %0; setc %1" : "=r"(*out), "=qm"(rndsts));
 #endif
 	if (rndsts != 1)
-		goto exhausted;
+		return 0;
 
 	return sizeof(*out) * NBBY;
-
-	/*
-	 * Userspace could have exhausted RDSEED, but the
-	 * CPU-internal generator feeding RDRAND is guaranteed
-	 * to be seeded even in this case.
-	 */
-exhausted:
-	if (has_rdrand)
-		return cpu_rng_rdrand(out);
-	else
-		return 0;
 }
 
 static size_t
-cpu_rng_via(cpu_rng_t *out)
+cpu_rng_rdseed_rdrand(uint64_t *out)
 {
-	uint32_t creg0, rndsts;
+	size_t n = cpu_rng_rdseed(out);
+
+	if (n == 0)
+		n = cpu_rng_rdrand(out);
+
+	return n;
+}
+
+/*
+ * VIA PPG says EAX[4:0] is nbytes, but the only documented numbers of
+ * bytes are 0,1,2,4,8 -- and there's only 8 bytes of output buffer
+ * anyway, so let's ignore bit 4 and treat it like EAX[3:0] instead.
+ */
+#define	VIA_RNG_STATUS_NBYTES	__BITS(3,0)
+#define	VIA_RNG_STATUS_MSR110B	__BITS(31,5)
+
+static size_t
+cpu_rng_via(uint64_t *out)
+{
+	u_long psl;
+	uint32_t cr0, status, nbytes;
 
 	/*
-	 * Sadly, we have to monkey with the coprocessor enable and fault
-	 * registers, which are really for the FPU, in order to read
-	 * from the RNG.
-	 *
-	 * Don't remove CR0_TS from the call below -- comments in the Linux
-	 * driver indicate that the xstorerng instruction can generate
-	 * spurious DNA faults though no FPU or SIMD state is changed
-	 * even if such a fault is generated.
-	 *
-	 * XXX can this really happen if we don't use "rep xstorrng"?
-	 *
+	 * The XSTORE instruction is handled by the SSE unit, which
+	 * requires the CR0 TS and CR0 EM bits to be clear.  We disable
+	 * all processor interrupts so there is no danger of any
+	 * interrupt handler changing CR0 while we work -- although
+	 * really, software splvm or fpu_kern_enter/leave should be
+	 * enough (but we'll do that in a separate change for the
+	 * benefit of bisection in case I'm wrong).
 	 */
-	kpreempt_disable();
+	psl = x86_read_psl();
 	x86_disable_intr();
-	creg0 = rcr0();
-	lcr0(creg0 & ~(CR0_EM|CR0_TS)); /* Permit access to SIMD/FPU path */
-	/*
-	 * The VIA RNG has an output queue of 8-byte values.  Read one.
-	 * This is atomic, so if the FPU were already enabled, we could skip
-	 * all the preemption and interrupt frobbing.  If we had bread,
-	 * we could have a ham sandwich, if we had any ham.
-	 */
-	__asm __volatile("xstorerng"
-	    : "=a" (rndsts), "+D" (out) : "d" (0) : "memory");
-	/* Put CR0 back how it was */
-	lcr0(creg0);
-	x86_enable_intr();
-	kpreempt_enable();
+	cr0 = rcr0();
+	lcr0(cr0 & ~(CR0_EM|CR0_TS));
+
+	/* Read up to eight bytes out of the buffer.  */
+	asm volatile("xstorerng"
+	    : "=a"(status)
+	    : "D"(out), "d"(0) /* EDX[1:0]=00 -> wait for 8 bytes or fail */
+	    : "memory");
+
+	/* Restore CR0 and interrupts.  */
+	lcr0(cr0);
+	x86_write_psl(psl);
+
+	/* Get the number of bytes stored.  (Should always be 8 or 0.)  */
+	nbytes = __SHIFTOUT(status, VIA_RNG_STATUS_NBYTES);
 
 	/*
 	 * The Cryptography Research paper on the VIA RNG estimates
 	 * 0.75 bits of entropy per output bit and advises users to
 	 * be "even more conservative".
+	 *
+	 *	`Evaluation of VIA C3 Nehemiah Random Number
+	 *	Generator', Cryptography Research, Inc., February 27,
+	 *	2003.
+	 *	https://www.rambus.com/wp-content/uploads/2015/08/VIA_rng.pdf
 	 */
-	return rndsts & 0xf ? 0 : sizeof(cpu_rng_t) * NBBY / 2;
+	return nbytes * NBBY/2;
 }
 
-size_t
-cpu_rng(cpu_rng_t *out)
+static size_t
+cpu_rng(enum cpu_rng_mode mode, uint64_t *out)
 {
 
-	switch (cpu_rng_mode) {
+	switch (mode) {
 	case CPU_RNG_NONE:
 		return 0;
 	case CPU_RNG_RDSEED:
 		return cpu_rng_rdseed(out);
 	case CPU_RNG_RDRAND:
 		return cpu_rng_rdrand(out);
+	case CPU_RNG_RDSEED_RDRAND:
+		return cpu_rng_rdseed_rdrand(out);
 	case CPU_RNG_VIA:
 		return cpu_rng_via(out);
 	default:
-		panic("cpu_rng: unknown mode %d", (int)cpu_rng_mode);
+		panic("cpu_rng: unknown mode %d", (int)mode);
 	}
+}
+
+static void
+cpu_rng_get(size_t nbytes, void *cookie)
+{
+#define N howmany(256, 64)
+	uint64_t buf[2*N];
+	unsigned i, nbits = 0;
+
+	while (nbytes) {
+		/*
+		 * The fraction of outputs this rejects in correct
+		 * operation is 1/2^256, which is close enough to zero
+		 * that we round it to having no effect on the number
+		 * of bits of entropy.
+		 */
+		for (i = 0; i < __arraycount(buf); i++)
+			nbits += cpu_rng(cpu_rng_mode, &buf[i]);
+		if (consttime_memequal(buf, buf + N, N)) {
+			printf("cpu_rng %s: failed repetition test\n",
+			    cpu_rng_name[cpu_rng_mode]);
+			nbits = 0;
+		}
+		rnd_add_data_sync(&cpu_rng_source, buf, sizeof buf, nbits);
+		nbytes -= MIN(MIN(nbytes, sizeof buf), MAX(1, 8*nbits));
+	}
+#undef N
+}
+
+void
+cpu_rng_init(void)
+{
+
+	cpu_rng_mode = cpu_rng_detect();
+	if (cpu_rng_mode == CPU_RNG_NONE)
+		return;
+	aprint_normal("cpu_rng: %s\n", cpu_rng_name[cpu_rng_mode]);
+	rndsource_setcb(&cpu_rng_source, cpu_rng_get, NULL);
+	rnd_attach_source(&cpu_rng_source, cpu_rng_name[cpu_rng_mode],
+	    RND_TYPE_RNG, RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
 }
 
 /* -------------------------------------------------------------------------- */
 
-static uint64_t earlyrng_state;
-
-/*
- * Small PRNG, that can be used very early. The only requirement is that
- * cpu_probe got called before.
- */
-void __noasan
-cpu_earlyrng(void *out, size_t sz)
+void
+cpu_rng_early_sample(uint64_t *sample)
 {
-	uint8_t digest[SHA512_DIGEST_LENGTH];
-	SHA512_CTX ctx;
-	cpu_rng_t buf[8];
-	uint64_t val;
-	int i;
+	static bool has_rdseed = false;
+	static bool has_rdrand = false;
+	static bool inited = false;
+	u_int descs[4];
+	size_t n;
 
-	bool has_rdseed = (cpu_feature[5] & CPUID_SEF_RDSEED) != 0;
-	has_rdrand = (cpu_feature[1] & CPUID2_RDRAND) != 0;
-
-	KASSERT(sz + sizeof(uint64_t) <= SHA512_DIGEST_LENGTH);
-
-	SHA512_Init(&ctx);
-
-	SHA512_Update(&ctx, (uint8_t *)&earlyrng_state, sizeof(earlyrng_state));
-	if (has_rdseed) {
-		for (i = 0; i < 8; i++) {
-			if (cpu_rng_rdseed(&buf[i]) == 0) {
-				break;
-			}
+	if (!inited) {
+		if (cpuid_level >= 7) {
+			x86_cpuid(0x07, descs);
+			has_rdseed = (descs[1] & CPUID_SEF_RDSEED) != 0;
 		}
-		SHA512_Update(&ctx, (uint8_t *)buf, i * sizeof(cpu_rng_t));
-	} else if (has_rdrand) {
-		for (i = 0; i < 8; i++) {
-			if (cpu_rng_rdrand(&buf[i]) == 0) {
-				break;
-			}
+		if (cpuid_level >= 1) {
+			x86_cpuid(0x01, descs);
+			has_rdrand = (descs[2] & CPUID2_RDRAND) != 0;
 		}
-		SHA512_Update(&ctx, (uint8_t *)buf, i * sizeof(cpu_rng_t));
+		inited = true;
 	}
-	val = rdtsc();
-	SHA512_Update(&ctx, (uint8_t *)&val, sizeof(val));
 
-	SHA512_Final(digest, &ctx);
-
-	memcpy(out, digest, sz);
-	memcpy(&earlyrng_state, &digest[sz], sizeof(earlyrng_state));
+	n = 0;
+	if (has_rdseed && has_rdrand)
+		n = cpu_rng_rdseed_rdrand(sample);
+	else if (has_rdseed)
+		n = cpu_rng_rdseed(sample);
+	else if (has_rdrand)
+		n = cpu_rng_rdrand(sample);
+	if (n == 0)
+		*sample = rdtsc();
 }

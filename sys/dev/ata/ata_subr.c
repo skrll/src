@@ -1,4 +1,4 @@
-/*	$NetBSD: ata_subr.c,v 1.8 2018/11/07 17:05:54 jdolecek Exp $	*/
+/*	$NetBSD: ata_subr.c,v 1.13 2020/12/23 08:17:01 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata_subr.c,v 1.8 2018/11/07 17:05:54 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata_subr.c,v 1.13 2020/12/23 08:17:01 skrll Exp $");
 
 #include "opt_ata.h"
 
@@ -235,6 +235,11 @@ ata_timeout(void *v)
 
 	callout_ack(&chp->c_timo_callout);
 
+	if (chp->ch_flags & ATACH_RECOVERING) {
+		/* Do nothing, recovery will requeue the xfers */
+		goto done;
+	}
+
 	/*
 	 * If there is a timeout, means the last enqueued command
 	 * timed out, and thus all commands timed out.
@@ -254,6 +259,7 @@ ata_timeout(void *v)
 		xfer->ops->c_intr(xfer->c_chp, xfer, 0);
 	}
 
+done:
 	splx(s);
 }
 
@@ -300,7 +306,7 @@ ata_queue_alloc_slot(struct ata_channel *chp, uint8_t *c_slot,
 	KASSERT(mutex_owned(&chp->ch_lock));
 	KASSERT(chq->queue_active < chq->queue_openings);
 
-	ATADEBUG_PRINT(("%s: channel %d qavail 0x%x qact %d",
+	ATADEBUG_PRINT(("%s: channel %d qavail 0x%x qact %d\n",
 	    __func__, chp->ch_channel,
 	    chq->queue_xfers_avail, chq->queue_active),
 	    DEBUG_XFERS);

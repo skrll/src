@@ -1,4 +1,4 @@
-.\"	$NetBSD: BUILDING.mdoc,v 1.126 2019/05/08 14:03:57 leot Exp $
+.\"	$NetBSD: BUILDING.mdoc,v 1.133 2020/11/10 21:47:49 kamil Exp $
 .\"
 .\" Copyright (c) 2001-2011 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -33,9 +33,19 @@
 .\" Toolchain prefix for commands
 .ds toolprefix nb
 .
-.Dd July 29, 2018
+.Dd October 13, 2020
 .Dt BUILDING 8
 .Os NetBSD
+.
+.\" if this file is processed with real roff (doc.tmac)
+.\" now that the tmac files have been lazily read,
+.\" we can override ``quotes'' with "quotes" for ascii output
+.ie '\*[Lq]'``' \{\
+.ds Lq \*q
+.ds Rq \*q
+.\}
+.\" and disable hyphenation
+.nr hyphen-flags 0
 .
 .Sh NAME
 .
@@ -220,8 +230,14 @@ to an absolute path by searching the
 .It Sy HOST_CC
 Path name to C compiler used to create the toolchain.
 .
+.It Sy HOST_CFLAGS
+Flags passed to the host C compiler.
+.
 .It Sy HOST_CXX
 Path name to C++ compiler used to create the toolchain.
+.
+.It Sy HOST_CXXFLAGS
+Flags passed to the host C++ compiler.
 .
 .It Sy MACHINE
 Machine type, e.g.,
@@ -388,6 +404,11 @@ Using a fixed value causes C++ binaries to be the same when
 built from the same sources, resulting in identical (reproducible) builds.
 Additional information is available in the GCC
 documentation of -frandom-seed.
+.
+.It Sy CPUFLAGS
+Additional flags to the compiler/assembler to select
+CPU instruction set options, CPU tuning options, etc.
+.DFLTu
 .
 .It Sy DESTDIR
 Directory to contain the built
@@ -1693,6 +1714,23 @@ Multiple paths may be specified via multiple
 options, or via a single option whose argument contains multiple
 space-separated paths.
 .
+.It Fl c Ar compiler
+Select the compiler for the toolchain to build
+.Nx
+and for inclusion in the
+.Nx
+distribution.
+Supported choices:
+.Bl -inset -offset indent
+.It clang
+.It gcc
+[default]
+.El
+.Pp
+The compiler used to build the toolchain can be different; see
+.Sy HOST_CC
+and
+.Sy HOST_CXX .
 .It Fl D Ar dest
 Set the value of
 .Sy DESTDIR

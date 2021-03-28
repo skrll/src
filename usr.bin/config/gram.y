@@ -1,5 +1,5 @@
 %{
-/*	$NetBSD: gram.y,v 1.54 2016/08/07 10:37:24 christos Exp $	*/
+/*	$NetBSD: gram.y,v 1.56 2020/07/26 22:40:52 uwe Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: gram.y,v 1.54 2016/08/07 10:37:24 christos Exp $");
+__RCSID("$NetBSD: gram.y,v 1.56 2020/07/26 22:40:52 uwe Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -306,7 +306,11 @@ no:
 
 /* Complete definition part: the contents of all files.* files. */
 definition_part:
-	definitions ENDDEFS		{ check_maxpart(); check_version(); }
+	definitions ENDDEFS		{
+		CFGDBG(1, "ENDDEFS");
+		check_maxpart();
+		check_version();
+	}
 ;
 
 /* Zero or more definitions. Trap errors. */
@@ -898,7 +902,7 @@ no_option:
 conf:
 	WORD				{
 		conf.cf_name = $1;
-		conf.cf_lineno = currentline();
+		conf.cf_where.w_srcline = currentline();
 		conf.cf_fstype = NULL;
 		conf.cf_root = NULL;
 		conf.cf_dump = NULL;

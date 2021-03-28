@@ -1,4 +1,4 @@
-/*	$NetBSD: ulpt.c,v 1.104 2019/12/01 08:27:54 maxv Exp $	*/
+/*	$NetBSD: ulpt.c,v 1.107 2020/06/27 07:29:11 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2003 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ulpt.c,v 1.104 2019/12/01 08:27:54 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ulpt.c,v 1.107 2020/06/27 07:29:11 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -374,7 +374,9 @@ ulpt_detach(device_t self, int flags)
 	vdevgone(maj, mn, mn, VCHR);
 	vdevgone(maj, mn | ULPT_NOPRIME , mn | ULPT_NOPRIME, VCHR);
 
-	usbd_add_drv_event(USB_EVENT_DRIVER_DETACH, sc->sc_udev, sc->sc_dev);
+	if (sc->sc_udev != NULL)
+		usbd_add_drv_event(USB_EVENT_DRIVER_DETACH, sc->sc_udev,
+		    sc->sc_dev);
 
 	return 0;
 }
@@ -448,7 +450,7 @@ ulptopen(dev_t dev, int flag, int mode, struct lwp *l)
 
 	sc->sc_state = ULPT_INIT;
 	sc->sc_flags = flags;
-	DPRINTFN(2, ("ulptopen: flags=0x%x\n", (unsigned)flags));
+	DPRINTFN(2, ("ulptopen: flags=%#x\n", (unsigned)flags));
 
 	error = 0;
 	sc->sc_refcnt++;

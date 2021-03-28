@@ -1,4 +1,4 @@
-/*	$NetBSD: radeon_gart.c,v 1.10 2018/08/27 13:56:22 riastradh Exp $	*/
+/*	$NetBSD: radeon_gart.c,v 1.12 2020/10/17 10:46:39 jmcneill Exp $	*/
 
 /*
  * Copyright 2008 Advanced Micro Devices, Inc.
@@ -28,7 +28,7 @@
  *          Jerome Glisse
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: radeon_gart.c,v 1.10 2018/08/27 13:56:22 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: radeon_gart.c,v 1.12 2020/10/17 10:46:39 jmcneill Exp $");
 
 #include <drm/drmP.h>
 #include <drm/radeon_drm.h>
@@ -92,6 +92,8 @@ int radeon_gart_table_ram_alloc(struct radeon_device *rdev)
 	    rdev->gart.ptr, rdev->gart.table_size, NULL, BUS_DMA_WAITOK);
 	if (error)
 		goto fail3;
+
+	memset((void *)rdev->gart.ptr, 0, rdev->gart.table_size);
 
 	/* Success!  */
 	rdev->gart.table_addr = rdev->gart.rg_table_map->dm_segs[0].ds_addr;
@@ -304,7 +306,7 @@ radeon_gart_post_update(struct radeon_device *rdev, unsigned gpu_pgstart,
 		    BUS_DMASYNC_PREWRITE);
 	}
 	if (rdev->gart.ptr != NULL) {
-		membar_sync();		/* XXX overkill */
+		mb();
 		radeon_gart_tlb_flush(rdev);
 	}
 }

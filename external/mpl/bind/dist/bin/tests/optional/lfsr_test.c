@@ -1,21 +1,20 @@
-/*	$NetBSD: lfsr_test.c,v 1.3 2019/01/09 16:55:00 christos Exp $	*/
+/*	$NetBSD: lfsr_test.c,v 1.5 2021/02/19 16:42:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
 /*! \file */
-#include <config.h>
 
-#include <stdio.h>
 #include <inttypes.h>
+#include <stdio.h>
 
 #include <isc/lfsr.h>
 #include <isc/print.h>
@@ -33,7 +32,7 @@ main(int argc, char **argv) {
 	UNUSED(argv);
 
 	/*
-	 * Verify that returned values are reproducable.
+	 * Verify that returned values are reproducible.
 	 */
 	isc_lfsr_init(&lfsr1, 0, 32, 0x80000057U, 0, NULL, NULL);
 	for (i = 0; i < 32; i++) {
@@ -43,10 +42,11 @@ main(int argc, char **argv) {
 	isc_lfsr_init(&lfsr1, 0, 32, 0x80000057U, 0, NULL, NULL);
 	for (i = 0; i < 32; i++) {
 		isc_lfsr_generate(&lfsr1, &temp, 4);
-		if (state[i] != temp)
+		if (state[i] != temp) {
 			printf("lfsr1:  state[%2d] = %08x, "
 			       "but new state is %08x\n",
 			       i, state[i], temp);
+		}
 	}
 
 	/*
@@ -62,10 +62,11 @@ main(int argc, char **argv) {
 	for (i = 0; i < 32; i++) {
 		isc_lfsr_generate(&lfsr1, &temp, 4);
 		isc_lfsr_skip(&lfsr1, 32);
-		if (state[i] != temp)
+		if (state[i] != temp) {
 			printf("lfsr1:  state[%2d] = %08x, "
 			       "but new state is %08x\n",
 			       i, state[i], temp);
+		}
 	}
 
 	/*
@@ -81,10 +82,11 @@ main(int argc, char **argv) {
 	isc_lfsr_init(&lfsr2, 0, 16, 0x00008016U, 0, NULL, NULL);
 	for (i = 0; i < 32; i++) {
 		isc_lfsr_generate(&lfsr2, &temp, 4);
-		if (state[i] != temp)
+		if (state[i] != temp) {
 			printf("lfsr2:  state[%2d] = %08x, "
 			       "but new state is %08x\n",
 			       i, state[i], temp);
+		}
 	}
 
 	return (0);

@@ -1,17 +1,16 @@
-#	$NetBSD: Makefile,v 1.22 2017/01/24 18:04:04 christos Exp $
+#	$NetBSD: Makefile,v 1.24 2020/09/15 08:13:51 mrg Exp $
 
 .include <bsd.own.mk>
 .include "${NETBSDSRCDIR}/distrib/common/Makefile.distrib"
 
 IMAGE=		ramdisk.fs
-IMAGESIZE=	2048k
+IMAGESIZE=	2304k
 MAKEFS_FLAGS+=	-f 15
 
 WARNS=		1
 DBG=		-Os
 
 CRUNCHBIN=	ramdiskbin
-CRUNCHGEN_FLAGS=-d "${DBG}"
 LISTS=		${.CURDIR}/list ${DISTRIBDIR}/common/list.sysinst.en
 MTREECONF=	${DISTRIBDIR}/common/mtree.common
 IMAGEENDIAN=	be

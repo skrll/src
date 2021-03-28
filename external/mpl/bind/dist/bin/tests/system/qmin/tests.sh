@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -192,7 +192,7 @@ if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
 n=`expr $n + 1`
-echo_i "query for .bad succeds when qname-minimization is in relaxed mode ($n)"
+echo_i "query for .bad succeeds when qname-minimization is in relaxed mode ($n)"
 ret=0
 $CLEANQL
 $RNDCCMD 10.53.0.7 flush
@@ -243,7 +243,7 @@ status=`expr $status + $ret`
 $RNDCCMD 10.53.0.6 flush
 
 n=`expr $n + 1`
-echo_i "query for .ugly succeds when qname-minimization is in relaxed mode ($n)"
+echo_i "query for .ugly succeeds when qname-minimization is in relaxed mode ($n)"
 ret=0
 $CLEANQL
 $RNDCCMD 10.53.0.7 flush
@@ -312,7 +312,7 @@ if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
 n=`expr $n + 1`
-echo_i "query for .ip6.arpa succeds and skips on proper boundaries when qname-minimization is on ($n)"
+echo_i "query for .ip6.arpa succeeds and skips on proper boundaries when qname-minimization is on ($n)"
 ret=0
 $CLEANQL
 $RNDCCMD 10.53.0.6 flush
@@ -383,6 +383,17 @@ __EOF
 for ans in ans2; do mv -f $ans/query.log query-$ans-$n.log 2>/dev/null || true; done
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
+
+n=`expr $n + 1`
+echo_i "qname minimization resolves unusual ip6.arpa. names ($n)"
+ret=0
+$CLEANQL
+$DIG $DIGOPTS test1.test2.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.9.0.9.4.1.1.1.1.8.2.6.0.1.0.0.2.ip6.arpa. txt @10.53.0.7 > dig.out.test$n 2>&1
+grep "status: NOERROR" dig.out.test$n > /dev/null || ret=1
+# Expected output in dig.out.test$n:
+# ;; ANSWER SECTION:
+# test1.test2.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.9.0.9.4.1.1.1.1.8.2.6.0.1.0.0.2.ip6.arpa. 1 IN TXT "long_ip6_name"
+grep 'ip6\.arpa.*TXT.*long_ip6_name' dig.out.test$n > /dev/null || ret=1
 
 echo_i "exit status: $status"
 [ $status -eq 0 ] || exit 1

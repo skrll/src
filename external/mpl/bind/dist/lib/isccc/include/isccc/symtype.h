@@ -1,11 +1,11 @@
-/*	$NetBSD: symtype.h,v 1.2 2018/08/12 13:02:40 christos Exp $	*/
+/*	$NetBSD: symtype.h,v 1.4 2021/02/19 16:42:21 christos Exp $	*/
 
 /*
  * Portions Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -25,15 +25,14 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-
 #ifndef ISCCC_SYMTYPE_H
 #define ISCCC_SYMTYPE_H 1
 
 /*! \file isccc/symtype.h */
 
-#define ISCCC_SYMTYPE_ZONESTATS			0x0001
-#define ISCCC_SYMTYPE_CCDUP			0x0002
-#define ISCCC_SYMTYPE_TELLSERVICE			0x0003
-#define ISCCC_SYMTYPE_TELLRESPONSE		0x0004
+#define ISCCC_SYMTYPE_ZONESTATS	   0x0001
+#define ISCCC_SYMTYPE_CCDUP	   0x0002
+#define ISCCC_SYMTYPE_TELLSERVICE  0x0003
+#define ISCCC_SYMTYPE_TELLRESPONSE 0x0004
 
 #endif /* ISCCC_SYMTYPE_H */

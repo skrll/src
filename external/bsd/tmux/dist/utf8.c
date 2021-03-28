@@ -18,6 +18,7 @@
 
 #include <sys/types.h>
 
+#include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -207,7 +208,13 @@ utf8_strvis(char *dst, const char *src, size_t len, int flag)
 			/* Not a complete, valid UTF-8 character. */
 			src -= ud.have;
 		}
-		if (src < end - 1)
+		if (src[0] == '$' && src < end - 1) {
+			if (isalpha((u_char)src[1]) ||
+			    src[1] == '_' ||
+			    src[1] == '{')
+				*dst++ = '\\';
+			*dst++ = '$';
+		} else if (src < end - 1)
 			dst = vis(dst, src[0], flag, src[1]);
 		else if (src < end)
 			dst = vis(dst, src[0], flag, '\0');
@@ -408,7 +415,7 @@ utf8_cstrwidth(const char *s)
 	return (width);
 }
 
-/* Pad UTF-8 string to width. Caller frees. */
+/* Pad UTF-8 string to width on the left. Caller frees. */
 char *
 utf8_padcstr(const char *s, u_int width)
 {
@@ -427,4 +434,45 @@ utf8_padcstr(const char *s, u_int width)
 		out[slen++] = ' ';
 	out[slen] = '\0';
 	return (out);
+}
+
+/* Pad UTF-8 string to width on the right. Caller frees. */
+char *
+utf8_rpadcstr(const char *s, u_int width)
+{
+	size_t	 slen;
+	char	*out;
+	u_int	  n, i;
+
+	n = utf8_cstrwidth(s);
+	if (n >= width)
+		return (xstrdup(s));
+
+	slen = strlen(s);
+	out = xmalloc(slen + 1 + (width - n));
+	for (i = 0; i < width - n; i++)
+		out[i] = ' ';
+	memcpy(out + i, s, slen);
+	out[i + slen] = '\0';
+	return (out);
+}
+
+int
+utf8_cstrhas(const char *s, const struct utf8_data *ud)
+{
+	struct utf8_data	*copy, *loop;
+	int			 found = 0;
+
+	copy = utf8_fromcstr(s);
+	for (loop = copy; loop->size != 0; loop++) {
+		if (loop->size != ud->size)
+			continue;
+		if (memcmp(loop->data, ud->data, loop->size) == 0) {
+			found = 1;
+			break;
+		}
+	}
+	free(copy);
+
+	return (found);
 }

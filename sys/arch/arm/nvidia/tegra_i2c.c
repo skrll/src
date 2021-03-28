@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_i2c.c,v 1.22 2018/09/25 22:23:22 jmcneill Exp $ */
+/* $NetBSD: tegra_i2c.c,v 1.26 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_i2c.c,v 1.22 2018/09/25 22:23:22 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_i2c.c,v 1.26 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -47,12 +47,6 @@ __KERNEL_RCSID(0, "$NetBSD: tegra_i2c.c,v 1.22 2018/09/25 22:23:22 jmcneill Exp 
 static int	tegra_i2c_match(device_t, cfdata_t, void *);
 static void	tegra_i2c_attach(device_t, device_t, void *);
 
-static i2c_tag_t tegra_i2c_get_tag(device_t);
-
-struct fdtbus_i2c_controller_func tegra_i2c_funcs = {
-	.get_tag = tegra_i2c_get_tag
-};
-
 struct tegra_i2c_softc {
 	device_t		sc_dev;
 	bus_space_tag_t		sc_bst;
@@ -63,15 +57,13 @@ struct tegra_i2c_softc {
 	u_int			sc_cid;
 
 	struct i2c_controller	sc_ic;
-	kmutex_t		sc_lock;
-	kcondvar_t		sc_cv;
+	kmutex_t		sc_intr_lock;
+	kcondvar_t		sc_intr_wait;
 };
 
 static void	tegra_i2c_init(struct tegra_i2c_softc *);
 static int	tegra_i2c_intr(void *);
 
-static int	tegra_i2c_acquire_bus(void *, int);
-static void	tegra_i2c_release_bus(void *, int);
 static int	tegra_i2c_exec(void *, i2c_op_t, i2c_addr_t, const void *,
 			       size_t, void *, size_t, int);
 
@@ -91,18 +83,19 @@ CFATTACH_DECL_NEW(tegra_i2c, sizeof(struct tegra_i2c_softc),
 #define I2C_SET_CLEAR(sc, reg, setval, clrval) \
     tegra_reg_set_clear((sc)->sc_bst, (sc)->sc_bsh, (reg), (setval), (clrval))
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "nvidia,tegra210-i2c" },
+	{ .compat = "nvidia,tegra124-i2c" },
+	{ .compat = "nvidia,tegra114-i2c" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 tegra_i2c_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"nvidia,tegra210-i2c",
-		"nvidia,tegra124-i2c",
-		"nvidia,tegra114-i2c",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -140,8 +133,8 @@ tegra_i2c_attach(device_t parent, device_t self, void *aux)
 		    addr, error);
 		return;
 	}
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
-	cv_init(&sc->sc_cv, device_xname(self));
+	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_VM);
+	cv_init(&sc->sc_intr_wait, device_xname(self));
 
 	aprint_naive("\n");
 	aprint_normal(": I2C\n");
@@ -151,8 +144,8 @@ tegra_i2c_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_VM,
-	    FDT_INTR_MPSAFE, tegra_i2c_intr, sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_VM,
+	    FDT_INTR_MPSAFE, tegra_i2c_intr, sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt on %s\n",
 		    intrstr);
@@ -177,24 +170,17 @@ tegra_i2c_attach(device_t parent, device_t self, void *aux)
 	}
 	fdtbus_reset_deassert(sc->sc_rst);
 
+	mutex_enter(&sc->sc_intr_lock);
 	tegra_i2c_init(sc);
+	mutex_exit(&sc->sc_intr_lock);
 
+	iic_tag_init(&sc->sc_ic);
 	sc->sc_ic.ic_cookie = sc;
-	sc->sc_ic.ic_acquire_bus = tegra_i2c_acquire_bus;
-	sc->sc_ic.ic_release_bus = tegra_i2c_release_bus;
 	sc->sc_ic.ic_exec = tegra_i2c_exec;
 
-	fdtbus_register_i2c_controller(self, phandle, &tegra_i2c_funcs);
+	fdtbus_register_i2c_controller(&sc->sc_ic, phandle);
 
 	fdtbus_attach_i2cbus(self, phandle, &sc->sc_ic, iicbus_print);
-}
-
-static i2c_tag_t
-tegra_i2c_get_tag(device_t dev)
-{
-	struct tegra_i2c_softc * const sc = device_private(dev);
-
-	return &sc->sc_ic;
 }
 
 static void
@@ -236,29 +222,11 @@ tegra_i2c_intr(void *priv)
 		return 0;
 	I2C_WRITE(sc, I2C_INTERRUPT_STATUS_REG, istatus);
 
-	mutex_enter(&sc->sc_lock);
-	cv_broadcast(&sc->sc_cv);
-	mutex_exit(&sc->sc_lock);
+	mutex_enter(&sc->sc_intr_lock);
+	cv_broadcast(&sc->sc_intr_wait);
+	mutex_exit(&sc->sc_intr_lock);
 
 	return 1;
-}
-
-static int
-tegra_i2c_acquire_bus(void *priv, int flags)
-{
-	struct tegra_i2c_softc * const sc = priv;
-
-	mutex_enter(&sc->sc_lock);
-
-	return 0;
-}
-
-static void
-tegra_i2c_release_bus(void *priv, int flags)
-{
-	struct tegra_i2c_softc * const sc = priv;
-
-	mutex_exit(&sc->sc_lock);
 }
 
 static int
@@ -268,15 +236,19 @@ tegra_i2c_exec(void *priv, i2c_op_t op, i2c_addr_t addr, const void *cmdbuf,
 	struct tegra_i2c_softc * const sc = priv;
 	int retry, error;
 
-#if notyet
-	if (cold)
-#endif
-		flags |= I2C_F_POLL;
-
-	KASSERT(mutex_owned(&sc->sc_lock));
+	/*
+	 * XXXJRT This is probably no longer necessary?  Before these
+	 * changes, the bus lock was also used for the interrupt handler,
+	 * and there would be a deadlock when the interrupt handler tried to
+	 * acquire it again.  The bus lock is now owned by the mid-layer and
+	 * we have our own interrupt lock.
+	 */
+	flags |= I2C_F_POLL;
 
 	if (buflen == 0 && cmdlen == 0)
 		return EINVAL;
+
+	mutex_enter(&sc->sc_intr_lock);
 
 	if ((flags & I2C_F_POLL) == 0) {
 		I2C_WRITE(sc, I2C_INTERRUPT_MASK_REG,
@@ -296,6 +268,7 @@ tegra_i2c_exec(void *priv, i2c_op_t op, i2c_addr_t addr, const void *cmdbuf,
 		delay(1);
 	}
 	if (retry == 0) {
+		mutex_exit(&sc->sc_intr_lock);
 		device_printf(sc->sc_dev, "timeout flushing FIFO\n");
 		return EIO;
 	}
@@ -325,6 +298,8 @@ done:
 		tegra_i2c_init(sc);
 	}
 
+	mutex_exit(&sc->sc_intr_lock);
+
 	return error;
 }
 
@@ -338,8 +313,9 @@ tegra_i2c_wait(struct tegra_i2c_softc *sc, int flags)
 
 	while (--retry > 0) {
 		if ((flags & I2C_F_POLL) == 0) {
-			error = cv_timedwait_sig(&sc->sc_cv, &sc->sc_lock,
-			    uimax(mstohz(10), 1));
+			error = cv_timedwait_sig(&sc->sc_intr_wait,
+						 &sc->sc_intr_lock,
+						 uimax(mstohz(10), 1));
 			if (error) {
 				return error;
 			}

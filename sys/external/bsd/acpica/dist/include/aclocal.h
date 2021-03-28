@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -90,6 +90,7 @@ union acpi_parse_object;
 
 #define ACPI_MAX_MUTEX                  5
 #define ACPI_NUM_MUTEX                  (ACPI_MAX_MUTEX+1)
+
 
 /* Lock structure for reader/writer interfaces */
 

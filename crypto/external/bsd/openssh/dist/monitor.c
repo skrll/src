@@ -1,5 +1,6 @@
-/*	$NetBSD: monitor.c,v 1.32 2019/12/07 16:38:42 christos Exp $	*/
-/* $OpenBSD: monitor.c,v 1.199 2019/10/07 23:10:38 djm Exp $ */
+/*	$NetBSD: monitor.c,v 1.35 2020/12/04 18:42:50 christos Exp $	*/
+/* $OpenBSD: monitor.c,v 1.214 2020/08/27 01:07:09 djm Exp $ */
+
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
  * Copyright 2002 Markus Friedl <markus@openbsd.org>
@@ -27,7 +28,7 @@
  */
 
 #include "includes.h"
-__RCSID("$NetBSD: monitor.c,v 1.32 2019/12/07 16:38:42 christos Exp $");
+__RCSID("$NetBSD: monitor.c,v 1.35 2020/12/04 18:42:50 christos Exp $");
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/socket.h>
@@ -84,6 +85,7 @@ __RCSID("$NetBSD: monitor.c,v 1.32 2019/12/07 16:38:42 christos Exp $");
 #include "authfd.h"
 #include "match.h"
 #include "ssherr.h"
+#include "sk-api.h"
 
 #include "pfilter.h"
 
@@ -375,9 +377,9 @@ monitor_child_postauth(struct ssh *ssh, struct monitor *pmonitor)
 	pmonitor->m_recvfd = -1;
 
 	monitor_set_child_handler(pmonitor->m_pid);
-	signal(SIGHUP, &monitor_child_handler);
-	signal(SIGTERM, &monitor_child_handler);
-	signal(SIGINT, &monitor_child_handler);
+	ssh_signal(SIGHUP, &monitor_child_handler);
+	ssh_signal(SIGTERM, &monitor_child_handler);
+	ssh_signal(SIGINT, &monitor_child_handler);
 
 	mon_dispatch = mon_dispatch_postauth20;
 
@@ -522,7 +524,7 @@ monitor_read(struct ssh *ssh, struct monitor *pmonitor, struct mon_table *ent,
 
 /* allowed key state */
 static int
-monitor_allowed_key(u_char *blob, u_int bloblen)
+monitor_allowed_key(const u_char *blob, u_int bloblen)
 {
 	/* make sure key is allowed */
 	if (key_blob == NULL || key_bloblen != bloblen ||
@@ -658,7 +660,7 @@ mm_answer_sign(struct ssh *ssh, int sock, struct sshbuf *m)
 
 	if ((key = get_hostkey_by_index(keyid)) != NULL) {
 		if ((r = sshkey_sign(key, &signature, &siglen, p, datlen, alg,
-		    compat)) != 0)
+		    options.sk_provider, NULL, compat)) != 0)
 			fatal("%s: sshkey_sign failed: %s",
 			    __func__, ssh_err(r));
 	} else if ((key = get_hostkey_public_by_index(keyid, ssh)) != NULL &&
@@ -841,8 +843,7 @@ mm_answer_authpassword(struct ssh *ssh, int sock, struct sshbuf *m)
 	/* Only authenticate if the context is valid */
 	authenticated = options.password_authentication &&
 	    auth_password(ssh, passwd);
-	explicit_bzero(passwd, plen);
-	free(passwd);
+	freezero(passwd, plen);
 
 	sshbuf_reset(m);
 	if ((r = sshbuf_put_u32(m, authenticated)) != 0)
@@ -1247,7 +1248,7 @@ mm_answer_keyallowed(struct ssh *ssh, int sock, struct sshbuf *m)
 }
 
 static int
-monitor_valid_userblob(struct ssh *ssh, u_char *data, u_int datalen)
+monitor_valid_userblob(struct ssh *ssh, const u_char *data, u_int datalen)
 {
 	struct sshbuf *b;
 	const u_char *p;
@@ -1257,10 +1258,8 @@ monitor_valid_userblob(struct ssh *ssh, u_char *data, u_int datalen)
 	int r, fail = 0;
 	Authctxt *authctxt = ssh->authctxt;
 
-	if ((b = sshbuf_new()) == NULL)
-		fatal("%s: sshbuf_new", __func__);
-	if ((r = sshbuf_put(b, data, datalen)) != 0)
-		fatal("%s: buffer error: %s", __func__, ssh_err(r));
+	if ((b = sshbuf_from(data, datalen)) == NULL)
+		fatal("%s: sshbuf_from", __func__);
 
 	if (datafellows & SSH_OLD_SESSIONID) {
 		p = sshbuf_ptr(b);
@@ -1315,8 +1314,8 @@ monitor_valid_userblob(struct ssh *ssh, u_char *data, u_int datalen)
 }
 
 static int
-monitor_valid_hostbasedblob(struct ssh *ssh, u_char *data, u_int datalen,
-    char *cuser, char *chost)
+monitor_valid_hostbasedblob(struct ssh *ssh, const u_char *data, u_int datalen,
+    const char *cuser, const char *chost)
 {
 	struct sshbuf *b;
 	const u_char *p;
@@ -1326,10 +1325,9 @@ monitor_valid_hostbasedblob(struct ssh *ssh, u_char *data, u_int datalen,
 	u_char type;
 	Authctxt *authctxt = ssh->authctxt;
 
-	if ((b = sshbuf_new()) == NULL)
+	if ((b = sshbuf_from(data, datalen)) == NULL)
 		fatal("%s: sshbuf_new", __func__);
-	if ((r = sshbuf_put(b, data, datalen)) != 0 ||
-	    (r = sshbuf_get_string_direct(b, &p, &len)) != 0)
+	if ((r = sshbuf_get_string_direct(b, &p, &len)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 
 	if ((session_id2 == NULL) ||
@@ -1389,15 +1387,17 @@ int
 mm_answer_keyverify(struct ssh *ssh, int sock, struct sshbuf *m)
 {
 	struct sshkey *key;
-	u_char *signature, *data, *blob;
-	char *sigalg;
+	const u_char *signature, *data, *blob;
+	char *sigalg = NULL, *fp = NULL;
 	size_t signaturelen, datalen, bloblen;
-	int r, ret, valid_data = 0, encoded_ret;
+	int r, ret, req_presence = 0, req_verify = 0, valid_data = 0;
+	int encoded_ret;
+	struct sshkey_sig_details *sig_details = NULL;
 	Authctxt *authctxt = ssh->authctxt;
 
-	if ((r = sshbuf_get_string(m, &blob, &bloblen)) != 0 ||
-	    (r = sshbuf_get_string(m, &signature, &signaturelen)) != 0 ||
-	    (r = sshbuf_get_string(m, &data, &datalen)) != 0 ||
+	if ((r = sshbuf_get_string_direct(m, &blob, &bloblen)) != 0 ||
+	    (r = sshbuf_get_string_direct(m, &signature, &signaturelen)) != 0 ||
+	    (r = sshbuf_get_string_direct(m, &data, &datalen)) != 0 ||
 	    (r = sshbuf_get_cstring(m, &sigalg, NULL)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 
@@ -1432,29 +1432,68 @@ mm_answer_keyverify(struct ssh *ssh, int sock, struct sshbuf *m)
 	if (!valid_data)
 		fatal("%s: bad signature data blob", __func__);
 
-	ret = sshkey_verify(key, signature, signaturelen, data, datalen,
-	    sigalg, ssh->compat);
-	debug3("%s: %s %p signature %s", __func__, auth_method, key,
-	    (ret == 0) ? "verified" : "unverified");
-	auth2_record_key(authctxt, ret == 0, key);
+	if ((fp = sshkey_fingerprint(key, options.fingerprint_hash,
+	    SSH_FP_DEFAULT)) == NULL)
+		fatal("%s: sshkey_fingerprint failed", __func__);
 
-	free(blob);
-	free(signature);
-	free(data);
-	free(sigalg);
+	ret = sshkey_verify(key, signature, signaturelen, data, datalen,
+	    sigalg, ssh->compat, &sig_details);
+	debug3("%s: %s %p signature %s%s%s", __func__, auth_method, key,
+	    (ret == 0) ? "verified" : "unverified",
+	    (ret != 0) ? ": " : "", (ret != 0) ? ssh_err(ret) : "");
+
+	if (ret == 0 && key_blobtype == MM_USERKEY && sig_details != NULL) {
+		req_presence = (options.pubkey_auth_options &
+		    PUBKEYAUTH_TOUCH_REQUIRED) ||
+		    !key_opts->no_require_user_presence;
+		if (req_presence &&
+		    (sig_details->sk_flags & SSH_SK_USER_PRESENCE_REQD) == 0) {
+			error("public key %s %s signature for %s%s from %.128s "
+			    "port %d rejected: user presence "
+			    "(authenticator touch) requirement not met ",
+			    sshkey_type(key), fp,
+			    authctxt->valid ? "" : "invalid user ",
+			    authctxt->user, ssh_remote_ipaddr(ssh),
+			    ssh_remote_port(ssh));
+			ret = SSH_ERR_SIGNATURE_INVALID;
+		}
+		req_verify = (options.pubkey_auth_options &
+		    PUBKEYAUTH_VERIFY_REQUIRED) || key_opts->require_verify;
+		if (req_verify &&
+		    (sig_details->sk_flags & SSH_SK_USER_VERIFICATION_REQD) == 0) {
+			error("public key %s %s signature for %s%s from %.128s "
+			    "port %d rejected: user verification requirement "
+			    "not met ", sshkey_type(key), fp,
+			    authctxt->valid ? "" : "invalid user ",
+			    authctxt->user, ssh_remote_ipaddr(ssh),
+			    ssh_remote_port(ssh));
+			ret = SSH_ERR_SIGNATURE_INVALID;
+		}
+	}
+	auth2_record_key(authctxt, ret == 0, key);
 
 	if (key_blobtype == MM_USERKEY)
 		auth_activate_options(ssh, key_opts);
 	monitor_reset_key_state();
 
-	sshkey_free(key);
 	sshbuf_reset(m);
 
 	/* encode ret != 0 as positive integer, since we're sending u32 */
 	encoded_ret = (ret != 0);
-	if ((r = sshbuf_put_u32(m, encoded_ret)) != 0)
+	if ((r = sshbuf_put_u32(m, encoded_ret)) != 0 ||
+	    (r = sshbuf_put_u8(m, sig_details != NULL)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
+	if (sig_details != NULL) {
+		if ((r = sshbuf_put_u32(m, sig_details->sk_counter)) != 0 ||
+		    (r = sshbuf_put_u8(m, sig_details->sk_flags)) != 0)
+			fatal("%s: buffer error: %s", __func__, ssh_err(r));
+	}
+	sshkey_sig_details_free(sig_details);
 	mm_request_send(sock, MONITOR_ANS_KEYVERIFY, m);
+
+	free(sigalg);
+	free(fp);
+	sshkey_free(key);
 
 	return ret == 0;
 }
@@ -1547,7 +1586,7 @@ mm_answer_pty(struct ssh *ssh, int sock, struct sshbuf *m)
 	if (fd0 != 0)
 		error("%s: fd0 %d != 0", __func__, fd0);
 
-	/* slave is not needed */
+	/* slave side of pty is not needed */
 	close(s->ttyfd);
 	s->ttyfd = s->ptyfd;
 	/* no need to dup() because nobody closes ptyfd */
@@ -1691,7 +1730,7 @@ monitor_apply_keystate(struct ssh *ssh, struct monitor *pmonitor)
 	}
 }
 
-/* This function requries careful sanity checking */
+/* This function requires careful sanity checking */
 
 void
 mm_get_keystate(struct ssh *ssh, struct monitor *pmonitor)

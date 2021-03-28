@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_mmc.c,v 1.40 2019/10/05 12:09:01 jmcneill Exp $ */
+/* $NetBSD: sunxi_mmc.c,v 1.46 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_sunximmc.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_mmc.c,v 1.40 2019/10/05 12:09:01 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_mmc.c,v 1.46 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -162,7 +162,7 @@ struct sunxi_mmc_softc {
 
 	device_t sc_sdmmc_dev;
 
-	struct sunxi_mmc_config *sc_config;
+	const struct sunxi_mmc_config *sc_config;
 
 	bus_dma_segment_t sc_idma_segs[1];
 	int sc_idma_nsegs;
@@ -279,17 +279,27 @@ static const struct sunxi_mmc_config sun50i_h6_emmc_config = {
 	.flags = SUNXI_MMC_FLAG_CALIB_REG,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "allwinner,sun4i-a10-mmc",	(uintptr_t)&sun4i_a10_mmc_config },
-	{ "allwinner,sun5i-a13-mmc",	(uintptr_t)&sun5i_a13_mmc_config },
-	{ "allwinner,sun7i-a20-mmc",	(uintptr_t)&sun7i_a20_mmc_config },
-	{ "allwinner,sun8i-a83t-emmc",	(uintptr_t)&sun8i_a83t_emmc_config },
-	{ "allwinner,sun9i-a80-mmc",	(uintptr_t)&sun9i_a80_mmc_config },
-	{ "allwinner,sun50i-a64-mmc",	(uintptr_t)&sun50i_a64_mmc_config },
-	{ "allwinner,sun50i-a64-emmc",	(uintptr_t)&sun50i_a64_emmc_config },
-	{ "allwinner,sun50i-h6-mmc",	(uintptr_t)&sun50i_h6_mmc_config },
-	{ "allwinner,sun50i-h6-emmc",	(uintptr_t)&sun50i_h6_emmc_config },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun4i-a10-mmc",
+	  .data = &sun4i_a10_mmc_config },
+	{ .compat = "allwinner,sun5i-a13-mmc",
+	  .data = &sun5i_a13_mmc_config },
+	{ .compat = "allwinner,sun7i-a20-mmc",
+	  .data = &sun7i_a20_mmc_config },
+	{ .compat = "allwinner,sun8i-a83t-emmc",
+	  .data = &sun8i_a83t_emmc_config },
+	{ .compat = "allwinner,sun9i-a80-mmc",
+	  .data = &sun9i_a80_mmc_config },
+	{ .compat = "allwinner,sun50i-a64-mmc",
+	  .data = &sun50i_a64_mmc_config },
+	{ .compat = "allwinner,sun50i-a64-emmc",
+	  .data = &sun50i_a64_emmc_config },
+	{ .compat = "allwinner,sun50i-h6-mmc",
+	  .data = &sun50i_h6_mmc_config },
+	{ .compat = "allwinner,sun50i-h6-emmc",
+	  .data = &sun50i_h6_emmc_config },
+
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -297,7 +307,7 @@ sunxi_mmc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -349,7 +359,7 @@ sunxi_mmc_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_dev = self;
 	sc->sc_phandle = phandle;
-	sc->sc_config = (void *)of_search_compatible(phandle, compat_data)->data;
+	sc->sc_config = of_compatible_lookup(phandle, compat_data)->data;
 	sc->sc_bst = faa->faa_bst;
 	sc->sc_dmat = faa->faa_dmat;
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_BIO);
@@ -396,8 +406,8 @@ sunxi_mmc_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_BIO, FDT_INTR_MPSAFE,
-	    sunxi_mmc_intr, sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_BIO,
+	    FDT_INTR_MPSAFE, sunxi_mmc_intr, sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt on %s\n",
 		    intrstr);
@@ -547,6 +557,14 @@ sunxi_mmc_attach_i(device_t self)
 	const u_int flags = sc->sc_config->flags;
 	struct sdmmcbus_attach_args saa;
 	uint32_t width;
+	const bool supports_hs200 =
+		of_hasprop(sc->sc_phandle, "mmc-hs200-1_2v") |
+		of_hasprop(sc->sc_phandle, "mmc-hs200-1_8v");
+
+	const bool supports_ddr =
+		of_hasprop(sc->sc_phandle, "mmc-ddr-1_2v") |
+		of_hasprop(sc->sc_phandle, "mmc-ddr-1_8v") |
+		of_hasprop(sc->sc_phandle, "mmc-ddr-3_3v");
 
 	if (sc->sc_pwrseq)
 		fdtbus_mmc_pwrseq_pre_power_on(sc->sc_pwrseq);
@@ -577,10 +595,11 @@ sunxi_mmc_attach_i(device_t self)
 		       SMC_CAPS_SD_HIGHSPEED |
 		       SMC_CAPS_MMC_HIGHSPEED;
 
-	if (sc->sc_config->delays || (flags & SUNXI_MMC_FLAG_NEW_TIMINGS))
+	if ((sc->sc_config->delays || (flags & SUNXI_MMC_FLAG_NEW_TIMINGS)) &&
+	     supports_ddr)
 		saa.saa_caps |= SMC_CAPS_MMC_DDR52;
 
-	if (flags & SUNXI_MMC_FLAG_HS200)
+	if ((flags & SUNXI_MMC_FLAG_HS200) != 0 && supports_hs200)
 		saa.saa_caps |= SMC_CAPS_MMC_HS200;
 
 	if (width == 4)

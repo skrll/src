@@ -1,10 +1,10 @@
-#	$NetBSD: MALTA,v 1.96 2019/04/26 21:40:29 sevan Exp $
+#	$NetBSD: MALTA,v 1.103 2021/01/21 06:51:54 nia Exp $
 
 include 	"arch/evbmips/conf/std.malta"
 
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"MALTA-$Revision: 1.96 $"
+#ident 		"MALTA-$Revision: 1.103 $"
 
 maxusers	32
 
@@ -46,6 +46,7 @@ include         "conf/compat_netbsd16.config"
 #options 	EXEC_ECOFF	# exec ECOFF binaries
 #options 	COMPAT_ULTRIX	# binary compatibility with Ultrix
 #options 	COMPAT_LINUX	# binary compatibility with Linux
+#options 	COMPAT_OSSAUDIO	# binary compatibility with Linux
 
 # File systems
 file-system	FFS		# Berkeley Fast Filesystem
@@ -64,7 +65,7 @@ file-system	TMPFS		# Efficient memory file system
 #file-system	UNION		# union file system
 #file-system	MSDOSFS		# MS-DOS FAT filesystem(s).
 #file-system 	CODA		# Coda File System; also needs vcoda (below)
-#file-system	PTYFS		# /dev/pts/N support
+file-system	PTYFS		# /dev/pts/N support
 
 # File system options
 #options 	NFSSERVER	# Sun NFS-compatible filesystem server
@@ -217,10 +218,7 @@ ath*		at pci? dev ? function ?	# Atheros WLAN
 #ep*		at pci? dev ? function ?	# 3Com 3c59x
 #ex*		at pci? dev ? function ?	# 3Com 90x[B]
 #epic*		at pci? dev ? function ?	# SMC EPIC/100 Ethernet
-#esh*		at pci? dev ? function ?	# Essential HIPPI card
-#fpa*		at pci? dev ? function ?	# DEC DEFPA FDDI
 #fxp*		at pci? dev ? function ?	# Intel EtherExpress PRO10+/100B
-#le*		at pci? dev ? function ?	# PCnet-PCI Ethernet
 pcn*		at pci? dev ? function ?	# AMD PCnet-PCI Ethernet
 options 	PCN_EVENT_COUNTERS
 #ne*		at pci? dev ? function ?	# NE2000-compatible Ethernet
@@ -300,7 +298,6 @@ pseudo-device 	carp				# Common Address Redundancy Protocol
 pseudo-device	loop				# network loopback
 #pseudo-device	ppp				# Point-to-Point Protocol
 #pseudo-device	sl				# Serial Line IP
-#pseudo-device	strip				# Starmode Radio IP (Metricom)
 #pseudo-device	tun				# network tunneling over tty
 #pseudo-device	tap				# virtual Ethernet
 #pseudo-device	gre				# generic L3 over IP tunnel
@@ -310,6 +307,7 @@ pseudo-device	loop				# network loopback
 #pseudo-device	stf				# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan				# IEEE 802.1q encapsulation
 pseudo-device	bridge				# simple inter-network bridging
+#pseudo-device	vether				# Virtual Ethernet for bridge
 
 # Miscellaneous pseudo-devices
 pseudo-device	pty				# pseudo-terminals

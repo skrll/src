@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.20 2019/08/18 04:12:07 kamil Exp $	
+#	$NetBSD: Makefile,v 1.22 2021/02/03 06:49:18 roy Exp $	
 
 USE_FORT?= yes	# network client
 

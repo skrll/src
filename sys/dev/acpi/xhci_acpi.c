@@ -1,4 +1,4 @@
-/* $NetBSD: xhci_acpi.c,v 1.5 2019/06/22 19:35:40 jmcneill Exp $ */
+/* $NetBSD: xhci_acpi.c,v 1.11 2021/01/29 15:49:55 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci_acpi.c,v 1.5 2019/06/22 19:35:40 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci_acpi.c,v 1.11 2021/01/29 15:49:55 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -49,10 +49,17 @@ __KERNEL_RCSID(0, "$NetBSD: xhci_acpi.c,v 1.5 2019/06/22 19:35:40 jmcneill Exp $
 #include <dev/acpi/acpi_intr.h>
 #include <dev/acpi/acpi_usb.h>
 
-static const char * const compatible[] = {
-	"PNP0D10",	/* XHCI-compliant USB controller without standard debug */
-	"PNP0D15",	/* XHCI-compliant USB controller with standard debug */
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	/* XHCI-compliant USB controller without standard debug */
+	{ .compat = "PNP0D10" },
+
+	/* XHCI-compliant USB controller with standard debug */
+	{ .compat = "PNP0D15" },
+
+	/* DesignWare Dual Role SuperSpeed USB controller */
+	{ .compat = "808622B7", },
+
+	DEVICE_COMPAT_EOL
 };
 
 struct xhci_acpi_softc {
@@ -74,10 +81,7 @@ xhci_acpi_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct acpi_attach_args *aa = aux;
 
-	if (aa->aa_node->ad_type != ACPI_TYPE_DEVICE)
-		return 0;
-
-	return acpi_match_hid(aa->aa_node->ad_devinfo, compatible);
+	return acpi_compatible_match(aa, compat_data);
 }
 
 static void
@@ -129,20 +133,21 @@ xhci_acpi_attach(device_t parent, device_t self, void *aux)
 
 	hccparams = bus_space_read_4(sc->sc_iot, sc->sc_ioh, XHCI_HCCPARAMS);
 	if (XHCI_HCC_AC64(hccparams)) {
-		aprint_verbose_dev(self, "using 64-bit DMA\n");
-		sc->sc_bus.ub_dmatag = aa->aa_dmat;
-	} else {
-		aprint_verbose_dev(self, "using 32-bit DMA\n");
-		error = bus_dmatag_subregion(aa->aa_dmat, 0, 0xffffffff,
-		    &sc->sc_bus.ub_dmatag, BUS_DMA_WAITOK);
-		if (error != 0) {
-			aprint_error_dev(self, "couldn't create DMA tag: %d\n",
-			    error);
-			return;
+		aprint_verbose_dev(self, "64-bit DMA");
+		if (BUS_DMA_TAG_VALID(aa->aa_dmat64)) {
+			aprint_verbose("\n");
+			sc->sc_bus.ub_dmatag = aa->aa_dmat64;
+		} else {
+			aprint_verbose(" - limited\n");
+			sc->sc_bus.ub_dmatag = aa->aa_dmat;
 		}
+	} else {
+		aprint_verbose_dev(self, "32-bit DMA\n");
+		sc->sc_bus.ub_dmatag = aa->aa_dmat;
 	}
 
-        ih = acpi_intr_establish(self, (uint64_t)aa->aa_node->ad_handle,
+	ih = acpi_intr_establish(self,
+	    (uint64_t)(uintptr_t)aa->aa_node->ad_handle,
 	    IPL_USB, true, xhci_intr, sc, device_xname(self));
 	if (ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt\n");

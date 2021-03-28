@@ -1,8 +1,8 @@
-/*	$NetBSD: spleen5x8.h,v 1.3 2019/11/04 10:44:00 fcambus Exp $ */
+/*	$NetBSD: spleen5x8.h,v 1.7 2020/07/20 13:41:16 fcambus Exp $ */
 /*	$OpenBSD: spleen5x8.h,v 1.2 2018/12/02 14:47:23 fcambus Exp $ */
 
 /*
- * Copyright (c) 2018-2019 Frederic Cambus <fcambus@openbsd.org>
+ * Copyright (c) 2018-2020 Frederic Cambus <fcambus@openbsd.org>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,16 +30,16 @@
 static u_char spleen5x8_data[];
 
 struct wsdisplay_font spleen5x8 = {
-	"Spleen 5x8",			/* typeface name */
-	' ',				/* firstchar */
-	128 - ' ',			/* numchars */
-	WSDISPLAY_FONTENC_ISO,		/* encoding */
-	5,				/* width */
-	8,				/* height */
-	1,				/* stride */
-	WSDISPLAY_FONTORDER_L2R,	/* bit order */
-	WSDISPLAY_FONTORDER_L2R,	/* byte order */
-	spleen5x8_data			/* data */
+	.name		= "Spleen 5x8",
+	.firstchar	= ' ',
+	.numchars	= 128 - ' ',
+	.encoding	= WSDISPLAY_FONTENC_ISO,
+	.fontwidth	= 5,
+	.fontheight	= 8,
+	.stride		= 1,
+	.bitorder	= WSDISPLAY_FONTORDER_L2R,
+	.byteorder	= WSDISPLAY_FONTORDER_L2R,
+	.data		= spleen5x8_data
 };
 
 static u_char spleen5x8_data[] = {
@@ -101,7 +101,7 @@ static u_char spleen5x8_data[] = {
 	0x50, 	/* .*.*.... */
 	0x50, 	/* .*.*.... */
 	0x60, 	/* .**..... */
-	0xa0, 	/* *.*..... */
+	0xa8, 	/* *.*.*... */
 	0x90, 	/* *..*.... */
 	0x68, 	/* .**.*... */
 	0x00, 	/* ........ */
@@ -235,7 +235,7 @@ static u_char spleen5x8_data[] = {
 	0x00, 	/* ........ */
 	0xf0, 	/* ****.... */
 	0x80, 	/* *....... */
-	0xf0, 	/* ****.... */
+	0xe0, 	/* ***..... */
 	0x10, 	/* ...*.... */
 	0x10, 	/* ...*.... */
 	0xe0, 	/* ***..... */
@@ -890,10 +890,10 @@ static u_char spleen5x8_data[] = {
 	0xc0, 	/* **...... */
 
 	0x00, 	/* ........ */
+	0x00, 	/* ........ */
+	0x00, 	/* ........ */
 	0x48, 	/* .*..*... */
 	0xb0, 	/* *.**.... */
-	0x00, 	/* ........ */
-	0x00, 	/* ........ */
 	0x00, 	/* ........ */
 	0x00, 	/* ........ */
 	0x00, 	/* ........ */

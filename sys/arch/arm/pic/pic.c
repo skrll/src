@@ -1,4 +1,4 @@
-/*	$NetBSD: pic.c,v 1.48 2018/11/16 15:06:22 jmcneill Exp $	*/
+/*	$NetBSD: pic.c,v 1.69 2021/02/21 17:07:45 jmcneill Exp $	*/
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -33,20 +33,20 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic.c,v 1.48 2018/11/16 15:06:22 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic.c,v 1.69 2021/02/21 17:07:45 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
 #include <sys/cpu.h>
 #include <sys/evcnt.h>
+#include <sys/interrupt.h>
 #include <sys/intr.h>
+#include <sys/ipi.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
 #include <sys/mutex.h>
 #include <sys/once.h>
-#include <sys/interrupt.h>
 #include <sys/xcall.h>
-#include <sys/ipi.h>
 
 #include <arm/armreg.h>
 #include <arm/cpufunc.h>
@@ -59,31 +59,20 @@ __KERNEL_RCSID(0, "$NetBSD: pic.c,v 1.48 2018/11/16 15:06:22 jmcneill Exp $");
 #include <arm/pic/picvar.h>
 
 #if defined(__HAVE_PIC_PENDING_INTRS)
+
 /*
  * This implementation of pending interrupts on a MULTIPROCESSOR system makes
  * the assumption that a PIC (pic_softc) shall only have all its interrupts
  * come from the same CPU.  In other words, interrupts from a single PIC will
  * not be distributed among multiple CPUs.
  */
-struct pic_pending {
-	volatile uint32_t blocked_pics;
-	volatile uint32_t pending_pics;
-	volatile uint32_t pending_ipls;
-};
 static uint32_t
 	pic_find_pending_irqs_by_ipl(struct pic_softc *, size_t, uint32_t, int);
 static struct pic_softc *
-	pic_list_find_pic_by_pending_ipl(struct pic_pending *, uint32_t);
+	pic_list_find_pic_by_pending_ipl(struct cpu_info *, uint32_t);
 static void
-	pic_deliver_irqs(struct pic_pending *, struct pic_softc *, int, void *);
-static void
-	pic_list_deliver_irqs(struct pic_pending *, register_t, int, void *);
+	pic_deliver_irqs(struct cpu_info *, struct pic_softc *, int, void *);
 
-#ifdef MULTIPROCESSOR
-percpu_t *pic_pending_percpu;
-#else
-struct pic_pending pic_pending;
-#endif /* MULTIPROCESSOR */
 #endif /* __HAVE_PIC_PENDING_INTRS */
 
 struct pic_softc *pic_list[PIC_MAXPICS];
@@ -98,23 +87,13 @@ struct intrsource **pic_iplsource[NIPL] = {
 size_t pic_ipl_offset[NIPL+1];
 
 static kmutex_t pic_lock;
-size_t pic_sourcebase;
+static size_t pic_sourcebase;
+static int pic_lastbase;
 static struct evcnt pic_deferral_ev =
     EVCNT_INITIALIZER(EVCNT_TYPE_MISC, NULL, "deferred", "intr");
 EVCNT_ATTACH_STATIC(pic_deferral_ev);
 
 static int pic_init(void);
-
-#ifdef __HAVE_PIC_SET_PRIORITY
-void
-pic_set_priority(struct cpu_info *ci, int newipl)
-{
-	struct pic_softc *pic = pic_list[0];
-
-	if (pic && pic->pic_ops->pic_set_priority)
-		(pic->pic_ops->pic_set_priority)(pic, newipl);
-}
-#endif
 
 #ifdef MULTIPROCESSOR
 int
@@ -159,7 +138,9 @@ pic_ipi_ddb(void *arg)
 int
 pic_ipi_kpreempt(void *arg)
 {
-	atomic_or_uint(&curcpu()->ci_astpending, __BIT(1));
+	struct lwp *l = curlwp;
+
+	l->l_md.md_astpending |= __BIT(1);
 	return 1;
 }
 #endif /* __HAVE_PREEMPTION */
@@ -182,25 +163,37 @@ intr_ipi_send(const kcpuset_t *kcp, u_long ipi)
 {
 	struct cpu_info * const ci = curcpu();
 	KASSERT(ipi < NIPI);
+	KASSERT(kcp == NULL || kcpuset_countset(kcp) == 1);
 	bool __diagused sent_p = false;
 	for (size_t slot = 0; slot < PIC_MAXPICS; slot++) {
 		struct pic_softc * const pic = pic_list[slot];
 		if (pic == NULL || pic->pic_cpus == NULL)
 			continue;
 		if (kcp == NULL || kcpuset_intersecting_p(kcp, pic->pic_cpus)) {
-			// never send to ourself
+			/*
+			 * Never send to ourself.
+			 *
+			 * This test uses pointer comparison for systems
+			 * that have a pic per cpu, e.g. RPI[23].  GIC sets
+			 * pic_cpus to kcpuset_running and handles "not for
+			 * self" internally.
+			 */
 			if (pic->pic_cpus == ci->ci_kcpuset)
 				continue;
 
 			(*pic->pic_ops->pic_ipi_send)(pic, kcp, ipi);
-			// If we were targeting a single CPU or this pic
-			// handles all cpus, we're done.
+
+			/*
+			 * If we were targeting a single CPU or this pic
+			 * handles all cpus, we're done.
+			 */
 			if (kcp != NULL || pic->pic_cpus == kcpuset_running)
 				return;
 			sent_p = true;
 		}
 	}
-	KASSERT(cold || sent_p || ncpu <= 1);
+	KASSERTMSG(cold || sent_p || ncpu <= 1, "cold %d sent_p %d ncpu %d",
+	    cold, sent_p, ncpu);
 }
 #endif /* MULTIPROCESSOR */
 
@@ -236,21 +229,14 @@ void
 pic_mark_pending_source(struct pic_softc *pic, struct intrsource *is)
 {
 	const uint32_t ipl_mask = __BIT(is->is_ipl);
+	struct cpu_info * const ci = curcpu();
 
 	atomic_or_32(&pic->pic_pending_irqs[is->is_irq >> 5],
 	    __BIT(is->is_irq & 0x1f));
 
 	atomic_or_32(&pic->pic_pending_ipls, ipl_mask);
-#ifdef MULTIPROCESSOR
-	struct pic_pending *pend = percpu_getref(pic_pending_percpu);
-#else
-	struct pic_pending *pend = &pic_pending;
-#endif
-	atomic_or_32(&pend->pending_ipls, ipl_mask);
-	atomic_or_32(&pend->pending_pics, __BIT(pic->pic_id));
-#ifdef MULTIPROCESSOR
-	percpu_putref(pic_pending_percpu);
-#endif
+	atomic_or_32(&ci->ci_pending_ipls, ipl_mask);
+	atomic_or_32(&ci->ci_pending_pics, __BIT(pic->pic_id));
 }
 
 void
@@ -271,6 +257,7 @@ pic_mark_pending_sources(struct pic_softc *pic, size_t irq_base,
 	struct intrsource ** const isbase = &pic->pic_sources[irq_base];
 	struct intrsource *is;
 	volatile uint32_t *ipending = &pic->pic_pending_irqs[irq_base >> 5];
+	struct cpu_info * const ci = curcpu();
 	uint32_t ipl_mask = 0;
 
 	if (pending == 0)
@@ -293,16 +280,8 @@ pic_mark_pending_sources(struct pic_softc *pic, size_t irq_base,
 	}
 
 	atomic_or_32(&pic->pic_pending_ipls, ipl_mask);
-#ifdef MULTIPROCESSOR
-	struct pic_pending *pend = percpu_getref(pic_pending_percpu);
-#else
-	struct pic_pending *pend = &pic_pending;
-#endif
-	atomic_or_32(&pend->pending_ipls, ipl_mask);
-	atomic_or_32(&pend->pending_pics, __BIT(pic->pic_id));
-#ifdef MULTIPROCESSOR
-	percpu_putref(pic_pending_percpu);
-#endif
+	atomic_or_32(&ci->ci_pending_ipls, ipl_mask);
+	atomic_or_32(&ci->ci_pending_pics, __BIT(pic->pic_id));
 	return ipl_mask;
 }
 
@@ -363,7 +342,6 @@ pic_dispatch(struct intrsource *is, void *frame)
 #endif
 		(void)(*func)(arg);
 
-
 	struct pic_percpu * const pcpu = percpu_getref(is->is_pic->pic_percpu);
 	KASSERT(pcpu->pcpu_magic == PICPERCPU_MAGIC);
 	pcpu->pcpu_evs[is->is_irq].ev_count++;
@@ -372,7 +350,7 @@ pic_dispatch(struct intrsource *is, void *frame)
 
 #if defined(__HAVE_PIC_PENDING_INTRS)
 void
-pic_deliver_irqs(struct pic_pending *pend, struct pic_softc *pic, int ipl,
+pic_deliver_irqs(struct cpu_info *ci, struct pic_softc *pic, int ipl,
     void *frame)
 {
 	const uint32_t ipl_mask = __BIT(ipl);
@@ -433,13 +411,14 @@ pic_deliver_irqs(struct pic_pending *pend, struct pic_softc *pic, int ipl,
 			atomic_and_32(ipending, ~__BIT(irq));
 			is = pic->pic_sources[irq_base + irq];
 			if (is != NULL) {
-				cpsie(I32_bit);
+				ENABLE_INTERRUPT();
 				pic_dispatch(is, frame);
-				cpsid(I32_bit);
+				DISABLE_INTERRUPT();
 #if PIC_MAXSOURCES > 32
 				/*
 				 * There is a possibility of interrupting
-				 * from cpsie() to cpsid().
+				 * from ENABLE_INTERRUPT() to
+				 * DISABLE_INTERRUPT().
 				 */
 				poi = 1;
 #endif
@@ -452,7 +431,7 @@ pic_deliver_irqs(struct pic_pending *pend, struct pic_softc *pic, int ipl,
 		} while (pending_irqs);
 		if (blocked_irqs) {
 			atomic_or_32(iblocked, blocked_irqs);
-			atomic_or_32(&pend->blocked_pics, __BIT(pic->pic_id));
+			atomic_or_32(&ci->ci_blocked_pics, __BIT(pic->pic_id));
 		}
 	}
 
@@ -462,15 +441,15 @@ pic_deliver_irqs(struct pic_pending *pend, struct pic_softc *pic, int ipl,
 	 * about these.
 	 */
 	if (atomic_and_32_nv(&pic->pic_pending_ipls, ~ipl_mask) == 0)
-		atomic_and_32(&pend->pending_pics, ~__BIT(pic->pic_id));
+		atomic_and_32(&ci->ci_pending_pics, ~__BIT(pic->pic_id));
 }
 
-static void
-pic_list_unblock_irqs(struct pic_pending *pend)
+void
+pic_list_unblock_irqs(struct cpu_info *ci)
 {
-	uint32_t blocked_pics = pend->blocked_pics;
+	uint32_t blocked_pics = ci->ci_blocked_pics;
 
-	pend->blocked_pics = 0;
+	ci->ci_blocked_pics = 0;
 
 	for (;;) {
 		struct pic_softc *pic;
@@ -506,11 +485,10 @@ pic_list_unblock_irqs(struct pic_pending *pend)
 	}
 }
 
-
 struct pic_softc *
-pic_list_find_pic_by_pending_ipl(struct pic_pending *pend, uint32_t ipl_mask)
+pic_list_find_pic_by_pending_ipl(struct cpu_info *ci, uint32_t ipl_mask)
 {
-	uint32_t pending_pics = pend->pending_pics;
+	uint32_t pending_pics = ci->ci_pending_pics;
 	struct pic_softc *pic;
 
 	for (;;) {
@@ -527,17 +505,17 @@ pic_list_find_pic_by_pending_ipl(struct pic_pending *pend, uint32_t ipl_mask)
 }
 
 void
-pic_list_deliver_irqs(struct pic_pending *pend, register_t psw, int ipl,
+pic_list_deliver_irqs(struct cpu_info *ci, register_t psw, int ipl,
     void *frame)
 {
 	const uint32_t ipl_mask = __BIT(ipl);
 	struct pic_softc *pic;
 
-	while ((pic = pic_list_find_pic_by_pending_ipl(pend, ipl_mask)) != NULL) {
-		pic_deliver_irqs(pend, pic, ipl, frame);
+	while ((pic = pic_list_find_pic_by_pending_ipl(ci, ipl_mask)) != NULL) {
+		pic_deliver_irqs(ci, pic, ipl, frame);
 		KASSERT((pic->pic_pending_ipls & ipl_mask) == 0);
 	}
-	atomic_and_32(&pend->pending_ipls, ~ipl_mask);
+	atomic_and_32(&ci->ci_pending_ipls, ~ipl_mask);
 }
 #endif /* __HAVE_PIC_PENDING_INTRS */
 
@@ -550,30 +528,23 @@ pic_do_pending_ints(register_t psw, int newipl, void *frame)
 		return;
 	}
 #if defined(__HAVE_PIC_PENDING_INTRS)
-#ifdef MULTIPROCESSOR
-	struct pic_pending *pend = percpu_getref(pic_pending_percpu);
-#else
-	struct pic_pending *pend = &pic_pending;
-#endif
-	while ((pend->pending_ipls & ~__BIT(newipl)) > __BIT(newipl)) {
-		KASSERT(pend->pending_ipls < __BIT(NIPL));
+	while ((ci->ci_pending_ipls & ~__BIT(newipl)) > __BIT(newipl)) {
+		KASSERT(ci->ci_pending_ipls < __BIT(NIPL));
 		for (;;) {
-			int ipl = 31 - __builtin_clz(pend->pending_ipls);
+			int ipl = 31 - __builtin_clz(ci->ci_pending_ipls);
 			KASSERT(ipl < NIPL);
 			if (ipl <= newipl)
 				break;
 
 			pic_set_priority(ci, ipl);
-			pic_list_deliver_irqs(pend, psw, ipl, frame);
-			pic_list_unblock_irqs(pend);
+			pic_list_deliver_irqs(ci, psw, ipl, frame);
+			pic_list_unblock_irqs(ci);
 		}
 	}
-#ifdef MULTIPROCESSOR
-	percpu_putref(pic_pending_percpu);
-#endif
 #endif /* __HAVE_PIC_PENDING_INTRS */
 #ifdef __HAVE_PREEMPTION
-	if (newipl == IPL_NONE && (ci->ci_astpending & __BIT(1))) {
+	struct lwp *l = curlwp;
+	if (newipl == IPL_NONE && (l->l_md.md_astpending & __BIT(1))) {
 		pic_set_priority(ci, IPL_SCHED);
 		kpreempt(0);
 	}
@@ -613,15 +584,6 @@ pic_percpu_allocate(void *v0, void *v1, struct cpu_info *ci)
 #endif
 }
 
-#if defined(__HAVE_PIC_PENDING_INTRS) && defined(MULTIPROCESSOR)
-static void
-pic_pending_zero(void *v0, void *v1, struct cpu_info *ci)
-{
-	struct pic_pending * const p = v0;
-	memset(p, 0, sizeof(*p));
-}
-#endif /* __HAVE_PIC_PENDING_INTRS && MULTIPROCESSOR */
-
 static int
 pic_init(void)
 {
@@ -631,7 +593,7 @@ pic_init(void)
 	return 0;
 }
 
-void
+int
 pic_add(struct pic_softc *pic, int irqbase)
 {
 	int slot, maybe_slot = -1;
@@ -642,18 +604,10 @@ pic_add(struct pic_softc *pic, int irqbase)
 
 	KASSERT(strlen(pic->pic_name) > 0);
 
-#if defined(__HAVE_PIC_PENDING_INTRS) && defined(MULTIPROCESSOR)
-	if (__predict_false(pic_pending_percpu == NULL)) {
-		pic_pending_percpu = percpu_alloc(sizeof(struct pic_pending));
-
-		/*
-		 * Now zero the per-cpu pending data.
-		 */
-		percpu_foreach(pic_pending_percpu, pic_pending_zero, NULL);
-	}
-#endif /* __HAVE_PIC_PENDING_INTRS && MULTIPROCESSOR */
-
 	mutex_enter(&pic_lock);
+	if (irqbase == PIC_IRQBASE_ALLOC) {
+		irqbase = pic_lastbase;
+	}
 	for (slot = 0; slot < PIC_MAXPICS; slot++) {
 		struct pic_softc * const xpic = pic_list[slot];
 		if (xpic == NULL) {
@@ -684,7 +638,8 @@ pic_add(struct pic_softc *pic, int irqbase)
 	KASSERT(pic_sourcebase + pic->pic_maxsources <= PIC_MAXMAXSOURCES);
 	sourcebase = pic_sourcebase;
 	pic_sourcebase += pic->pic_maxsources;
-
+        if (pic_lastbase < irqbase + pic->pic_maxsources)
+                pic_lastbase = irqbase + pic->pic_maxsources;
 	mutex_exit(&pic_lock);
 
 	/*
@@ -695,12 +650,8 @@ pic_add(struct pic_softc *pic, int irqbase)
 	 * corrupt the pointers in the evcnts themselves.  Remember, any
 	 * problem can be solved with sufficient indirection.
 	 */
-	pic->pic_percpu = percpu_alloc(sizeof(struct pic_percpu));
-
-	/*
-	 * Now allocate the per-cpu evcnts.
-	 */
-	percpu_foreach(pic->pic_percpu, pic_percpu_allocate, pic);
+	pic->pic_percpu = percpu_create(sizeof(struct pic_percpu),
+	    pic_percpu_allocate, NULL, pic);
 
 	pic->pic_sources = &pic_sources[sourcebase];
 	pic->pic_irqbase = irqbase;
@@ -712,6 +663,8 @@ pic_add(struct pic_softc *pic, int irqbase)
 	KASSERT((pic->pic_cpus != NULL) == (pic->pic_ops->pic_ipi_send != NULL));
 #endif
 	pic_list[slot] = pic;
+
+	return irqbase;
 }
 
 int
@@ -898,6 +851,28 @@ intr_disestablish(void *ih)
 	KASSERT(!cpu_softintr_p());
 
 	pic_disestablish_source(is);
+}
+
+void
+intr_mask(void *ih)
+{
+	struct intrsource * const is = ih;
+	struct pic_softc * const pic = is->is_pic;
+	const int irq = is->is_irq;
+
+	if (atomic_inc_32_nv(&is->is_mask_count) == 1)
+		(*pic->pic_ops->pic_block_irqs)(pic, irq & ~0x1f, __BIT(irq & 0x1f));
+}
+
+void
+intr_unmask(void *ih)
+{
+	struct intrsource * const is = ih;
+	struct pic_softc * const pic = is->is_pic;
+	const int irq = is->is_irq;
+
+	if (atomic_dec_32_nv(&is->is_mask_count) == 0)
+		(*pic->pic_ops->pic_unblock_irqs)(pic, irq & ~0x1f, __BIT(irq & 0x1f));
 }
 
 const char *

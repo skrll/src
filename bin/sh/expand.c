@@ -1,4 +1,4 @@
-/*	$NetBSD: expand.c,v 1.136 2019/10/14 13:34:14 christos Exp $	*/
+/*	$NetBSD: expand.c,v 1.138 2020/08/01 17:56:56 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)expand.c	8.5 (Berkeley) 5/15/95";
 #else
-__RCSID("$NetBSD: expand.c,v 1.136 2019/10/14 13:34:14 christos Exp $");
+__RCSID("$NetBSD: expand.c,v 1.138 2020/08/01 17:56:56 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -146,10 +146,12 @@ STATIC void rmescapes_nl(char *);
 void
 expandhere(union node *arg, int fd)
 {
+	int len;
 
 	herefd = fd;
 	expandarg(arg, NULL, 0);
-	xwrite(fd, stackblock(), expdest - stackblock());
+	len = rmescapes(stackblock());
+	xwrite(fd, stackblock(),  len);
 }
 
 
@@ -2037,9 +2039,11 @@ patmatch(const char *pattern, const char *string, int squoted)
 
 /*
  * Remove any CTLESC or CTLNONL characters from a string.
+ *
+ * String is modified in place, and we return the length of the result
  */
 
-void
+int
 rmescapes(char *str)
 {
 	char *p, *q;
@@ -2047,7 +2051,7 @@ rmescapes(char *str)
 	p = str;
 	while (!ISCTL(*p)) {
 		if (*p++ == '\0')
-			return;
+			return ((int)(p - str) - 1);
 	}
 	q = p;
 	while (*p) {
@@ -2069,6 +2073,8 @@ rmescapes(char *str)
 		*q++ = *p++;
 	}
 	*q = '\0';
+
+	return ((int)(q - str));
 }
 
 /*

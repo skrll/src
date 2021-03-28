@@ -1,4 +1,4 @@
-/* $NetBSD: kern_pmf.c,v 1.40 2018/04/08 11:46:13 mlelstv Exp $ */
+/* $NetBSD: kern_pmf.c,v 1.45 2020/06/11 02:30:21 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_pmf.c,v 1.40 2018/04/08 11:46:13 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_pmf.c,v 1.45 2020/06/11 02:30:21 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -317,7 +317,7 @@ pmf_system_suspend(const pmf_qual_t *qual)
 	if (doing_shutdown == 0 && panicstr == NULL) {
 		printf("Flushing disk caches: ");
 		do_sys_sync(&lwp0);
-		if (buf_syncwait() != 0)
+		if (vfs_syncwait() != 0)
 			printf("giving up\n");
 		else
 			printf("done\n");
@@ -351,6 +351,7 @@ shutdown_all(int how)
 	device_t curdev;
 	bool progress = false;
 
+	KERNEL_LOCK(1, NULL);
 	for (curdev = shutdown_first(&s); curdev != NULL;
 	     curdev = shutdown_next(&s)) {
 		aprint_debug(" shutting down %s, ", device_xname(curdev));
@@ -369,6 +370,7 @@ shutdown_all(int how)
 			aprint_debug("success.");
 		}
 	}
+	KERNEL_UNLOCK_ONE(NULL);
 	return progress;
 }
 
@@ -391,7 +393,7 @@ pmf_set_platform(const char *key, const char *value)
 	if (pmf_platform == NULL)
 		return false;
 
-	return prop_dictionary_set_cstring(pmf_platform, key, value);
+	return prop_dictionary_set_string(pmf_platform, key, value);
 }
 
 const char *
@@ -402,7 +404,7 @@ pmf_get_platform(const char *key)
 	if (pmf_platform == NULL)
 		return NULL;
 
-	if (!prop_dictionary_get_cstring_nocopy(pmf_platform, key, &value))
+	if (!prop_dictionary_get_string(pmf_platform, key, &value))
 		return NULL;
 
 	return value;
@@ -891,7 +893,9 @@ pmf_class_network_suspend(device_t dev, const pmf_qual_t *qual)
 	int s;
 
 	s = splnet();
+	IFNET_LOCK(ifp);
 	(*ifp->if_stop)(ifp, 0);
+	IFNET_UNLOCK(ifp);
 	splx(s);
 
 	return true;
@@ -902,14 +906,21 @@ pmf_class_network_resume(device_t dev, const pmf_qual_t *qual)
 {
 	struct ifnet *ifp = device_pmf_class_private(dev);
 	int s;
+	bool restart = false;
 
 	s = splnet();
+	IFNET_LOCK(ifp);
 	if (ifp->if_flags & IFF_UP) {
 		ifp->if_flags &= ~IFF_RUNNING;
 		if ((*ifp->if_init)(ifp) != 0)
 			aprint_normal_ifnet(ifp, "resume failed\n");
-		if_start_lock(ifp);
+		restart = true;
 	}
+	IFNET_UNLOCK(ifp);
+
+	if (restart)
+		if_start_lock(ifp);
+
 	splx(s);
 
 	return true;

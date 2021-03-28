@@ -1,4 +1,4 @@
-/*	$NetBSD: clock.c,v 1.55 2015/11/12 12:19:49 phx Exp $ */
+/*	$NetBSD: clock.c,v 1.58 2020/07/03 16:23:03 maxv Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.55 2015/11/12 12:19:49 phx Exp $");
+__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.58 2020/07/03 16:23:03 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -93,14 +93,9 @@ struct CIA *clockcia;
 static u_int clk_getcounter(struct timecounter *);
 
 static struct timecounter clk_timecounter = {
-	clk_getcounter,	/* get_timecount */
-	0,		/* no poll_pps */
-	~0u,		/* counter_mask */
-	0,		/* frequency */
-	"clock",	/* name, overriden later */
-	100,		/* quality */
-	NULL,		/* prev */
-	NULL,		/* next */
+	.tc_get_timecount = clk_getcounter,
+	.tc_counter_mask = ~0u,
+	.tc_quality = 100,
 };
 
 CFATTACH_DECL_NEW(clock, 0,
@@ -147,7 +142,10 @@ clockattach(device_t parent, device_t self, void *aux)
 		clockchip = "CIA B";
 	}
 
+	/* round nearest to mitigate clock drift for PAL */
 	amiga_clk_interval = chipfreq / hz;
+	if (chipfreq % hz >= hz / 2)
+		amiga_clk_interval++;
 
 	if (self != NULL) {	/* real autoconfig? */
 		printf(": %s system hz %d hardware hz %d\n", clockchip, hz,
@@ -294,9 +292,9 @@ clk_getcounter(struct timecounter *tc)
 	u_int counter;
 
 	do {
-		cur_hardclock = hardclock_ticks;
+		cur_hardclock = getticks();
 		counter = clk_gettick();
-	} while (cur_hardclock != hardclock_ticks);
+	} while (cur_hardclock != getticks());
 
 	/*
 	 * Handle the situation of a wrapped interval counter, while

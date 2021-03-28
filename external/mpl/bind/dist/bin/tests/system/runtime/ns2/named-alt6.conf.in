@@ -12,8 +12,8 @@
 options {
 	new-zones-directory "./nope";
 	port @PORT@;
-	pid-file "../named.pid";
-	listen-on { 127.0.0.1; };
+	pid-file "named.pid";
+	listen-on { 10.53.0.2; };
 	listen-on-v6 { none; };
 	recursion no;
 };

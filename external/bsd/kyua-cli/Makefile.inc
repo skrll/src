@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.inc,v 1.4 2014/07/05 19:22:41 dholland Exp $
+# $NetBSD: Makefile.inc,v 1.9 2020/11/12 17:53:43 nia Exp $
 
 .include <bsd.own.mk>
 
@@ -58,8 +58,8 @@ DPADD+=			${LIBOBJDIR_${lib}}/lib${lib}.a
 .endfor
 
 .if !empty(KYUA_LIBS:Mutils)
-LDADD+=		-llutok -lsqlite3
-DPADD+=		${LIBLUTOK} ${LIBSQLITE}
+LDADD+=		-llutok -lsqlite3 -lm
+DPADD+=		${LIBLUTOK} ${LIBSQLITE} ${LIBM}
 .endif
 
 MANPAGE_DEPS = cookie-tarname cookie-version

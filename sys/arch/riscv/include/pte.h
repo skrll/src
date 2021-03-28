@@ -1,4 +1,4 @@
-/* $NetBSD: pte.h,v 1.3 2019/06/16 07:42:52 maxv Exp $ */
+/* $NetBSD: pte.h,v 1.5 2020/11/01 19:47:46 skrll Exp $ */
 
 /*
  * Copyright (c) 2014, 2019 The NetBSD Foundation, Inc.
@@ -59,14 +59,15 @@ typedef __uint32_t pd_entry_t;
 #define	PTE_WIRED	__BIT(8)
 
 /* Hardware PTE bits. */
-#define	PTE_D		__BIT(7)
-#define	PTE_A		__BIT(6)
-#define	PTE_G		__BIT(5)
-#define	PTE_U		__BIT(4)
-#define	PTE_X		__BIT(3)
-#define	PTE_W		__BIT(2)
-#define	PTE_R		__BIT(1)
-#define	PTE_V		__BIT(0)
+// These are hardware defined bits
+#define	PTE_D		__BIT(7)	// Dirty
+#define	PTE_A		__BIT(6)	// Accessed
+#define	PTE_G		__BIT(5)	// Global
+#define	PTE_U		__BIT(4)	// User
+#define	PTE_X		__BIT(3)	// eXecute
+#define	PTE_W		__BIT(2)	// Write
+#define	PTE_R		__BIT(1)	// Read
+#define	PTE_V		__BIT(0)	// Valid
 
 #define PA_TO_PTE(pa)	(((pa) >> PAGE_SHIFT) << PTE_PPN_SHIFT)
 #define PTE_TO_PA(pte)	(((pte) >> PTE_PPN_SHIFT) << PAGE_SHIFT)
@@ -125,8 +126,8 @@ pte_wire_entry(pt_entry_t pte)
 {
 	return pte | PTE_WIRED;
 }
-        
-static inline pt_entry_t   
+
+static inline pt_entry_t
 pte_unwire_entry(pt_entry_t pte)
 {
 	return pte & ~PTE_WIRED;

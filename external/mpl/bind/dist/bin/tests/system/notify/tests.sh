@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -174,7 +174,7 @@ grep "10.0.0.4" dig.out.ns2.test$n > /dev/null || ret=1
 status=`expr $ret + $status`
 
 n=`expr $n + 1`
-echo_i "checking example4 contents have been transfered after restart ($n)"
+echo_i "checking example4 contents have been transferred after restart ($n)"
 ret=0
 $DIG $DIGOPTS a.example. @10.53.0.2 a > dig.out.ns2.test$n || ret=1
 grep "10.0.0.4" dig.out.ns2.test$n > /dev/null || ret=1
@@ -230,6 +230,8 @@ do
 done
 grep "test string" dig.out.b.ns5.test$n > /dev/null || ret=1
 grep "test string" dig.out.c.ns5.test$n > /dev/null || ret=1
+grep "sending notify to 10.53.0.5#[0-9]* : TSIG (b)" ns5/named.run > /dev/null || ret=1
+grep "sending notify to 10.53.0.5#[0-9]* : TSIG (c)" ns5/named.run > /dev/null || ret=1
 
 [ $ret = 0 ] || echo_i "failed"
 status=`expr $ret + $status`

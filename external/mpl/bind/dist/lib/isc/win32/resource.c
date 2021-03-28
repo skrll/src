@@ -1,18 +1,15 @@
-/*	$NetBSD: resource.c,v 1.2 2018/08/12 13:02:40 christos Exp $	*/
+/*	$NetBSD: resource.c,v 1.4 2021/02/19 16:42:21 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
-
-#include <config.h>
 
 #include <stdio.h>
 
@@ -27,35 +24,37 @@
  * Windows limits the maximum number of open files to 2048
  */
 
-#define WIN32_MAX_OPEN_FILES	2048
+#define WIN32_MAX_OPEN_FILES 2048
 
 isc_result_t
 isc_resource_setlimit(isc_resource_t resource, isc_resourcevalue_t value) {
 	isc_resourcevalue_t rlim_value;
 	int wresult;
 
-	if (resource != isc_resource_openfiles)
+	if (resource != isc_resource_openfiles) {
 		return (ISC_R_NOTIMPLEMENTED);
+	}
 
-
-	if (value == ISC_RESOURCE_UNLIMITED)
+	if (value == ISC_RESOURCE_UNLIMITED) {
 		rlim_value = WIN32_MAX_OPEN_FILES;
-	else
+	} else {
 		rlim_value = min(value, WIN32_MAX_OPEN_FILES);
+	}
 
-	wresult = _setmaxstdio((int) rlim_value);
+	wresult = _setmaxstdio((int)rlim_value);
 
-	if (wresult > 0)
+	if (wresult > 0) {
 		return (ISC_R_SUCCESS);
-	else
+	} else {
 		return (isc__errno2result(errno));
+	}
 }
 
 isc_result_t
 isc_resource_getlimit(isc_resource_t resource, isc_resourcevalue_t *value) {
-
-	if (resource != isc_resource_openfiles)
+	if (resource != isc_resource_openfiles) {
 		return (ISC_R_NOTIMPLEMENTED);
+	}
 
 	*value = WIN32_MAX_OPEN_FILES;
 	return (ISC_R_SUCCESS);

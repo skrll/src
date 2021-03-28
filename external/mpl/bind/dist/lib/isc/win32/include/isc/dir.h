@@ -1,11 +1,11 @@
-/*	$NetBSD: dir.h,v 1.3 2019/01/09 16:55:17 christos Exp $	*/
+/*	$NetBSD: dir.h,v 1.5 2021/02/19 16:42:21 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -14,33 +14,26 @@
 #ifndef ISC_DIR_H
 #define ISC_DIR_H 1
 
-#include <windows.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <windows.h>
 
 #include <isc/lang.h>
+#include <isc/platform.h>
 #include <isc/result.h>
 
-#ifndef NAME_MAX
-#define NAME_MAX _MAX_FNAME
-#endif
-
-#ifndef PATH_MAX
-#define PATH_MAX _MAX_PATH
-#endif
-
 typedef struct {
-	char 		name[NAME_MAX];
+	char		name[NAME_MAX];
 	unsigned int	length;
-	WIN32_FIND_DATA	find_data;
+	WIN32_FIND_DATA find_data;
 } isc_direntry_t;
 
 typedef struct {
-	unsigned int	magic;
-	char		dirname[PATH_MAX];
-	isc_direntry_t	entry;
-	bool	entry_filled;
-	HANDLE        	search_handle;
+	unsigned int   magic;
+	char	       dirname[PATH_MAX];
+	isc_direntry_t entry;
+	bool	       entry_filled;
+	HANDLE	       search_handle;
 } isc_dir_t;
 
 ISC_LANG_BEGINDECLS

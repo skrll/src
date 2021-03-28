@@ -1140,6 +1140,7 @@ fhstatvfs
 fhtovp
 fileassoc
 fileio
+filemon
 filt
 fincore
 fingerd
@@ -3035,6 +3036,7 @@ ppath
 ppb
 ppbus
 ppi
+ppoll
 ppp
 pppd
 pppdump
@@ -4414,7 +4416,6 @@ uvmspace
 uvn
 uvscom
 uyap
-uyurex
 va
 vaccess
 vaddr

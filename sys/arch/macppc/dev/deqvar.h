@@ -1,4 +1,4 @@
-/*	$NetBSD: deqvar.h,v 1.3 2008/05/16 03:11:09 macallan Exp $	*/
+/*	$NetBSD: deqvar.h,v 1.5 2020/04/16 23:29:52 rin Exp $	*/
 
 /*-
  * Copyright (C) 2005 Michael Lorenz
@@ -35,7 +35,7 @@
 #define DEQVAR_H
  
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: deqvar.h,v 1.3 2008/05/16 03:11:09 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: deqvar.h,v 1.5 2020/04/16 23:29:52 rin Exp $");
 
 #include <sys/kernel.h>
 #include <sys/device.h>

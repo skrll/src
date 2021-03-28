@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.efiboot,v 1.16 2019/09/13 02:19:45 manu Exp $
+# $NetBSD: Makefile.efiboot,v 1.18 2020/09/06 07:20:29 mrg Exp $
 
 S=		${.CURDIR}/../../../../..
 
@@ -41,6 +41,7 @@ BINMODE=444
 .PATH:	${.CURDIR}/../../libsa
 
 LDSCRIPT?= ${.CURDIR}/ldscript
+LDFLAGS+= --no-dynamic-linker --noinhibit-exec
 LDFLAGS+= -nostdlib -T${LDSCRIPT} -Bsymbolic -shared -nocombreloc
 CPPFLAGS+= -I$S -I${.CURDIR} -I${.CURDIR}/.. -I$S/lib/libsa
 CPPFLAGS+= -I${.OBJDIR}
@@ -141,6 +142,8 @@ ${PROG}.so: ${OBJS} ${LIBLIST} ${LDSCRIPT} ${.CURDIR}/../Makefile.efiboot
 	fi
 	rm -f ${.TARGET}
 	mv ${.TARGET}.tmp ${.TARGET}
+
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 KLINK_MACHINE?=	${MACHINE}
 .include <bsd.klinks.mk>

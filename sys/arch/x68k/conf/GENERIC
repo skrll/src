@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.196 2019/04/26 22:46:04 sevan Exp $
+# $NetBSD: GENERIC,v 1.203 2021/01/21 06:51:56 nia Exp $
 #
 # GENERIC machine description file
 # 
@@ -22,9 +22,11 @@ include 	"arch/x68k/conf/std.x68k"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.196 $"
+#ident 		"GENERIC-$Revision: 1.203 $"
 
-makeoptions	COPTS="-O2 -fno-reorder-blocks"	# see share/mk/sys.mk
+makeoptions	COPTS="-O2 -fno-reorder-blocks -fno-omit-frame-pointer"
+	# See share/mk/sys.mk. -fno-omit-frame-pointer is necessary for
+	# backtraces in DDB.
 
 maxusers	8
 
@@ -150,6 +152,7 @@ options 	COMPAT_AOUT_M68K # compatibility with NetBSD/m68k a.out
 #options 	COMPAT_M68K4K	# NetBSD/m68k4k binaries
 #options 	COMPAT_SUNOS	# SunOS 4.x binary compatibility; broken
 #options 	COMPAT_LINUX	# Linux/m68k binary compatibility
+#options 	COMPAT_OSSAUDIO	# Linux/m68k binary compatibility
 
 ## File systems.
 file-system	FFS		# Berkeley Fast Filesystem
@@ -332,7 +335,7 @@ bmd*	at intio0 addr 0xecebf0		# Nereid
 # Option N.V. Wireless WAN modems
 #uhso*	at uhub? port ? configuration ?
 
-# USB Mass Storage; wd not supported
+# USB Mass Storage
 #umass*	at uhub? port ? configuration ? interface ?
 #atapibus* at umass?
 #scsibus* at umass?
@@ -378,9 +381,6 @@ bmd*	at intio0 addr 0xecebf0		# Nereid
 #uvscom*	at uhub? port ?		# SUNTAC Slipper U VS-10U serial adapter
 #ucom*	at uvscom? portno ?
 
-# Diamond Multimedia Rio 500
-#urio*	at uhub? port ?
-
 # USB Handspring Visor
 #uvisor*	at uhub? port ?
 #ucom*	at uvisor?
@@ -395,9 +395,6 @@ bmd*	at intio0 addr 0xecebf0		# Nereid
 # USB scanners that use SCSI emulation, e.g., HP5300
 #usscanner* at uhub? port ?
 #scsibus* at usscanner? channel ?
-
-# Y@P firmware loader
-#uyap* at uhub? port ?
 
 # D-Link DSB-R100 USB radio
 #udsbr*	at uhub? port ?
@@ -486,7 +483,7 @@ pseudo-device	vlan
 
 ## Simple inter-network traffic bridging
 pseudo-device	bridge
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 #### Other device configuration

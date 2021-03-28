@@ -14,25 +14,24 @@ top_srcdir =	@top_srcdir@
 VERSION=@BIND9_VERSION@
 @BIND9_MAJOR@
 
-@LIBNS_API@
-
 @BIND9_MAKE_INCLUDES@
 
 USE_ISC_SPNEGO = @USE_ISC_SPNEGO@
 
 CINCLUDES =	-I. -I${top_srcdir}/lib/ns -Iinclude \
 		${NS_INCLUDES} ${DNS_INCLUDES} ${ISC_INCLUDES} \
-		@OPENSSL_INCLUDES@ @DST_GSSAPI_INC@
+		${OPENSSL_CFLAGS} @DST_GSSAPI_INC@ \
+		${FSTRM_CFLAGS}
 
 CDEFINES =	-DNAMED_PLUGINDIR=\"${plugindir}\"
 
 CWARNINGS =
 
-ISCLIBS =	../../lib/isc/libisc.@A@ @OPENSSL_LIBS@
+ISCLIBS =	../../lib/isc/libisc.@A@
 
 ISCDEPLIBS =	../../lib/isc/libisc.@A@
 
-DNSLIBS =	../../lib/dns/libdns.@A@ ${MAXMINDDB_LIBS} @DNS_CRYPTO_LIBS@
+DNSLIBS =	../../lib/dns/libdns.@A@ @NO_LIBTOOL_DNSLIBS@
 
 DNSDEPLIBS =	../../lib/dns/libdns.@A@
 
@@ -61,9 +60,6 @@ version.@O@: version.c
 	${LIBTOOL_MODE_COMPILE} ${CC} ${ALL_CFLAGS} \
 		-DVERSION=\"${VERSION}\" \
 		-DMAJOR=\"${MAJOR}\" \
-		-DLIBINTERFACE=${LIBINTERFACE} \
-		-DLIBREVISION=${LIBREVISION} \
-		-DLIBAGE=${LIBAGE} \
 		-c ${srcdir}/version.c
 
 libns.@SA@: ${OBJS}
@@ -73,8 +69,8 @@ libns.@SA@: ${OBJS}
 libns.la: ${OBJS}
 	${LIBTOOL_MODE_LINK} \
 		${CC} ${ALL_CFLAGS} ${LDFLAGS} -o libns.la -rpath ${libdir} \
-		-version-info ${LIBINTERFACE}:${LIBREVISION}:${LIBAGE} \
-		${OBJS} ${ISCLIBS} @DNS_CRYPTO_LIBS@ ${LIBS}
+		-release "${VERSION}" \
+		${OBJS} ${ISCLIBS} ${DNSLIBS} @DNS_CRYPTO_LIBS@ ${LIBS}
 
 timestamp: libns.@A@
 	touch timestamp

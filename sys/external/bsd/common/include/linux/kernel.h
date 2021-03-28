@@ -1,4 +1,4 @@
-/*	$NetBSD: kernel.h,v 1.23 2019/09/30 12:20:54 christos Exp $	*/
+/*	$NetBSD: kernel.h,v 1.26 2020/10/19 11:49:56 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -36,9 +36,15 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/endian.h>
 
 #include <lib/libkern/libkern.h>
+
+#include <asm/byteorder.h>
+#include <asm/div64.h>
+
 #include <linux/bitops.h>
+#include <linux/log2.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
 
@@ -47,6 +53,12 @@
 #define U64_MAX UINT64_MAX
 
 #define	oops_in_progress	(panicstr != NULL)
+
+#if BYTE_ORDER == BIG_ENDIAN
+#define	__BIG_ENDIAN		_BIG_ENDIAN
+#else
+#define	__LITTLE_ENDIAN		_LITTLE_ENDIAN
+#endif
 
 #define	IS_ENABLED(option)	(option)
 #define	IS_BUILTIN(option)	(1) /* Probably... */
@@ -194,6 +206,18 @@ kstrtol(const char *s, unsigned base, long *vp)
 		return -ERANGE;
 	*vp = v;
 	return 0;
+}
+
+static inline long
+simple_strtol(const char *s, char **endp, unsigned base)
+{
+	long v;
+
+	*endp = NULL;		/* paranoia */
+	v = strtoll(s, endp, base);
+	if (v < LONG_MIN || LONG_MAX < v)
+		return 0;
+	return v;
 }
 
 static __inline char * __printflike(2, 0)

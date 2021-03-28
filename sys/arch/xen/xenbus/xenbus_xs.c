@@ -1,4 +1,4 @@
-/* $NetBSD: xenbus_xs.c,v 1.23 2012/11/28 16:26:59 royger Exp $ */
+/* $NetBSD: xenbus_xs.c,v 1.27 2020/05/06 16:50:13 bouyer Exp $ */
 /******************************************************************************
  * xenbus_xs.c
  *
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xenbus_xs.c,v 1.23 2012/11/28 16:26:59 royger Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xenbus_xs.c,v 1.27 2020/05/06 16:50:13 bouyer Exp $");
 
 #if 0
 #define DPRINTK(fmt, args...) \
@@ -158,9 +158,8 @@ xenbus_debug_write(const char *str, unsigned int count)
 int
 xenbus_dev_request_and_reply(struct xsd_sockmsg *msg, void**reply)
 {
-	int err = 0, s;
+	int err = 0;
 
-	s = spltty();
 	mutex_enter(&xs_state.xs_lock);
 	err = xb_write(msg, sizeof(*msg) + msg->len);
 	if (err) {
@@ -170,9 +169,14 @@ xenbus_dev_request_and_reply(struct xsd_sockmsg *msg, void**reply)
 		*reply = read_reply(&msg->type, &msg->len);
 	}
 	mutex_exit(&xs_state.xs_lock);
-	splx(s);
 
 	return err;
+}
+
+void
+xenbus_dev_reply_free(struct xsd_sockmsg *msg, void *reply)
+{
+	free(reply, M_DEVBUF);
 }
 
 /* Send message to xs, get kmalloc'ed reply.  ERR_PTR() on error. */
@@ -186,7 +190,7 @@ xs_talkv(struct xenbus_transaction *t,
 {
 	struct xsd_sockmsg msg;
 	unsigned int i;
-	int err, s;
+	int err;
 	void *ret;
 
 	msg.tx_id = (uint32_t)(unsigned long)t;
@@ -196,7 +200,6 @@ xs_talkv(struct xenbus_transaction *t,
 	for (i = 0; i < num_vecs; i++)
 		msg.len += iovec[i].iov_len;
 
-	s = spltty();
 	mutex_enter(&xs_state.xs_lock);
 
 	DPRINTK("write msg");
@@ -204,7 +207,6 @@ xs_talkv(struct xenbus_transaction *t,
 	DPRINTK("write msg err %d", err);
 	if (err) {
 		mutex_exit(&xs_state.xs_lock);
-		splx(s);
 		return (err);
 	}
 
@@ -214,7 +216,6 @@ xs_talkv(struct xenbus_transaction *t,
 		DPRINTK("write iovect err %d", err);
 		if (err) {
 			mutex_exit(&xs_state.xs_lock);
-			splx(s);
 			return (err);
 		}
 	}
@@ -224,7 +225,6 @@ xs_talkv(struct xenbus_transaction *t,
 	DPRINTK("read done");
 
 	mutex_exit(&xs_state.xs_lock);
-	splx(s);
 
 	if (msg.type == XS_ERROR) {
 		err = get_error(ret);
@@ -338,6 +338,12 @@ xenbus_directory(struct xenbus_transaction *t,
 	return 0;
 }
 
+void
+xenbus_directory_free(unsigned int num, char **dir)
+{
+	free(dir, M_DEVBUF);
+}
+
 /* Check if a path exists. Return 1 if it does. */
 int
 xenbus_exists(struct xenbus_transaction *t,
@@ -359,17 +365,29 @@ xenbus_exists(struct xenbus_transaction *t,
  */
 int
 xenbus_read(struct xenbus_transaction *t,
-		  const char *dir, const char *node, unsigned int *len,
-		  char **ret)
+		  const char *dir, const char *node,
+		  char *buffer, size_t bufsz)
 {
 	char *path;
 	int err;
+	char *ret;
+	unsigned int len;
 
 	path = join(dir, node);
 	if (path == NULL)
 		return ENOMEM;
 
-	err = xs_single(t, XS_READ, path, len, ret);
+	err = xs_single(t, XS_READ, path, &len, &ret);
+
+	if (err == 0) {
+		if (len + 1 <= bufsz) {
+			strncpy(buffer, ret, bufsz);
+		} else {
+			err = ENAMETOOLONG;
+		}
+		free(ret, M_DEVBUF);
+	}
+
 	free(path, M_DEVBUF);
 	return err;
 }
@@ -380,18 +398,16 @@ xenbus_read_ul(struct xenbus_transaction *t,
 		  const char *dir, const char *node, unsigned long *val,
 		  int base)
 {
-	char *string, *ep;
+	char string[32], *ep;
 	int err;
 
-	err = xenbus_read(t, dir, node, NULL, &string);
+	err = xenbus_read(t, dir, node, string, sizeof(string));
 	if (err)
 		return err;
 	*val = strtoul(string, &ep, base);
 	if (*ep != '\0') {
-		free(string, M_DEVBUF);
 		return EFTYPE;
 	}
-	free(string, M_DEVBUF);
 	return 0;
 }
 
@@ -401,18 +417,16 @@ xenbus_read_ull(struct xenbus_transaction *t,
 		  const char *dir, const char *node, unsigned long long *val,
 		  int base)
 {
-	char *string, *ep;
+	char string[32], *ep;
 	int err;
 
-	err = xenbus_read(t, dir, node, NULL, &string);
+	err = xenbus_read(t, dir, node, string, sizeof(string));
 	if (err)
 		return err;
 	*val = strtoull(string, &ep, base);
 	if (*ep != '\0') {
-		free(string, M_DEVBUF);
 		return EFTYPE;
 	}
-	free(string, M_DEVBUF);
 	return 0;
 }
 
@@ -513,28 +527,6 @@ int xenbus_transaction_end(struct xenbus_transaction *t, int abort)
 	return err;
 }
 
-/* Single read and scanf: returns -errno or num scanned. */
-int
-xenbus_scanf(struct xenbus_transaction *t,
-		 const char *dir, const char *node, const char *fmt, ...)
-{
-	va_list ap;
-	int ret;
-	char *val;
-
-	ret = xenbus_read(t, dir, node, NULL, &val);
-	if (ret)
-		return ret;
-
-	va_start(ap, fmt);
-	//ret = vsscanf(val, fmt, ap);
-	ret = ENXIO;
-	printf("xb_scanf format %s in %s\n", fmt, val);
-	va_end(ap);
-	free(val, M_DEVBUF);
-	return ret;
-}
-
 /* Single printf and write: returns -errno or 0. */
 int
 xenbus_printf(struct xenbus_transaction *t,
@@ -558,34 +550,6 @@ xenbus_printf(struct xenbus_transaction *t,
 
 	free(printf_buffer, M_DEVBUF);
 
-	return ret;
-}
-
-/* Takes tuples of names, scanf-style args, and void **, NULL terminated. */
-int
-xenbus_gather(struct xenbus_transaction *t, const char *dir, ...)
-{
-	va_list ap;
-	const char *name;
-	int ret = 0;
-
-	va_start(ap, dir);
-	while (ret == 0 && (name = va_arg(ap, char *)) != NULL) {
-		const char *fmt = va_arg(ap, char *);
-		void *result = va_arg(ap, void *);
-		char *p;
-
-		ret = xenbus_read(t, dir, name, NULL, &p);
-		if (ret)
-			break;
-		if (fmt) {
-			// XXX if (sscanf(p, fmt, result) == 0)
-				ret = -EINVAL;
-			free(p, M_DEVBUF);
-		} else
-			*(char **)result = p;
-	}
-	va_end(ap);
 	return ret;
 }
 
@@ -859,14 +823,14 @@ xs_init(device_t dev)
 	mutex_init(&xs_state.reply_lock, MUTEX_DEFAULT, IPL_TTY);
 	cv_init(&xs_state.reply_cv, "rplq");
 
-	err = kthread_create(PRI_NONE, 0, NULL, xenwatch_thread,
+	err = kthread_create(PRI_NONE, KTHREAD_MPSAFE, NULL, xenwatch_thread,
 	    NULL, NULL, "xenwatch");
 	if (err) {
 		aprint_error_dev(dev, "kthread_create(xenwatch): %d\n", err);
 		return err;
 	}
 
-	err = kthread_create(PRI_NONE, 0, NULL, xenbus_thread,
+	err = kthread_create(PRI_NONE, KTHREAD_MPSAFE, NULL, xenbus_thread,
 	    NULL, NULL, "xenbus");
 	if (err) {
 		aprint_error_dev(dev, "kthread_create(xenbus): %d\n", err);

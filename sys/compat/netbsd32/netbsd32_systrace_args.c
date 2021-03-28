@@ -1,4 +1,4 @@
-/* $NetBSD: netbsd32_systrace_args.c,v 1.36 2019/11/04 11:33:01 rin Exp $ */
+/* $NetBSD: netbsd32_systrace_args.c,v 1.45 2020/10/10 00:03:53 rin Exp $ */
 
 /*
  * System call argument to DTrace register array converstion.
@@ -164,7 +164,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 3;
 		break;
 	}
-	/* sys_getpid */
+	/* sys_getpid_with_ppid */
 	case 20: {
 		*n_args = 0;
 		break;
@@ -194,7 +194,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 1;
 		break;
 	}
-	/* sys_getuid */
+	/* sys_getuid_with_euid */
 	case 24: {
 		*n_args = 0;
 		break;
@@ -375,7 +375,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 3;
 		break;
 	}
-	/* sys_getgid */
+	/* sys_getgid_with_egid */
 	case 47: {
 		*n_args = 0;
 		break;
@@ -661,6 +661,15 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[0] = SCARG(p, from); /* int */
 		iarg[1] = SCARG(p, to); /* int */
 		*n_args = 2;
+		break;
+	}
+	/* netbsd32_getrandom */
+	case 91: {
+		const struct netbsd32_getrandom_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, buf).i32; /* netbsd32_voidp */
+		iarg[1] = SCARG(p, buflen); /* netbsd32_size_t */
+		uarg[2] = SCARG(p, flags); /* unsigned int */
+		*n_args = 3;
 		break;
 	}
 	/* netbsd32_fcntl */
@@ -1094,7 +1103,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 0;
 		break;
 	}
-#if defined(QUOTA) || !defined(_KERNEL_OPT)
 	/* netbsd32_quotactl */
 	case 148: {
 		const struct compat_50_netbsd32_quotactl_args *p = params;
@@ -1105,13 +1113,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 4;
 		break;
 	}
-	/* sys_quota */
-	case 149: {
-		*n_args = 0;
-		break;
-	}
-#else
-#endif
 	/* netbsd32_ogetsockname */
 	case 150: {
 		const struct compat_43_netbsd32_ogetsockname_args *p = params;
@@ -1192,6 +1193,36 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[0] = SCARG(p, op); /* int */
 		uarg[1] = (intptr_t) SCARG(p, parms).i32; /* netbsd32_voidp */
 		*n_args = 2;
+		break;
+	}
+	/* netbsd32___futex */
+	case 166: {
+		const struct netbsd32___futex_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, uaddr).i32; /* netbsd32_intp */
+		iarg[1] = SCARG(p, op); /* int */
+		iarg[2] = SCARG(p, val); /* int */
+		uarg[3] = (intptr_t) SCARG(p, timeout).i32; /* const netbsd32_timespecp_t */
+		uarg[4] = (intptr_t) SCARG(p, uaddr2).i32; /* netbsd32_intp */
+		iarg[5] = SCARG(p, val2); /* int */
+		iarg[6] = SCARG(p, val3); /* int */
+		*n_args = 7;
+		break;
+	}
+	/* netbsd32___futex_set_robust_list */
+	case 167: {
+		const struct netbsd32___futex_set_robust_list_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, head).i32; /* netbsd32_voidp */
+		iarg[1] = SCARG(p, len); /* netbsd32_size_t */
+		*n_args = 2;
+		break;
+	}
+	/* netbsd32___futex_get_robust_list */
+	case 168: {
+		const struct netbsd32___futex_get_robust_list_args *p = params;
+		iarg[0] = SCARG(p, lwpid); /* lwpid_t */
+		uarg[1] = (intptr_t) SCARG(p, headp).i32; /* netbsd32_voidp */
+		uarg[2] = (intptr_t) SCARG(p, lenp).i32; /* netbsd32_size_tp */
+		*n_args = 3;
 		break;
 	}
 	/* netbsd32_semsys */
@@ -3385,7 +3416,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 2;
 		break;
 	}
-#if defined(QUOTA) || !defined(_KERNEL_OPT)
 	/* netbsd32___quotactl */
 	case 473: {
 		const struct netbsd32___quotactl_args *p = params;
@@ -3394,8 +3424,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 2;
 		break;
 	}
-#else
-#endif
 	/* netbsd32_posix_spawn */
 	case 474: {
 		const struct netbsd32_posix_spawn_args *p = params;
@@ -3527,6 +3555,119 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		uarg[2] = (intptr_t) SCARG(p, buf).i32; /* netbsd32_statvfsp_t */
 		iarg[3] = SCARG(p, flags); /* int */
 		*n_args = 4;
+		break;
+	}
+	/* netbsd32___acl_get_link */
+	case 487: {
+		const struct netbsd32___acl_get_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_set_link */
+	case 488: {
+		const struct netbsd32___acl_set_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_delete_link */
+	case 489: {
+		const struct netbsd32___acl_delete_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		*n_args = 2;
+		break;
+	}
+	/* netbsd32___acl_aclcheck_link */
+	case 490: {
+		const struct netbsd32___acl_aclcheck_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_get_file */
+	case 491: {
+		const struct netbsd32___acl_get_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_set_file */
+	case 492: {
+		const struct netbsd32___acl_set_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_get_fd */
+	case 493: {
+		const struct netbsd32___acl_get_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_set_fd */
+	case 494: {
+		const struct netbsd32___acl_set_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_delete_file */
+	case 495: {
+		const struct netbsd32___acl_delete_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		*n_args = 2;
+		break;
+	}
+	/* netbsd32___acl_delete_fd */
+	case 496: {
+		const struct netbsd32___acl_delete_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		*n_args = 2;
+		break;
+	}
+	/* netbsd32___acl_aclcheck_file */
+	case 497: {
+		const struct netbsd32___acl_aclcheck_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_aclcheck_fd */
+	case 498: {
+		const struct netbsd32___acl_aclcheck_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32_lpathconf */
+	case 499: {
+		const struct netbsd32_lpathconf_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, name); /* int */
+		*n_args = 2;
 		break;
 	}
 	default:
@@ -3785,7 +3926,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* sys_getpid */
+	/* sys_getpid_with_ppid */
 	case 20:
 		break;
 	/* netbsd32_mount */
@@ -3830,7 +3971,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* sys_getuid */
+	/* sys_getuid_with_euid */
 	case 24:
 		break;
 	/* sys_geteuid */
@@ -4114,7 +4255,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* sys_getgid */
+	/* sys_getgid_with_egid */
 	case 47:
 		break;
 	/* netbsd32_sigprocmask */
@@ -4548,6 +4689,22 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		case 1:
 			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32_getrandom */
+	case 91:
+		switch(ndx) {
+		case 0:
+			p = "netbsd32_voidp";
+			break;
+		case 1:
+			p = "netbsd32_size_t";
+			break;
+		case 2:
+			p = "unsigned int";
 			break;
 		default:
 			break;
@@ -5283,7 +5440,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	/* sys_setsid */
 	case 147:
 		break;
-#if defined(QUOTA) || !defined(_KERNEL_OPT)
 	/* netbsd32_quotactl */
 	case 148:
 		switch(ndx) {
@@ -5303,11 +5459,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* sys_quota */
-	case 149:
-		break;
-#else
-#endif
 	/* netbsd32_ogetsockname */
 	case 150:
 		switch(ndx) {
@@ -5439,6 +5590,63 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		case 1:
 			p = "netbsd32_voidp";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___futex */
+	case 166:
+		switch(ndx) {
+		case 0:
+			p = "netbsd32_intp";
+			break;
+		case 1:
+			p = "int";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "const netbsd32_timespecp_t";
+			break;
+		case 4:
+			p = "netbsd32_intp";
+			break;
+		case 5:
+			p = "int";
+			break;
+		case 6:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___futex_set_robust_list */
+	case 167:
+		switch(ndx) {
+		case 0:
+			p = "netbsd32_voidp";
+			break;
+		case 1:
+			p = "netbsd32_size_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___futex_get_robust_list */
+	case 168:
+		switch(ndx) {
+		case 0:
+			p = "lwpid_t";
+			break;
+		case 1:
+			p = "netbsd32_voidp";
+			break;
+		case 2:
+			p = "netbsd32_size_tp";
 			break;
 		default:
 			break;
@@ -9258,7 +9466,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-#if defined(QUOTA) || !defined(_KERNEL_OPT)
 	/* netbsd32___quotactl */
 	case 473:
 		switch(ndx) {
@@ -9272,8 +9479,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-#else
-#endif
 	/* netbsd32_posix_spawn */
 	case 474:
 		switch(ndx) {
@@ -9530,6 +9735,202 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* netbsd32___acl_get_link */
+	case 487:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_set_link */
+	case 488:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_delete_link */
+	case 489:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_aclcheck_link */
+	case 490:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_get_file */
+	case 491:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_set_file */
+	case 492:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_get_fd */
+	case 493:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_set_fd */
+	case 494:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_delete_file */
+	case 495:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_delete_fd */
+	case 496:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_aclcheck_file */
+	case 497:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_aclcheck_fd */
+	case 498:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32_lpathconf */
+	case 499:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
 	default:
 		break;
 	};
@@ -9633,7 +10034,7 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "netbsd32_long";
 		break;
-	/* sys_getpid */
+	/* sys_getpid_with_ppid */
 	case 20:
 	/* netbsd32_mount */
 	case 21:
@@ -9650,7 +10051,7 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-	/* sys_getuid */
+	/* sys_getuid_with_euid */
 	case 24:
 	/* sys_geteuid */
 	case 25:
@@ -9747,7 +10148,7 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-	/* sys_getgid */
+	/* sys_getgid_with_egid */
 	case 47:
 	/* netbsd32_sigprocmask */
 	case 48:
@@ -9915,6 +10316,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 90:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
+		break;
+	/* netbsd32_getrandom */
+	case 91:
+		if (ndx == 0 || ndx == 1)
+			p = "netbsd32_ssize_t";
 		break;
 	/* netbsd32_fcntl */
 	case 92:
@@ -10165,16 +10571,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* sys_setsid */
 	case 147:
-#if defined(QUOTA) || !defined(_KERNEL_OPT)
 	/* netbsd32_quotactl */
 	case 148:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-	/* sys_quota */
-	case 149:
-#else
-#endif
 	/* netbsd32_ogetsockname */
 	case 150:
 		if (ndx == 0 || ndx == 1)
@@ -10222,6 +10623,21 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* netbsd32_sysarch */
 	case 165:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___futex */
+	case 166:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___futex_set_robust_list */
+	case 167:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___futex_get_robust_list */
+	case 168:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
@@ -11452,14 +11868,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-#if defined(QUOTA) || !defined(_KERNEL_OPT)
 	/* netbsd32___quotactl */
 	case 473:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-#else
-#endif
 	/* netbsd32_posix_spawn */
 	case 474:
 		if (ndx == 0 || ndx == 1)
@@ -11524,6 +11937,71 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 486:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
+		break;
+	/* netbsd32___acl_get_link */
+	case 487:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_set_link */
+	case 488:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_delete_link */
+	case 489:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_aclcheck_link */
+	case 490:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_get_file */
+	case 491:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_set_file */
+	case 492:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_get_fd */
+	case 493:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_set_fd */
+	case 494:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_delete_file */
+	case 495:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_delete_fd */
+	case 496:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_aclcheck_file */
+	case 497:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_aclcheck_fd */
+	case 498:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32_lpathconf */
+	case 499:
+		if (ndx == 0 || ndx == 1)
+			p = "long";
 		break;
 	default:
 		break;

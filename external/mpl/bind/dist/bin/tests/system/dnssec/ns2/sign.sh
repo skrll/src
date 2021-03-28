@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -136,31 +136,6 @@ keyname2=$("$KEYGEN" -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" -n zone "$zon
 cat "$infile" "$keyname1.key" "$keyname2.key" > "$zonefile"
 "$SIGNER" -P -g -o "$zone" -k "$keyname1" "$zonefile" "$keyname2" > /dev/null 2>&1
 
-# Sign the privately secure file
-
-privzone=private.secure.example
-privinfile=private.secure.example.db.in
-privzonefile=private.secure.example.db
-
-privkeyname=$("$KEYGEN" -q -a "${DEFAULT_ALGORITHM}" -b "${DEFAULT_BITS}" -n zone "$privzone")
-
-cat "$privinfile" "$privkeyname.key" > "$privzonefile"
-
-"$SIGNER" -P -g -o "$privzone" -l dlv "$privzonefile" > /dev/null 2>&1
-
-# Sign the DLV secure zone.
-
-dlvzone=dlv.
-dlvinfile=dlv.db.in
-dlvzonefile=dlv.db
-dlvsetfile="dlvset-${privzone}${TP}"
-
-dlvkeyname=$("$KEYGEN" -q -a "${DEFAULT_ALGORITHM}" -b "${DEFAULT_BITS}" -n zone "$dlvzone")
-
-cat "$dlvinfile" "$dlvkeyname.key" "$dlvsetfile" > "$dlvzonefile"
-
-"$SIGNER" -P -g -o "$dlvzone" "$dlvzonefile" > /dev/null 2>&1
-
 # Sign the badparam secure file
 
 zone=badparam.
@@ -221,8 +196,10 @@ cat > "$zonefile" << EOF
 ns2	10	A	10.53.0.2
 ns3	10	A	10.53.0.3
 EOF
-for i in $(seq 300); do
+i=1
+while [ $i -le 300 ]; do
     echo "host$i 10 IN NS ns.elsewhere"
+    i=$((i+1))
 done >> "$zonefile"
 key1=$("$KEYGEN" -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" -n zone -f KSK "$zone")
 key2=$("$KEYGEN" -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" -n zone "$zone")
@@ -263,6 +240,7 @@ key1=$("$KEYGEN" -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" -n zone -f KSK "$
 key2=$("$KEYGEN" -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" -n zone "$zone")
 cat "$infile" "$key1.key" "$key2.key" > "$zonefile"
 "$SIGNER" -P -g -o "$zone" "$zonefile" > /dev/null 2>&1
+keyfile_to_key_id "$key1" > cds-kskonly.secure.id
 
 zone=cds-auto.secure
 infile=cds-auto.secure.db.in
@@ -306,6 +284,7 @@ key1=$("$KEYGEN" -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" -n zone -f KSK "$
 key2=$("$KEYGEN" -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" -n zone "$zone")
 cat "$infile" "$key1.key" "$key2.key" > "$zonefile"
 "$SIGNER" -P -g -o "$zone" "$zonefile" > /dev/null 2>&1
+keyfile_to_key_id "$key1" > cdnskey-kskonly.secure.id
 
 zone=cdnskey-auto.secure
 infile=cdnskey-auto.secure.db.in
@@ -331,3 +310,11 @@ sed 's/DNSKEY/CDNSKEY/' "$key1.key" > "$key1.cdnskey"
 cat "$infile" "$key1.key" "$key2.key" "$key1.cdnskey" "$key1.cds" > "$zonefile"
 # Don't sign, let auto-dnssec maintain do it.
 mv $zonefile "$zonefile.signed"
+
+zone=hours-vs-days
+infile=hours-vs-days.db.in
+zonefile=hours-vs-days.db
+key1=$("$KEYGEN" -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" -n zone -f KSK "$zone")
+key2=$("$KEYGEN" -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" -n zone "$zone")
+$SETTIME -P sync now "$key1" > /dev/null
+cat "$infile" > "$zonefile.signed"

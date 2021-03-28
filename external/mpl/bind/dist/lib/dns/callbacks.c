@@ -1,20 +1,17 @@
-/*	$NetBSD: callbacks.c,v 1.2 2018/08/12 13:02:35 christos Exp $	*/
+/*	$NetBSD: callbacks.c,v 1.4 2021/02/19 16:42:15 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
 /*! \file */
-
-#include <config.h>
 
 #include <isc/print.h>
 #include <isc/util.h>
@@ -24,24 +21,23 @@
 
 static void
 stdio_error_warn_callback(dns_rdatacallbacks_t *, const char *, ...)
-     ISC_FORMAT_PRINTF(2, 3);
+	ISC_FORMAT_PRINTF(2, 3);
 
 static void
 isclog_error_callback(dns_rdatacallbacks_t *callbacks, const char *fmt, ...)
-     ISC_FORMAT_PRINTF(2, 3);
+	ISC_FORMAT_PRINTF(2, 3);
 
 static void
 isclog_warn_callback(dns_rdatacallbacks_t *callbacks, const char *fmt, ...)
-     ISC_FORMAT_PRINTF(2, 3);
+	ISC_FORMAT_PRINTF(2, 3);
 
 /*
  * Private
  */
 
 static void
-stdio_error_warn_callback(dns_rdatacallbacks_t *callbacks,
-			  const char *fmt, ...)
-{
+stdio_error_warn_callback(dns_rdatacallbacks_t *callbacks, const char *fmt,
+			  ...) {
 	va_list ap;
 
 	UNUSED(callbacks);
@@ -109,4 +105,3 @@ dns_rdatacallbacks_init_stdio(dns_rdatacallbacks_t *callbacks) {
 	callbacks->error = stdio_error_warn_callback;
 	callbacks->warn = stdio_error_warn_callback;
 }
-

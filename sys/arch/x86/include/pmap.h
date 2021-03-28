@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.107 2019/12/15 19:24:11 ad Exp $	*/
+/*	$NetBSD: pmap.h,v 1.125 2020/07/19 07:35:08 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -111,6 +111,7 @@
 
 #if defined(_KERNEL)
 #include <sys/kcpuset.h>
+#include <sys/rwlock.h>
 #include <x86/pmap_pv.h>
 #include <uvm/pmap/pmap_pvt.h>
 
@@ -190,9 +191,14 @@ extern struct slotspace slotspace;
 #define MAXGDTSIZ 65536 /* XXX */
 #endif
 
+#ifndef MAX_USERLDT_SIZE
+#define MAX_USERLDT_SIZE PAGE_SIZE /* XXX */
+#endif
+
 struct pcpu_entry {
 	uint8_t gdt[MAXGDTSIZ];
-	uint8_t ldt[MAXGDTSIZ];
+	uint8_t ldt[MAX_USERLDT_SIZE];
+	uint8_t idt[PAGE_SIZE];
 	uint8_t tss[PAGE_SIZE];
 	uint8_t ist0[PAGE_SIZE];
 	uint8_t ist1[PAGE_SIZE];
@@ -205,7 +211,6 @@ struct pcpu_area {
 #ifdef SVS
 	uint8_t utls[PAGE_SIZE];
 #endif
-	uint8_t idt[PAGE_SIZE];
 	uint8_t ldt[PAGE_SIZE];
 	struct pcpu_entry ent[MAXCPUS];
 } __packed;
@@ -232,9 +237,9 @@ extern struct pmap_head pmaps;
 extern kmutex_t pmaps_lock;    /* protects pmaps */
 
 /*
- * pool_cache(9) that PDPs are allocated from 
+ * pool_cache(9) that pmaps are allocated from 
  */
-extern struct pool_cache pmap_pdp_cache;
+extern struct pool_cache pmap_cache;
 
 /*
  * the pmap structure
@@ -247,33 +252,38 @@ extern struct pool_cache pmap_pdp_cache;
  * (the other object locks are only used when uvm_pagealloc is called)
  */
 
+struct pv_page;
+
 struct pmap {
-	struct uvm_object pm_obj[PTP_LEVELS-1]; /* objects for lvl >= 1) */
-	kmutex_t pm_lock;		/* locks for pm_objs */
-	LIST_ENTRY(pmap) pm_list;	/* list (lck by pm_list lock) */
-	pd_entry_t *pm_pdir;		/* VA of PD (lck by object lock) */
+	struct uvm_object pm_obj[PTP_LEVELS-1];/* objects for lvl >= 1) */
+	LIST_ENTRY(pmap) pm_list;	/* list of all pmaps */
+	pd_entry_t *pm_pdir;		/* VA of PD */
 	paddr_t pm_pdirpa[PDP_SIZE];	/* PA of PDs (read-only after create) */
 	struct vm_page *pm_ptphint[PTP_LEVELS-1];
 					/* pointer to a PTP in our pmap */
-	struct pmap_statistics pm_stats;  /* pmap stats (lck by object lock) */
+	struct pmap_statistics pm_stats;  /* pmap stats */
+	struct pv_entry *pm_pve;	/* spare pv_entry */
+	LIST_HEAD(, pv_page) pm_pvp_part;
+	LIST_HEAD(, pv_page) pm_pvp_empty;
+	LIST_HEAD(, pv_page) pm_pvp_full;
 
 #if !defined(__x86_64__)
 	vaddr_t pm_hiexec;		/* highest executable mapping */
 #endif /* !defined(__x86_64__) */
-	int pm_flags;			/* see below */
 
 	union descriptor *pm_ldt;	/* user-set LDT */
-	size_t pm_ldt_len;		/* size of LDT in bytes */
+	size_t pm_ldt_len;		/* XXX unused, remove */
 	int pm_ldt_sel;			/* LDT selector */
+
 	kcpuset_t *pm_cpus;		/* mask of CPUs using pmap */
 	kcpuset_t *pm_kernel_cpus;	/* mask of CPUs using kernel part
 					 of pmap */
 	kcpuset_t *pm_xen_ptp_cpus;	/* mask of CPUs which have this pmap's
 					 ptp mapped */
 	uint64_t pm_ncsw;		/* for assertions */
-	struct vm_page *pm_gc_ptp;	/* pages from pmap g/c */
+	LIST_HEAD(,vm_page) pm_gc_ptp;	/* PTPs queued for free */
 
-	/* Used by NVMM. */
+	/* Used by NVMM and Xen */
 	int (*pm_enter)(struct pmap *, vaddr_t, paddr_t, vm_prot_t, u_int);
 	bool (*pm_extract)(struct pmap *, vaddr_t, paddr_t *);
 	void (*pm_remove)(struct pmap *, vaddr_t, vaddr_t);
@@ -286,6 +296,10 @@ struct pmap {
 
 	void (*pm_tlb_flush)(struct pmap *);
 	void *pm_data;
+
+	kmutex_t pm_lock		/* locks for pm_objs */
+	    __aligned(64);		/* give lock own cache line */
+	krwlock_t pm_dummy_lock;	/* ugly hack for abusing uvm_object */
 };
 
 /* macro to access pm_pdirpa slots */
@@ -362,7 +376,7 @@ bool		pmap_test_attrs(struct vm_page *, unsigned);
 void		pmap_write_protect(struct pmap *, vaddr_t, vaddr_t, vm_prot_t);
 void		pmap_load(void);
 paddr_t		pmap_init_tmp_pgtbl(paddr_t);
-void		pmap_remove_all(struct pmap *);
+bool		pmap_remove_all(struct pmap *);
 void		pmap_ldt_cleanup(struct lwp *);
 void		pmap_ldt_sync(struct pmap *);
 void		pmap_kremove_local(vaddr_t, vsize_t);
@@ -374,7 +388,7 @@ void		pmap_pv_untrack(paddr_t, psize_t);
 
 void		pmap_map_ptes(struct pmap *, struct pmap **, pd_entry_t **,
 		    pd_entry_t * const **);
-void		pmap_unmap_ptes(struct pmap *, struct pmap *, struct vm_page *);
+void		pmap_unmap_ptes(struct pmap *, struct pmap *);
 
 bool		pmap_pdes_valid(vaddr_t, pd_entry_t * const *, pd_entry_t *,
 		    int *lastlvl);
@@ -388,23 +402,20 @@ void		pmap_ept_transform(struct pmap *);
 #ifndef __HAVE_DIRECT_MAP
 void		pmap_vpage_cpu_init(struct cpu_info *);
 #endif
-vaddr_t		slotspace_rand(int, size_t, size_t);
+vaddr_t		slotspace_rand(int, size_t, size_t, size_t, vaddr_t);
 
 vaddr_t reserve_dumppages(vaddr_t); /* XXX: not a pmap fn */
 
 typedef enum tlbwhy {
-	TLBSHOOT_APTE,
+	TLBSHOOT_REMOVE_ALL,
 	TLBSHOOT_KENTER,
 	TLBSHOOT_KREMOVE,
-	TLBSHOOT_FREE_PTP1,
-	TLBSHOOT_FREE_PTP2,
+	TLBSHOOT_FREE_PTP,
 	TLBSHOOT_REMOVE_PTE,
-	TLBSHOOT_REMOVE_PTES,
-	TLBSHOOT_SYNC_PV1,
-	TLBSHOOT_SYNC_PV2,
+	TLBSHOOT_SYNC_PV,
 	TLBSHOOT_WRITE_PROTECT,
 	TLBSHOOT_ENTER,
-	TLBSHOOT_UPDATE,
+	TLBSHOOT_NVMM,
 	TLBSHOOT_BUS_DMA,
 	TLBSHOOT_BUS_SPACE,
 	TLBSHOOT__MAX,
@@ -418,12 +429,6 @@ void		pmap_tlb_intr(void);
 
 #define PMAP_GROWKERNEL		/* turn on pmap_growkernel interface */
 #define PMAP_FORK		/* turn on pmap_fork interface */
-
-/*
- * Do idle page zero'ing uncached to avoid polluting the cache.
- */
-bool	pmap_pageidlezero(paddr_t);
-#define	PMAP_PAGEIDLEZERO(pa)	pmap_pageidlezero((pa))
 
 /*
  * inline functions
@@ -535,7 +540,6 @@ kvtopte(vaddr_t va)
 paddr_t vtophys(vaddr_t);
 vaddr_t	pmap_map(vaddr_t, paddr_t, paddr_t, vm_prot_t);
 void	pmap_cpu_init_late(struct cpu_info *);
-bool	sse2_idlezero_page(void *);
 
 #ifdef XENPV
 #include <sys/bitops.h>
@@ -575,7 +579,6 @@ void	pmap_kenter_ma(vaddr_t, paddr_t, vm_prot_t, u_int);
 int	pmap_enter_ma(struct pmap *, vaddr_t, paddr_t, paddr_t,
 	    vm_prot_t, u_int, int);
 bool	pmap_extract_ma(pmap_t, vaddr_t, paddr_t *);
-void	pmap_free_ptps(struct vm_page *);
 
 paddr_t pmap_get_physpage(void);
 
@@ -607,9 +610,9 @@ extern vaddr_t pmap_direct_end;
 #define PMAP_MAP_POOLPAGE(pa)	PMAP_DIRECT_MAP((pa))
 #define PMAP_UNMAP_POOLPAGE(va)	PMAP_DIRECT_UNMAP((va))
 
-void	pagezero(vaddr_t);
-
 #endif /* __HAVE_DIRECT_MAP */
+
+void	svs_quad_copy(void *, void *, long);
 
 #endif /* _KERNEL */
 

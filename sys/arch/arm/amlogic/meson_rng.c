@@ -1,4 +1,4 @@
-/* $NetBSD: meson_rng.c,v 1.2 2019/04/21 14:13:55 jmcneill Exp $ */
+/* $NetBSD: meson_rng.c,v 1.4 2021/01/27 03:10:18 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015-2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: meson_rng.c,v 1.2 2019/04/21 14:13:55 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_rng.c,v 1.4 2021/01/27 03:10:18 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -35,7 +35,6 @@ __KERNEL_RCSID(0, "$NetBSD: meson_rng.c,v 1.2 2019/04/21 14:13:55 jmcneill Exp $
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/mutex.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 
 #include <dev/fdt/fdtvar.h>
@@ -54,9 +53,9 @@ struct meson_rng_softc {
 	krndsource_t		sc_rndsource;
 };
 
-static const char * const compatible[] = {
-	"amlogic,meson-rng",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "amlogic,meson-rng" },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(meson_rng, sizeof(struct meson_rng_softc),
@@ -67,7 +66,7 @@ meson_rng_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -107,8 +106,6 @@ meson_rng_attach(device_t parent, device_t self, void *aux)
 	rndsource_setcb(&sc->sc_rndsource, meson_rng_get, sc);
 	rnd_attach_source(&sc->sc_rndsource, device_xname(self), RND_TYPE_RNG,
 	    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
-
-	meson_rng_get(RND_POOLBITS / NBBY, sc);
 }
 
 static void

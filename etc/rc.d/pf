@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# $NetBSD: pf,v 1.11 2018/06/29 12:34:15 roy Exp $
+# $NetBSD: pf,v 1.14 2020/09/08 12:52:18 martin Exp $
 #
 
 # PROVIDE: pf
-# REQUIRE: root bootconf mountcritlocal tty network dhcpcd
+# REQUIRE: root bootconf CRITLOCALMOUNTED tty network dhcpcd
 # BEFORE: NETWORKING
 
 $_rc_subr_loaded . /etc/rc.subr
@@ -35,7 +35,7 @@ pf_start()
 
 	# The pf_boot script has enabled pf already.
 	if [ "$autoboot" != yes ]; then
-		/sbin/pfctl -q ${pf_flags} -e 
+		/sbin/pfctl -q ${pf_flags} -e
 	fi
 
 	if [ -f ${pf_rules} ]; then

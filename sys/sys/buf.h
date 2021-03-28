@@ -1,4 +1,4 @@
-/*     $NetBSD: buf.h,v 1.131 2019/08/26 10:24:39 msaitoh Exp $ */
+/*     $NetBSD: buf.h,v 1.134 2020/07/31 04:07:30 chs Exp $ */
 
 /*-
  * Copyright (c) 1999, 2000, 2007, 2008 The NetBSD Foundation, Inc.
@@ -149,7 +149,6 @@ struct buf {
 	off_t	b_dcookie;		/* NFS: Offset cookie if dir block */
 
 	kcondvar_t		b_busy;		/* c: threads waiting on buf */
-	u_int			b_refcnt;	/* c: refcount for b_busy */
 	void			*b_unused;	/*  : unused */
 	LIST_ENTRY(buf)		b_hash;		/* c: hash chain */
 	LIST_ENTRY(buf)		b_vnbufs;	/* c: associated vnode */
@@ -288,6 +287,7 @@ buf_t	*incore(struct vnode *, daddr_t);
 int	allocbuf(buf_t *, int, int);
 void	brelsel(buf_t *, int);
 void	brelse(buf_t *, int);
+void	binvalbuf(struct vnode *, daddr_t);
 
 /*
  * So-far indeterminate ops that might belong to either
@@ -300,7 +300,6 @@ void	minphys(buf_t *);
 void	brelvp(buf_t *);
 void	reassignbuf(buf_t *, struct vnode *);
 void	bgetvp(struct vnode *, buf_t *);
-int	buf_syncwait(void);
 u_long	buf_memcalc(void);
 int	buf_drain(int);
 int	buf_setvalimit(vsize_t);

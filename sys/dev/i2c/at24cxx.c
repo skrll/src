@@ -1,4 +1,4 @@
-/*	$NetBSD: at24cxx.c,v 1.33 2019/11/29 04:59:15 hkenken Exp $	*/
+/*	$NetBSD: at24cxx.c,v 1.41 2021/01/28 14:57:43 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.33 2019/11/29 04:59:15 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.41 2021/01/28 14:57:43 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -112,21 +112,21 @@ const struct cdevsw seeprom_cdevsw = {
 static int seeprom_wait_idle(struct seeprom_softc *);
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "i2c-at24c01",		128 },
-	{ "i2c-at24c02",		256 },
-	{ "i2c-at24c04",		512 },
-	{ "i2c-at24c08",		1024 },
-	{ "i2c-at24c16",		2048 },
-	{ "i2c-at24c32",		4096 },
-	{ "i2c-at24c64",		8192 },
-	{ "i2c-at24c128",		16384 },
-	{ "i2c-at24c256",		32768 },
-	{ "i2c-at24c512",		65536 },
-	{ "i2c-at34c02",		256 },
-	{ "atmel,24c02",		256 },
-	{ "atmel,24c16",		2048 },
-	{ "atmel,24c256",		32768 },
-	{ NULL,				0 }
+	{ .compat = "i2c-at24c01",		.value = 128 },
+	{ .compat = "i2c-at24c02",		.value = 256 },
+	{ .compat = "i2c-at24c04",		.value = 512 },
+	{ .compat = "i2c-at24c08",		.value = 1024 },
+	{ .compat = "i2c-at24c16",		.value = 2048 },
+	{ .compat = "i2c-at24c32",		.value = 4096 },
+	{ .compat = "i2c-at24c64",		.value = 8192 },
+	{ .compat = "i2c-at24c128",		.value = 16384 },
+	{ .compat = "i2c-at24c256",		.value = 32768 },
+	{ .compat = "i2c-at24c512",		.value = 65536 },
+	{ .compat = "i2c-at34c02",		.value = 256 },
+	{ .compat = "atmel,24c02",		.value = 256 },
+	{ .compat = "atmel,24c16",		.value = 2048 },
+	{ .compat = "atmel,24c256",		.value = 32768 },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -180,9 +180,9 @@ seeprom_attach(device_t parent, device_t self, void *aux)
 	if (device_cfdata(self)->cf_flags)
 		sc->sc_size = (device_cfdata(self)->cf_flags << 7);
 
-	if (sc->sc_size <= 0 && ia->ia_ncompat > 0) {
-		if (iic_compatible_match(ia, compat_data, &dce))
-			sc->sc_size = dce->data;
+	if (sc->sc_size <= 0) {
+		if ((dce = iic_compatible_lookup(ia, compat_data)) != NULL)
+			sc->sc_size = dce->value;
 	}
 
 	switch (sc->sc_size) {
@@ -392,8 +392,8 @@ seeprom_wait_idle(struct seeprom_softc *sc)
 		if (error == 0)
 			break;
 
-		rv = tsleep(sc, PRIBIO | PCATCH, "seepromwr", timeout);
-		if (rv != EWOULDBLOCK)
+		rv = kpause("seepromwr", true, timeout, NULL);
+		if (rv != EWOULDBLOCK && rv != 0)
 			return (rv);
 	}
 
@@ -416,7 +416,7 @@ seeprom_bootstrap_read(i2c_tag_t tag, int i2caddr, int offset, int devsize,
 	/* We are very forgiving about devsize during bootstrap. */
 	cmdlen = (devsize >= 4096) ? 2 : 1;
 
-	if (iic_acquire_bus(tag, I2C_F_POLL) != 0)
+	if (iic_acquire_bus(tag, 0) != 0)
 		return (-1);
 
 	while (len) {
@@ -431,8 +431,8 @@ seeprom_bootstrap_read(i2c_tag_t tag, int i2caddr, int offset, int devsize,
 
 		/* Read a single byte. */
 		if (iic_exec(tag, I2C_OP_READ_WITH_STOP, addr,
-			     cmdbuf, cmdlen, rvp, 1, I2C_F_POLL)) {
-			iic_release_bus(tag, I2C_F_POLL);
+			     cmdbuf, cmdlen, rvp, 1, 0)) {
+			iic_release_bus(tag, 0);
 			return (-1);
 		}
 
@@ -441,6 +441,6 @@ seeprom_bootstrap_read(i2c_tag_t tag, int i2caddr, int offset, int devsize,
 		offset++;
 	}
 
-	iic_release_bus(tag, I2C_F_POLL);
+	iic_release_bus(tag, 0);
 	return (0);
 }

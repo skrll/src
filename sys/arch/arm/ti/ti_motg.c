@@ -1,4 +1,4 @@
-/* $NetBSD: ti_motg.c,v 1.1 2019/10/27 16:31:26 jmcneill Exp $ */
+/* $NetBSD: ti_motg.c,v 1.4 2021/01/27 03:10:20 thorpej Exp $ */
 /*
  * Copyright (c) 2013 Manuel Bouyer.  All rights reserved.
  *
@@ -24,7 +24,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_motg.c,v 1.1 2019/10/27 16:31:26 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_motg.c,v 1.4 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -61,9 +61,9 @@ extern int motgdebug;
 #define	MOTGHIST_FUNC()		USBHIST_FUNC()
 #define	MOTGHIST_CALLED(name)	USBHIST_CALLED(motgdebug)
 
-static const char * compatible [] = {
-	"ti,musb-am33xx",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "ti,musb-am33xx" },
+	DEVICE_COMPAT_EOL
 };
 
 /*
@@ -93,7 +93,7 @@ ti_motg_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -126,8 +126,8 @@ ti_motg_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": couldn't map registers\n");
 		return;
 	}
-	sc->sc_ctrlih = fdtbus_intr_establish(phandle, 0, IPL_USB, 0,
-	    ti_motg_intr, sc);
+	sc->sc_ctrlih = fdtbus_intr_establish_xname(phandle, 0, IPL_USB, 0,
+	    ti_motg_intr, sc, device_xname(self));
 	sc->sc_motg.sc_bus.ub_dmatag = faa->faa_dmat;
 
 	val = TIOTG_USBC_READ4(sc, USBCTRL_REV);
@@ -187,8 +187,7 @@ ti_motg_intr(void *v)
 {
 	struct ti_motg_softc *sc = v;
 	uint32_t stat, stat0, stat1;
-	int rv = 0;
-	int i;
+	int rv;
 
 	MOTGHIST_FUNC(); MOTGHIST_CALLED();
 
@@ -198,34 +197,18 @@ ti_motg_intr(void *v)
 	stat1 = TIOTG_USBC_READ4(sc, USBCTRL_IRQ_STAT1);
 	DPRINTF("USB %jd 0x%jx 0x%jx stat %jd",
 	    sc->sc_ctrlport, stat0, stat1, stat);
-	/* try to deal with vbus errors */
-	if (stat1 & MUSB2_MASK_IVBUSERR ) {
-		stat1 &= ~MUSB2_MASK_IVBUSERR;
-		for (i = 0; i < 1000; i++) {
-			TIOTG_USBC_WRITE4(sc, USBCTRL_IRQ_STAT1,
-			    MUSB2_MASK_IVBUSERR);
-			motg_intr_vbus(&sc->sc_motg, stat & 0x1);
-			delay(1000);
-			stat = TIOTG_USBC_READ4(sc, USBCTRL_STAT);
-			if (stat & 0x1)
-				break;
-		}
-	}
+
 	if (stat0) {
 		TIOTG_USBC_WRITE4(sc, USBCTRL_IRQ_STAT0, stat0);
 	}
 	if (stat1) {
 		TIOTG_USBC_WRITE4(sc, USBCTRL_IRQ_STAT1, stat1);
 	}
-	if ((stat & 0x1) == 0) {
-		mutex_spin_exit(&sc->sc_motg.sc_intr_lock);
-		aprint_error_dev(sc->sc_motg.sc_dev, ": vbus error\n");
-		return 1;
+	if (stat1 & USBCTRL_IRQ_STAT1_DRVVBUS) {
+		motg_intr_vbus(&sc->sc_motg, stat & 0x1);
 	}
-	if (stat0 != 0 || stat1 != 0) {
-		rv = motg_intr(&sc->sc_motg, ((stat0 >> 16) & 0xffff),
-			    stat0 & 0xffff, stat1 & 0xff);
-	}
+	rv = motg_intr(&sc->sc_motg, ((stat0 >> 16) & 0xffff),
+		    stat0 & 0xffff, stat1 & 0xff);
 	mutex_spin_exit(&sc->sc_motg.sc_intr_lock);
 	return rv;
 }

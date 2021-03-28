@@ -1,6 +1,6 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
 <html>
-<!-- Copyright (C) 1988-2018 Free Software Foundation, Inc.
+<!-- Copyright (C) 1988-2019 Free Software Foundation, Inc.
 
 Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -116,7 +116,7 @@ that type mismatches occur, this could be the cause.
 </p>
 <p>The solution is not to use such a directory for building GCC.
 </p>
-<p>Similarly, when building from SVN or snapshots, or if you modify
+<p>Similarly, when building from the source repository or snapshots, or if you modify
 <samp>*.l</samp> files, you need the Flex lexical analyzer generator
 installed.  If you do not modify <samp>*.l</samp> files, releases contain
 the Flex-generated files and you do not need Flex installed to build
@@ -124,7 +124,7 @@ them.  There is still one Flex-based lexical analyzer (part of the
 build machinery, not of GCC itself) that is used even if you only
 build the C front end.
 </p>
-<p>When building from SVN or snapshots, or if you modify Texinfo
+<p>When building from the source repository or snapshots, or if you modify Texinfo
 documentation, you need version 4.7 or later of Texinfo installed if you
 want Info documentation to be regenerated.  Releases contain Info
 documentation pre-built for the unmodified documentation in the release.
@@ -248,6 +248,13 @@ hosts that do not support the linker plugin.  Without the linker plugin
 static libraries are not compiled with link-time optimizations.  Since 
 the GCC middle end and back end are in <samp>libbackend.a</samp> this means
 that only the front end is actually LTO optimized.
+</p>
+</dd>
+<dt>&lsquo;<samp>bootstrap-lto-lean</samp>&rsquo;</dt>
+<dd><p>This option is similar to <code>bootstrap-lto</code>, but is intended for
+faster build by only using LTO in the final bootstrap stage.
+With &lsquo;<samp>make profiledbootstrap</samp>&rsquo; the LTO frontend
+is trained only on generator files.
 </p>
 </dd>
 <dt>&lsquo;<samp>bootstrap-debug</samp>&rsquo;</dt>

@@ -1,11 +1,11 @@
-/*	$NetBSD: listenlist.h,v 1.3 2019/01/09 16:55:19 christos Exp $	*/
+/*	$NetBSD: listenlist.h,v 1.5 2021/02/19 16:42:22 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -15,8 +15,8 @@
 #define NS_LISTENLIST_H 1
 
 /*****
- ***** Module Info
- *****/
+***** Module Info
+*****/
 
 /*! \file
  * \brief
@@ -37,21 +37,21 @@
  *** Types
  ***/
 
-typedef struct ns_listenelt ns_listenelt_t;
+typedef struct ns_listenelt  ns_listenelt_t;
 typedef struct ns_listenlist ns_listenlist_t;
 
 struct ns_listenelt {
-	isc_mem_t *	       		mctx;
-	in_port_t			port;
-	isc_dscp_t			dscp;  /* -1 = not set, 0..63 */
-	dns_acl_t *	       		acl;
-	ISC_LINK(ns_listenelt_t)	link;
+	isc_mem_t *mctx;
+	in_port_t  port;
+	isc_dscp_t dscp; /* -1 = not set, 0..63 */
+	dns_acl_t *acl;
+	ISC_LINK(ns_listenelt_t) link;
 };
 
 struct ns_listenlist {
-	isc_mem_t *			mctx;
-	int				refcount;
-	ISC_LIST(ns_listenelt_t)	elts;
+	isc_mem_t *mctx;
+	int	   refcount;
+	ISC_LIST(ns_listenelt_t) elts;
 };
 
 /***
@@ -99,5 +99,3 @@ ns_listenlist_default(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
  */
 
 #endif /* NS_LISTENLIST_H */
-
-

@@ -1,7 +1,7 @@
-/*	$NetBSD: pthread_barrier.c,v 1.20 2016/07/03 14:24:58 christos Exp $	*/
+/*	$NetBSD: pthread_barrier.c,v 1.22 2020/05/16 22:53:37 ad Exp $	*/
 
 /*-
- * Copyright (c) 2001, 2003, 2006, 2007, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 2001, 2003, 2006, 2007, 2009, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread_barrier.c,v 1.20 2016/07/03 14:24:58 christos Exp $");
+__RCSID("$NetBSD: pthread_barrier.c,v 1.22 2020/05/16 22:53:37 ad Exp $");
 
 #include <errno.h>
 
@@ -41,9 +41,9 @@ int
 pthread_barrier_init(pthread_barrier_t *barrier,
 		     const pthread_barrierattr_t *attr, unsigned int count)
 {
-	
-	if (attr != NULL && attr->ptba_magic != _PT_BARRIERATTR_MAGIC)
-		return EINVAL;
+
+	pthread__error(EINVAL, "Invalid barrier attribute",
+	    attr == NULL || attr->ptba_magic == _PT_BARRIERATTR_MAGIC);
 	if (count == 0)
 		return EINVAL;
 
@@ -59,10 +59,13 @@ int
 pthread_barrier_destroy(pthread_barrier_t *barrier)
 {
 
-	if (barrier->ptb_magic != _PT_BARRIER_MAGIC)
-		return EINVAL;
+	pthread__error(EINVAL, "Invalid barrier",
+	    barrier->ptb_magic == _PT_BARRIER_MAGIC);
 	if (barrier->ptb_curcount != 0)
 		return EBUSY;
+
+	barrier->ptb_magic = _PT_BARRIER_DEAD;
+
 	return 0;
 }
 
@@ -73,8 +76,8 @@ pthread_barrier_wait(pthread_barrier_t *barrier)
 	pthread_t self;
 	unsigned int gen;
 
-	if (barrier->ptb_magic != _PT_BARRIER_MAGIC)
-		return EINVAL;
+	pthread__error(EINVAL, "Invalid barrier",
+	    barrier->ptb_magic == _PT_BARRIER_MAGIC);
 
 	/*
 	 * A single arbitrary thread is supposed to return
@@ -103,7 +106,7 @@ pthread_barrier_wait(pthread_barrier_t *barrier)
 		PTQ_INSERT_TAIL(&barrier->ptb_waiters, self, pt_sleep);
 		self->pt_sleepobj = &barrier->ptb_waiters;
 		(void)pthread__park(self, interlock, &barrier->ptb_waiters,
-		    NULL, 0, __UNVOLATILE(&interlock->ptm_waiters));
+		    NULL, 0);
 		if (__predict_true(gen != barrier->ptb_generation)) {
 			break;
 		}
@@ -123,6 +126,9 @@ pthread_barrierattr_getpshared(const pthread_barrierattr_t * __restrict attr,
     int * __restrict pshared)
 {
 
+	pthread__error(EINVAL, "Invalid barrier attribute",
+	    attr->ptba_magic == _PT_BARRIERATTR_MAGIC);
+
 	*pshared = PTHREAD_PROCESS_PRIVATE;
 	return 0;
 }
@@ -130,6 +136,9 @@ pthread_barrierattr_getpshared(const pthread_barrierattr_t * __restrict attr,
 int
 pthread_barrierattr_setpshared(pthread_barrierattr_t *attr, int pshared)
 {
+
+	pthread__error(EINVAL, "Invalid barrier attribute",
+	    attr->ptba_magic == _PT_BARRIERATTR_MAGIC);
 
 	switch(pshared) {
 	case PTHREAD_PROCESS_PRIVATE:
@@ -153,8 +162,8 @@ int
 pthread_barrierattr_destroy(pthread_barrierattr_t *attr)
 {
 
-	if (attr->ptba_magic != _PT_BARRIERATTR_MAGIC)
-		return EINVAL;
+	pthread__error(EINVAL, "Invalid barrier attribute",
+	    attr->ptba_magic == _PT_BARRIERATTR_MAGIC);
 	attr->ptba_magic = _PT_BARRIERATTR_DEAD;
 	return 0;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: in_pcb_hdr.h,v 1.13 2017/06/02 03:41:20 ozaki-r Exp $	*/
+/*	$NetBSD: in_pcb_hdr.h,v 1.15 2020/08/28 07:01:57 riastradh Exp $	*/
 
 /*
  * Copyright (C) 2003 WIDE Project.
@@ -63,9 +63,16 @@
 #ifndef _NETINET_IN_PCB_HDR_H_
 #define _NETINET_IN_PCB_HDR_H_
 
+#include <sys/types.h>
 #include <sys/queue.h>
 
+#include <netinet/in.h>
+
 struct inpcbpolicy;
+struct inpcbtable;
+struct mbuf;
+struct sockaddr;
+struct socket;
 
 /*
  * align it with inpcb and in6pcb!
@@ -131,5 +138,8 @@ struct inpcbtable {
 #define	INP_ATTACHED		0
 #define	INP_BOUND		1
 #define	INP_CONNECTED		2
+
+typedef int (*pcb_overudp_cb_t)(struct mbuf **, int, struct socket *,
+    struct sockaddr *, void *);
 
 #endif /* !_NETINET_IN_PCB_HDR_H_ */

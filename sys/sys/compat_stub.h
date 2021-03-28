@@ -1,4 +1,4 @@
-/*	$NetBSD: compat_stub.h,v 1.22 2019/11/20 19:37:54 pgoyette Exp $	*/
+/*	$NetBSD: compat_stub.h,v 1.25 2020/11/01 18:51:03 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -377,8 +377,21 @@ MODULE_HOOK(coredump_write_hook, int,
     (struct coredump_iostate *, enum uio_seg, const void *, size_t));
 MODULE_HOOK(coredump_netbsd_hook, int,
     (struct lwp *, struct coredump_iostate *));
+MODULE_HOOK(coredump_netbsd32_hook, int,
+    (struct lwp *, struct coredump_iostate *));
+MODULE_HOOK(coredump_elf32_hook, int,
+    (struct lwp *, struct coredump_iostate *));
+MODULE_HOOK(coredump_elf64_hook, int,
+    (struct lwp *, struct coredump_iostate *));
 MODULE_HOOK(uvm_coredump_walkmap_hook, int,
     (struct proc *, int (*)(struct uvm_coredump_state *), void *));
 MODULE_HOOK(uvm_coredump_count_segs_hook, int, (struct proc *));
+
+/*
+ * Hook for amd64 handler for oosyscall for COMPAT_NETBSD32 && COMPAT_10)
+ */
+struct proc;
+struct trapframe;
+MODULE_HOOK(amd64_oosyscall_hook, int, (struct proc *, struct trapframe *));
 
 #endif	/* _SYS_COMPAT_STUB_H */

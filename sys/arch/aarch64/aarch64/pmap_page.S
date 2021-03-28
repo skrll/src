@@ -1,4 +1,4 @@
-/* $NetBSD: pmap_page.S,v 1.4 2018/09/26 16:55:34 ryo Exp $ */
+/* $NetBSD: pmap_page.S,v 1.6 2021/02/11 08:35:12 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -29,19 +29,20 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "opt_gprof.h"
 #include <aarch64/asm.h>
 
 #include "assym.h"
 
-RCSID("$NetBSD: pmap_page.S,v 1.4 2018/09/26 16:55:34 ryo Exp $");
+RCSID("$NetBSD: pmap_page.S,v 1.6 2021/02/11 08:35:12 ryo Exp $");
 
 /* LINTSTUB: void pmap_zero_page(paddr_t pa); */
 ENTRY(pmap_zero_page)
 	/* convert to direct mapped */
-#if ((AARCH64_KSEG_MASK & 0x0000ffffffffffff) == 0)
-	movk	x0, #(AARCH64_KSEG_START >> 48), lsl #48
+#if ((AARCH64_DIRECTMAP_MASK & 0x0000ffffffffffff) == 0)
+	movk	x0, #(AARCH64_DIRECTMAP_START >> 48), lsl #48
 #else
-	mov	x1, #AARCH64_KSEG_START
+	mov	x1, #AARCH64_DIRECTMAP_START
 	orr	x0, x0, x1
 #endif
 
@@ -71,11 +72,11 @@ END(pmap_zero_page)
 /* LINTSTUB: void pmap_copy_page(paddr_t src_pa, paddr_t dst_pa); */
 ENTRY(pmap_copy_page)
 	/* convert to direct mapped */
-#if ((AARCH64_KSEG_MASK & 0x0000ffffffffffff) == 0)
-	movk	x0, #(AARCH64_KSEG_START >> 48), lsl #48
-	movk	x1, #(AARCH64_KSEG_START >> 48), lsl #48
+#if ((AARCH64_DIRECTMAP_MASK & 0x0000ffffffffffff) == 0)
+	movk	x0, #(AARCH64_DIRECTMAP_START >> 48), lsl #48
+	movk	x1, #(AARCH64_DIRECTMAP_START >> 48), lsl #48
 #else
-	mov	x2, #AARCH64_KSEG_START
+	mov	x2, #AARCH64_DIRECTMAP_START
 	orr	x0, x0, x2
 	orr	x1, x1, x2
 #endif

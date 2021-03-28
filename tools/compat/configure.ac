@@ -1,4 +1,4 @@
-#	$NetBSD: configure.ac,v 1.97 2019/06/22 13:42:53 hannken Exp $
+#	$NetBSD: configure.ac,v 1.99 2021/02/25 13:41:58 christos Exp $
 #
 # Autoconf definition file for libnbcompat.
 #
@@ -121,8 +121,11 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #ifdef HAVE_SYS_UIO_H
 #include <sys/uio.h>
 #endif]],
-[[enum uio_rw rw;]])],[AC_DEFINE([HAVE_ENUM_UIO_RW], 1,
-			    [Define if you have the enum uio_rw type.])],)
+[[enum uio_rw rw;]])],
+[AC_MSG_RESULT(yes)
+ AC_DEFINE([HAVE_ENUM_UIO_RW], 1,
+    [Define if you have the enum uio_rw type.])],
+[AC_MSG_RESULT(no)])
 
 AC_MSG_CHECKING([for enum uio_seg])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
@@ -130,8 +133,11 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #ifdef HAVE_SYS_UIO_H
 #include <sys/uio.h>
 #endif]],
-[[enum uio_seg seg;]])],[AC_DEFINE([HAVE_ENUM_UIO_SEG], 1,
-			    [Define if you have the enum uio_seg type.])],)
+[[enum uio_seg seg;]])],
+[AC_MSG_RESULT(yes)
+ AC_DEFINE([HAVE_ENUM_UIO_SEG], 1,
+    [Define if you have the enum uio_seg type.])],
+[AC_MSG_RESULT(no)])
 
 dnl XXX - This is UGLY.  Need a better way to homogenize the bitsized types,
 dnl including use of compiler primitive types via AC_CHECK_SIZEOF.
@@ -173,8 +179,9 @@ AC_CHECK_DECLS([asprintf, asnprintf, vasprintf, vasnprintf, vsnprintf, fgetln, f
 #include <stdio.h>
 ])
 
-AC_CHECK_DECLS([atoll, heapsort, mkdtemp, mkstemp, reallocarr, getsubopt,
-	setenv, strtoi, strtoll, strtou, setprogname, getprogname],,, [
+AC_CHECK_DECLS([atoll, heapsort, mkdtemp, mkstemp, reallocarr, reallocarray,
+	getsubopt, setenv, strtoi, strtoll, strtou, setprogname,
+	getprogname],,, [
 #include <stdlib.h>
 ])
 
@@ -217,7 +224,7 @@ AC_CHECK_FUNCS(atoll asprintf asnprintf basename devname dirfd dirname \
 	getopt getopt_long group_from_gid gid_from_group \
 	heapsort isblank issetugid lchflags lchmod lchown lutimes mkstemp \
 	mkdtemp poll pread putc_unlocked pwcache_userdb pwcache_groupdb \
-	pwrite raise_default_signal random reallocarr setenv \
+	pwrite raise_default_signal random reallocarr reallocarray setenv \
 	setgroupent setprogname setpassent \
 	snprintb_m snprintf strlcat strlcpy strmode \
 	strcasecmp strncasecmp strndup strnlen strsep strsuftoll strtoi \

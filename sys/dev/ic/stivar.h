@@ -1,4 +1,4 @@
-/*	$NetBSD: stivar.h,v 1.9 2014/06/29 04:08:43 tsutsui Exp $	*/
+/*	$NetBSD: stivar.h,v 1.11 2020/12/23 08:34:35 tsutsui Exp $	*/
 
 /*	$OpenBSD: stivar.h,v 1.25 2015/04/05 23:25:57 miod Exp $	*/
 
@@ -115,7 +115,7 @@ struct sti_screen {
 };
 
 /*
- * STI Device state
+ * STI device state
  */
 struct sti_softc {
 	device_t sc_dev;
@@ -145,6 +145,10 @@ void	sti_describe(struct sti_softc *);
 void	sti_end_attach(struct sti_softc *);
 u_int	sti_rom_size(bus_space_tag_t, bus_space_handle_t);
 
+int	sti_init(struct sti_screen *, int);
+#define	STI_TEXTMODE	0x01
+#define	STI_CLEARSCR	0x02
+#define	STI_FBMODE	0x04
 int	sti_ioctl(void *, void *, u_long, void *, int, struct lwp *);
 paddr_t	sti_mmap(void *, void *, off_t, int);
 int	sti_alloc_screen(void *, const struct wsscreen_descr *,

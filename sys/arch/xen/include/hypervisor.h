@@ -1,4 +1,4 @@
-/*	$NetBSD: hypervisor.h,v 1.49 2019/02/04 18:14:53 cherry Exp $	*/
+/*	$NetBSD: hypervisor.h,v 1.52 2020/05/02 16:44:36 bouyer Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -58,6 +58,12 @@
 #include "isa.h"
 #include "pci.h"
 
+struct cpu_info;
+
+int xen_hvm_init(void);
+int xen_hvm_init_cpu(struct cpu_info *);
+void xen_mainbus_attach(device_t, device_t, void *);
+
 struct hypervisor_attach_args {
 	const char 		*haa_busname;
 };
@@ -93,6 +99,7 @@ struct xen_npx_attach_args {
 #include <xen/include/public/memory.h>
 #include <xen/include/public/io/netif.h>
 #include <xen/include/public/io/blkif.h>
+#include <xen/include/public/arch-x86/hvm/start_info.h>
 
 #if __XEN_INTERFACE_VERSION < 0x00030208
 /* Undo namespace damage from xen/include/public/io/ring.h
@@ -108,7 +115,7 @@ struct xen_npx_attach_args {
 #define xen_wmb() membar_consumer()
 #endif /* __XEN_INTERFACE_VERSION */
 
-#include <machine/hypercalls.h>
+#include <machine/xen/hypercalls.h>
 
 #undef u8
 #undef u16
@@ -132,8 +139,13 @@ union start_info_union
 extern union start_info_union start_info_union;
 #define xen_start_info (start_info_union.start_info)
 
+extern struct hvm_start_info *hvm_start_info;
+
 /* For use in guest OSes. */
 extern volatile shared_info_t *HYPERVISOR_shared_info;
+
+/* console */
+extern volatile struct xencons_interface *xencons_interface;
 
 
 /* Structural guest handles introduced in 0x00030201. */
@@ -147,10 +159,6 @@ extern volatile shared_info_t *HYPERVISOR_shared_info;
 struct intrframe;
 struct cpu_info;
 void do_hypervisor_callback(struct intrframe *regs);
-#if NPCI > 0 || NISA > 0
-void hypervisor_prime_pirq_event(int, unsigned int);
-void hypervisor_ack_pirq_event(unsigned int);
-#endif /* NPCI > 0 || NISA > 0 */
 
 extern int xen_version;
 #define XEN_MAJOR(x) (((x) & 0xffff0000) >> 16)
@@ -170,7 +178,7 @@ void hypervisor_send_event(struct cpu_info *, unsigned int);
 void hypervisor_unmask_event(unsigned int);
 void hypervisor_mask_event(unsigned int);
 void hypervisor_clear_event(unsigned int);
-void hypervisor_enable_ipl(unsigned int);
+void hypervisor_enable_sir(unsigned int);
 void hypervisor_set_ipending(uint32_t, int, int);
 void hypervisor_machdep_attach(void);
 void hypervisor_machdep_resume(void);
@@ -194,5 +202,7 @@ hypervisor_notify_via_evtchn(unsigned int port)
 	op.u.send.port = port;
 	(void)HYPERVISOR_event_channel_op(&op);
 }
+
+void xen_init_ksyms(void);
 
 #endif /* _XEN_HYPERVISOR_H_ */

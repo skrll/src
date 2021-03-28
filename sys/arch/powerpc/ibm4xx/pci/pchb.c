@@ -1,4 +1,4 @@
-/*	$NetBSD: pchb.c,v 1.11 2012/01/27 18:53:00 para Exp $	*/
+/*	$NetBSD: pchb.c,v 1.14 2020/07/07 03:38:48 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -28,17 +28,20 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pchb.c,v 1.11 2012/01/27 18:53:00 para Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pchb.c,v 1.14 2020/07/07 03:38:48 thorpej Exp $");
 
 #include "pci.h"
+
+#ifdef _KERNEL_OPT
 #include "opt_pci.h"
+#endif
 
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/extent.h>
 #include <sys/malloc.h>
 
 #define _IBM4XX_BUS_DMA_PRIVATE
@@ -159,16 +162,15 @@ pchbattach(device_t parent, device_t self, void *aux)
 		panic("pchbattach: can't init MEM tag");
 
 #ifdef PCI_NETBSD_CONFIGURE
-	struct extent *memext = extent_create("pcimem",
-	    IBM405GP_PCI_MEM_START,
-	    IBM405GP_PCI_MEM_START + 0x1fffffff, NULL, 0,
-	    EX_NOWAIT);
-	struct extent *ioext = extent_create("pciio",
-	    IBM405GP_PCI_PCI_IO_START,
-	    IBM405GP_PCI_PCI_IO_START + 0xffff, NULL, 0, EX_NOWAIT);
-	pci_configure_bus(pc, ioext, memext, NULL, 0, 32);
-	extent_destroy(ioext);
-	extent_destroy(memext);
+	struct pciconf_resources *pcires = pciconf_resource_init();
+
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    IBM405GP_PCI_PCI_IO_START, 0x10000);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    IBM405GP_PCI_MEM_START, 0x20000000);
+
+	pci_configure_bus(pc, pcires, 0, 32);
+	pciconf_resource_fini(pcires);
 #endif /* PCI_NETBSD_CONFIGURE */
 
 #ifdef PCI_CONFIGURE_VERBOSE

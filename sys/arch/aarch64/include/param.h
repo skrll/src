@@ -1,4 +1,4 @@
-/* $NetBSD: param.h,v 1.13 2019/11/24 04:08:36 rin Exp $ */
+/* $NetBSD: param.h,v 1.15 2021/01/24 12:51:32 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -131,6 +131,12 @@
 
 #define MCLBYTES		(1 << MCLSHIFT)	/* size of a m_buf cluster */
 
+#ifndef NFS_RSIZE
+#define NFS_RSIZE		32768	/* Default NFS read data size */
+#endif
+#ifndef NFS_WSIZE
+#define NFS_WSIZE		32768	/* Default NFS write data size */
+#endif
 
 #ifndef MSGBUFSIZE
 #define MSGBUFSIZE		65536	/* default message buffer size */
@@ -164,8 +170,6 @@ void delay(unsigned int);
 /* compatibility for arm */
 #define arm_btop(x)		aarch64_btop(x)
 #define arm_ptob(x)		aarch64_ptob(x)
-#define arm_trunc_page(x)	aarch64_trunc_page(x)
-#define arm_round_page(x)	aarch64_round_page(x)
 
 #elif defined(__arm__)
 

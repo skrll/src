@@ -1,4 +1,4 @@
-/*	$NetBSD: gus.c,v 1.117 2019/06/08 08:02:38 isaki Exp $	*/
+/*	$NetBSD: gus.c,v 1.119 2021/02/06 07:16:18 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1999, 2008 The NetBSD Foundation, Inc.
@@ -88,7 +88,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gus.c,v 1.117 2019/06/08 08:02:38 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gus.c,v 1.119 2021/02/06 07:16:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1359,14 +1359,10 @@ gusclose(void *addr)
 	sc = addr;
 	DPRINTF(("gus_close: sc=%p\n", sc));
 
+	KASSERT((sc->sc_flags & (GUS_DMAOUT_ACTIVE | GUS_LOCKED)) == 0);
+	KASSERT((sc->sc_flags & GUS_DMAIN_ACTIVE) == 0);
 
-/*	if (sc->sc_flags & GUS_DMAOUT_ACTIVE) */ {
-		gus_halt_out_dma(sc);
-	}
-/*	if (sc->sc_flags & GUS_DMAIN_ACTIVE) */ {
-		gus_halt_in_dma(sc);
-	}
-	sc->sc_flags &= ~(GUS_OPEN|GUS_LOCKED|GUS_DMAOUT_ACTIVE|GUS_DMAIN_ACTIVE);
+	sc->sc_flags &= ~GUS_OPEN;
 
 	/* turn off speaker, etc. */
 
@@ -2332,7 +2328,6 @@ gusmax_round_blocksize(void *addr, int blocksize,
 
 	ac = addr;
 	sc = ac->sc_ad1848.parent;
-/*	blocksize = ad1848_round_blocksize(ac, blocksize, mode, param);*/
 	return gus_round_blocksize(sc, blocksize, mode, param);
 }
 

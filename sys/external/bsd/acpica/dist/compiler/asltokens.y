@@ -6,7 +6,7 @@ NoEcho('
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -314,6 +314,7 @@ NoEcho('
 %token <i> PARSEOP_REGIONSPACE_PCC
 %token <i> PARSEOP_REGIONSPACE_PCI
 %token <i> PARSEOP_REGIONSPACE_PCIBAR
+%token <i> PARSEOP_REGIONSPACE_PRM
 %token <i> PARSEOP_REGIONSPACE_SMBUS
 %token <i> PARSEOP_REGISTER
 %token <i> PARSEOP_RELEASE

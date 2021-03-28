@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1.1.1 2016/06/10 03:42:14 mrg Exp $
+#	$NetBSD: Makefile,v 1.3 2020/11/05 16:06:41 tsutsui Exp $
 
 .include <bsd.own.mk>
 
@@ -31,15 +31,13 @@ SRCS+=	miinitext.c
 .PATH:	${X11SRCDIR.xorg-server}/fb
 SRCS+=	fbcmap_mi.c
 
-CPPFLAGS+=	-I${X11SRCDIR.xorg-server}/include \
-		-I${X11SRCDIR.xorg-server}/hw/netbsd/x68k \
-		-I${X11SRCDIR.xorg-server}/fb \
-		-I${X11SRCDIR.xorg-server}/mi \
-		-I${X11SRCDIR.xorg-server}/render \
-		-I${DESTDIR}${X11INCDIR}/X11
+CPPFLAGS+=	-I${X11SRCDIR.xorg-server}/hw/netbsd/x68k \
+		${X11INCS.DIX}
 
 CPPFLAGS+=	-UXFree86LOADER -UXF86VIDMODE -UXFreeXDGA -UXF86MISC \
 		-UXF86DRI -UXF86BIGFONT
+
+CPPFLAGS+=	-UHAVE_XORG_CONFIG_H
 
 CPPFLAGS.x68kConfig.c=	 -DX11_LIBDIR=\"${X11ETCDIR}\"
 
@@ -58,7 +56,6 @@ LDADD+= ${LDADD.dix} \
 	${LDADD.xfixes} \
 	${LDADD.damageext} \
 	${LDADD.miext/damage} \
-	${LDADD.miext/shadow} \
 	${LDADD.miext/sync} \
 	${LDADD.Xi} \
 	-lXfont \
@@ -80,7 +77,6 @@ DPADD+= ${LDADD.dix} \
 	${DPADD.xfixes} \
 	${DPADD.damageext} \
 	${DPADD.miext/damage} \
-	${DPADD.miext/shadow} \
 	${DPADD.miext/sync} \
 	${DPADD.Xi} \
 	${LIBXFONT} \

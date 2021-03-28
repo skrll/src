@@ -1,4 +1,4 @@
-/*	$NetBSD: if_hvn.c,v 1.13 2019/12/10 12:20:20 nonaka Exp $	*/
+/*	$NetBSD: if_hvn.c,v 1.20 2021/01/29 04:38:49 nonaka Exp $	*/
 /*	$OpenBSD: if_hvn.c,v 1.39 2018/03/11 14:31:34 mikeb Exp $	*/
 
 /*-
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_hvn.c,v 1.13 2019/12/10 12:20:20 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_hvn.c,v 1.20 2021/01/29 04:38:49 nonaka Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -66,6 +66,9 @@ __KERNEL_RCSID(0, "$NetBSD: if_hvn.c,v 1.13 2019/12/10 12:20:20 nonaka Exp $");
 
 #ifndef EVL_PRIO_BITS
 #define EVL_PRIO_BITS	13
+#endif
+#ifndef EVL_CFI_BITS
+#define EVL_CFI_BITS	12
 #endif
 
 #define HVN_NVS_MSGSIZE			32
@@ -130,6 +133,7 @@ struct hvn_softc {
 
 	struct ethercom			sc_ec;
 	struct ifmedia			sc_media;
+	kmutex_t			sc_media_lock;	/* XXX */
 	struct if_percpuq		*sc_ipq;
 	int				sc_link_state;
 	int				sc_promisc;
@@ -291,8 +295,10 @@ hvn_attach(device_t parent, device_t self, void *aux)
 
 	/* Initialize ifmedia structures. */
 	sc->sc_ec.ec_ifmedia = &sc->sc_media;
-	ifmedia_init(&sc->sc_media, IFM_IMASK, hvn_media_change,
-	    hvn_media_status);
+	/* XXX media locking needs revisiting */
+	mutex_init(&sc->sc_media_lock, MUTEX_DEFAULT, IPL_SOFTNET);
+	ifmedia_init_with_lock(&sc->sc_media, IFM_IMASK,
+	    hvn_media_change, hvn_media_status, &sc->sc_media_lock);
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_MANUAL, 0, NULL);
 	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_MANUAL);
 
@@ -338,7 +344,9 @@ hvn_attach(device_t parent, device_t self, void *aux)
 
 fail4:	hvn_rndis_detach(sc);
 	if_percpuq_destroy(sc->sc_ipq);
-fail3:	hvn_tx_ring_destroy(sc);
+fail3:	ifmedia_fini(&sc->sc_media);
+	mutex_destroy(&sc->sc_media_lock);
+	hvn_tx_ring_destroy(sc);
 fail2:	hvn_rx_ring_destroy(sc);
 fail1:	hvn_nvs_detach(sc);
 }
@@ -359,6 +367,8 @@ hvn_detach(device_t self, int flags)
 
 	ether_ifdetach(ifp);
 	if_detach(ifp);
+	ifmedia_fini(&sc->sc_media);
+	mutex_destroy(&sc->sc_media_lock);
 	if_percpuq_destroy(sc->sc_ipq);
 
 	hvn_rndis_detach(sc);
@@ -377,26 +387,7 @@ hvn_ioctl(struct ifnet *ifp, u_long command, void * data)
 
 	s = splnet();
 
-	switch (command) {
-	case SIOCSIFFLAGS:
-		if (ifp->if_flags & IFF_UP) {
-			if (ifp->if_flags & IFF_RUNNING)
-				error = ENETRESET;
-			else {
-				error = hvn_init(ifp);
-				if (error)
-					ifp->if_flags &= ~IFF_UP;
-			}
-		} else {
-			if (ifp->if_flags & IFF_RUNNING)
-				hvn_stop(ifp, 1);
-		}
-		break;
-	default:
-		error = ether_ioctl(ifp, command, data);
-		break;
-	}
-
+	error = ether_ioctl(ifp, command, data);
 	if (error == ENETRESET) {
 		if (ifp->if_flags & IFF_RUNNING)
 			hvn_iff(sc);
@@ -495,7 +486,7 @@ hvn_start(struct ifnet *ifp)
 
 		if (hvn_encap(sc, m, &txd)) {
 			/* the chain is too large */
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			m_freem(m);
 			continue;
 		}
@@ -504,7 +495,7 @@ hvn_start(struct ifnet *ifp)
 
 		if (hvn_rndis_output(sc, txd)) {
 			hvn_decap(sc, txd);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			m_freem(m);
 			continue;
 		}
@@ -577,13 +568,14 @@ hvn_encap(struct hvn_softc *sc, struct mbuf *m, struct hvn_tx_desc **txd0)
 	}
 	txd->txd_buf = m;
 
-	if (m->m_flags & M_VLANTAG) {
+	if (vlan_has_tag(m)) {
 		uint32_t vlan;
 		char *cp;
+		uint16_t tag;
 
-		vlan = NDIS_VLAN_INFO_MAKE(
-		    EVL_VLANOFTAG(m->m_pkthdr.ether_vtag),
-		    EVL_PRIOFTAG(m->m_pkthdr.ether_vtag), 0);
+		tag = vlan_get_tag(m);
+		vlan = NDIS_VLAN_INFO_MAKE(EVL_VLANOFTAG(tag),
+		    EVL_PRIOFTAG(tag), EVL_CFIOFTAG(tag));
 		cp = hvn_rndis_pktinfo_append(pkt, HVN_RNDIS_PKT_LEN,
 		    NDIS_VLAN_INFO_SIZE, NDIS_PKTINFO_TYPE_VLAN);
 		memcpy(cp, &vlan, NDIS_VLAN_INFO_SIZE);
@@ -674,7 +666,7 @@ hvn_txeof(struct hvn_softc *sc, uint64_t tid)
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 	bus_dmamap_unload(sc->sc_dmat, txd->txd_dmap);
 	m_freem(m);
-	ifp->if_opackets++;
+	if_statinc(ifp, if_opackets);
 
 	txd->txd_ready = 1;
 
@@ -1078,7 +1070,8 @@ hvn_nvs_cmd(struct hvn_softc *sc, void *cmd, size_t cmdsize, uint64_t tid,
 			if (cold)
 				delay(1000);
 			else
-				tsleep(cmd, PRIBIO, "nvsout", mstohz(1));
+				tsleep(cmd, PRIBIO, "nvsout",
+				    uimax(1, mstohz(1)));
 		} else if (rv) {
 			DPRINTF("%s: NVSP operation %u send error %d\n",
 			    device_xname(sc->sc_dev), hdr->nvs_type, rv);
@@ -1103,7 +1096,7 @@ hvn_nvs_cmd(struct hvn_softc *sc, void *cmd, size_t cmdsize, uint64_t tid,
 			splx(s);
 		} else
 			tsleep(sc->sc_nvsrsp, PRIBIO | PCATCH, "nvscmd",
-			    mstohz(1));
+			    uimax(1, mstohz(1)));
 	} while (--timo > 0 && sc->sc_nvsdone != 1);
 
 	if (timo == 0 && sc->sc_nvsdone != 1) {
@@ -1401,7 +1394,8 @@ hvn_rndis_cmd(struct hvn_softc *sc, struct rndis_cmd *rc, int timo)
 			if (cold)
 				delay(1000);
 			else
-				tsleep(rc, PRIBIO, "rndisout", mstohz(1));
+				tsleep(rc, PRIBIO, "rndisout",
+				    uimax(1, mstohz(1)));
 		} else if (rv) {
 			DPRINTF("%s: RNDIS operation %u send error %d\n",
 			    device_xname(sc->sc_dev), hdr->rm_type, rv);
@@ -1430,7 +1424,8 @@ hvn_rndis_cmd(struct hvn_softc *sc, struct rndis_cmd *rc, int timo)
 			hvn_nvs_intr(sc);
 			splx(s);
 		} else
-			tsleep(rc, PRIBIO | PCATCH, "rndiscmd", mstohz(1));
+			tsleep(rc, PRIBIO | PCATCH, "rndiscmd",
+			    uimax(1, mstohz(1)));
 	} while (--timo > 0 && rc->rc_done != 1);
 
 	bus_dmamap_sync(sc->sc_dmat, rc->rc_dmap, 0, PAGE_SIZE,
@@ -1556,7 +1551,7 @@ hvn_rxeof(struct hvn_softc *sc, uint8_t *buf, uint32_t len)
 
 	if ((m = hvn_devget(sc, buf + RNDIS_HEADER_OFFSET + pkt->rm_dataoffset,
 	    pkt->rm_datalen)) == NULL) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -1590,10 +1585,10 @@ hvn_rxeof(struct hvn_softc *sc, uint8_t *buf, uint32_t len)
 		case NDIS_PKTINFO_TYPE_VLAN:
 			memcpy(&vlan, pi->rm_data, sizeof(vlan));
 			if (vlan != 0xffffffff) {
-				m->m_pkthdr.ether_vtag =
-				    NDIS_VLAN_INFO_ID(vlan) |
-				    (NDIS_VLAN_INFO_PRI(vlan) << EVL_PRIO_BITS);
-				m->m_flags |= M_VLANTAG;
+				uint16_t t = NDIS_VLAN_INFO_ID(vlan);
+				t |= NDIS_VLAN_INFO_PRI(vlan) << EVL_PRIO_BITS;
+				t |= NDIS_VLAN_INFO_CFI(vlan) << EVL_CFI_BITS;
+				vlan_set_tag(m, t);
 			}
 			break;
 		default:

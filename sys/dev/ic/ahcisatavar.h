@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisatavar.h,v 1.23 2019/09/29 21:16:14 jakllsch Exp $	*/
+/*	$NetBSD: ahcisatavar.h,v 1.26 2020/12/28 14:08:42 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -58,7 +58,7 @@ struct ahci_softc {
 #define AHCI_PCI_QUIRK_FORCE	__BIT(0)  /* force attach */
 #define AHCI_PCI_QUIRK_BAD64	__BIT(1)  /* broken 64-bit DMA */
 #define AHCI_QUIRK_BADPMP	__BIT(2)  /* broken PMP support, ignore */
-#define AHCI_QUIRK_SKIP_RESET	__BIT(4)  /* skip drive reset sequence */
+#define AHCI_QUIRK_BADNCQ	__BIT(3)  /* possibly broken NCQ support, ignore */
 
 	uint32_t sc_ahci_cap;	/* copy of AHCI_CAP */
 	int sc_ncmds; /* number of command slots */
@@ -114,7 +114,7 @@ struct ahci_softc {
     (sc)->sc_ahcih, (reg))
 #define AHCI_WRITE(sc, reg, val) bus_space_write_4((sc)->sc_ahcit, \
     (sc)->sc_ahcih, (reg), (val))
-    
+
 #define AHCI_CH2SC(chp)		(struct ahci_softc *)((chp)->ch_atac)
 
 void ahci_attach(struct ahci_softc *);

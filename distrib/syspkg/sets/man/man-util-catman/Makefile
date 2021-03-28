@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.2 2004/06/30 03:37:48 jmc Exp $
+#	$NetBSD: Makefile,v 1.4 2020/11/10 21:47:48 kamil Exp $
 
 PKGBASE=man-util-catman
 TINY_VERSION=0

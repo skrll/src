@@ -1,4 +1,4 @@
-/*	$NetBSD: i2cvar.h,v 1.18 2018/12/10 00:31:45 thorpej Exp $	*/
+/*	$NetBSD: i2cvar.h,v 1.23 2021/01/25 12:15:32 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -39,16 +39,23 @@
 #define	_DEV_I2C_I2CVAR_H_
 
 #include <sys/device.h>
+#include <sys/mutex.h>
 #include <dev/i2c/i2c_io.h>
 #include <prop/proplib.h>
 
 /* Flags passed to i2c routines. */
-#define	I2C_F_WRITE		0x00	/* new transfer is a write */
-#define	I2C_F_READ		0x01	/* new transfer is a read */
-#define	I2C_F_LAST		0x02	/* last byte of read */
-#define	I2C_F_STOP		0x04	/* send stop after byte */
-#define	I2C_F_POLL		0x08	/* poll, don't sleep */
-#define	I2C_F_PEC		0x10	/* smbus packet error checking */
+#define	I2C_F_WRITE	0		/* new transfer is a write */
+#define	I2C_F_READ	__BIT(0)	/* new transfer is a read */
+#define	I2C_F_LAST	__BIT(1)	/* last byte of read */
+#define	I2C_F_STOP	__BIT(2)	/* send stop after byte */
+#define	I2C_F_POLL	__BIT(3)	/* poll, don't sleep */
+#define	I2C_F_PEC	__BIT(4)	/* smbus packet error checking */
+#define	I2C_F_SPEED	__BITS(28,31)	/* I2C transfer speed selector */
+
+#define	I2C_SPEED_SM		0	/* standard mode (100Kb/s) */
+#define	I2C_SPEED_FM		1	/* fast mode (400Kb/s) */
+#define	I2C_SPEED_FMPLUS	2	/* fast mode+ (1Mb/s) */
+#define	I2C_SPEED_HS		3	/* high speed (3.4Mb/s) */
 
 /* i2c bus instance properties */
 #define	I2C_PROP_INDIRECT_PROBE_STRATEGY	\
@@ -60,8 +67,8 @@
 #define	I2C_PROBE_STRATEGY_NONE			\
 				"none"
 
-#define	I2C_PROP_INDIRECT_DEVICE_WHITELIST	\
-				"i2c-indirect-device-whitelist"
+#define	I2C_PROP_INDIRECT_DEVICE_PERMITLIST	\
+				"i2c-indirect-device-permitlist"
 	/* value is a prop_array of prop_strings */
 
 struct ic_intr_list {
@@ -90,10 +97,12 @@ typedef struct i2c_controller {
 	 * the driver is finished, it should release the
 	 * bus.
 	 *
-	 * This is provided by the back-end since a single
-	 * controller may present e.g. i2c and smbus views
-	 * of the same set of i2c wires.
+	 * The main synchronization logic is handled by the
+	 * generic i2c layer, but optional hooks to back-end
+	 * drivers are provided in case additional processing
+	 * is needed (e.g. enabling the i2c controller).
 	 */
+	kmutex_t ic_bus_lock;
 	int	(*ic_acquire_bus)(void *, int);
 	void	(*ic_release_bus)(void *, int);
 
@@ -119,14 +128,17 @@ typedef struct i2c_controller {
 	const char *ic_devname;
 } *i2c_tag_t;
 
-/* I2C bus types */
-#define	I2C_TYPE_SMBUS	1
-
 /* Used to attach the i2c framework to the controller. */
 struct i2cbus_attach_args {
 	i2c_tag_t iba_tag;		/* the controller */
-	int iba_type;			/* bus type */
 	prop_array_t iba_child_devices;	/* child devices (direct config) */
+};
+
+/* Type of value stored in "ia_cookie" */
+enum i2c_cookie_type {
+	I2C_COOKIE_NONE,		/* Cookie is not valid */
+	I2C_COOKIE_OF,			/* Cookie is an OF node phandle */
+	I2C_COOKIE_ACPI,		/* Cookie is an ACPI handle */
 };
 
 /* Used to attach devices on the i2c bus. */
@@ -149,25 +161,30 @@ struct i2c_attach_args {
 	 * may be present. Example: on OpenFirmware machines the device
 	 * tree OF node - if available. This info is hard to transport
 	 * down to MD drivers through the MI i2c bus otherwise.
-	 * 
+	 *
 	 * On ACPI platforms this is the ACPI_HANDLE of the device.
 	 */
 	uintptr_t	ia_cookie;	/* OF node in openfirmware machines */
+	enum i2c_cookie_type ia_cookietype; /* Value type of cookie */
 };
 
 /*
  * API presented to i2c controllers.
  */
 int	iicbus_print(void *, const char *);
+void	iic_tag_init(i2c_tag_t);
+void	iic_tag_fini(i2c_tag_t);
 
 /*
  * API presented to i2c devices.
  */
 int	iic_compatible_match(const struct i2c_attach_args *,
-			     const struct device_compatible_entry *,
-			     const struct device_compatible_entry **);
+			     const struct device_compatible_entry *);
 bool	iic_use_direct_match(const struct i2c_attach_args *, const cfdata_t,
 			     const struct device_compatible_entry *, int *);
+const struct device_compatible_entry *
+	iic_compatible_lookup(const struct i2c_attach_args *,
+			      const struct device_compatible_entry *);
 
 /*
  * Constants to indicate the quality of a match made by a driver's

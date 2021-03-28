@@ -1,4 +1,4 @@
-/*	$NetBSD: netstat_hostops.c,v 1.2 2019/08/18 04:14:40 kamil Exp $	*/
+/*	$NetBSD: netstat_hostops.c,v 1.4 2020/04/03 16:41:59 christos Exp $	*/
 
 /*
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -26,22 +26,4 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
-#ifndef lint
-__RCSID("$NetBSD: netstat_hostops.c,v 1.2 2019/08/18 04:14:40 kamil Exp $");
-#endif /* !lint */
-
-#include <sys/types.h>
-#include <sys/sysctl.h>
-
-#include "prog_ops.h"
-
-const struct prog_ops prog_ops = {
-	.op_sysctl = sysctl,
-
-	.op_sysctlbyname = sysctlbyname,
-
-	.op_sysctlgetmibinfo = sysctlgetmibinfo,
-
-	.op_sysctlnametomib = sysctlnametomib,
-};
+#include "route_hostops.c"

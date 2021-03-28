@@ -1,4 +1,4 @@
-/* $NetBSD: bcm2835_genfb.c,v 1.9 2018/04/01 04:35:03 ryo Exp $ */
+/* $NetBSD: bcm2835_genfb.c,v 1.12 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2013 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,15 +31,16 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_genfb.c,v 1.9 2018/04/01 04:35:03 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_genfb.c,v 1.12 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
-#include <sys/systm.h>
-#include <sys/device.h>
-#include <sys/conf.h>
 #include <sys/bus.h>
+#include <sys/conf.h>
+#include <sys/device.h>
+#include <sys/endian.h>
 #include <sys/kmem.h>
+#include <sys/systm.h>
 
 #include <dev/fdt/fdtvar.h>
 
@@ -70,13 +71,17 @@ int (*bcmgenfb_ioctl_handler)(void *, void *, u_long, void *, int, struct lwp *)
 CFATTACH_DECL_NEW(bcmgenfb, sizeof(struct bcmgenfb_softc),
     bcmgenfb_match, bcmgenfb_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "brcm,bcm2835-fb" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 bcmgenfb_match(device_t parent, cfdata_t match, void *aux)
 {
-	const char * const compatible[] = { "brcm,bcm2835-fb", NULL };
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -96,6 +101,9 @@ bcmgenfb_attach(device_t parent, device_t self, void *aux)
 	sc->sc_wstype = WSDISPLAY_TYPE_VC4;
 	prop_dictionary_get_uint32(dict, "wsdisplay_type", &sc->sc_wstype);
 	prop_dictionary_get_bool(dict, "is_console", &is_console);
+#if BYTE_ORDER == BIG_ENDIAN
+	prop_dictionary_set_bool(dict, "is_swapped", true);
+#endif
 
 	genfb_init(&sc->sc_gen);
 

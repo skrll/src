@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -135,6 +135,7 @@ for mode in native dnsrps; do
     else
       echo_i "running DNSRPS sub-test"
       $PERL $SYSTEMTESTTOP/start.pl --noclean --restart --port ${PORT} rpzrecurse
+      sleep 3
     fi
     ;;
   esac
@@ -258,7 +259,7 @@ for mode in native dnsrps; do
     echo_i "adding an NSDNAME policy"
     cp ns2/db.6a.00.policy.local ns2/saved.policy.local
     cp ns2/db.6b.00.policy.local ns2/db.6a.00.policy.local
-    $RNDC -c ../common/rndc.conf -s 10.53.0.2 -p ${CONTROLPORT} reload 6a.00.policy.local 2>&1 | sed 's/^/I:ns2 /' | cat_i
+    $RNDC -c ../common/rndc.conf -s 10.53.0.2 -p ${CONTROLPORT} reload 6a.00.policy.local 2>&1 | sed 's/^/ns2 /' | cat_i
     test -f dnsrpzd.pid && $KILL -USR1 `cat dnsrpzd.pid`
     sleep 1
     t=`expr $t + 1`
@@ -268,7 +269,7 @@ for mode in native dnsrps; do
     sleep 1
     echo_i "removing the NSDNAME policy"
     cp ns2/db.6c.00.policy.local ns2/db.6a.00.policy.local
-    $RNDC -c ../common/rndc.conf -s 10.53.0.2 -p ${CONTROLPORT} reload 6a.00.policy.local 2>&1 | sed 's/^/I:ns2 /' | cat_i
+    $RNDC -c ../common/rndc.conf -s 10.53.0.2 -p ${CONTROLPORT} reload 6a.00.policy.local 2>&1 | sed 's/^/ns2 /' | cat_i
     test -f dnsrpzd.pid && $KILL -USR1 `cat dnsrpzd.pid`
     sleep 1
     echo_i "resuming authority server"
@@ -310,7 +311,7 @@ for mode in native dnsrps; do
     fi
     echo_i "adding an NSDNAME policy"
     cp ns2/db.6b.00.policy.local ns2/db.6a.00.policy.local
-    $RNDC -c ../common/rndc.conf -s 10.53.0.2 -p ${CONTROLPORT} reload 6a.00.policy.local 2>&1 | sed 's/^/I:ns2 /' | cat_i
+    $RNDC -c ../common/rndc.conf -s 10.53.0.2 -p ${CONTROLPORT} reload 6a.00.policy.local 2>&1 | sed 's/^/ns2 /' | cat_i
     test -f dnsrpzd.pid && $KILL -USR1 `cat dnsrpzd.pid`
     sleep 1
     t=`expr $t + 1`
@@ -414,15 +415,15 @@ for mode in native dnsrps; do
   $DIG $DIGOPTS l2.l1.l0 a @10.53.0.2 -p ${PORT} -b 10.53.0.3 >> dig.out.${t}
   $DIG $DIGOPTS l2.l1.l0 a @10.53.0.2 -p ${PORT} -b 10.53.0.2 >> dig.out.${t}
   sed -n "$cur,"'$p' < ns2/named.run | grep "view recursive: rpz CLIENT-IP Local-Data rewrite l2.l1.l0/A/IN via 32.4.0.53.10.rpz-client-ip.log1" > /dev/null && {
-    echo_i " failed: unexpected rewrite message for policy zone log1 was logged"
+    echo_ic "failed: unexpected rewrite message for policy zone log1 was logged"
     status=1
   }
   sed -n "$cur,"'$p' < ns2/named.run | grep "view recursive: rpz CLIENT-IP Local-Data rewrite l2.l1.l0/A/IN via 32.3.0.53.10.rpz-client-ip.log2" > /dev/null || {
-    echo_i " failed: expected rewrite message for policy zone log2 was not logged"
+    echo_ic "failed: expected rewrite message for policy zone log2 was not logged"
     status=1
   }
   sed -n "$cur,"'$p' < ns2/named.run | grep "view recursive: rpz CLIENT-IP Local-Data rewrite l2.l1.l0/A/IN via 32.2.0.53.10.rpz-client-ip.log3" > /dev/null || {
-    echo_i " failed: expected rewrite message for policy zone log3 was not logged"
+    echo_ic "failed: expected rewrite message for policy zone log3 was not logged"
     status=1
   }
 
@@ -479,13 +480,28 @@ for mode in native dnsrps; do
   add_test_marker 10.53.0.2
   run_server invalidprefixlength
   grep "invalid rpz IP address \"1000.4.0.53.10.rpz-client-ip.invalidprefixlength\"; invalid prefix length of 1000$" ns2/named.run > /dev/null || {
-    echo_i " failed: expected that invalid prefix length error would be logged"
+    echo_ic "failed: expected that invalid prefix length error would be logged"
     status=1
   }
 
   t=`expr $t + 1`
-  echo_i "checking 'nsip-wait-recurse no' is faster than 'nsip-wait-recurse yes' ($t)"
+  echo_i "testing wildcard passthru before explicit drop (${t})"
   add_test_marker 10.53.0.2
+  run_server wildcard4
+  $DIG $DIGOPTS example.com a @10.53.0.2 -p ${PORT} > dig.out.${t}.1
+  grep "status: NOERROR" dig.out.${t}.1 > /dev/null || {
+    echo_i "test ${t} failed"
+    status=1
+  }
+  $DIG $DIGOPTS www.example.com a @10.53.0.2 -p ${PORT} > dig.out.${t}.2
+  grep "status: NOERROR" dig.out.${t}.2 > /dev/null || {
+    echo_i "test ${t} failed"
+    status=1
+  }
+  
+  t=`expr $t + 1`
+  echo_i "checking 'nsip-wait-recurse no' is faster than 'nsip-wait-recurse yes' ($t)"
+  add_test_marker 10.53.0.2 10.53.0.3
   echo_i "timing 'nsip-wait-recurse yes' (default)"
   ret=0
   t1=`$PERL -e 'print time()."\n";'`
@@ -495,8 +511,10 @@ for mode in native dnsrps; do
   echo_i "elasped time $p1 seconds"
 
   $RNDC  -c ../common/rndc.conf -s 10.53.0.3 -p ${CONTROLPORT} flush
-  cp -f ns3/named2.conf ns3/named.conf
+  copy_setports ns3/named2.conf.in ns3/named.conf
+  nextpart ns3/named.run > /dev/null
   $RNDC  -c ../common/rndc.conf -s 10.53.0.3 -p ${CONTROLPORT} reload > /dev/null
+  wait_for_log 20 "rpz: policy: reload done" ns3/named.run || ret=1
 
   echo_i "timing 'nsip-wait-recurse no'"
   t3=`$PERL -e 'print time()."\n";'`

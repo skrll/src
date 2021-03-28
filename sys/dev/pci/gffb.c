@@ -1,4 +1,4 @@
-/*	$NetBSD: gffb.c,v 1.13 2018/07/26 19:32:25 macallan Exp $	*/
+/*	$NetBSD: gffb.c,v 1.15 2021/02/25 19:11:44 macallan Exp $	*/
 
 /*
  * Copyright (c) 2013 Michael Lorenz
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.13 2018/07/26 19:32:25 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.15 2021/02/25 19:11:44 macallan Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -45,8 +45,6 @@ __KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.13 2018/07/26 19:32:25 macallan Exp $");
 #include <sys/lwp.h>
 #include <sys/kauth.h>
 #include <sys/atomic.h>
-
-#include <dev/videomode/videomode.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
@@ -61,8 +59,6 @@ __KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.13 2018/07/26 19:32:25 macallan Exp $");
 #include <dev/wscons/wsdisplay_vconsvar.h>
 #include <dev/pci/wsdisplay_pci.h>
 #include <dev/wscons/wsdisplay_glyphcachevar.h>
-
-#include <dev/i2c/i2cvar.h>
 
 #include "opt_gffb.h"
 #include "opt_vcons.h"
@@ -168,6 +164,8 @@ gffb_match(device_t parent, cfdata_t match, void *aux)
 	if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_NVIDIA_GEFORCE2MX)
 		return 100;
 	if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_NVIDIA_GEFORCE_6800U)
+		return 100;
+	if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_NVIDIA_GF_FXGO5200)
 		return 100;
 	return (0);
 }

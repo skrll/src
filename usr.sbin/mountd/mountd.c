@@ -1,4 +1,4 @@
-/* 	$NetBSD: mountd.c,v 1.130 2018/01/09 03:31:13 christos Exp $	 */
+/* 	$NetBSD: mountd.c,v 1.134 2021/02/16 10:00:27 hannken Exp $	 */
 
 /*
  * Copyright (c) 1989, 1993
@@ -42,7 +42,7 @@ __COPYRIGHT("@(#) Copyright (c) 1989, 1993\
 #if 0
 static char     sccsid[] = "@(#)mountd.c  8.15 (Berkeley) 5/1/95";
 #else
-__RCSID("$NetBSD: mountd.c,v 1.130 2018/01/09 03:31:13 christos Exp $");
+__RCSID("$NetBSD: mountd.c,v 1.134 2021/02/16 10:00:27 hannken Exp $");
 #endif
 #endif				/* not lint */
 
@@ -66,6 +66,7 @@ __RCSID("$NetBSD: mountd.c,v 1.130 2018/01/09 03:31:13 christos Exp $");
 
 #ifdef MOUNTD_RUMP
 #include <rump/rump.h>
+#include <rump/rump_syscallshotgun.h>
 #include <rump/rump_syscalls.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -225,7 +226,8 @@ __dead static void no_nfs(int);
 static struct exportlist *exphead;
 static struct mountlist *mlhead;
 static struct grouplist *grphead;
-static const char *exname;
+static char *const exnames_default[] = { __UNCONST(_PATH_EXPORTS), NULL };
+static char *const *exnames;
 static struct uucred def_anon = {
 	1,
 	(uid_t) -2,
@@ -238,7 +240,7 @@ int      opt_flags;
 static int	have_v6 = 1;
 const int ninumeric = NI_NUMERICHOST;
 
-int      debug = DEBUGGING;
+int      mountd_debug = DEBUGGING;
 #if 0
 static void SYSLOG(int, const char *,...);
 #endif
@@ -369,7 +371,7 @@ main(int argc, char **argv)
 			forcedport = atoi(optarg);
 			break;
 		case 'd':
-			debug = 1;
+			mountd_debug = 1;
 			break;
 		case 'N':
 			noprivports = 1;
@@ -383,15 +385,15 @@ main(int argc, char **argv)
 #ifdef IPSEC
 			    " [-P policy]"
 #endif
-			    " [-p port] [exportsfile]\n", getprogname());
+			    " [-p port] [exportsfile ...]\n", getprogname());
 			exit(1);
 		};
 	argc -= optind;
 	argv += optind;
-	if (argc == 1)
-		exname = *argv;
+	if (argc > 0)
+		exnames = argv;
 	else
-		exname = _PATH_EXPORTS;
+		exnames = exnames_default;
 
 	s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 	if (s < 0)
@@ -407,23 +409,23 @@ main(int argc, char **argv)
 
 	sem_init(&exportsem, 0, 0);
 	pthread_create(&ptdummy, NULL, exportlist_thread, NULL);
-	exname = _PATH_EXPORTS;
+	exnames = exnames_default;
 	have_v6 = 0;
 	(void)signal(SIGHUP, signal_get_exportlist);
 #endif
 	grphead = NULL;
 	exphead = NULL;
 	mlhead = NULL;
-	openlog("mountd", LOG_PID | (debug ? LOG_PERROR : 0), LOG_DAEMON);
+	openlog("mountd", LOG_PID | (mountd_debug ? LOG_PERROR : 0), LOG_DAEMON);
 	(void)signal(SIGSYS, no_nfs);
 
-	if (debug)
+	if (mountd_debug)
 		(void)fprintf(stderr, "Getting export list.\n");
 	get_exportlist(0);
-	if (debug)
+	if (mountd_debug)
 		(void)fprintf(stderr, "Getting mount list.\n");
 	get_mountlist();
-	if (debug)
+	if (mountd_debug)
 		(void)fprintf(stderr, "Here we go.\n");
 	(void)signal(SIGTERM, send_umntall);
 
@@ -547,7 +549,7 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (debug == 0) {
+	if (mountd_debug == 0) {
 		daemon(0, 0);
 		(void)signal(SIGINT, SIG_IGN);
 		(void)signal(SIGQUIT, SIG_IGN);
@@ -612,16 +614,16 @@ mntsrv(struct svc_req *rqstp, SVCXPRT *transp)
 			syslog(LOG_ERR, "Can't send reply");
 		return;
 	case MOUNTPROC_MNT:
-		if (debug)
+		if (mountd_debug)
 			fprintf(stderr,
 			    "got mount request from %s\n", numerichost);
 		if (!svc_getargs(transp, xdr_dir, rpcpath)) {
-			if (debug)
+			if (mountd_debug)
 				fprintf(stderr, "-> garbage args\n");
 			svcerr_decode(transp);
 			return;
 		}
-		if (debug)
+		if (mountd_debug)
 			fprintf(stderr,
 			    "-> rpcpath: %s\n", rpcpath);
 		/*
@@ -638,14 +640,14 @@ mntsrv(struct svc_req *rqstp, SVCXPRT *transp)
 		    (!S_ISDIR(stb.st_mode) && !S_ISREG(stb.st_mode)) ||
 		    statvfs1(rdirpath, &fsb, ST_WAIT) < 0) {
 			(void)chdir("/"); /* Just in case realpath doesn't */
-			if (debug)
+			if (mountd_debug)
 				(void)fprintf(stderr, "-> stat failed on %s\n",
 				    rdirpath);
 			if (!svc_sendreply(transp, (xdrproc_t)xdr_long, (caddr_t) &bad))
 				syslog(LOG_ERR, "Can't send reply");
 			return;
 		}
-		if (debug)
+		if (mountd_debug)
 			fprintf(stderr,
 			    "-> dirpath: %s\n", rdirpath);
 		/* Check in the exports list */
@@ -696,7 +698,7 @@ mntsrv(struct svc_req *rqstp, SVCXPRT *transp)
 				add_mlist(host, rdirpath, hostset);
 			else
 				add_mlist(numerichost, rdirpath, hostset);
-			if (debug)
+			if (mountd_debug)
 				(void)fprintf(stderr, "Mount successful.\n");
 		} else {
 			if (!svc_sendreply(transp, (xdrproc_t)xdr_long, (caddr_t) &bad))
@@ -992,12 +994,12 @@ parse_directory(const char *line, size_t lineno, struct grouplist *tgrp,
 			*ep = get_exp();
 			(*ep)->ex_fs = fsp->f_fsidx;
 			(*ep)->ex_fsdir = estrdup(fsp->f_mntonname);
-			if (debug)
+			if (mountd_debug)
 				(void)fprintf(stderr,
 				    "Making new ep fs=0x%x,0x%x\n",
 				    fsp->f_fsidx.__fsid_val[0], fsp->f_fsidx.__fsid_val[1]);
 		} else {
-			if (debug)
+			if (mountd_debug)
 				(void)fprintf(stderr,
 				    "Found ep fs=0x%x,0x%x\n",
 				    fsp->f_fsidx.__fsid_val[0], fsp->f_fsidx.__fsid_val[1]);
@@ -1008,84 +1010,25 @@ parse_directory(const char *line, size_t lineno, struct grouplist *tgrp,
 }
 
 
-/*
- * Get the export list
- */
-/* ARGSUSED */
-void
-get_exportlist(int n)
+static void
+get_exportlist_one(FILE *exp_file)
 {
 	struct exportlist *ep, *ep2;
 	struct grouplist *grp, *tgrp;
 	struct exportlist **epp;
 	struct dirlist *dirhead;
-	struct statvfs fsb, *fsp;
+	struct statvfs fsb;
 	struct addrinfo *ai;
 	struct uucred anon;
 	char *cp, *endcp, *dirp, savedc;
-	int has_host, exflags, got_nondir, dirplen, num, i;
-	FILE *exp_file;
+	int has_host, exflags, got_nondir, dirplen;
 	char *line;
 	size_t lineno = 0, len;
 
-
-	/*
-	 * First, get rid of the old list
-	 */
-	ep = exphead;
-	while (ep) {
-		ep2 = ep;
-		ep = ep->ex_next;
-		free_exp(ep2);
-	}
-	exphead = NULL;
-
 	dirp = NULL;
-	dirplen = 0;
-	grp = grphead;
-	while (grp) {
-		tgrp = grp;
-		grp = grp->gr_next;
-		free_grp(tgrp);
-	}
-	grphead = NULL;
-
-	/*
-	 * And delete exports that are in the kernel for all local
-	 * file systems.
-	 */
-	num = getmntinfo(&fsp, MNT_NOWAIT);
-	for (i = 0; i < num; i++) {
-		struct mountd_exports_list mel;
-
-		/* Delete all entries from the export list. */
-		mel.mel_path = fsp->f_mntonname;
-		mel.mel_nexports = 0;
-		if (nfssvc(NFSSVC_SETEXPORTSLIST, &mel) == -1 &&
-		    errno != EOPNOTSUPP)
-			syslog(LOG_ERR, "Can't delete exports for %s (%m)",
-			    fsp->f_mntonname);
-
-		fsp++;
-	}
-
-	/*
-	 * Read in the exports file and build the list, calling
-	 * mount() as we go along to push the export rules into the kernel.
-	 */
-	if ((exp_file = fopen(exname, "r")) == NULL) {
-		/*
-		 * Don't exit here; we can still reload the config
-		 * after a SIGHUP.
-		 */
-		if (debug)
-			(void)fprintf(stderr, "Can't open %s: %s\n", exname,
-			    strerror(errno));
-		return;
-	}
 	dirhead = NULL;
 	while ((line = fparseln(exp_file, &len, &lineno, NULL, 0)) != NULL) {
-		if (debug)
+		if (mountd_debug)
 			(void)fprintf(stderr, "Got line %s\n", line);
 		cp = line;
 		nextfield(&cp, &endcp);
@@ -1130,7 +1073,7 @@ get_exportlist(int n)
 					    line, (unsigned long)lineno);
 					goto badline;
 				}
-				if (debug)
+				if (mountd_debug)
 					(void)fprintf(stderr, "doing opt %s\n",
 					    cp);
 				got_nondir = 1;
@@ -1184,7 +1127,7 @@ get_exportlist(int n)
 
 		if (!has_host) {
 			grp->gr_type = GT_HOST;
-			if (debug)
+			if (mountd_debug)
 				(void)fprintf(stderr,
 				    "Adding a default entry\n");
 			/* add a default group and make the grp list NULL */
@@ -1261,7 +1204,80 @@ nextline:
 		}
 		free(line);
 	}
-	(void)fclose(exp_file);
+}
+
+/*
+ * Get the export list
+ */
+/* ARGSUSED */
+void
+get_exportlist(int n)
+{
+	struct exportlist *ep, *ep2;
+	struct grouplist *grp, *tgrp;
+	struct statvfs *fsp;
+	int num, i;
+	FILE *exp_file;
+
+
+	/*
+	 * First, get rid of the old list
+	 */
+	ep = exphead;
+	while (ep) {
+		ep2 = ep;
+		ep = ep->ex_next;
+		free_exp(ep2);
+	}
+	exphead = NULL;
+
+	grp = grphead;
+	while (grp) {
+		tgrp = grp;
+		grp = grp->gr_next;
+		free_grp(tgrp);
+	}
+	grphead = NULL;
+
+	/*
+	 * And delete exports that are in the kernel for all local
+	 * file systems.
+	 */
+	num = getmntinfo(&fsp, MNT_NOWAIT);
+	for (i = 0; i < num; i++) {
+		struct mountd_exports_list mel;
+
+		/* Delete all entries from the export list. */
+		mel.mel_path = fsp->f_mntonname;
+		mel.mel_nexports = 0;
+		if (nfssvc(NFSSVC_SETEXPORTSLIST, &mel) == -1 &&
+		    errno != EOPNOTSUPP)
+			syslog(LOG_ERR, "Can't delete exports for %s (%m)",
+			    fsp->f_mntonname);
+
+		fsp++;
+	}
+
+	/*
+	 * Read in the exports file and build the list, calling
+	 * mount() as we go along to push the export rules into the kernel.
+	 */
+	for (i = 0; exnames[i] != NULL; i++) {
+		if ((exp_file = fopen(exnames[i], "r")) == NULL) {
+			/*
+			 * Don't exit here; we can still reload the config
+			 * after a SIGHUP.
+			 */
+			if (mountd_debug)
+				(void)fprintf(stderr, "Can't open %s: %s\n",
+				    exnames[i], strerror(errno));
+			continue;
+		}
+
+		get_exportlist_one(exp_file);
+
+		(void)fclose(exp_file);
+	}
 }
 
 /*
@@ -1482,7 +1498,7 @@ bitcmp(void *dst, void *src, int bitlen)
 	bytelen = bitlen / 8;
 	bitsleft = bitlen % 8;
 
-	if (debug) {
+	if (mountd_debug) {
 		printf("comparing:\n");
 		for (i = 0; i < (bitsleft ? bytelen + 1 : bytelen); i++)
 			printf("%02x", p1[i]);
@@ -1755,7 +1771,7 @@ do_opt(const char *line, size_t lineno, char **cpp, char **endcpp,
 		} else if (cpoptarg && (!strcmp(cpopt, "network") ||
 		    !strcmp(cpopt, "n"))) {
 			if (strchr(cpoptarg, '/') != NULL) {
-				if (debug)
+				if (mountd_debug)
 					fprintf(stderr, "setting OP_MASKLEN\n");
 				opt_flags |= OP_MASKLEN;
 			}
@@ -1850,7 +1866,7 @@ get_host(const char *line, size_t lineno, const char *cp,
 			ai->ai_flags |= AI_CANONNAME;
 		} else
 			ai->ai_flags &= ~AI_CANONNAME;
-		if (debug)
+		if (mountd_debug)
 			(void)fprintf(stderr, "got host %s\n", ai->ai_canonname);
 		ai = ai->ai_next;
 	}
@@ -2278,7 +2294,7 @@ SYSLOG(int pri, const char *fmt,...)
 
 	va_start(ap, fmt);
 
-	if (debug)
+	if (mountd_debug)
 		vfprintf(stderr, fmt, ap);
 	else
 		vsyslog(pri, fmt, ap);

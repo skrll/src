@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_var.h,v 1.128 2019/05/13 07:47:59 ozaki-r Exp $	*/
+/*	$NetBSD: ip_var.h,v 1.133 2021/02/03 18:13:13 roy Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1993
@@ -46,7 +46,10 @@ struct ipovly {
 	u_int16_t ih_len;		/* protocol length */
 	struct	  in_addr ih_src;	/* source internet address */
 	struct	  in_addr ih_dst;	/* destination internet address */
-} __packed;
+};
+#ifdef __CTASSERT
+__CTASSERT(sizeof(struct ipovly) == 20);
+#endif
 
 /*
  * IP Flow structure
@@ -149,8 +152,15 @@ struct ip_pktopts {
 #define	IP_STAT_NOIPSEC		31	/* no match ipsec(4) found */
 #define	IP_STAT_PFILDROP_IN	32	/* dropped by pfil (PFIL_IN) */
 #define	IP_STAT_PFILDROP_OUT	33	/* dropped by pfil (PFIL_OUT) */
+#define	IP_STAT_IPSECDROP_IN	34	/* dropped by IPsec SP check */
+#define	IP_STAT_IPSECDROP_OUT	35	/* dropped by IPsec SP check */
+#define	IP_STAT_IFDROP		36	/* dropped due to interface state */
+#define	IP_STAT_TIMXCEED	37	/* time to live exceeded */
+#define	IP_STAT_IFNOADDR	38	/* interface has no IP address */
+#define	IP_STAT_RTREJECT	39	/* rejected by route */
+#define	IP_STAT_BCASTDENIED	40	/* broadcast prohibited */
 
-#define	IP_NSTATS		34
+#define	IP_NSTATS		41
 
 #ifdef _KERNEL
 

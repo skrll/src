@@ -1,4 +1,4 @@
-/*	$NetBSD: qat.c,v 1.3 2019/12/04 01:06:28 hikaru Exp $	*/
+/*	$NetBSD: qat.c,v 1.6 2020/06/14 23:23:12 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2019 Internet Initiative Japan, Inc.
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: qat.c,v 1.3 2019/12/04 01:06:28 hikaru Exp $");
+__KERNEL_RCSID(0, "$NetBSD: qat.c,v 1.6 2020/06/14 23:23:12 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1027,7 +1027,7 @@ qat_etr_setup_ring(struct qat_softc *sc, int bank, uint32_t ring,
 	qr = &qb->qb_et_rings[ring];
 	qb->qb_allocated_rings |= 1 << ring;
 
-	/* Intialize allocated ring */
+	/* Initialize allocated ring */
 	qr->qr_ring = ring;
 	qr->qr_bank = bank;
 	qr->qr_name = name;
@@ -1577,24 +1577,13 @@ int
 qat_crypto_load_iv(struct qat_sym_cookie *qsc, struct cryptop *crp,
     struct cryptodesc *crde, struct qat_crypto_desc const *desc)
 {
-	uint32_t rand;
 	uint32_t ivlen = desc->qcd_cipher_blk_sz;
-	int i;
 
 	if (crde->crd_flags & CRD_F_IV_EXPLICIT) {
 		memcpy(qsc->qsc_iv_buf, crde->crd_iv, ivlen);
 	} else {
 		if (crde->crd_flags & CRD_F_ENCRYPT) {
-			for (i = 0; i + sizeof(rand) <= ivlen;
-			    i += sizeof(rand)) {
-				rand = cprng_fast32();
-				memcpy(qsc->qsc_iv_buf + i, &rand, sizeof(rand));
-			}
-			if (sizeof(qsc->qsc_iv_buf) % sizeof(rand) != 0) {
-				rand = cprng_fast32();
-				memcpy(qsc->qsc_iv_buf + i, &rand,
-				       sizeof(qsc->qsc_iv_buf) - i);
-			}
+			cprng_fast(qsc->qsc_iv_buf, ivlen);
 		} else if (crp->crp_flags & CRYPTO_F_IMBUF) {
 			/* get iv from buf */
 			m_copydata(qsc->qsc_buf, crde->crd_inject, ivlen,
@@ -1968,8 +1957,6 @@ qat_crypto_new_session(void *arg, uint32_t *lid, struct cryptoini *cri)
 
 	qcy->qcy_sc->sc_hw.qhw_crypto_setup_desc(qcy, qs, &qs->qs_dec_desc, crie, cria);
 	qcy->qcy_sc->sc_hw.qhw_crypto_setup_desc(qcy, qs, &qs->qs_enc_desc, crie, cria);
-
-	membar_producer();
 
 	return 0;
 fail:

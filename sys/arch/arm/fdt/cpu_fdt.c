@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_fdt.c,v 1.30 2019/11/01 13:22:08 bad Exp $ */
+/* $NetBSD: cpu_fdt.c,v 1.38 2020/12/03 07:45:52 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "psci_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.30 2019/11/01 13:22:08 bad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.38 2020/12/03 07:45:52 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -45,6 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.30 2019/11/01 13:22:08 bad Exp $");
 #include <arm/armreg.h>
 #include <arm/cpu.h>
 #include <arm/cpufunc.h>
+#include <arm/cpuvar.h>
 #include <arm/locore.h>
 
 #include <arm/arm/psci.h>
@@ -56,36 +57,9 @@ __KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.30 2019/11/01 13:22:08 bad Exp $");
 static int	cpu_fdt_match(device_t, cfdata_t, void *);
 static void	cpu_fdt_attach(device_t, device_t, void *);
 
-enum cpu_fdt_type {
-	ARM_CPU_UP = 1,
-	ARM_CPU_ARMV7,
-	ARM_CPU_ARMV8,
-};
-
 struct cpu_fdt_softc {
 	device_t		sc_dev;
 	int			sc_phandle;
-};
-
-static const struct of_compat_data compat_data[] = {
-	{ "arm,arm1176jzf-s",		ARM_CPU_UP },
-
-	{ "arm,arm-v7",			ARM_CPU_ARMV7 },
-	{ "arm,cortex-a5",		ARM_CPU_ARMV7 },
-	{ "arm,cortex-a7",		ARM_CPU_ARMV7 },
-	{ "arm,cortex-a8",		ARM_CPU_ARMV7 },
-	{ "arm,cortex-a9",		ARM_CPU_ARMV7 },
-	{ "arm,cortex-a12",		ARM_CPU_ARMV7 },
-	{ "arm,cortex-a15",		ARM_CPU_ARMV7 },
-	{ "arm,cortex-a17",		ARM_CPU_ARMV7 },
-
-	{ "arm,armv8",			ARM_CPU_ARMV8 },
-	{ "arm,cortex-a53",		ARM_CPU_ARMV8 },
-	{ "arm,cortex-a57",		ARM_CPU_ARMV8 },
-	{ "arm,cortex-a72",		ARM_CPU_ARMV8 },
-	{ "arm,cortex-a73",		ARM_CPU_ARMV8 },
-
-	{ NULL }
 };
 
 CFATTACH_DECL_NEW(cpu_fdt, sizeof(struct cpu_fdt_softc),
@@ -96,25 +70,11 @@ cpu_fdt_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
-	enum cpu_fdt_type type;
-	int is_compatible;
-	bus_addr_t mpidr;
+	const char *device_type;
 
-	is_compatible = of_match_compat_data(phandle, compat_data);
-	if (!is_compatible)
-		return 0;
+	device_type = fdtbus_get_string(phandle, "device_type");
 
-	type = of_search_compatible(phandle, compat_data)->data;
-	switch (type) {
-	case ARM_CPU_ARMV7:
-	case ARM_CPU_ARMV8:
-		if (fdtbus_get_reg(phandle, 0, &mpidr, NULL) != 0)
-			return 0;
-	default:
-		break;
-	}
-
-	return is_compatible;
+	return device_type != NULL && strcmp(device_type, "cpu") == 0;
 }
 
 static void
@@ -123,28 +83,24 @@ cpu_fdt_attach(device_t parent, device_t self, void *aux)
 	struct cpu_fdt_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
-	enum cpu_fdt_type type;
-	bus_addr_t mpidr;
-	cpuid_t cpuid;
+	bus_addr_t cpuid;
+	const uint32_t *cap_ptr;
+	int len;
 
 	sc->sc_dev = self;
 	sc->sc_phandle = phandle;
 
-	type = of_search_compatible(phandle, compat_data)->data;
+ 	cap_ptr = fdtbus_get_prop(phandle, "capacity-dmips-mhz", &len);
+	if (cap_ptr && len == 4) {
+		prop_dictionary_t dict = device_properties(self);
+		uint32_t capacity_dmips_mhz = be32toh(*cap_ptr);
 
-	switch (type) {
-	case ARM_CPU_ARMV7:
-	case ARM_CPU_ARMV8:
-		if (fdtbus_get_reg(phandle, 0, &mpidr, NULL) != 0) {
-			aprint_error(": missing 'reg' property\n");
-			return;
-		}
-		cpuid = mpidr;
-		break;
-	default:
-		cpuid = 0;
-		break;
+		prop_dictionary_set_uint32(dict, "capacity_dmips_mhz",
+		    capacity_dmips_mhz);
 	}
+
+	if (fdtbus_get_reg(phandle, 0, &cpuid, NULL) != 0)
+		cpuid = 0;
 
 	/* Attach the CPU */
 	cpu_attach(self, cpuid);
@@ -211,7 +167,7 @@ arm_fdt_cpu_bootstrap(void)
 	/* MPIDR affinity levels of boot processor. */
 	bp_mpidr = cpu_mpidr_aff_read();
 
-	/* Boot APs */
+	/* Add APs to cpu_mpidr array */
 	cpuindex = 1;
 	for (child = OF_child(cpus); child; child = OF_peer(child)) {
 		if (!arm_fdt_cpu_okay(child))
@@ -235,6 +191,20 @@ arm_fdt_cpu_bootstrap(void)
 
 #ifdef MULTIPROCESSOR
 static struct arm_cpu_method *
+arm_fdt_cpu_enable_method_byname(const char *method)
+{
+	__link_set_decl(arm_cpu_methods, struct arm_cpu_method);
+	struct arm_cpu_method * const *acmp;
+
+	__link_set_foreach(acmp, arm_cpu_methods) {
+		if (strcmp(method, (*acmp)->acm_compat) == 0)
+			return *acmp;
+	}
+
+	return NULL;
+}
+
+static struct arm_cpu_method *
 arm_fdt_cpu_enable_method(int phandle)
 {
 	const char *method;
@@ -243,14 +213,7 @@ arm_fdt_cpu_enable_method(int phandle)
 	if (method == NULL)
 		return NULL;
 
-	__link_set_decl(arm_cpu_methods, struct arm_cpu_method);
-	struct arm_cpu_method * const *acmp;
-	__link_set_foreach(acmp, arm_cpu_methods) {
-		if (strcmp(method, (*acmp)->acm_compat) == 0)
-			return *acmp;
-	}
-
-	return NULL;
+	return arm_fdt_cpu_enable_method_byname(method);
 }
 
 static int
@@ -295,16 +258,19 @@ arm_fdt_cpu_mpstart(void)
 		if (acm == NULL)
 			acm = arm_fdt_cpu_enable_method(cpus);
 		if (acm == NULL)
+			acm = arm_fdt_cpu_enable_method_byname("psci");
+		if (acm == NULL)
 			continue;
 
 		error = arm_fdt_cpu_enable(child, acm);
 		if (error != 0) {
-			aprint_error("%s: failed to enable CPU %#" PRIx64 "\n", __func__, mpidr);
+			aprint_error("%s: failed to enable CPU %#" PRIx64 "\n",
+			    __func__, mpidr);
 			continue;
 		}
 
 		/* Wake up AP in case firmware has placed it in WFE state */
-		__asm __volatile("sev" ::: "memory");
+		sev();
 
 		/* Wait for AP to start */
 		for (i = 0x10000000; i > 0; i--) {
@@ -370,7 +336,7 @@ spintable_cpu_on(u_int cpuindex, paddr_t entry_point_address, paddr_t cpu_releas
 {
 	/*
 	 * we need devmap for cpu-release-addr in advance.
-	 * __HAVE_MM_MD_DIRECT_MAPPED_PHYS nor pmap didn't work at this point.
+	 * __HAVE_MM_MD_DIRECT_MAPPED_PHYS nor pmap work at this point.
 	 */
 	if (pmap_devmap_find_pa(cpu_release_addr, sizeof(paddr_t)) == NULL) {
 		aprint_error("%s: devmap for cpu-release-addr"

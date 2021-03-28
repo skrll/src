@@ -1,4 +1,4 @@
-# $NetBSD: MPCSA_GENERIC,v 1.67 2019/04/26 22:46:03 sevan Exp $
+# $NetBSD: MPCSA_GENERIC,v 1.74 2020/09/27 13:48:50 roy Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include		"arch/evbarm/conf/std.mpcsa"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.67 $"
+#ident 		"GENERIC-$Revision: 1.74 $"
 
 maxusers	32		# estimated number of users
 
@@ -113,7 +113,6 @@ file-system 	NULLFS		# loopback file system
 #file-system 	UMAPFS		# NULLFS + uid and gid remapping
 file-system 	UNION		# union file system
 #file-system	CODA		# Coda File System; also needs vcoda (below)
-#file-system	SMBFS		# experimental - CIFS; also needs nsmb (below)
 file-system	PTYFS		# /dev/ptm support
 file-system	TMPFS		# Efficient memory file-system
 #file-system	UDF		# experimental - OSTA UDF CD/DVD file-system
@@ -370,8 +369,6 @@ sd*	at atapibus? drive ? flags 0x0000	# ATAPI disk drives
 #ne*	at pcmcia? function ?		# NE2000-compatible Ethernet
 #ray*	at pcmcia? function ?		# Raytheon Raylink (802.11)
 #sm*	at pcmcia? function ?		# Megahertz Ethernet
-# tr at pcmcia has problems with Cardbus bridges
-#tr*	at pcmcia? function ?		# TROPIC based Token-Ring
 wi*	at pcmcia? function ?		# Lucent/Intersil WaveLan IEEE (802.11)
 #xirc*	at pcmcia? function ?		# Xircom CreditCard Ethernet
 #com*	at xirc?
@@ -508,9 +505,6 @@ ucom*	at uplcom? portno ?
 uvscom* at uhub? port ? 	# SUNTAC Slipper U VS-10U serial adapter
 ucom*	at uvscom? portno ?
 
-# Diamond Multimedia Rio 500
-#urio*	at uhub? port ?
-
 # USB Handspring Visor
 #uvisor*	at uhub? port ?
 #ucom*	at uvisor?
@@ -527,9 +521,6 @@ ucom*	at uvscom? portno ?
 
 # Topfield TF5000PVR range of DVB recorders
 #utoppy*	at uhub? port ?
-
-# Y@P firmware loader
-#uyap* at uhub? port ?
 
 # D-Link DSB-R100 USB radio
 #udsbr*	at uhub? port ?
@@ -623,7 +614,6 @@ pseudo-device	loop			# network loopback
 pseudo-device	ppp			# Point-to-Point Protocol
 #pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
 #pseudo-device	sl			# Serial Line IP
-#pseudo-device	strip			# Starmode Radio IP (Metricom)
 #pseudo-device	irframetty		# IrDA frame line discipline
 #pseudo-device	tap			# virtual Ethernet
 pseudo-device	tun			# network tunneling over tty
@@ -633,7 +623,7 @@ pseudo-device	tun			# network tunneling over tty
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 # srt is EXPERIMENTAL
 #pseudo-device	srt			# source-address-based routing
 
@@ -646,9 +636,6 @@ pseudo-device	ksyms			# /dev/ksyms
 
 # a pseudo device needed for Coda	# also needs CODA (above)
 #pseudo-device	vcoda			# coda minicache <-> venus comm.
-
-# a pseudo device needed for SMBFS
-#pseudo-device	nsmb			# experimental - SMB requester
 
 # wscons pseudo-devices
 #pseudo-device	wsmux			# mouse & keyboard multiplexor

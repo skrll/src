@@ -1,4 +1,4 @@
-/* $NetBSD: meson_platform.c,v 1.13 2019/08/13 09:56:08 skrll Exp $ */
+/* $NetBSD: meson_platform.c,v 1.19 2021/02/05 08:07:14 skrll Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,7 @@
 #include "arml2cc.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: meson_platform.c,v 1.13 2019/08/13 09:56:08 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_platform.c,v 1.19 2021/02/05 08:07:14 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -118,11 +118,9 @@ __KERNEL_RCSID(0, "$NetBSD: meson_platform.c,v 1.13 2019/08/13 09:56:08 skrll Ex
 
 extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 extern struct bus_space arm_generic_bs_tag;
-extern struct bus_space arm_generic_a4x_bs_tag;
 
 #define	meson_dma_tag		arm_generic_dma_tag
 #define	meson_bs_tag		arm_generic_bs_tag
-#define	meson_a4x_bs_tag	arm_generic_a4x_bs_tag
 
 static const struct pmap_devmap *
 meson_platform_devmap(void)
@@ -150,13 +148,12 @@ static void
 meson_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &meson_bs_tag;
-	faa->faa_a4x_bst = &meson_a4x_bs_tag;
 	faa->faa_dmat = &meson_dma_tag;
 }
 
 void meson_platform_early_putchar(char);
 
-void
+void __noasan
 meson_platform_early_putchar(char c)
 {
 #ifdef CONSADDR
@@ -185,14 +182,14 @@ meson_platform_device_register(device_t self, void *aux)
 {
 	prop_dictionary_t dict = device_properties(self);
 
+	fdtbus_device_register(self, aux);
+
 	if (device_is_a(self, "awge") && device_unit(self) == 0) {
 		uint8_t enaddr[ETHER_ADDR_LEN];
 		if (get_bootconf_option(boot_args, "awge0.mac-address",
 		    BOOTOPT_TYPE_MACADDR, enaddr)) {
-			prop_data_t pd = prop_data_create_data(enaddr,
+			prop_dictionary_set_data(dict, "mac-address", enaddr,
 			    sizeof(enaddr));
-			prop_dictionary_set(dict, "mac-address", pd);
-			prop_object_release(pd);
 		}
 	}
 
@@ -236,6 +233,8 @@ meson8b_platform_device_register(device_t self, void *aux)
 {
 	device_t parent = device_parent(self);
 	char *ptr;
+
+	fdtbus_device_register(self, aux);
 
 	if (device_is_a(self, "ld") &&
 	    device_is_a(parent, "sdmmc") &&
@@ -324,16 +323,19 @@ meson8b_platform_reset(void)
 	}
 }
 
+#ifdef MULTIPROCESSOR
 static void
 meson8b_mpinit_delay(u_int n)
 {
 	for (volatile int i = 0; i < n; i++)
 		;
 }
+#endif
 
 static int
 cpu_enable_meson8b(int phandle)
 {
+#ifdef MULTIPROCESSOR
 	const bus_addr_t cbar = armreg_cbar_read();
 	bus_space_tag_t bst = &arm_generic_bs_tag;
 
@@ -401,6 +403,7 @@ cpu_enable_meson8b(int phandle)
 	uint32_t ctrl = bus_space_read_4(bst, cpuconf_bsh, MESON8B_SRAM_CPUCONF_CTRL_REG);
 	ctrl |= __BITS(cpuno,0);
 	bus_space_write_4(bst, cpuconf_bsh, MESON8B_SRAM_CPUCONF_CTRL_REG, ctrl);
+#endif
 
 	return 0;
 }

@@ -1,9 +1,15 @@
-# $NetBSD: Makefile,v 1.2 2016/11/25 08:51:16 ozaki-r Exp $
+# $NetBSD: Makefile,v 1.6 2020/10/01 13:49:18 rin Exp $
 #
 
 .include <bsd.own.mk>
 
-TESTSDIR=	${TESTSBASE}/net/if_tap
+PROG=			rump_open_tap
+MAN=			# empty
+DPADD=			${LIBRUMPRES} ${LIBRUMPCLIENT}
+LDADD=			-lrumpres -lrumpclient
+BINDIR.rump_open_tap=	${TESTSDIR}
+
+TESTSDIR=		${TESTSBASE}/net/if_tap
 
 .for name in tap
 TESTS_SH+=		t_${name}

@@ -1,4 +1,4 @@
-/*	$NetBSD: upgrade.c,v 1.13 2019/08/27 14:11:00 martin Exp $	*/
+/*	$NetBSD: upgrade.c,v 1.17 2020/11/04 14:29:40 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -62,24 +62,22 @@ do_upgrade(void)
 	if (!ask_noyes(NULL))
 		return;
 
-	get_ramsize();
-
 	if (find_disks(msg_string(MSG_upgrade), !root_is_read_only()) < 0)
 		return;
 
-	if (pm->parts == NULL && !pm->cur_system) {
+	if (pm->parts == NULL && !pm->cur_system && !pm->no_part) {
 		hit_enter_to_continue(MSG_noroot, NULL);
 		return;
 	}
 
-	if (!pm->cur_system) {
+	if (!pm->cur_system && pm->parts != NULL) {
 		if (pm->parts->pscheme->pre_update_verify) {
 			if (pm->parts->pscheme->pre_update_verify(pm->parts))
 				pm->parts->pscheme->write_to_disk(pm->parts);
 		}
 
 		install_desc_from_parts(&install, pm->parts);
-	} else {
+	} else if (pm->cur_system) {
 		install.cur_system = true;
 	}
 
@@ -106,7 +104,6 @@ do_upgrade(void)
 #endif
 	/* Do any md updating of the file systems ... e.g. bootblocks,
 	   copy file systems ... */
-	/* XXX pass install here too */
 	if (!md_update(&install))
 		goto free_install;
 
@@ -211,14 +208,9 @@ do_reinstall_sets()
 	if (find_disks(msg_string(MSG_reinstall), !root_is_read_only()) < 0)
 		return;
 
-	if (!pm->cur_system) {
-		if (pm->parts == NULL) {
-			hit_enter_to_continue(MSG_noroot, NULL);
-			return;
-		}
-
+	if (!pm->cur_system && pm->parts != NULL) {
 		install_desc_from_parts(&install, pm->parts);
-	} else {
+	} else if (pm->cur_system) {
 		install.cur_system = true;
 	}
 

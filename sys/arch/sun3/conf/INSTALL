@@ -1,4 +1,4 @@
-# $NetBSD: INSTALL,v 1.61 2018/08/01 20:04:14 maxv Exp $
+# $NetBSD: INSTALL,v 1.63 2021/01/21 06:51:56 nia Exp $
 #
 # INSTALL - Installation kernel for the Sun3
 #
@@ -11,7 +11,7 @@ include "arch/sun3/conf/std.sun3"
 
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-makeoptions	COPTS="-Os"	# Optimise for space. Implies -O2
+makeoptions	COPTS="-Os -fno-unwind-tables"	# Optimise for space. Implies -O2
 
 # Machines to be supported by this kernel
 options 	FPU_EMULATE
@@ -48,6 +48,7 @@ options 	PIPE_SOCKETPAIR		# smaller, but slower pipe(2)
 # Compatibility options
 include 	"conf/compat_netbsd13.config"
 #options 	COMPAT_LINUX	# can run Linux/m68k executables
+#options 	COMPAT_OSSAUDIO	# can run Linux/m68k executables
 
 # File systems
 file-system	FFS		# Berkeley Fast Filesystem

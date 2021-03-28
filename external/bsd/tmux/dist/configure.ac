@@ -1,6 +1,6 @@
 # configure.ac
 
-AC_INIT([tmux], 2.9a)
+AC_INIT([tmux], 3.1c)
 AC_PREREQ([2.60])
 
 AC_CONFIG_AUX_DIR(etc)
@@ -28,6 +28,7 @@ AC_PROG_CC_C99
 AC_PROG_CPP
 AC_PROG_EGREP
 AC_PROG_INSTALL
+AC_PROG_YACC
 PKG_PROG_PKG_CONFIG
 AC_USE_SYSTEM_EXTENSIONS
 
@@ -123,6 +124,12 @@ AC_FUNC_STRNLEN
 
 # Look for clock_gettime. Must come before event_init.
 AC_SEARCH_LIBS(clock_gettime, rt)
+
+# Always use our getopt because 1) glibc's doesn't enforce argument order 2)
+# musl does not set optarg to NULL for flags without arguments (although it is
+# not required to, but it is helpful) 3) there are probably other weird
+# implementations.
+AC_LIBOBJ(getopt)
 
 # Look for libevent.
 PKG_CHECK_MODULES(
@@ -421,48 +428,6 @@ if test "x$found_stravis" = xyes; then
 else
 	AC_LIBOBJ(vis)
 	AC_LIBOBJ(unvis)
-fi
-
-# Look for getopt. glibc's getopt does not enforce argument order and the ways
-# of making it do so are stupid, so just use our own instead.
-AC_CHECK_FUNC(getopt, found_getopt=yes, found_getopt=no)
-if test "x$found_getopt" != xno; then
-	AC_MSG_CHECKING(if getopt is suitable)
-	AC_EGREP_CPP(
-		yes,
-		[
-			#include <features.h>
-			#ifdef __GLIBC__
-			yes
-			#endif
-		],
-		[
-			found_getopt=no
-			AC_MSG_RESULT(no)
-		],
-		AC_MSG_RESULT(yes))
-fi
-if test "x$found_getopt" != xno; then
-	AC_CHECK_DECLS(
-		[optarg, optind, optreset],
-		,
-		found_getopt=no,
-		[
-			#include <unistd.h>
-		])
-fi
-if test "x$found_getopt" != xno; then
-	AC_DEFINE(HAVE_GETOPT)
-else
-	AC_LIBOBJ(getopt)
-fi
-
-# Look for fparseln in libutil.
-AC_SEARCH_LIBS(fparseln, util, found_fparseln=yes, found_fparseln=no)
-if test "x$found_fparseln" = xyes; then
-	AC_DEFINE(HAVE_FPARSELN)
-else
-	AC_LIBOBJ(fparseln)
 fi
 
 # Look for fdforkpty and forkpty in libutil.

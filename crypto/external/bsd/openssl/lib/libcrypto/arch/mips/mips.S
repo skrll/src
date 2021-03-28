@@ -1,4 +1,6 @@
-.set	mips2
+#if !(defined (__mips_isa_rev) && (__mips_isa_rev >= 6))
+.set     mips2
+#endif
 #include "mips_arch.h"
 
 #if defined(_MIPS_ARCH_MIPS64R6)
@@ -314,9 +316,8 @@ bn_sqr_words_internal:
 	sw	$11,-2*4($4)
 
 	.set	noreorder
-	sw	$10,-4($4)
 	bgtz	$8,.L_bn_sqr_words_loop
-	nop
+	sw	$10,-4($4)
 
 	beqz	$6,.L_bn_sqr_words_return
 	nop
@@ -569,6 +570,11 @@ bn_sub_words_internal:
 	move	$4,$2
 .end	bn_sub_words_internal
 
+#if 0
+/*
+ * The bn_div_3_words entry point is re-used for constant-time interface.
+ * Implementation is retained as historical reference.
+ */
 .align 5
 .globl	bn_div_3_words
 .ent	bn_div_3_words
@@ -582,9 +588,8 @@ bn_div_3_words:
 
 	lw	$4,($7)
 	move	$10,$5
-	lw	$5,-4($7)
 	bne	$4,$6,bn_div_3_words_internal
-	 nop
+	 lw	$5,-4($7)
 	li	$2,-1
 	jr	$31
 	move	$4,$2
@@ -625,6 +630,7 @@ bn_div_3_words_internal:
 	jr	$31
 	move	$4,$2
 .end	bn_div_3_words_internal
+#endif
 
 .align	5
 .globl	bn_div_words

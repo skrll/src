@@ -18,6 +18,7 @@ options {
 	session-keyfile "session.key";
 	listen-on { 10.53.0.1; 127.0.0.1; };
 	listen-on-v6 { none; };
+	allow-transfer { !10.53.0.1; any; };
 	recursion no;
 	notify yes;
 };
@@ -36,7 +37,7 @@ controls {
 include "dlzs.conf";
 
 zone zone.nil {
-	type master;
+	type primary;
 	dlz unsearched2;
 };
 
@@ -46,6 +47,6 @@ zone "." {
 };
 
 zone "." {
-	type master;
+	type primary;
 	file "root.db";
 };

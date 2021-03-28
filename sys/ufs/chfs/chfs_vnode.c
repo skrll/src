@@ -1,4 +1,4 @@
-/*	$NetBSD: chfs_vnode.c,v 1.17 2019/09/18 18:46:00 christos Exp $	*/
+/*	$NetBSD: chfs_vnode.c,v 1.19 2020/05/16 18:31:53 christos Exp $	*/
 
 /*-
  * Copyright (c) 2010 Department of Software Engineering,
@@ -210,7 +210,7 @@ chfs_makeinode(int mode, struct vnode *dvp, struct vnode **vpp,
 	/* number of vnode will be the new maximum */
 	vno = ++(chmp->chm_max_vno);
 
-	error = VFS_VGET(dvp->v_mount, vno, &vp);
+	error = VFS_VGET(dvp->v_mount, vno, LK_EXCLUSIVE, &vp);
 	if (error)
 		return (error);
 
@@ -251,9 +251,9 @@ chfs_makeinode(int mode, struct vnode *dvp, struct vnode **vpp,
 
 	/* authorize setting SGID if needed */
 	if (ip->mode & ISGID) {
-		error = kauth_authorize_vnode(cnp->cn_cred, KAUTH_VNODE_WRITE_SECURITY,
-		    vp, NULL, genfs_can_chmod(vp->v_type, cnp->cn_cred, ip->uid,
-		    ip->gid, mode));
+		error = kauth_authorize_vnode(cnp->cn_cred,
+		    KAUTH_VNODE_WRITE_SECURITY, vp, NULL, genfs_can_chmod(vp,
+		    cnp->cn_cred, ip->uid, ip->gid, mode));
 		if (error)
 			ip->mode &= ~ISGID;
 	}

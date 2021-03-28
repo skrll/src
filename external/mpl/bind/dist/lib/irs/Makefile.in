@@ -13,16 +13,29 @@ top_srcdir =	@top_srcdir@
 
 VERSION=@BIND9_VERSION@
 
-@LIBIRS_API@
-
 @BIND9_MAKE_INCLUDES@
 
 CINCLUDES =	-I. -I./include -I${srcdir}/include \
 		${DNS_INCLUDES} ${ISC_INCLUDES} \
-		${ISCCFG_INCLUDES} @OPENSSL_INCLUDES@
+		${ISCCFG_INCLUDES} \
+		${OPENSSL_CFLAGS}
 
 CDEFINES =
 CWARNINGS =
+
+ISCLIBS =	../../lib/isc/libisc.@A@ @NO_LIBTOOL_ISCLIBS@
+
+ISCDEPLIBS =	../../lib/isc/libisc.@A@
+
+DNSLIBS =	../../lib/dns/libdns.@A@ @NO_LIBTOOL_DNSLIBS@
+
+DNSDEPLIBS =	../../lib/dns/libdns.@A@
+
+ISCCFGLIBS =	../../lib/isccfg/libisccfg.@A@
+
+ISCCFGDEPLIBS =	../../lib/isccfg/libisccfg.@A@
+
+LIBS =		@LIBS@
 
 # Alphabetically
 OBJS =		context.@O@ \
@@ -36,8 +49,6 @@ SRCS =		context.c \
 		gai_strerror.c getaddrinfo.c getnameinfo.c \
 		resconf.c
 
-LIBS =		@LIBS@
-
 SUBDIRS =	include
 TESTDIRS =	@UNITTESTS@
 TARGETS =	timestamp
@@ -47,9 +58,6 @@ TARGETS =	timestamp
 version.@O@: version.c
 	${LIBTOOL_MODE_COMPILE} ${CC} ${ALL_CFLAGS} \
 		-DVERSION=\"${VERSION}\" \
-		-DLIBINTERFACE=${LIBINTERFACE} \
-		-DLIBREVISION=${LIBREVISION} \
-		-DLIBAGE=${LIBAGE} \
 		-c ${srcdir}/version.c
 
 libirs.@SA@: ${OBJS} version.@O@
@@ -59,8 +67,8 @@ libirs.@SA@: ${OBJS} version.@O@
 libirs.la: ${OBJS} version.@O@
 	${LIBTOOL_MODE_LINK} \
 		${CC} ${ALL_CFLAGS} ${LDFLAGS} -o libirs.la -rpath ${libdir} \
-		-version-info ${LIBINTERFACE}:${LIBREVISION}:${LIBAGE} \
-		${OBJS} version.@O@ ${LIBS}
+		-release "${VERSION}" \
+		${OBJS} version.@O@ ${ISCLIBS} ${DNSLIBS} ${ISCCFGLIBS} ${LIBS}
 
 timestamp: libirs.@A@
 	touch timestamp

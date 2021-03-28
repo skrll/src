@@ -1,4 +1,4 @@
-/* $NetBSD: fdc_acpi.c,v 1.43 2015/04/13 16:33:23 riastradh Exp $ */
+/* $NetBSD: fdc_acpi.c,v 1.46 2021/01/29 15:49:55 thorpej Exp $ */
 
 /*
  * Copyright (c) 2002 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdc_acpi.c,v 1.43 2015/04/13 16:33:23 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdc_acpi.c,v 1.46 2021/01/29 15:49:55 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: fdc_acpi.c,v 1.43 2015/04/13 16:33:23 riastradh Exp 
 
 #include <dev/acpi/acpireg.h>
 #include <dev/acpi/acpivar.h>
+#include <dev/acpi/acpi_intr.h>
 
 #include <dev/isa/isadmavar.h>
 #include <dev/isa/fdcvar.h>
@@ -72,9 +73,9 @@ CFATTACH_DECL_NEW(fdc_acpi, sizeof(struct fdc_acpi_softc), fdc_acpi_match,
  * Supported device IDs
  */
 
-static const char * const fdc_acpi_ids[] = {
-	"PNP07??",	/* PC standard floppy disk controller */
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "PNP07??" }, /* PC standard floppy disk controller */
+	DEVICE_COMPAT_EOL
 };
 
 /*
@@ -85,10 +86,7 @@ fdc_acpi_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct acpi_attach_args *aa = aux;
 
-	if (aa->aa_node->ad_type != ACPI_TYPE_DEVICE)
-		return 0;
-
-	return acpi_match_hid(aa->aa_node->ad_devinfo, fdc_acpi_ids);
+	return acpi_compatible_match(aa, compat_data);
 }
 
 /*
@@ -101,7 +99,6 @@ fdc_acpi_attach(device_t parent, device_t self, void *aux)
 	struct fdc_softc *sc = &asc->sc_fdc;
 	struct acpi_attach_args *aa = aux;
 	struct acpi_io *io, *ctlio;
-	struct acpi_irq *irq;
 	struct acpi_drq *drq;
 	struct acpi_resources res;
 	ACPI_STATUS rv;
@@ -121,13 +118,6 @@ fdc_acpi_attach(device_t parent, device_t self, void *aux)
 	if (io == NULL) {
 		aprint_error_dev(sc->sc_dev,
 		    "unable to find i/o register resource\n");
-		goto out;
-	}
-
-	/* find our IRQ */
-	irq = acpi_res_irq(&res, 0);
-	if (irq == NULL) {
-		aprint_error_dev(sc->sc_dev, "unable to find irq resource\n");
 		goto out;
 	}
 
@@ -188,9 +178,13 @@ fdc_acpi_attach(device_t parent, device_t self, void *aux)
 		}
 	}
 
-	sc->sc_ih = isa_intr_establish(aa->aa_ic, irq->ar_irq,
-	    (irq->ar_type == ACPI_EDGE_SENSITIVE) ? IST_EDGE : IST_LEVEL,
-	    IPL_BIO, fdcintr, sc);
+	sc->sc_ih = acpi_intr_establish(self,
+	    (uint64_t)(uintptr_t)aa->aa_node->ad_handle,
+	    IPL_BIO, false, fdcintr, sc, device_xname(self));
+	if (sc->sc_ih == NULL) {
+		aprint_error_dev(sc->sc_dev, "unable to establish interrupt\n");
+		goto out;
+	}
 
 	/* Setup direct configuration of floppy drives */
 	sc->sc_present = fdc_acpi_enumerate(asc);

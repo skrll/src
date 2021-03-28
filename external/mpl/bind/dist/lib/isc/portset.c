@@ -1,23 +1,20 @@
-/*	$NetBSD: portset.c,v 1.3 2019/01/09 16:55:14 christos Exp $	*/
+/*	$NetBSD: portset.c,v 1.5 2021/02/19 16:42:19 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
 /*! \file */
 
-#include <config.h>
-
-#include <stdbool.h>
 #include <inttypes.h>
+#include <stdbool.h>
 
 #include <isc/mem.h>
 #include <isc/portset.h>
@@ -33,7 +30,7 @@
  * the second most significant bit of buf[0] corresponds to port 1.
  */
 struct isc_portset {
-	unsigned int nports;	/*%< number of ports in the set */
+	unsigned int nports; /*%< number of ports in the set */
 	uint32_t buf[ISC_PORTSET_BUFSIZE];
 };
 
@@ -65,8 +62,6 @@ isc_portset_create(isc_mem_t *mctx, isc_portset_t **portsetp) {
 	REQUIRE(portsetp != NULL && *portsetp == NULL);
 
 	portset = isc_mem_get(mctx, sizeof(*portset));
-	if (portset == NULL)
-		return (ISC_R_NOMEMORY);
 
 	/* Make the set 'empty' by default */
 	memset(portset, 0, sizeof(*portset));
@@ -113,8 +108,7 @@ isc_portset_remove(isc_portset_t *portset, in_port_t port) {
 
 void
 isc_portset_addrange(isc_portset_t *portset, in_port_t port_lo,
-		     in_port_t port_hi)
-{
+		     in_port_t port_hi) {
 	in_port_t p;
 
 	REQUIRE(portset != NULL);
@@ -128,8 +122,7 @@ isc_portset_addrange(isc_portset_t *portset, in_port_t port_lo,
 
 void
 isc_portset_removerange(isc_portset_t *portset, in_port_t port_lo,
-			in_port_t port_hi)
-{
+			in_port_t port_hi) {
 	in_port_t p;
 
 	REQUIRE(portset != NULL);

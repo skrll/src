@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.28 2019/09/15 15:16:30 tnn Exp $ */
+/* $NetBSD: armreg.h,v 1.54 2020/09/30 08:40:49 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -35,27 +35,51 @@
 #include <arm/cputypes.h>
 #include <sys/types.h>
 
-#define AARCH64REG_READ_INLINE2(regname, regdesc)		\
-static __inline uint64_t					\
+#ifdef __clang__
+#define ATTR_ARCH(arch)			".arch " arch ";"
+#define ATTR_TARGET_ARCH(x)
+#define ASM_ARCH(x)			x
+#else
+#define ATTR_ARCH(arch)			__attribute__((target("arch=" arch)))
+#define ATTR_TARGET_ARCH(x)		x
+#define ASM_ARCH(x)
+#endif
+
+#define AARCH64REG_READ_INLINE3(regname, regdesc, arch)		\
+static __inline uint64_t ATTR_TARGET_ARCH(arch)			\
 reg_##regname##_read(void)					\
 {								\
 	uint64_t __rv;						\
-	__asm __volatile("mrs %0, " #regdesc : "=r"(__rv));	\
+	__asm __volatile(					\
+	    ASM_ARCH(arch)					\
+	    "mrs %0, " #regdesc : "=r"(__rv)			\
+	);							\
 	return __rv;						\
 }
 
-#define AARCH64REG_WRITE_INLINE2(regname, regdesc)		\
-static __inline void						\
+#define AARCH64REG_READ_INLINE2(regname, regdesc)		\
+	AARCH64REG_READ_INLINE3(regname, regdesc, )
+
+#define AARCH64REG_WRITE_INLINE3(regname, regdesc, arch)	\
+static __inline void ATTR_TARGET_ARCH(arch)			\
 reg_##regname##_write(uint64_t __val)				\
 {								\
-	__asm __volatile("msr " #regdesc ", %0" :: "r"(__val));	\
+	__asm __volatile(					\
+	    ASM_ARCH(arch)					\
+	    "msr " #regdesc ", %0" :: "r"(__val) : "memory"	\
+	);							\
 }
+
+#define AARCH64REG_WRITE_INLINE2(regname, regdesc)		\
+	AARCH64REG_WRITE_INLINE3(regname, regdesc, )
 
 #define AARCH64REG_WRITEIMM_INLINE2(regname, regdesc)		\
 static __inline void						\
 reg_##regname##_write(uint64_t __val)				\
 {								\
-	__asm __volatile("msr " #regdesc ", %0" :: "n"(__val));	\
+	__asm __volatile(					\
+	    "msr " #regdesc ", %0" :: "n"(__val) : "memory"	\
+	);							\
 }
 
 #define AARCH64REG_READ_INLINE(regname)				\
@@ -75,7 +99,9 @@ reg_##regname##_write(uint64_t __val)				\
 static __inline void						\
 reg_##regname##_write(uint64_t __val)				\
 {								\
-	__asm __volatile("at " #regdesc ", %0" :: "r"(__val));	\
+	__asm __volatile(					\
+	    "at " #regdesc ", %0" :: "r"(__val) : "memory"	\
+	);							\
 }
 
 #define AARCH64REG_ATWRITE_INLINE(regname)			\
@@ -86,10 +112,14 @@ reg_##regname##_write(uint64_t __val)				\
  */
 AARCH64REG_READ_INLINE(ctr_el0)		// Cache Type Register
 
+#define	CTR_EL0_TMIN_LINE	__BITS(37,32)	// Tag MIN LINE size
+#define	CTR_EL0_DIC		__BIT(29)	// Instruction cache requirement
+#define	CTR_EL0_IDC		__BIT(28)	// Data Cache clean requirement
 #define	CTR_EL0_CWG_LINE	__BITS(27,24)	// Cacheback Writeback Granule
 #define	CTR_EL0_ERG_LINE	__BITS(23,20)	// Exclusives Reservation Granule
 #define	CTR_EL0_DMIN_LINE	__BITS(19,16)	// Dcache MIN LINE size (log2 - 2)
 #define	CTR_EL0_L1IP_MASK	__BITS(15,14)
+#define	 CTR_EL0_L1IP_VPIPT	0		//  VMID-aware Physical Index, Physical Tag
 #define	 CTR_EL0_L1IP_AIVIVT	1		//  ASID-tagged Virtual Index, Virtual Tag
 #define	 CTR_EL0_L1IP_VIPT	2		//  Virtual Index, Physical Tag
 #define	 CTR_EL0_L1IP_PIPT	3		//  Physical Index, Physical Tag
@@ -166,16 +196,23 @@ AARCH64REG_READ_INLINE2(cbar_el1, s3_1_c15_c3_0)	// Cortex-A57
 
 AARCH64REG_READ_INLINE(ccsidr_el1)
 
-#define	CCSIDR_WT		__BIT(31)	// Write-through supported
-#define	CCSIDR_WB		__BIT(30)	// Write-back supported
-#define	CCSIDR_RA		__BIT(29)	// Read-allocation supported
-#define	CCSIDR_WA		__BIT(28)	// Write-allocation supported
+/* 32bit format CCSIDR_EL1 */
+#define	CCSIDR_WT		__BIT(31)	// OBSOLETE: Write-through supported
+#define	CCSIDR_WB		__BIT(30)	// OBSOLETE: Write-back supported
+#define	CCSIDR_RA		__BIT(29)	// OBSOLETE: Read-allocation supported
+#define	CCSIDR_WA		__BIT(28)	// OBSOLETE: Write-allocation supported
 #define	CCSIDR_NUMSET		__BITS(27,13)	// (Number of sets in cache) - 1
 #define	CCSIDR_ASSOC		__BITS(12,3)	// (Associativity of cache) - 1
 #define	CCSIDR_LINESIZE 	__BITS(2,0)	// Number of bytes in cache line
 
+/* 64bit format CCSIDR_EL1 (ARMv8.3-CCIDX is implemented) */
+#define	CCSIDR64_NUMSET		__BITS(55,32)	// (Number of sets in cache) - 1
+#define	CCSIDR64_ASSOC		__BITS(23,3)	// (Associativity of cache) - 1
+#define	CCSIDR64_LINESIZE 	__BITS(2,0)	// Number of bytes in cache line
+
 AARCH64REG_READ_INLINE(clidr_el1)
 
+#define	CLIDR_ICB		__BITS(32,30)	// Inner cache boundary
 #define	CLIDR_LOUU		__BITS(29,27)	// Level of Unification Uniprocessor
 #define	CLIDR_LOC		__BITS(26,24)	// Level of Coherency
 #define	CLIDR_LOUIS		__BITS(23,21)	// Level of Unification InnerShareable*/
@@ -197,6 +234,13 @@ AARCH64REG_READ_INLINE(id_aa64afr0_el1)
 AARCH64REG_READ_INLINE(id_aa64afr1_el1)
 AARCH64REG_READ_INLINE(id_aa64dfr0_el1)
 
+#define	ID_AA64DFR0_EL1_TRACEFILT	__BITS(43,40)
+#define	 ID_AA64DFR0_EL1_TRACEFILT_NONE	 0
+#define	 ID_AA64DFR0_EL1_TRACEFILT_IMPL	 1
+#define	ID_AA64DFR0_EL1_DBLLOCK		__BITS(39,36)
+#define	 ID_AA64DFR0_EL1_DBLLOCK_IMPL	 0
+#define	 ID_AA64DFR0_EL1_DBLLOCK_NONE	 15
+#define	ID_AA64DFR0_EL1_PMSVER		__BITS(35,32)
 #define	ID_AA64DFR0_EL1_CTX_CMPS	__BITS(31,28)
 #define	ID_AA64DFR0_EL1_WRPS		__BITS(20,23)
 #define	ID_AA64DFR0_EL1_BRPS		__BITS(12,15)
@@ -214,12 +258,45 @@ AARCH64REG_READ_INLINE(id_aa64dfr1_el1)
 
 AARCH64REG_READ_INLINE(id_aa64isar0_el1)
 
+#define	ID_AA64ISAR0_EL1_RNDR		__BITS(63,60)
+#define	 ID_AA64ISAR0_EL1_RNDR_NONE	 0
+#define	 ID_AA64ISAR0_EL1_RNDR_RNDRRS	 1
+#define	ID_AA64ISAR0_EL1_TLB		__BITS(59,56)
+#define	 ID_AA64ISAR0_EL1_TLB_NONE	 0
+#define	 ID_AA64ISAR0_EL1_TLB_OS	 1
+#define	 ID_AA64ISAR0_EL1_TLB_OS_TLB	 2
+#define	ID_AA64ISAR0_EL1_TS		__BITS(55,52)
+#define	 ID_AA64ISAR0_EL1_TS_NONE	 0
+#define	 ID_AA64ISAR0_EL1_TS_CFINV	 1
+#define	 ID_AA64ISAR0_EL1_TS_AXFLAG	 2
+#define	ID_AA64ISAR0_EL1_FHM		__BITS(51,48)
+#define	 ID_AA64ISAR0_EL1_FHM_NONE	 0
+#define	 ID_AA64ISAR0_EL1_FHM_FMLAL	 1
+#define	ID_AA64ISAR0_EL1_DP		__BITS(47,44)
+#define	 ID_AA64ISAR0_EL1_DP_NONE	 0
+#define	 ID_AA64ISAR0_EL1_DP_UDOT	 1
+#define	ID_AA64ISAR0_EL1_SM4		__BITS(43,40)
+#define	 ID_AA64ISAR0_EL1_SM4_NONE	 0
+#define	 ID_AA64ISAR0_EL1_SM4_SM4	 1
+#define	ID_AA64ISAR0_EL1_SM3		__BITS(39,36)
+#define	 ID_AA64ISAR0_EL1_SM3_NONE	 0
+#define	 ID_AA64ISAR0_EL1_SM3_SM3	 1
+#define	ID_AA64ISAR0_EL1_SHA3		__BITS(35,32)
+#define	 ID_AA64ISAR0_EL1_SHA3_NONE	 0
+#define	 ID_AA64ISAR0_EL1_SHA3_EOR3	 1
+#define	ID_AA64ISAR0_EL1_RDM		__BITS(31,28)
+#define	 ID_AA64ISAR0_EL1_RDM_NONE	 0
+#define	 ID_AA64ISAR0_EL1_RDM_SQRDML	 1
+#define	ID_AA64ISAR0_EL1_ATOMIC		__BITS(23,20)
+#define	 ID_AA64ISAR0_EL1_ATOMIC_NONE	 0
+#define	 ID_AA64ISAR0_EL1_ATOMIC_SWP	 1
 #define	ID_AA64ISAR0_EL1_CRC32		__BITS(19,16)
 #define	 ID_AA64ISAR0_EL1_CRC32_NONE	 0
 #define	 ID_AA64ISAR0_EL1_CRC32_CRC32X	 1
 #define	ID_AA64ISAR0_EL1_SHA2		__BITS(15,12)
 #define	 ID_AA64ISAR0_EL1_SHA2_NONE	 0
 #define	 ID_AA64ISAR0_EL1_SHA2_SHA256HSU 1
+#define	 ID_AA64ISAR0_EL1_SHA2_SHA512HSU 2
 #define	ID_AA64ISAR0_EL1_SHA1		__BITS(11,8)
 #define	 ID_AA64ISAR0_EL1_SHA1_NONE	 0
 #define	 ID_AA64ISAR0_EL1_SHA1_SHA1CPMHSU 1
@@ -229,8 +306,57 @@ AARCH64REG_READ_INLINE(id_aa64isar0_el1)
 #define	 ID_AA64ISAR0_EL1_AES_PMUL	 2
 
 AARCH64REG_READ_INLINE(id_aa64isar1_el1)
+
+#define	ID_AA64ISAR1_EL1_I8MM		__BITS(55,52)
+#define	 ID_AA64ISAR1_EL1_I8MM_NONE	 0
+#define	 ID_AA64ISAR1_EL1_I8MM_SUPPORTED 1
+#define	ID_AA64ISAR1_EL1_DGH		__BITS(51,48)
+#define	 ID_AA64ISAR1_EL1_DGH_NONE	 0
+#define	 ID_AA64ISAR1_EL1_DGH_SUPPORTED	 1
+#define	ID_AA64ISAR1_EL1_BF16		__BITS(47,44)
+#define	 ID_AA64ISAR1_EL1_BF16_NONE	 0
+#define	 ID_AA64ISAR1_EL1_BF16_BFDOT	 1
+#define	ID_AA64ISAR1_EL1_SPECRES	__BITS(43,40)
+#define	 ID_AA64ISAR1_EL1_SPECRES_NONE	 0
+#define	 ID_AA64ISAR1_EL1_SPECRES_SUPPORTED 1
+#define	ID_AA64ISAR1_EL1_SB		__BITS(39,36)
+#define	 ID_AA64ISAR1_EL1_SB_NONE	 0
+#define	 ID_AA64ISAR1_EL1_SB_SUPPORTED	 1
+#define	ID_AA64ISAR1_EL1_FRINTTS	__BITS(35,32)
+#define	 ID_AA64ISAR1_EL1_FRINTTS_NONE	 0
+#define	 ID_AA64ISAR1_EL1_FRINTTS_SUPPORTED 1
+#define	ID_AA64ISAR1_EL1_GPI		__BITS(31,28)
+#define	 ID_AA64ISAR1_EL1_GPI_NONE	 0
+#define	 ID_AA64ISAR1_EL1_GPI_SUPPORTED	 1
+#define	ID_AA64ISAR1_EL1_GPA		__BITS(27,24)
+#define	 ID_AA64ISAR1_EL1_GPA_NONE	 0
+#define	 ID_AA64ISAR1_EL1_GPA_QARMA	 1
+#define	ID_AA64ISAR1_EL1_LRCPC		__BITS(23,20)
+#define	 ID_AA64ISAR1_EL1_LRCPC_NONE	 0
+#define	 ID_AA64ISAR1_EL1_LRCPC_PR	 1
+#define	 ID_AA64ISAR1_EL1_LRCPC_PR_UR	 2
+#define	ID_AA64ISAR1_EL1_FCMA		__BITS(19,16)
+#define	 ID_AA64ISAR1_EL1_FCMA_NONE	 0
+#define	 ID_AA64ISAR1_EL1_FCMA_SUPPORTED 1
+#define	ID_AA64ISAR1_EL1_JSCVT		__BITS(15,12)
+#define	 ID_AA64ISAR1_EL1_JSCVT_NONE	 0
+#define	 ID_AA64ISAR1_EL1_JSCVT_SUPPORTED 1
+#define	ID_AA64ISAR1_EL1_API		__BITS(11,8)
+#define	 ID_AA64ISAR1_EL1_API_NONE	 0
+#define	 ID_AA64ISAR1_EL1_API_SUPPORTED	 1
+#define	 ID_AA64ISAR1_EL1_API_ENHANCED	 2
+#define	ID_AA64ISAR1_EL1_APA		__BITS(7,4)
+#define	 ID_AA64ISAR1_EL1_APA_NONE	 0
+#define	 ID_AA64ISAR1_EL1_APA_QARMA	 1
+#define	 ID_AA64ISAR1_EL1_APA_QARMA_ENH	 2
+#define	ID_AA64ISAR1_EL1_DPB		__BITS(3,0)
+#define	 ID_AA64ISAR1_EL1_DPB_NONE	 0
+#define	 ID_AA64ISAR1_EL1_DPB_CVAP	 1
+#define	 ID_AA64ISAR1_EL1_DPB_CVAP_CVADP 2
+
 AARCH64REG_READ_INLINE(id_aa64mmfr0_el1)
 
+#define	ID_AA64MMFR0_EL1_EXS		__BITS(43,40)
 #define	ID_AA64MMFR0_EL1_TGRAN4		__BITS(31,28)
 #define	 ID_AA64MMFR0_EL1_TGRAN4_4KB	 0
 #define	 ID_AA64MMFR0_EL1_TGRAN4_NONE	 15
@@ -259,12 +385,109 @@ AARCH64REG_READ_INLINE(id_aa64mmfr0_el1)
 #define	 ID_AA64MMFR0_EL1_PARANGE_4T	 3
 #define	 ID_AA64MMFR0_EL1_PARANGE_16T	 4
 #define	 ID_AA64MMFR0_EL1_PARANGE_256T	 5
+#define	 ID_AA64MMFR0_EL1_PARANGE_4P	 6
+
+AARCH64REG_READ_INLINE(id_aa64mmfr1_el1)
+
+#define	ID_AA64MMFR1_EL1_XNX		__BITS(31,28)
+#define	 ID_AA64MMFR1_EL1_XNX_NONE	 0
+#define	 ID_AA64MMFR1_EL1_XNX_SUPPORTED	 1
+#define	ID_AA64MMFR1_EL1_SPECSEI	__BITS(27,24)
+#define	 ID_AA64MMFR1_EL1_SPECSEI_NONE	 0
+#define	 ID_AA64MMFR1_EL1_SPECSEI_EXTINT 1
+#define	ID_AA64MMFR1_EL1_PAN		__BITS(23,20)
+#define	 ID_AA64MMFR1_EL1_PAN_NONE	 0
+#define	 ID_AA64MMFR1_EL1_PAN_SUPPORTED	 1
+#define	 ID_AA64MMFR1_EL1_PAN_S1E1	 2
+#define	ID_AA64MMFR1_EL1_LO		__BITS(19,16)
+#define	 ID_AA64MMFR1_EL1_LO_NONE	 0
+#define	 ID_AA64MMFR1_EL1_LO_SUPPORTED	 1
+#define	ID_AA64MMFR1_EL1_HPDS		__BITS(15,12)
+#define	 ID_AA64MMFR1_EL1_HPDS_NONE	 0
+#define	 ID_AA64MMFR1_EL1_HPDS_SUPPORTED 1
+#define	 ID_AA64MMFR1_EL1_HPDS_EXTRA_PTD 2
+#define	ID_AA64MMFR1_EL1_VH		__BITS(11,8)
+#define	 ID_AA64MMFR1_EL1_VH_NONE	 0
+#define	 ID_AA64MMFR1_EL1_VH_SUPPORTED	 1
+#define	ID_AA64MMFR1_EL1_VMIDBITS	__BITS(7,4)
+#define	 ID_AA64MMFR1_EL1_VMIDBITS_8BIT	 0
+#define	 ID_AA64MMFR1_EL1_VMIDBITS_16BIT 2
+#define	ID_AA64MMFR1_EL1_HAFDBS		__BITS(3,0)
+#define	 ID_AA64MMFR1_EL1_HAFDBS_NONE	 0
+#define	 ID_AA64MMFR1_EL1_HAFDBS_A	 1
+#define	 ID_AA64MMFR1_EL1_HAFDBS_AD	 2
+
+AARCH64REG_READ_INLINE3(id_aa64mmfr2_el1, id_aa64mmfr2_el1,
+    ATTR_ARCH("armv8.2-a"))
+
+#define	ID_AA64MMFR2_EL1_E0PD		__BITS(63,60)
+#define	 ID_AA64MMFR2_EL1_E0PD_NONE	 0
+#define	 ID_AA64MMFR2_EL1_E0PD_SUPPORTED 1
+#define	ID_AA64MMFR2_EL1_EVT		__BITS(59,56)
+#define	 ID_AA64MMFR2_EL1_EVT_NONE	 0
+#define	 ID_AA64MMFR2_EL1_EVT_TO_TI	 1
+#define	 ID_AA64MMFR2_EL1_EVT_TO_TI_TTL	 2
+#define	ID_AA64MMFR2_EL1_BBM		__BITS(55,52)
+#define	 ID_AA64MMFR2_EL1_BBM_L0	 0
+#define	 ID_AA64MMFR2_EL1_BBM_L1	 1
+#define	 ID_AA64MMFR2_EL1_BBM_L2	 2
+#define	ID_AA64MMFR2_EL1_TTL		__BITS(51,48)
+#define	 ID_AA64MMFR2_EL1_TTL_NONE	 0
+#define	 ID_AA64MMFR2_EL1_TTL_SUPPORTED	 1
+#define	ID_AA64MMFR2_EL1_FWB		__BITS(43,40)
+#define	 ID_AA64MMFR2_EL1_FWB_NONE	 0
+#define	 ID_AA64MMFR2_EL1_FWB_SUPPORTED	 1
+#define	ID_AA64MMFR2_EL1_IDS		__BITS(39,36)
+#define	 ID_AA64MMFR2_EL1_IDS_0X0	 0
+#define	 ID_AA64MMFR2_EL1_IDS_0X18	 1
+#define	ID_AA64MMFR2_EL1_AT		__BITS(35,32)
+#define	 ID_AA64MMFR2_EL1_AT_NONE	 0
+#define	 ID_AA64MMFR2_EL1_AT_16BIT	 1
+#define	ID_AA64MMFR2_EL1_ST		__BITS(31,28)
+#define	 ID_AA64MMFR2_EL1_ST_39		 0
+#define	 ID_AA64MMFR2_EL1_ST_48		 1
+#define	ID_AA64MMFR2_EL1_NV		__BITS(27,24)
+#define	 ID_AA64MMFR2_EL1_NV_NONE	 0
+#define	 ID_AA64MMFR2_EL1_NV_HCR	 1
+#define	 ID_AA64MMFR2_EL1_NV_HCR_VNCR	 2
+#define	ID_AA64MMFR2_EL1_CCIDX		__BITS(23,20)
+#define	 ID_AA64MMFR2_EL1_CCIDX_32BIT	 0
+#define	 ID_AA64MMFR2_EL1_CCIDX_64BIT	 1
+#define	ID_AA64MMFR2_EL1_VARANGE	__BITS(19,16)
+#define	 ID_AA64MMFR2_EL1_VARANGE_48BIT	 0
+#define	 ID_AA64MMFR2_EL1_VARANGE_52BIT	 1
+#define	ID_AA64MMFR2_EL1_IESB		__BITS(15,12)
+#define	 ID_AA64MMFR2_EL1_IESB_NONE	 0
+#define	 ID_AA64MMFR2_EL1_IESB_SUPPORTED 1
+#define	ID_AA64MMFR2_EL1_LSM		__BITS(11,8)
+#define	 ID_AA64MMFR2_EL1_LSM_NONE	 0
+#define	 ID_AA64MMFR2_EL1_LSM_SUPPORTED	 1
+#define	ID_AA64MMFR2_EL1_UAO		__BITS(7,4)
+#define	 ID_AA64MMFR2_EL1_UAO_NONE	 0
+#define	 ID_AA64MMFR2_EL1_UAO_SUPPORTED	 1
+#define	ID_AA64MMFR2_EL1_CNP		__BITS(3,0)
+#define	 ID_AA64MMFR2_EL1_CNP_NONE	 0
+#define	 ID_AA64MMFR2_EL1_CNP_SUPPORTED	 1
 
 AARCH64REG_READ_INLINE2(a72_cpuactlr_el1, s3_1_c15_c2_0)
-AARCH64REG_READ_INLINE(id_aa64mmfr1_el1)
-AARCH64REG_READ_INLINE(id_aa64mmfr2_el1)
 AARCH64REG_READ_INLINE(id_aa64pfr0_el1)
 AARCH64REG_READ_INLINE(id_aa64pfr1_el1)
+
+#define	ID_AA64PFR1_EL1_RASFRAC		__BITS(15,12)
+#define	 ID_AA64PFR1_EL1_RASFRAC_NORMAL	 0
+#define	 ID_AA64PFR1_EL1_RASFRAC_EXTRA	 1
+#define	ID_AA64PFR1_EL1_MTE		__BITS(11,8)
+#define	 ID_AA64PFR1_EL1_MTE_NONE	 0
+#define	 ID_AA64PFR1_EL1_MTE_PARTIAL	 1
+#define	 ID_AA64PFR1_EL1_MTE_SUPPORTED	 2
+#define	ID_AA64PFR1_EL1_SSBS		__BITS(7,4)
+#define	 ID_AA64PFR1_EL1_SSBS_NONE	 0
+#define	 ID_AA64PFR1_EL1_SSBS_SUPPORTED	 1
+#define	 ID_AA64PFR1_EL1_SSBS_MSR_MRS	 2
+#define	ID_AA64PFR1_EL1_BT		__BITS(3,0)
+#define	 ID_AA64PFR1_EL1_BT_NONE	 0
+#define	 ID_AA64PFR1_EL1_BT_SUPPORTED	 1
+
 AARCH64REG_READ_INLINE(id_aa64zfr0_el1)
 AARCH64REG_READ_INLINE(id_pfr1_el1)
 AARCH64REG_READ_INLINE(isr_el1)
@@ -363,6 +586,34 @@ AARCH64REG_READ_INLINE(revidr_el1)
 /*
  * These are read/write registers
  */
+AARCH64REG_READ_INLINE3(APIAKeyLo_EL1, apiakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APIAKeyLo_EL1, apiakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APIAKeyHi_EL1, apiakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APIAKeyHi_EL1, apiakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
+AARCH64REG_READ_INLINE3(APIBKeyLo_EL1, apibkeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APIBKeyLo_EL1, apibkeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APIBKeyHi_EL1, apibkeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APIBKeyHi_EL1, apibkeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
+AARCH64REG_READ_INLINE3(APDAKeyLo_EL1, apdakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APDAKeyLo_EL1, apdakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APDAKeyHi_EL1, apdakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APDAKeyHi_EL1, apdakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
+AARCH64REG_READ_INLINE3(APDBKeyLo_EL1, apdbkeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APDBKeyLo_EL1, apdbkeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APDBKeyHi_EL1, apdbkeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APDBKeyHi_EL1, apdbkeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
+AARCH64REG_READ_INLINE3(APGAKeyLo_EL1, apgakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APGAKeyLo_EL1, apgakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APGAKeyHi_EL1, apgakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APGAKeyHi_EL1, apgakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
+AARCH64REG_READ_INLINE3(pan, pan, ATTR_ARCH("armv8.1-a"))
+AARCH64REG_WRITE_INLINE3(pan, pan, ATTR_ARCH("armv8.1-a"))
+
 AARCH64REG_READ_INLINE(cpacr_el1)	// Coprocessor Access Control Regiser
 AARCH64REG_WRITE_INLINE(cpacr_el1)
 
@@ -406,6 +657,7 @@ AARCH64REG_WRITE_INLINE(esr_el1)
 #define	 ESR_EC_FP_ACCESS	 0x07	// AXX: Access to SIMD/FP Registers
 #define	 ESR_EC_FPID		 0x08	// A32: MCR/MRC access to CP10 !EC=7
 #define	 ESR_EC_CP14_RRT	 0x0c	// A32: MRRC access to CP14
+#define	 ESR_EC_BTE_A64		 0x0d	// A64: Branch Target Exception (V8.5)
 #define	 ESR_EC_ILL_STATE	 0x0e	// AXX: Illegal Execution State
 #define	 ESR_EC_SVC_A32		 0x11	// A32: SVC Instruction Execution
 #define	 ESR_EC_HVC_A32		 0x12	// A32: HVC Instruction Execution
@@ -523,6 +775,7 @@ AARCH64REG_WRITE_INLINE(mair_el1)
 #define	MAIR_ATTR6		 __BITS(55,48)
 #define	MAIR_ATTR7		 __BITS(63,56)
 #define	MAIR_DEVICE_nGnRnE	 0x00	// NoGathering,NoReordering,NoEarlyWriteAck.
+#define	MAIR_DEVICE_nGnRE	 0x04	// NoGathering,NoReordering,EarlyWriteAck.
 #define	MAIR_NORMAL_NC		 0x44
 #define	MAIR_NORMAL_WT		 0xbb
 #define	MAIR_NORMAL_WB		 0xff
@@ -531,7 +784,8 @@ AARCH64REG_READ_INLINE(par_el1)		// Physical Address Register
 AARCH64REG_WRITE_INLINE(par_el1)
 
 #define	PAR_ATTR		__BITS(63,56)	// F=0 memory attributes
-#define	PAR_PA			__BITS(47,12)	// F=0 physical address
+#define	PAR_PA			__BITS(51,12)	// F=0 physical address
+#define	PAR_PA_SHIFT		12
 #define	PAR_NS			__BIT(9)	// F=0 non-secure
 #define	PAR_S			__BIT(9)	// F=1 failure stage
 #define	PAR_SHA			__BITS(8,7)	// F=0 shareability attribute
@@ -564,23 +818,39 @@ AARCH64REG_WRITE_INLINE(sctlr_el1)
 #define	SCTLR_SA		__BIT(3)
 #define	SCTLR_SA0		__BIT(4)
 #define	SCTLR_CP15BEN		__BIT(5)
-#define	SCTLR_THEE		__BIT(6)
+#define	SCTLR_nAA		__BIT(6)
 #define	SCTLR_ITD		__BIT(7)
 #define	SCTLR_SED		__BIT(8)
 #define	SCTLR_UMA		__BIT(9)
+#define	SCTLR_EnRCTX		__BIT(10)
+#define	SCTLR_EOS		__BIT(11)
 #define	SCTLR_I			__BIT(12)
+#define	SCTLR_EnDB		__BIT(13)
 #define	SCTLR_DZE		__BIT(14)
 #define	SCTLR_UCT		__BIT(15)
 #define	SCTLR_nTWI		__BIT(16)
 #define	SCTLR_nTWE		__BIT(18)
 #define	SCTLR_WXN		__BIT(19)
+#define	SCTLR_TSCXT		__BIT(20)
 #define	SCTLR_IESB		__BIT(21)
+#define	SCTLR_EIS		__BIT(22)
 #define	SCTLR_SPAN		__BIT(23)
-#define	SCTLR_EOE		__BIT(24)
+#define	SCTLR_E0E		__BIT(24)
 #define	SCTLR_EE		__BIT(25)
 #define	SCTLR_UCI		__BIT(26)
+#define	SCTLR_EnDA		__BIT(27)
 #define	SCTLR_nTLSMD		__BIT(28)
 #define	SCTLR_LSMAOE		__BIT(29)
+#define	SCTLR_EnIB		__BIT(30)
+#define	SCTLR_EnIA		__BIT(31)
+#define	SCTLR_BT0		__BIT(35)
+#define	SCTLR_BT1		__BIT(36)
+#define	SCTLR_ITFSB		__BIT(37)
+#define	SCTLR_TCF0		__BITS(39,38)
+#define	SCTLR_TCF		__BITS(41,40)
+#define	SCTLR_ATA0		__BIT(42)
+#define	SCTLR_ATA		__BIT(43)
+#define	SCTLR_DSSBS		__BIT(44)
 
 // current EL stack pointer
 static __inline uint64_t
@@ -608,9 +878,9 @@ AARCH64REG_WRITE_INLINE(spsr_el1)
 #define	 SPSR_C	 		__BIT(29)	// Carry
 #define	 SPSR_V	 		__BIT(28)	// oVerflow
 #define	SPSR_A32_Q 		__BIT(27)	// A32: Overflow
-#define	SPSR_A32_J 		__BIT(24)	// A32: Jazelle Mode
-#define	SPSR_A32_IT1 		__BIT(23)	// A32: IT[1]
-#define	SPSR_A32_IT0 		__BIT(22)	// A32: IT[0]
+#define	SPSR_A32_IT1 		__BIT(26)	// A32: IT[1]
+#define	SPSR_A32_IT0 		__BIT(25)	// A32: IT[0]
+#define	SPSR_PAN	 	__BIT(22)	// Privileged Access Never
 #define	SPSR_SS	 		__BIT(21)	// Software Step
 #define	SPSR_SS_SHIFT		21
 #define	SPSR_IL	 		__BIT(20)	// Instruction Length
@@ -621,6 +891,7 @@ AARCH64REG_WRITE_INLINE(spsr_el1)
 #define	SPSR_IT4 		__BIT(12)	// A32: IT[4]
 #define	SPSR_IT3 		__BIT(11)	// A32: IT[3]
 #define	SPSR_IT2 		__BIT(10)	// A32: IT[2]
+#define	SPSR_A64_BTYPE 		__BITS(11,10)	// A64: BTYPE
 #define	SPSR_A64_D 		__BIT(9)	// A64: Debug Exception Mask
 #define	SPSR_A32_E 		__BIT(9)	// A32: BE Endian Mode
 #define	SPSR_A	 		__BIT(8)	// Async abort (SError) Mask
@@ -649,6 +920,26 @@ AARCH64REG_WRITE_INLINE(tcr_el1)
 
 
 /* TCR_EL1 - Translation Control Register */
+#define TCR_TCMA1		__BIT(58)		/* ARMv8.5-MemTag control when ADDR[59:55] = 0b11111 */
+#define TCR_TCMA0		__BIT(57)		/* ARMv8.5-MemTag control when ADDR[59:55] = 0b00000 */
+#define TCR_E0PD1		__BIT(56)		/* ARMv8.5-E0PD Faulting control for EL0 by TTBR1 */
+#define TCR_E0PD0		__BIT(55)		/* ARMv8.5-E0PD Faulting control for EL0 by TTBR0 */
+#define TCR_NFD1		__BIT(54)		/* SVE Non-fault translation table walk disable (TTBR1) */
+#define TCR_NFD0		__BIT(53)		/* SVE Non-fault translation table walk disable (TTBR0) */
+#define TCR_TBID1		__BIT(52)		/* ARMv8.3-PAuth TBI for instruction addr (TTBR1) */
+#define TCR_TBID0		__BIT(51)		/* ARMv8.3-PAuth TBI for instruction addr (TTBR0) */
+#define TCR_HWU162		__BIT(50)		/* ARMv8.1-TTPBHA bit[62] of PTE (TTBR1) */
+#define TCR_HWU161		__BIT(49)		/* ARMv8.1-TTPBHA bit[61] of PTE (TTBR1) */
+#define TCR_HWU160		__BIT(48)		/* ARMv8.1-TTPBHA bit[60] of PTE (TTBR1) */
+#define TCR_HWU159		__BIT(47)		/* ARMv8.1-TTPBHA bit[59] of PTE (TTBR1) */
+#define TCR_HWU062		__BIT(46)		/* ARMv8.1-TTPBHA bit[62] of PTE (TTBR0) */
+#define TCR_HWU061		__BIT(45)		/* ARMv8.1-TTPBHA bit[61] of PTE (TTBR0) */
+#define TCR_HWU060		__BIT(44)		/* ARMv8.1-TTPBHA bit[60] of PTE (TTBR0) */
+#define TCR_HWU059		__BIT(43)		/* ARMv8.1-TTPBHA bit[59] of PTE (TTBR0) */
+#define TCR_HPD1		__BIT(42)		/* ARMv8.1-HPD Hierarchical Permission (TTBR1) */
+#define TCR_HPD0		__BIT(41)		/* ARMv8.1-HPD Hierarchical Permission (TTBR0) */
+#define TCR_HD			__BIT(40)		/* ARMv8.1-TTHM Hardware Dirty flag */
+#define TCR_HA			__BIT(39)		/* ARMv8.1-TTHM Hardware Access flag */
 #define TCR_TBI1		__BIT(38)		/* ignore Top Byte TTBR1_EL1 */
 #define TCR_TBI0		__BIT(37)		/* ignore Top Byte TTBR0_EL1 */
 #define TCR_AS64K		__BIT(36)		/* Use 64K ASIDs */
@@ -917,6 +1208,9 @@ AARCH64REG_READ_INLINE(pmceid1_el0)
 AARCH64REG_WRITE_INLINE(pmcntenclr_el0)
 AARCH64REG_WRITE_INLINE(pmcntenset_el0)
 
+#define	PMCNTEN_C		__BIT(31)	// Enable the cycle counter
+#define	PMCNTEN_P		__BITS(30,0)	// Enable event counter bits
+
 AARCH64REG_READ_INLINE(pmcr_el0)
 AARCH64REG_WRITE_INLINE(pmcr_el0)
 
@@ -1028,15 +1322,44 @@ AARCH64REG_WRITE_INLINE(cntvct_el0)
 #define	CNTCTL_ENABLE		__BIT(0)	// Timer Enabled
 
 // ID_AA64PFR0_EL1: AArch64 Processor Feature Register 0
+#define	ID_AA64PFR0_EL1_CSV3		__BITS(63,60) // Speculative fault data
+#define	 ID_AA64PFR0_EL1_CSV3_NONE	0
+#define	 ID_AA64PFR0_EL1_CSV3_IMPL	1
+#define	ID_AA64PFR0_EL1_CSV2		__BITS(59,56) // Speculative branches
+#define	 ID_AA64PFR0_EL1_CSV2_NONE	0
+#define	 ID_AA64PFR0_EL1_CSV2_IMPL	1
+// reserved [55:52]
+#define	ID_AA64PFR0_EL1_DIT		__BITS(51,48) // Data-indep. timing
+#define	 ID_AA64PFR0_EL1_DIT_NONE	0
+#define	 ID_AA64PFR0_EL1_DIT_IMPL	1
+#define	ID_AA64PFR0_EL1_AMU		__BITS(47,44) // Activity monitors ext.
+#define	 ID_AA64PFR0_EL1_AMU_NONE	0
+#define	 ID_AA64PFR0_EL1_AMU_IMPLv8_4	1
+#define	 ID_AA64PFR0_EL1_AMU_IMPLv8_6	2
+#define	ID_AA64PFR0_EL1_MPAM		__BITS(43,40) // MPAM Extension
+#define	 ID_AA64PFR0_EL1_MPAM_NONE	0
+#define	 ID_AA64PFR0_EL1_MPAM_IMPL	1
+#define	ID_AA64PFR0_EL1_SEL2		__BITS(43,40) // Secure EL2
+#define	 ID_AA64PFR0_EL1_SEL2_NONE	0
+#define	 ID_AA64PFR0_EL1_SEL2_IMPL	1
+#define	ID_AA64PFR0_EL1_SVE		__BITS(35,32) // Scalable Vector
+#define	 ID_AA64PFR0_EL1_SVE_NONE	 0
+#define	 ID_AA64PFR0_EL1_SVE_IMPL	 1
+#define	ID_AA64PFR0_EL1_RAS		__BITS(31,28) // RAS Extension
+#define	 ID_AA64PFR0_EL1_RAS_NONE	 0
+#define	 ID_AA64PFR0_EL1_RAS_IMPL	 1
+#define	 ID_AA64PFR0_EL1_RAS_ERX	 2
 #define	ID_AA64PFR0_EL1_GIC		__BITS(24,27) // GIC CPU IF
 #define	ID_AA64PFR0_EL1_GIC_SHIFT	24
 #define	 ID_AA64PFR0_EL1_GIC_CPUIF_EN	 1
 #define	 ID_AA64PFR0_EL1_GIC_CPUIF_NONE	 0
 #define	ID_AA64PFR0_EL1_ADVSIMD		__BITS(23,20) // SIMD
 #define	 ID_AA64PFR0_EL1_ADV_SIMD_IMPL	 0x0
+#define	 ID_AA64PFR0_EL1_ADV_SIMD_HP	 0x1
 #define	 ID_AA64PFR0_EL1_ADV_SIMD_NONE	 0xf
 #define	ID_AA64PFR0_EL1_FP		__BITS(19,16) // FP
 #define	 ID_AA64PFR0_EL1_FP_IMPL	 0x0
+#define	 ID_AA64PFR0_EL1_FP_HP		 0x1
 #define	 ID_AA64PFR0_EL1_FP_NONE	 0xf
 #define	ID_AA64PFR0_EL1_EL3		__BITS(15,12) // EL3 handling
 #define	 ID_AA64PFR0_EL1_EL3_NONE	 0
@@ -1296,9 +1619,9 @@ struct aarch64_sysctl_cpu_id {
 	uint64_t ac_aa64isar0;	/* A64 Instruction Set Attribute Register 0 */
 	uint64_t ac_aa64isar1;	/* A64 Instruction Set Attribute Register 1 */
 
-	uint64_t ac_aa64mmfr0;	/* A64 Memroy Model Feature Register 0 */
-	uint64_t ac_aa64mmfr1;	/* A64 Memroy Model Feature Register 1 */
-	uint64_t ac_aa64mmfr2;	/* A64 Memroy Model Feature Register 2 */
+	uint64_t ac_aa64mmfr0;	/* A64 Memory Model Feature Register 0 */
+	uint64_t ac_aa64mmfr1;	/* A64 Memory Model Feature Register 1 */
+	uint64_t ac_aa64mmfr2;	/* A64 Memory Model Feature Register 2 */
 
 	uint64_t ac_aa64pfr0;	/* A64 Processor Feature Register 0 */
 	uint64_t ac_aa64pfr1;	/* A64 Processor Feature Register 1 */
@@ -1308,6 +1631,10 @@ struct aarch64_sysctl_cpu_id {
 	uint32_t ac_mvfr0;	/* Media and VFP Feature Register 0 */
 	uint32_t ac_mvfr1;	/* Media and VFP Feature Register 1 */
 	uint32_t ac_mvfr2;	/* Media and VFP Feature Register 2 */
+	uint32_t ac_pad;
+
+	uint64_t ac_clidr;	/* Cacle Level ID Register */
+	uint64_t ac_ctr;	/* Cache Type Register */
 };
 
 #endif /* _AARCH64_ARMREG_H_ */

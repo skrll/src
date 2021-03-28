@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -14,6 +14,12 @@ SYSTEMTESTTOP=..
 
 DIGOPTS="+tcp +nosea +nostat +nocmd +norec +noques +noauth +noadd +nostats +dnssec -p ${PORT}"
 RNDCCMD="$RNDC -c $SYSTEMTESTTOP/common/rndc.conf -p ${CONTROLPORT} -s"
+
+check_zonestatus() (
+    $RNDCCMD "10.53.0.$1" zonestatus -redirect > "zonestatus.out.ns$1.$n" &&
+    grep "type: redirect" "zonestatus.out.ns$1.$n" > /dev/null &&
+    grep "serial: 1" "zonestatus.out.ns$1.$n" > /dev/null
+)
 
 status=0
 n=0
@@ -48,55 +54,67 @@ fi
 
 echo_i "adding new zone ($n)"
 ret=0
-$RNDCCMD 10.53.0.2 addzone 'added.example { type master; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
-$DIG $DIGOPTS @10.53.0.2 a.added.example a > dig.out.ns2.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.$n > /dev/null || ret=1
-grep '^a.added.example' dig.out.ns2.$n > /dev/null || ret=1
+$RNDCCMD 10.53.0.2 addzone 'added.example { type primary; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
+_check_adding_new_zone () (
+	$DIG $DIGOPTS @10.53.0.2 a.added.example a > dig.out.ns2.$n &&
+	grep 'status: NOERROR' dig.out.ns2.$n > /dev/null &&
+	grep '^a.added.example' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_adding_new_zone || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
+nextpart ns2/named.run >/dev/null
 echo_i "checking addzone errors are logged correctly"
 ret=0
 $RNDCCMD 10.53.0.2 addzone bad.example '{ type mister; };' 2>&1 | grep 'unexpected token' > /dev/null 2>&1 || ret=1
-grep "addzone: 'mister' unexpected" ns2/named.run >/dev/null 2>&1 || ret=1
+wait_for_log_peek 20 "addzone: 'mister' unexpected" ns2/named.run || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
+nextpart ns2/named.run >/dev/null
 echo_i "checking modzone errors are logged correctly"
 ret=0
 $RNDCCMD 10.53.0.2 modzone added.example '{ type mister; };' 2>&1 | grep 'unexpected token' > /dev/null 2>&1 || ret=1
-grep "modzone: 'mister' unexpected" ns2/named.run >/dev/null 2>&1 || ret=1
+wait_for_log_peek 20 "modzone: 'mister' unexpected" ns2/named.run || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
 echo_i "adding a zone that requires quotes ($n)"
 ret=0
-$RNDCCMD 10.53.0.2 addzone '"32/1.0.0.127-in-addr.added.example" { check-names ignore; type master; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
-$DIG $DIGOPTS @10.53.0.2 "a.32/1.0.0.127-in-addr.added.example" a > dig.out.ns2.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.$n > /dev/null || ret=1
-grep '^a.32/1.0.0.127-in-addr.added.example' dig.out.ns2.$n > /dev/null || ret=1
+$RNDCCMD 10.53.0.2 addzone '"32/1.0.0.127-in-addr.added.example" {
+check-names ignore; type primary; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
+_check_zone_that_requires_quotes() (
+	$DIG $DIGOPTS @10.53.0.2 "a.32/1.0.0.127-in-addr.added.example" a > dig.out.ns2.$n &&
+	grep 'status: NOERROR' dig.out.ns2.$n > /dev/null &&
+	grep '^a.32/1.0.0.127-in-addr.added.example' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_zone_that_requires_quotes || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
 echo_i "adding a zone with a quote in the name ($n)"
 ret=0
-$RNDCCMD 10.53.0.2 addzone '"foo\"bar.example" { check-names ignore; type master; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
-$DIG $DIGOPTS @10.53.0.2 "a.foo\"bar.example" a > dig.out.ns2.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.$n > /dev/null || ret=1
-grep '^a.foo\\"bar.example' dig.out.ns2.$n > /dev/null || ret=1
+$RNDCCMD 10.53.0.2 addzone '"foo\"bar.example" { check-names ignore; type primary; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
+_check_zone_with_a_quote() (
+	$DIG $DIGOPTS @10.53.0.2 "a.foo\"bar.example" a > dig.out.ns2.$n &&
+	grep 'status: NOERROR' dig.out.ns2.$n > /dev/null &&
+	grep '^a.foo\\"bar.example' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_zone_with_a_quote || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "adding new zone with missing master file ($n)"
+echo_i "adding new zone with missing file ($n)"
 ret=0
 $DIG $DIGOPTS +all @10.53.0.2 a.missing.example a > dig.out.ns2.pre.$n || ret=1
 grep "status: REFUSED" dig.out.ns2.pre.$n > /dev/null || ret=1
-$RNDCCMD 10.53.0.2 addzone 'missing.example { type master; file "missing.db"; };' 2> rndc.out.ns2.$n
+$RNDCCMD 10.53.0.2 addzone 'missing.example { type primary; file "missing.db"; };' 2> rndc.out.ns2.$n
 grep "file not found" rndc.out.ns2.$n > /dev/null || ret=1
 $DIG $DIGOPTS +all @10.53.0.2 a.missing.example a > dig.out.ns2.post.$n || ret=1
 grep "status: REFUSED" dig.out.ns2.post.$n > /dev/null || ret=1
@@ -118,7 +136,7 @@ fi
 echo_i "checking rndc showzone with previously added zone ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 showzone previous.example > rndc.out.ns2.$n
-expected='zone "previous.example" { type master; file "previous.db"; };'
+expected='zone "previous.example" { type primary; file "previous.db"; };'
 [ "`cat rndc.out.ns2.$n`" = "$expected" ] || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -135,21 +153,24 @@ fi
 echo_i "deleting previously added zone ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 delzone previous.example 2>&1 | sed 's/^/I:ns2 /'
-$DIG $DIGOPTS @10.53.0.2 a.previous.example a > dig.out.ns2.$n
-grep 'status: REFUSED' dig.out.ns2.$n > /dev/null || ret=1
-grep '^a.previous.example' dig.out.ns2.$n > /dev/null && ret=1
+_check_deleting_previously_added_zone() (
+	$DIG $DIGOPTS @10.53.0.2 a.previous.example a > dig.out.ns2.$n &&
+	grep 'status: REFUSED' dig.out.ns2.$n > /dev/null &&
+	! grep '^a.previous.example' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_deleting_previously_added_zone || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
+check_nzd2nzf() (
+	$NZD2NZF ns2/_default.nzd > nzd2nzf.out.$n &&
+	! grep previous.example nzd2nzf.out.$n > /dev/null
+)
+
 if [ -n "$NZD" ]; then
     echo_i "checking zone was deleted from NZD ($n)"
-    for i in 0 1 2 3 4 5 6 7 8 9; do
-        ret=0
-        $NZD2NZF ns2/_default.nzd | grep previous.example > /dev/null && ret=1
-        [ $ret = 0 ] && break
-        sleep 1
-    done
+    retry_quiet 10 check_nzd2nzf || ret=1
     if [ $ret != 0 ]; then echo_i "failed"; fi
     status=`expr $status + $ret`
 fi
@@ -167,9 +188,12 @@ fi
 echo_i "deleting newly added zone added.example ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 delzone added.example 2>&1 | sed 's/^/I:ns2 /'
-$DIG $DIGOPTS @10.53.0.2 a.added.example a > dig.out.ns2.$n
-grep 'status: REFUSED' dig.out.ns2.$n > /dev/null || ret=1
-grep '^a.added.example' dig.out.ns2.$n > /dev/null && ret=1
+_check_deleting_newly_added_zone() (
+	$DIG $DIGOPTS @10.53.0.2 a.added.example a > dig.out.ns2.$n &&
+	grep 'status: REFUSED' dig.out.ns2.$n > /dev/null &&
+	! grep '^a.added.example' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_deleting_newly_added_zone || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
@@ -177,9 +201,12 @@ status=`expr $status + $ret`
 echo_i "deleting newly added zone with escaped quote ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 delzone "foo\\\"bar.example" 2>&1 | sed 's/^/I:ns2 /'
-$DIG $DIGOPTS @10.53.0.2 "a.foo\"bar.example" a > dig.out.ns2.$n
-grep 'status: REFUSED' dig.out.ns2.$n > /dev/null || ret=1
-grep "^a.foo\"bar.example" dig.out.ns2.$n > /dev/null && ret=1
+_check_deleting_newly_added_zone_quote() (
+	$DIG $DIGOPTS @10.53.0.2 "a.foo\"bar.example" a > dig.out.ns2.$n &&
+	grep 'status: REFUSED' dig.out.ns2.$n > /dev/null &&
+	! grep "^a.foo\"bar.example" dig.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_deleting_newly_added_zone_quote || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
@@ -187,7 +214,7 @@ status=`expr $status + $ret`
 echo_i "checking rndc showzone with a normally-loaded zone ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 showzone normal.example > rndc.out.ns2.$n
-expected='zone "normal.example" { type master; file "normal.db"; };'
+expected='zone "normal.example" { type primary; file "normal.db"; };'
 [ "`cat rndc.out.ns2.$n`" = "$expected" ] || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -196,7 +223,7 @@ status=`expr $status + $ret`
 echo_i "checking rndc showzone with a normally-loaded zone with trailing dot ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 showzone finaldot.example > rndc.out.ns2.$n
-expected='zone "finaldot.example." { type master; file "normal.db"; };'
+expected='zone "finaldot.example." { type primary; file "normal.db"; };'
 [ "`cat rndc.out.ns2.$n`" = "$expected" ] || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -225,9 +252,7 @@ ret=0
 sleep 1
 cp -f ns1/redirect.db.2 ns1/redirect.db
 $RNDCCMD 10.53.0.1 reload -redirect > rndc.out.ns1.$n
-$RNDCCMD 10.53.0.1 zonestatus -redirect > zonestatus.out.ns1.$n
-grep "type: redirect" zonestatus.out.ns1.$n > /dev/null || ret=1
-grep "serial: 1" zonestatus.out.ns1.$n > /dev/null || ret=1
+retry_quiet 5 check_zonestatus 1 || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
@@ -235,112 +260,92 @@ status=`expr $status + $ret`
 echo_i "delete a normally-loaded zone ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 delzone normal.example > rndc.out.ns2.$n 2>&1
-$DIG $DIGOPTS @10.53.0.2 a.normal.example a > dig.out.ns2.$n
-grep "is no longer active and will be deleted" rndc.out.ns2.$n > /dev/null || ret=1
+grep "is no longer active and will be deleted" rndc.out.ns2.$n > /dev/null || ret=11
 grep "To keep it from returning when the server is restarted" rndc.out.ns2.$n > /dev/null || ret=1
 grep "must also be removed from named.conf." rndc.out.ns2.$n > /dev/null || ret=1
+_check_delete_normally_loaded_zone() (
+	$DIG $DIGOPTS @10.53.0.2 a.normal.example a > dig.out.ns2.$n &&
+	grep 'status: REFUSED' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 5 _check_delete_normally_loaded_zone || ret=1
 
-grep 'status: REFUSED' dig.out.ns2.$n > /dev/null || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "attempting to add master zone with inline signing ($n)"
-$RNDCCMD 10.53.0.2 addzone 'inline.example { type master; file "inline.db"; inline-signing yes; };' 2>&1 | sed 's/^/I:ns2 /'
-for i in 1 2 3 4 5
-do
-ret=0
-$DIG $DIGOPTS @10.53.0.2 a.inline.example a > dig.out.ns2.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.$n > /dev/null || ret=1
-grep '^a.inline.example' dig.out.ns2.$n > /dev/null || ret=1
-[ $ret = 0 ] && break
-sleep 1
-done
+echo_i "attempting to add primary zone with inline signing ($n)"
+$RNDCCMD 10.53.0.2 addzone 'inline.example { type primary; file "inline.db"; inline-signing yes; };' 2>&1 | sed 's/^/I:ns2 /'
+_check_add_primary_zone_with_inline() (
+	$DIG $DIGOPTS @10.53.0.2 a.inline.example a > dig.out.ns2.$n &&
+	grep 'status: NOERROR' dig.out.ns2.$n > /dev/null &&
+	grep '^a.inline.example' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 5 _check_add_primary_zone_with_inline || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "attempting to add master zone with inline signing and missing master ($n)"
+echo_i "attempting to add primary zone with inline signing and missing file ($n)"
 ret=0
-$RNDCCMD 10.53.0.2 addzone 'inlinemissing.example { type master; file "missing.db"; inline-signing yes; };' 2> rndc.out.ns2.$n
+$RNDCCMD 10.53.0.2 addzone 'inlinemissing.example { type primary; file "missing.db"; inline-signing yes; };' 2> rndc.out.ns2.$n
 grep "file not found" rndc.out.ns2.$n > /dev/null || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "attempting to add slave zone with inline signing ($n)"
-$RNDCCMD 10.53.0.2 addzone 'inlineslave.example { type slave; masters { 10.53.0.1; }; file "inlineslave.bk"; inline-signing yes; };' 2>&1 | sed 's/^/I:ns2 /'
-for i in 1 2 3 4 5
-do
-ret=0
-$DIG $DIGOPTS @10.53.0.2 a.inlineslave.example a > dig.out.ns2.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.$n > /dev/null || ret=1
-grep '^a.inlineslave.example' dig.out.ns2.$n > /dev/null || ret=1
-[ $ret = 0 ] && break
-sleep 1
-done
+echo_i "attempting to add secondary zone with inline signing ($n)"
+$RNDCCMD 10.53.0.2 addzone 'inlinesec.example { type secondary; primaries { 10.53.0.1; }; file "inlinesec.bk"; inline-signing yes; };' 2>&1 | sed 's/^/I:ns2 /'
+_check_add_secondary_with_inline() (
+	$DIG $DIGOPTS @10.53.0.2 a.inlinesec.example a > dig.out.ns2.$n &&
+	grep 'status: NOERROR' dig.out.ns2.$n > /dev/null &&
+	grep '^a.inlinesec.example' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 5 _check_add_secondary_with_inline || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "attempting to delete slave zone with inline signing ($n)"
+echo_i "attempting to delete secondary zone with inline signing ($n)"
 ret=0
-for i in 0 1 2 3 4 5 6 7 8 9
-do
-	test -f ns2/inlineslave.bk.signed -a -f ns2/inlineslave.bk && break
-	sleep 1
-done
-$RNDCCMD 10.53.0.2 delzone inlineslave.example 2>&1 > rndc.out2.test$n
-test -f inlineslave.bk ||
-grep '^inlineslave.bk$' rndc.out2.test$n > /dev/null || {
-	echo_i "failed to report inlineslave.bk"; ret=1;
+retry_quiet 10 test -f ns2/inlinesec.bk.signed -a -f ns2/inlinesec.bk || ret=1
+$RNDCCMD 10.53.0.2 delzone inlinesec.example > rndc.out2.test$n 2>&1 || ret=1
+test -f inlinesec.bk ||
+grep '^inlinesec.bk$' rndc.out2.test$n > /dev/null || {
+	echo_i "failed to report inlinesec.bk"; ret=1;
 }
-test ! -f inlineslave.bk.signed ||
-grep '^inlineslave.bk.signed$' rndc.out2.test$n > /dev/null || {
-	echo_i "failed to report inlineslave.bk.signed"; ret=1;
+test ! -f inlinesec.bk.signed ||
+grep '^inlinesec.bk.signed$' rndc.out2.test$n > /dev/null || {
+	echo_i "failed to report inlinesec.bk.signed"; ret=1;
 }
 n=`expr $n + 1`
 status=`expr $status + $ret`
 
-echo_i "restoring slave zone with inline signing ($n)"
-$RNDCCMD 10.53.0.2 addzone 'inlineslave.example { type slave; masters { 10.53.0.1; }; file "inlineslave.bk"; inline-signing yes; };' 2>&1 | sed 's/^/I:ns2 /'
-for i in 1 2 3 4 5
-do
-ret=0
-$DIG $DIGOPTS @10.53.0.2 a.inlineslave.example a > dig.out.ns2.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.$n > /dev/null || ret=1
-grep '^a.inlineslave.example' dig.out.ns2.$n > /dev/null || ret=1
-[ $ret = 0 ] && break
-sleep 1
-done
+echo_i "restoring secondary zone with inline signing ($n)"
+$RNDCCMD 10.53.0.2 addzone 'inlinesec.example { type secondary; primaries { 10.53.0.1; }; file "inlinesec.bk"; inline-signing yes; };' 2>&1 | sed 's/^/I:ns2 /'
+_check_restoring_secondary_with_inline() (
+	$DIG $DIGOPTS @10.53.0.2 a.inlinesec.example a > dig.out.ns2.$n &&
+	grep 'status: NOERROR' dig.out.ns2.$n > /dev/null &&
+	grep '^a.inlinesec.example' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 5 _check_restoring_secondary_with_inline || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "deleting slave zone with automatic zone file removal ($n)"
+echo_i "deleting secondary zone with automatic zone file removal ($n)"
 ret=0
-for i in 0 1 2 3 4 5 6 7 8 9
-do
-	test -f ns2/inlineslave.bk.signed -a -f ns2/inlineslave.bk && break
-	sleep 1
-done
-$RNDCCMD 10.53.0.2 delzone -clean inlineslave.example 2>&1 > /dev/null
-for i in 0 1 2 3 4 5 6 7 8 9
-do
-        ret=0
-	test -f ns2/inlineslave.bk.signed -a -f ns2/inlineslave.bk && ret=1
-        [ $ret = 0 ] && break
-	sleep 1
-done
+retry_quiet 10 test -f ns2/inlinesec.bk.signed -a -f ns2/inlinesec.bk || ret=1
+$RNDCCMD 10.53.0.2 delzone -clean inlinesec.example > /dev/null 2>&1
+retry_quiet 10 test ! -f ns2/inlinesec.bk.signed -a ! -f ns2/inlinesec.bk
 n=`expr $n + 1`
 status=`expr $status + $ret`
 
 echo_i "modifying zone configuration ($n)"
 ret=0
-$RNDCCMD 10.53.0.2 addzone 'mod.example { type master; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
+$RNDCCMD 10.53.0.2 addzone 'mod.example { type primary; file "added.db"; };' 2>&1 | sed 's/^/ns2 /' | cat_i
 $DIG +norec $DIGOPTS @10.53.0.2 mod.example ns > dig.out.ns2.1.$n || ret=1
 grep 'status: NOERROR' dig.out.ns2.1.$n > /dev/null || ret=1
-$RNDCCMD 10.53.0.2 modzone 'mod.example { type master; file "added.db"; allow-query { none; }; };' 2>&1 | sed 's/^/I:ns2 /'
+$RNDCCMD 10.53.0.2 modzone 'mod.example { type primary; file "added.db"; allow-query { none; }; };' 2>&1 | sed 's/^/ns2 /' | cat_i
 $DIG +norec $DIGOPTS @10.53.0.2 mod.example ns > dig.out.ns2.2.$n || ret=1
 $RNDCCMD 10.53.0.2 showzone mod.example | grep 'allow-query { "none"; };' > /dev/null 2>&1 || ret=1
 n=`expr $n + 1`
@@ -349,7 +354,7 @@ status=`expr $status + $ret`
 
 echo_i "check that adding a 'stub' zone works ($n)"
 ret=0
-$RNDCCMD 10.53.0.2 addzone 'stub.example { type stub; masters { 1.2.3.4; }; file "stub.example.bk"; };' > rndc.out.ns2.$n 2>&1 || ret=1
+$RNDCCMD 10.53.0.2 addzone 'stub.example { type stub; primaries { 1.2.3.4; }; file "stub.example.bk"; };' > rndc.out.ns2.$n 2>&1 || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
@@ -361,75 +366,88 @@ n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "check that adding a 'master redirect' zone works ($n)"
+echo_i "check that adding a 'primary redirect' zone works ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 addzone '"." { type redirect; file "redirect.db"; };' > rndc.out.ns2.$n 2>&1 || ret=1
-$RNDCCMD 10.53.0.2 showzone -redirect > showzone.out.ns2.$n 2>&1 || ret=1
-grep "type redirect;" showzone.out.ns2.$n > /dev/null || ret=1
-$RNDCCMD 10.53.0.2 zonestatus -redirect > zonestatus.out.ns2.$n 2>&1 || ret=1
-grep "type: redirect" zonestatus.out.ns2.$n > /dev/null || ret=1
-grep "serial: 0" zonestatus.out.ns2.$n > /dev/null || ret=1
+_check_add_primary_redirect() (
+	$RNDCCMD 10.53.0.2 showzone -redirect > showzone.out.ns2.$n 2>&1 &&
+	grep "type redirect;" showzone.out.ns2.$n > /dev/null &&
+	$RNDCCMD 10.53.0.2 zonestatus -redirect > zonestatus.out.ns2.$n 2>&1 &&
+	grep "type: redirect" zonestatus.out.ns2.$n > /dev/null &&
+	grep "serial: 0" zonestatus.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_add_primary_redirect || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
+status=`expr $status + $ret`
 
-echo_i "check that reloading a added 'master redirect' zone works ($n)"
+echo_i "check that reloading a added 'primary redirect' zone works ($n)"
 ret=0
 sleep 1
 cp -f ns2/redirect.db.2 ns2/redirect.db
 $RNDCCMD 10.53.0.2 reload -redirect > rndc.out.ns2.$n
-$RNDCCMD 10.53.0.2 zonestatus -redirect > zonestatus.out.ns2.$n 2>&1 || ret=1
-grep "type: redirect" zonestatus.out.ns2.$n > /dev/null || ret=1
-grep "serial: 1" zonestatus.out.ns2.$n > /dev/null || ret=1
+retry_quiet 10 check_zonestatus 2 || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
+status=`expr $status + $ret`
 
-echo_i "check that retransfer of a added 'master redirect' zone fails ($n)"
+echo_i "check that retransfer of a added 'primary redirect' zone fails ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 retransfer -redirect > rndc.out.ns2.$n 2>&1 && ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
+status=`expr $status + $ret`
 
-echo_i "check that deleting a 'master redirect' zone works ($n)"
+echo_i "check that deleting a 'primary redirect' zone works ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 delzone -redirect > rndc.out.ns2.$n 2>&1 || ret=1
-$RNDCCMD 10.53.0.2 showzone -redirect > showzone.out.ns2.$n 2>&1
-grep 'not found' showzone.out.ns2.$n > /dev/null || ret=1
+_check_deleting_primary_redirect() (
+	$RNDCCMD 10.53.0.2 showzone -redirect > showzone.out.ns2.$n 2>&1 || true
+	grep 'not found' showzone.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_deleting_primary_redirect || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "check that adding a 'slave redirect' zone works ($n)"
+echo_i "check that adding a 'secondary redirect' zone works ($n)"
 ret=0
-$RNDCCMD 10.53.0.2 addzone '"." { type redirect; masters { 10.53.0.3;}; file "redirect.bk"; };' > rndc.out.ns2.$n 2>&1 || ret=1
-$RNDCCMD 10.53.0.2 showzone -redirect > showzone.out.ns2.$n 2>&1 || ret=1
-grep "type redirect;" showzone.out.ns2.$n > /dev/null || ret=1
-sleep 1
-$RNDCCMD 10.53.0.2 zonestatus -redirect > zonestatus.out.ns2.$n 2>&1 || ret=1
-grep "type: redirect" zonestatus.out.ns2.$n > /dev/null || ret=1
-grep "serial: 0" zonestatus.out.ns2.$n > /dev/null || ret=1
+$RNDCCMD 10.53.0.2 addzone '"." { type redirect; primaries { 10.53.0.3;}; file "redirect.bk"; };' > rndc.out.ns2.$n 2>&1 || ret=1
+_check_adding_secondary_redirect() (
+	$RNDCCMD 10.53.0.2 showzone -redirect > showzone.out.ns2.$n 2>&1 &&
+	grep "type redirect;" showzone.out.ns2.$n > /dev/null &&
+	$RNDCCMD 10.53.0.2 zonestatus -redirect > zonestatus.out.ns2.$n 2>&1 &&
+	grep "type: redirect" zonestatus.out.ns2.$n > /dev/null &&
+	grep "serial: 0" zonestatus.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_adding_secondary_redirect || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "check that retransfering a added 'slave redirect' zone works ($n)"
+echo_i "check that retransfering a added 'secondary redirect' zone works ($n)"
 ret=0
 cp -f ns3/redirect.db.2 ns3/redirect.db
 $RNDCCMD 10.53.0.3 reload . > showzone.out.ns3.$n 2>&1 || ret=1
-sleep 1
-$RNDCCMD 10.53.0.2 retransfer -redirect > rndc.out.ns2.$n 2>&1 || ret=1
-sleep 1
-$RNDCCMD 10.53.0.2 zonestatus -redirect > zonestatus.out.ns2.$n 2>&1 || ret=1
-grep "type: redirect" zonestatus.out.ns2.$n > /dev/null || ret=1
-grep "serial: 1" zonestatus.out.ns2.$n > /dev/null || ret=1
+_check_retransfering_secondary_redirect() (
+	$RNDCCMD 10.53.0.2 retransfer -redirect > rndc.out.ns2.$n 2>&1 &&
+	$RNDCCMD 10.53.0.2 zonestatus -redirect > zonestatus.out.ns2.$n 2>&1 &&
+	grep "type: redirect" zonestatus.out.ns2.$n > /dev/null &&
+	grep "serial: 1" zonestatus.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_retransfering_secondary_redirect || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-echo_i "check that deleting a 'slave redirect' zone works ($n)"
+echo_i "check that deleting a 'secondary redirect' zone works ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 delzone -redirect > rndc.out.ns2.$n 2>&1 || ret=1
-$RNDCCMD 10.53.0.2 showzone -redirect > showzone.out.ns2.$n 2>&1
-grep 'not found' showzone.out.ns2.$n > /dev/null || ret=1
+_check_deleting_secondary_redirect() (
+	$RNDCCMD 10.53.0.2 showzone -redirect > showzone.out.ns2.$n 2>&1 || true
+	grep 'not found' showzone.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_deleting_secondary_redirect || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
@@ -483,7 +501,7 @@ $DIG +norec $DIGOPTS @10.53.0.2 -b 10.53.0.2 a.added.example a > dig.out.ns2.int
 grep 'status: NOERROR' dig.out.ns2.intpre.$n > /dev/null || ret=1
 $DIG +norec $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.extpre.$n || ret=1
 grep 'status: REFUSED' dig.out.ns2.extpre.$n > /dev/null || ret=1
-$RNDCCMD 10.53.0.2 addzone 'added.example in external { type master; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
+$RNDCCMD 10.53.0.2 addzone 'added.example in external { type primary; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
 $DIG +norec $DIGOPTS @10.53.0.2 -b 10.53.0.2 a.added.example a > dig.out.ns2.int.$n || ret=1
 grep 'status: NOERROR' dig.out.ns2.int.$n > /dev/null || ret=1
 $DIG +norec $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.ext.$n || ret=1
@@ -514,31 +532,30 @@ fi
 
 echo_i "checking rndc reload causes named to reload the external view's new zone config ($n)"
 ret=0
-$RNDCCMD 10.53.0.2 reload 2>&1 | sed 's/^/I:ns2 /'
-$DIG +norec $DIGOPTS @10.53.0.2 -b 10.53.0.2 a.added.example a > dig.out.ns2.int.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.int.$n > /dev/null || ret=1
-$DIG +norec $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.ext.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.ext.$n > /dev/null || ret=1
-grep '^a.added.example' dig.out.ns2.ext.$n > /dev/null || ret=1
+$RNDCCMD 10.53.0.2 reload 2>&1 | sed 's/^/ns2 /' | cat_i
+_check_rndc_reload_external_view_config() (
+	$DIG +norec $DIGOPTS @10.53.0.2 -b 10.53.0.2 a.added.example a > dig.out.ns2.int.$n &&
+	grep 'status: NOERROR' dig.out.ns2.int.$n > /dev/null &&
+	$DIG +norec $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.ext.$n &&
+	grep 'status: NOERROR' dig.out.ns2.ext.$n > /dev/null &&
+	grep '^a.added.example' dig.out.ns2.ext.$n > /dev/null
+)
+retry_quiet 10 _check_rndc_reload_external_view_config || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
 echo_i "checking rndc showzone with newly added zone ($n)"
-# loop because showzone may complain if zones are still being
-# loaded from the NZDB at this point.
-for try in 0 1 2 3 4 5; do
-    ret=0
-$RNDCCMD 10.53.0.2 showzone added.example in external > rndc.out.ns2.$n 2>/dev/null
-    if [ -z "$NZD" ]; then
-      expected='zone "added.example" in external { type master; file "added.db"; };'
-    else
-      expected='zone "added.example" { type master; file "added.db"; };'
-    fi
-    [ "`cat rndc.out.ns2.$n`" = "$expected" ] || ret=1
-    [ $ret -eq 0 ] && break
-    sleep 1
-done
+_check_rndc_showzone_newly_added() (
+	if [ -z "$NZD" ]; then
+		expected='zone "added.example" in external { type primary; file "added.db"; };'
+	else
+		expected='zone "added.example" { type primary; file "added.db"; };'
+	fi
+	$RNDCCMD 10.53.0.2 showzone added.example in external > rndc.out.ns2.$n 2>/dev/null &&
+	[ "`cat rndc.out.ns2.$n`" = "$expected" ]
+)
+retry_quiet 10  _check_rndc_showzone_newly_added || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
@@ -546,9 +563,12 @@ status=`expr $status + $ret`
 echo_i "deleting newly added zone ($n)"
 ret=0
 $RNDCCMD 10.53.0.2 delzone 'added.example in external' 2>&1 | sed 's/^/I:ns2 /'
-$DIG $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.$n || ret=1
-grep 'status: REFUSED' dig.out.ns2.$n > /dev/null || ret=1
-grep '^a.added.example' dig.out.ns2.$n > /dev/null && ret=1
+_check_deleting_newly_added_zone() (
+	$DIG $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.$n &&
+	grep 'status: REFUSED' dig.out.ns2.$n > /dev/null &&
+	! grep '^a.added.example' dig.out.ns2.$n > /dev/null
+)
+retry_quiet 10 _check_deleting_newly_added_zone || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
@@ -557,7 +577,7 @@ echo_i "attempting to add zone to internal view ($n)"
 ret=0
 $DIG +norec $DIGOPTS @10.53.0.2 -b 10.53.0.2 a.added.example a > dig.out.ns2.pre.$n || ret=1
 grep 'status: NOERROR' dig.out.ns2.pre.$n > /dev/null || ret=1
-$RNDCCMD 10.53.0.2 addzone 'added.example in internal { type master; file "added.db"; };' 2> rndc.out.ns2.$n
+$RNDCCMD 10.53.0.2 addzone 'added.example in internal { type primary; file "added.db"; };' 2> rndc.out.ns2.$n
 grep "permission denied" rndc.out.ns2.$n > /dev/null || ret=1
 $DIG $DIGOPTS @10.53.0.2 -b 10.53.0.2 a.added.example a > dig.out.ns2.int.$n || ret=1
 grep 'status: NOERROR' dig.out.ns2.int.$n > /dev/null || ret=1
@@ -577,12 +597,15 @@ status=`expr $status + $ret`
 
 echo_i "adding new zone again to external view ($n)"
 ret=0
-$RNDCCMD 10.53.0.2 addzone 'added.example in external { type master; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
-$DIG +norec $DIGOPTS @10.53.0.2 -b 10.53.0.2 a.added.example a > dig.out.ns2.int.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.int.$n > /dev/null || ret=1
-$DIG +norec $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.ext.$n || ret=1
-grep 'status: NOERROR' dig.out.ns2.ext.$n > /dev/null || ret=1
-grep '^a.added.example' dig.out.ns2.ext.$n > /dev/null || ret=1
+$RNDCCMD 10.53.0.2 addzone 'added.example in external { type primary; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
+_check_adding_new_zone_again_external() (
+	$DIG +norec $DIGOPTS @10.53.0.2 -b 10.53.0.2 a.added.example a > dig.out.ns2.int.$n &&
+	grep 'status: NOERROR' dig.out.ns2.int.$n > /dev/null &&
+	$DIG +norec $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.ext.$n &&
+	grep 'status: NOERROR' dig.out.ns2.ext.$n > /dev/null &&
+	grep '^a.added.example' dig.out.ns2.ext.$n > /dev/null
+)
+retry_quiet 10 _check_adding_new_zone_again_external || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
@@ -619,7 +642,7 @@ $DIG +norec $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.ext
 grep 'status: REFUSED' dig.out.ns2.extpre.$n > /dev/null || ret=1
 $DIG +norec $DIGOPTS @10.53.0.5 -b 10.53.0.5 a.added.example a > dig.out.ns2.dirpre.$n || ret=1
 grep 'status: REFUSED' dig.out.ns2.dirpre.$n > /dev/null || ret=1
-$RNDCCMD 10.53.0.2 addzone 'added.example in directory { type master; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
+$RNDCCMD 10.53.0.2 addzone 'added.example in directory { type primary; file "added.db"; };' 2>&1 | sed 's/^/I:ns2 /'
 $DIG +norec $DIGOPTS @10.53.0.2 -b 10.53.0.2 a.added.example a > dig.out.ns2.int.$n || ret=1
 grep 'status: NOERROR' dig.out.ns2.int.$n > /dev/null || ret=1
 $DIG +norec $DIGOPTS @10.53.0.4 -b 10.53.0.4 a.added.example a > dig.out.ns2.ext.$n || ret=1
@@ -665,10 +688,10 @@ status=`expr $status + $ret`
 
 echo_i "check delzone after reconfig failure ($n)"
 ret=0
-$RNDCCMD 10.53.0.3 addzone 'inlineslave.example. IN { type slave; file "inlineslave.db"; masterfile-format text; masters { testmaster; }; };' > /dev/null 2>&1 || ret=1
+$RNDCCMD 10.53.0.3 addzone 'inlinesec.example. IN { type secondary; file "inlinesec.db"; masterfile-format text; primaries { test; }; };' > /dev/null 2>&1 || ret=1
 copy_setports ns3/named2.conf.in ns3/named.conf
 rndc_reconfig ns3 10.53.0.3
-$RNDCCMD 10.53.0.3 delzone inlineslave.example > /dev/null 2>&1 || ret=1
+$RNDCCMD 10.53.0.3 delzone inlinesec.example > /dev/null 2>&1 || ret=1
 n=`expr $n + 1`
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
@@ -677,9 +700,9 @@ if ! $FEATURETEST --with-lmdb
 then
     echo_i "check that addzone is fully reversed on failure (--with-lmdb=no) ($n)"
     ret=0
-    $RNDCCMD 10.53.0.3 addzone "test1.baz" '{ type master; file "e.db"; };' > /dev/null 2>&1 || ret=1
-    $RNDCCMD 10.53.0.3 addzone "test2.baz" '{ type master; file "dne.db"; };' > /dev/null 2>&1 && ret=1
-    $RNDCCMD 10.53.0.3 addzone "test3.baz" '{ type master; file "e.db"; };' > /dev/null 2>&1 || ret=1
+    $RNDCCMD 10.53.0.3 addzone "test1.baz" '{ type primary; file "e.db"; };' > /dev/null 2>&1 || ret=1
+    $RNDCCMD 10.53.0.3 addzone "test2.baz" '{ type primary; file "dne.db"; };' > /dev/null 2>&1 && ret=1
+    $RNDCCMD 10.53.0.3 addzone "test3.baz" '{ type primary; file "e.db"; };' > /dev/null 2>&1 || ret=1
     $RNDCCMD 10.53.0.3 delzone "test3.baz" > /dev/null 2>&1 || ret=1
     grep test2.baz ns3/_default.nzf > /dev/null && ret=1
     n=`expr $n + 1`
@@ -687,17 +710,44 @@ then
     status=`expr $status + $ret`
 fi
 
+_check_version_bind() (
+	$DIG $DIGOPTS @10.53.0.3 version.bind txt ch > dig.out.test$n &&
+	grep "status: NOERROR" dig.out.test$n > /dev/null
+)
+
 echo_i "check that named restarts with multiple added zones ($n)"
 ret=0
-$RNDCCMD 10.53.0.3 addzone "test4.baz" '{ type master; file "e.db"; };' > /dev/null 2>&1 || ret=1
-$RNDCCMD 10.53.0.3 addzone "test5.baz" '{ type master; file "e.db"; };' > /dev/null 2>&1 || ret=1
+$RNDCCMD 10.53.0.3 addzone "test4.baz" '{ type primary; file "e.db"; };' > /dev/null 2>&1 || ret=1
+$RNDCCMD 10.53.0.3 addzone "test5.baz" '{ type primary; file "e.db"; };' > /dev/null 2>&1 || ret=1
+$RNDCCMD 10.53.0.3 addzone '"test/.baz"' '{ type primary; check-names ignore; file "e.db"; };' > /dev/null 2>&1 || ret=1
+$RNDCCMD 10.53.0.3 addzone '"test\".baz"' '{ type primary; check-names ignore; file "e.db"; };' > /dev/null 2>&1 || ret=1
+$RNDCCMD 10.53.0.3 addzone '"test\\.baz"' '{ type primary; check-names ignore; file "e.db"; };' > /dev/null 2>&1 || ret=1
+$RNDCCMD 10.53.0.3 addzone '"test\032.baz"' '{ type primary; check-names ignore; file "e.db"; };' > /dev/null 2>&1 || ret=1
+$RNDCCMD 10.53.0.3 addzone '"test\010.baz"' '{ type primary; check-names ignore; file "e.db"; };' > /dev/null 2>&1 || ret=1
 $PERL $SYSTEMTESTTOP/stop.pl addzone ns3
 $PERL $SYSTEMTESTTOP/start.pl --noclean --restart --port ${PORT} addzone ns3 || ret=1
-$DIG $DIGOPTS @10.53.0.3 version.bind txt ch > dig.out.test$n || ret=1
-grep "status: NOERROR" dig.out.test$n > /dev/null || ret=1
-n=`expr $n + 1`
+retry_quiet 10 _check_version_bind || ret=1
+$DIG $DIGOPTS @10.53.0.3 SOA  "test4.baz" > dig.out.1.test$n || ret=1
+grep "status: NOERROR" dig.out.1.test$n > /dev/null || ret=1
+grep "ANSWER: 1," dig.out.1.test$n > /dev/null || ret=1
+$DIG $DIGOPTS @10.53.0.3 SOA  "test5.baz" > dig.out.2.test$n || ret=1
+grep "status: NOERROR" dig.out.2.test$n > /dev/null || ret=1
+grep "ANSWER: 1," dig.out.2.test$n > /dev/null || ret=1
+$DIG $DIGOPTS @10.53.0.3 SOA  'test/.baz' > dig.out.3.test$n || ret=1
+grep "status: NOERROR" dig.out.3.test$n > /dev/null || ret=1
+grep "ANSWER: 1," dig.out.3.test$n > /dev/null || ret=1
+$DIG $DIGOPTS @10.53.0.3 SOA  'test\\.baz' > dig.out.4.test$n || ret=1
+grep "status: NOERROR" dig.out.4.test$n > /dev/null || ret=1
+grep "ANSWER: 1," dig.out.4.test$n > /dev/null || ret=1
+$DIG $DIGOPTS @10.53.0.3 SOA  'test\032.baz' > dig.out.5.test$n || ret=1
+grep "status: NOERROR" dig.out.5.test$n > /dev/null || ret=1
+grep "ANSWER: 1," dig.out.5.test$n > /dev/null || ret=1
+$DIG $DIGOPTS @10.53.0.3 SOA  'test\010.baz' > dig.out.6.test$n || ret=1
+grep "status: NOERROR" dig.out.6.test$n > /dev/null || ret=1
+grep "ANSWER: 1," dig.out.6.test$n > /dev/null || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
+n=`expr $n + 1`
 
 echo_i "exit status: $status"
 [ $status -eq 0 ] || exit 1

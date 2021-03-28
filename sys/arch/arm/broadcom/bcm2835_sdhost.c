@@ -1,4 +1,4 @@
-/* $NetBSD: bcm2835_sdhost.c,v 1.4 2017/12/10 21:38:26 skrll Exp $ */
+/* $NetBSD: bcm2835_sdhost.c,v 1.8 2021/01/29 14:11:14 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_sdhost.c,v 1.4 2017/12/10 21:38:26 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_sdhost.c,v 1.8 2021/01/29 14:11:14 skrll Exp $");
 
 #include "bcmdmac.h"
 
@@ -174,16 +174,17 @@ CFATTACH_DECL_NEW(bcmsdhost, sizeof(struct sdhost_softc),
 #define SDHOST_READ(sc, reg) \
 	bus_space_read_4((sc)->sc_bst, (sc)->sc_bsh, (reg))
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "brcm,bcm2835-sdhost" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 sdhost_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-	    "brcm,bcm2835-sdhost",
-	    NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -191,8 +192,6 @@ sdhost_attach(device_t parent, device_t self, void *aux)
 {
 	struct sdhost_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
-	prop_dictionary_t dict = device_properties(self);
-	bool disable = false;
 
 	sc->sc_dev = self;
 	sc->sc_bst = faa->faa_bst;
@@ -220,12 +219,6 @@ sdhost_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal(": SD HOST controller\n");
 
-	prop_dictionary_get_bool(dict, "disable", &disable);
-	if (disable) {
-		aprint_naive(": disabled\n");
-		aprint_normal(": disabled\n");
-		return;
-	}
 	/* Enable clocks */
 	struct clk *clk;
 	for (int i = 0; (clk = fdtbus_clock_get_index(phandle, i)); i++) {
@@ -250,8 +243,8 @@ sdhost_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_SDMMC,
-	    FDT_INTR_MPSAFE, sdhost_intr, sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_SDMMC,
+	    FDT_INTR_MPSAFE, sdhost_intr, sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt %s\n",
 		    intrstr);
@@ -405,6 +398,7 @@ sdhost_dma_transfer(struct sdhost_softc *sc, struct sdmmc_command *cmd)
 			    sc->sc_dmamap->dm_segs[0].ds_addr +
 			    sizeof(struct bcm_dmac_conblk) * (seg+1);
 		}
+		bcm_dmac_swap_conblk(&sc->sc_cblk[seg]);
 		sc->sc_cblk[seg].cb_padding[0] = 0;
 		sc->sc_cblk[seg].cb_padding[1] = 0;
 	}

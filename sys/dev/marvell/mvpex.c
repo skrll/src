@@ -1,4 +1,4 @@
-/*	$NetBSD: mvpex.c,v 1.18 2019/11/10 21:16:35 chs Exp $	*/
+/*	$NetBSD: mvpex.c,v 1.20 2020/07/07 03:38:49 thorpej Exp $	*/
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvpex.c,v 1.18 2019/11/10 21:16:35 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvpex.c,v 1.20 2020/07/07 03:38:49 thorpej Exp $");
 
 #include "opt_pci.h"
 #include "pci.h"
@@ -35,7 +35,6 @@ __KERNEL_RCSID(0, "$NetBSD: mvpex.c,v 1.18 2019/11/10 21:16:35 chs Exp $");
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/errno.h>
-#include <sys/extent.h>
 #include <sys/evcnt.h>
 #include <sys/malloc.h>
 #include <sys/systm.h>
@@ -409,28 +408,22 @@ mvpex_pci_config(struct mvpex_softc *sc, bus_space_tag_t iot,
 		 int cacheline_size)
 {
 	struct pcibus_attach_args pba;
-#ifdef PCI_NETBSD_CONFIGURE
-	struct extent *ioext = NULL, *memext = NULL;
-#endif
 	uint32_t stat;
 
 	stat = bus_space_read_4(sc->sc_iot, sc->sc_ioh, MVPEX_STAT);
 
 #ifdef PCI_NETBSD_CONFIGURE
-	ioext = extent_create("pexio", iostart, ioend, NULL, 0, EX_NOWAIT);
-	memext = extent_create("pexmem", memstart, memend, NULL, 0, EX_NOWAIT);
-	if (ioext != NULL && memext != NULL)
-		pci_configure_bus(pc, ioext, memext, NULL,
-		    MVPEX_STAT_PEXBUSNUM(stat), cacheline_size);
-        else
-		aprint_error_dev(sc->sc_dev, "can't create extent %s%s%s\n",
-		    ioext == NULL ? "io" : "",
-		    ioext == NULL && memext == NULL ? " and " : "",
-		    memext == NULL ? "mem" : "");
-	if (ioext != NULL)
-		extent_destroy(ioext);
-	if (memext != NULL)
-		extent_destroy(memext);
+	struct pciconf_resources *pcires = pciconf_resource_init();
+
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    iostart, (ioend - iostart) + 1);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    memstart, (memend - memstart) + 1);
+
+	pci_configure_bus(pc, pcires,
+	    MVPEX_STAT_PEXBUSNUM(stat), cacheline_size);
+
+	pciconf_resource_fini(pcires);
 #endif
 
 	pba.pba_iot = iot;

@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.47 2019/12/21 12:53:53 ad Exp $	*/
+/*	$NetBSD: cpu.h,v 1.51 2020/06/15 18:04:42 ad Exp $	*/
 
 /*-
  * Copyright (c) 2007 YAMAMOTO Takashi,
@@ -57,7 +57,7 @@ void cpu_need_resched(struct cpu_info *, struct lwp *, int);
 /*
  * CPU_INFO_ITERATOR() may be supplied by machine dependent code as it
  * controls how the cpu_info structures are allocated.
- * 
+ *
  * This macro must always iterate just the boot-CPU when the system has
  * not attached any cpus via mi_cpu_attach() yet, and the "ncpu" variable
  * is zero.
@@ -91,6 +91,7 @@ int	cpu_lwp_setprivate(struct lwp *, void *);
 void	cpu_intr_redistribute(void);
 u_int	cpu_intr_count(struct cpu_info *);
 void	cpu_topology_set(struct cpu_info *, u_int, u_int, u_int, u_int);
+void	cpu_topology_setspeed(struct cpu_info *, bool);
 void	cpu_topology_init(void);
 #endif
 
@@ -134,8 +135,8 @@ int cpu_ucode_md_open(firmware_handle_t *, int, const char *);
 #endif	/* !_LOCORE */
 
 /*
- * Flags for cpu_need_resched.  RESCHED_KERNEL must be greater than
- * RESCHED_USER; see sched_resched_cpu().
+ * Flags for cpu_need_resched.  RESCHED_KPREEMPT must be greater than
+ * RESCHED_UPREEMPT; see sched_resched_cpu().
  */
 #define	RESCHED_REMOTE		0x01	/* request is for a remote CPU */
 #define	RESCHED_IDLE		0x02	/* idle LWP observed */

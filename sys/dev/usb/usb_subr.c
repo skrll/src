@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_subr.c,v 1.241 2019/10/03 05:20:31 maxv Exp $	*/
+/*	$NetBSD: usb_subr.c,v 1.249 2021/02/17 06:30:57 mlelstv Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_subr.c,v 1.18 1999/11/17 22:33:47 n_hibma Exp $	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.241 2019/10/03 05:20:31 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.249 2021/02/17 06:30:57 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -66,7 +66,6 @@ __KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.241 2019/10/03 05:20:31 maxv Exp $");
 #define	DPRINTF(FMT,A,B,C,D)	USBHIST_LOG(usbdebug,FMT,A,B,C,D)
 #define	DPRINTFN(N,FMT,A,B,C,D)	USBHIST_LOGN(usbdebug,N,FMT,A,B,C,D)
 
-Static usbd_status usbd_set_config(struct usbd_device *, int);
 Static void usbd_devinfo(struct usbd_device *, int, char *, size_t);
 Static int usbd_getnewaddr(struct usbd_bus *);
 Static int usbd_print(void *, const char *);
@@ -111,51 +110,6 @@ usbd_errstr(usbd_status err)
 		snprintf(buffer, sizeof(buffer), "%d", err);
 		return buffer;
 	}
-}
-
-usbd_status
-usbd_get_string_desc(struct usbd_device *dev, int sindex, int langid,
-		     usb_string_descriptor_t *sdesc, int *sizep)
-{
-	USBHIST_FUNC(); USBHIST_CALLED(usbdebug);
-	usb_device_request_t req;
-	usbd_status err;
-	int actlen;
-
-	/*
-	 * Pass a full-sized buffer to usbd_do_request_len().  At least
-	 * one device has been seen returning additional data beyond the
-	 * provided buffers (2-bytes written shortly after the request
-	 * claims to have completed and returned the 2 byte header,
-	 * corrupting other memory.)
-	 */
-	req.bmRequestType = UT_READ_DEVICE;
-	req.bRequest = UR_GET_DESCRIPTOR;
-	USETW2(req.wValue, UDESC_STRING, sindex);
-	USETW(req.wIndex, langid);
-	USETW(req.wLength, 2);	/* only size byte first */
-	err = usbd_do_request_len(dev, &req, sizeof(*sdesc), sdesc,
-	    USBD_SHORT_XFER_OK, &actlen, USBD_DEFAULT_TIMEOUT);
-	if (err)
-		return err;
-
-	if (actlen < 2)
-		return USBD_SHORT_XFER;
-
-	if (sdesc->bLength > sizeof(*sdesc))
-		return USBD_INVAL;
-	USETW(req.wLength, sdesc->bLength);	/* the whole string */
-	err = usbd_do_request_len(dev, &req, sizeof(*sdesc), sdesc,
-	    USBD_SHORT_XFER_OK, &actlen, USBD_DEFAULT_TIMEOUT);
-	if (err)
-		return err;
-
-	if (actlen != sdesc->bLength) {
-		DPRINTF("expected %jd, got %jd", sdesc->bLength, actlen, 0, 0);
-	}
-
-	*sizep = actlen;
-	return USBD_NORMAL_COMPLETION;
 }
 
 static void
@@ -254,7 +208,7 @@ usbd_devinfo(struct usbd_device *dev, int showclass, char *cp, size_t l)
 
 	usbd_devinfo_vp(dev, vendor, USB_MAX_ENCODED_STRING_LEN,
 	    product, USB_MAX_ENCODED_STRING_LEN, 0, 1);
-	cp += snprintf(cp, ep - cp, "%s (%#04x) %s (%#04x)", vendor,
+	cp += snprintf(cp, ep - cp, "%s (0x%04x) %s (0x%04x)", vendor,
 	    UGETW(udd->idVendor), product, UGETW(udd->idProduct));
 	if (showclass)
 		cp += snprintf(cp, ep - cp, ", class %d/%d",
@@ -493,10 +447,17 @@ usbd_fill_iface_data(struct usbd_device *dev, int ifaceidx, int altidx)
 				break;
 		}
 		/* passed end, or bad desc */
-		printf("usbd_fill_iface_data: bad descriptor(s): %s\n",
-		       ed->bLength == 0 ? "0 length" :
-		       ed->bDescriptorType == UDESC_INTERFACE ? "iface desc":
-		       "out of data");
+		if (p < end) {
+			if (ed->bLength == 0) {
+				printf("%s: bad descriptor: 0 length\n",
+				    __func__);
+			} else {
+				printf("%s: bad descriptor: iface desc\n",
+				    __func__);
+			}
+		} else {
+			printf("%s: no desc found\n", __func__);
+		}
 		goto bad;
 	found:
 		ifc->ui_endpoints[endpt].ue_edesc = ed;
@@ -546,24 +507,8 @@ usbd_free_iface_data(struct usbd_device *dev, int ifcno)
 		int nendpt = ifc->ui_idesc->bNumEndpoints;
 		size_t sz = nendpt * sizeof(struct usbd_endpoint);
 		kmem_free(ifc->ui_endpoints, sz);
+		ifc->ui_endpoints = NULL;
 	}
-}
-
-Static usbd_status
-usbd_set_config(struct usbd_device *dev, int conf)
-{
-	usb_device_request_t req;
-
-	USBHIST_FUNC();
-	USBHIST_CALLARGS(usbdebug, "dev %#jx conf %jd",
-	    (uintptr_t)dev, conf, 0, 0);
-
-	req.bmRequestType = UT_WRITE_DEVICE;
-	req.bRequest = UR_SET_CONFIG;
-	USETW(req.wValue, conf);
-	USETW(req.wIndex, 0);
-	USETW(req.wLength, 0);
-	return usbd_do_request(dev, &req, 0);
 }
 
 usbd_status
@@ -721,7 +666,7 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 	 */
 	selfpowered = !!(cdp->bmAttributes & UC_SELF_POWERED);
 
-	DPRINTF("addr %jd cno=%jd attr=%#02jx, selfpowered=%jd",
+	DPRINTF("addr %jd cno=%jd attr=0x%02jx, selfpowered=%jd",
 	    dev->ud_addr, cdp->bConfigurationValue, cdp->bmAttributes,
 	    selfpowered);
 	DPRINTF("max power=%jd", cdp->bMaxPower * 2, 0, 0, 0);
@@ -789,14 +734,21 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 		if (err) {
 			while (--ifcidx >= 0)
 				usbd_free_iface_data(dev, ifcidx);
+			kmem_free(dev->ud_ifaces,
+			    nifc * sizeof(struct usbd_interface));
+			dev->ud_ifaces = NULL;
 			goto bad;
 		}
 	}
 
 	return USBD_NORMAL_COMPLETION;
 
- bad:
+bad:
+	/* XXX Use usbd_set_config() to reset the config? */
+	/* XXX Should we forbid USB_UNCONFIG_NO from bConfigurationValue? */
+	dev->ud_config = USB_UNCONFIG_NO;
 	kmem_free(cdp, len);
+	dev->ud_cdesc = NULL;
 	if (bdp != NULL) {
 		kmem_free(bdp, UGETW(bdp->wTotalLength));
 		dev->ud_bdesc = NULL;
@@ -910,10 +862,36 @@ usbd_attach_roothub(device_t parent, struct usbd_device *dev)
 }
 
 static void
-usbd_serialnumber(device_t dv, struct usbd_device *dev)
+usbd_properties(device_t dv, struct usbd_device *dev)
 {
+	usb_device_descriptor_t *dd = &dev->ud_ddesc;
+	prop_dictionary_t dict = device_properties(dv);
+	int class, subclass, release, proto, vendor, product;
+
+	class = dd->bDeviceClass;
+	subclass = dd->bDeviceSubClass;
+	release = UGETW(dd->bcdDevice);
+	proto = dd->bDeviceProtocol;
+	vendor = UGETW(dd->idVendor);
+	product = UGETW(dd->idProduct);
+
+	prop_dictionary_set_uint16(dict, "class", class);
+	prop_dictionary_set_uint16(dict, "subclass", subclass);
+	prop_dictionary_set_uint16(dict, "release", release);
+	prop_dictionary_set_uint16(dict, "proto", proto);
+	prop_dictionary_set_uint16(dict, "vendor", vendor);
+	prop_dictionary_set_uint16(dict, "product", product);
+
+	if (dev->ud_vendor) {
+		prop_dictionary_set_string(dict,
+		    "vendor-string", dev->ud_vendor);
+	}
+	if (dev->ud_product) {
+		prop_dictionary_set_string(dict,
+		    "product-string", dev->ud_product);
+	}
 	if (dev->ud_serial) {
-		prop_dictionary_set_cstring(device_properties(dv),
+		prop_dictionary_set_string(dict,
 		    "serialnumber", dev->ud_serial);
 	}
 }
@@ -955,7 +933,7 @@ usbd_attachwholedevice(device_t parent, struct usbd_device *dev, int port,
 		dev->ud_subdevs[0] = dv;
 		dev->ud_subdevlen = 1;
 		dev->ud_nifaces_claimed = 1; /* XXX */
-		usbd_serialnumber(dv, dev);
+		usbd_properties(dv, dev);
 	}
 	config_pending_decr(parent);
 	return USBD_NORMAL_COMPLETION;
@@ -1031,7 +1009,7 @@ usbd_attachinterfaces(device_t parent, struct usbd_device *dev,
 		if (!dv)
 			continue;
 
-		usbd_serialnumber(dv, dev);
+		usbd_properties(dv, dev);
 
 		/* claim */
 		ifaces[i] = NULL;
@@ -1074,7 +1052,7 @@ usbd_probe_and_attach(device_t parent, struct usbd_device *dev,
 		err = usbd_set_config_index(dev, confi, 1);
 		if (err) {
 			DPRINTF("port %jd, set config at addr %jd failed, "
-			    "error=%d", port, addr, err, 0);
+			    "error=%jd", port, addr, err, 0);
 			printf("%s: port %d, set config at addr %d failed\n",
 			    device_xname(parent), port, addr);
 			return err;
@@ -1161,36 +1139,6 @@ usbd_reattach_device(device_t parent, struct usbd_device *dev,
 	if (i >= dev->ud_subdevlen)
 		return USBD_NORMAL_COMPLETION;
 	return usbd_attachinterfaces(parent, dev, port, locators);
-}
-
-/*
- * Get the first 8 bytes of the device descriptor.
- * Do as Windows does: try to read 64 bytes -- there are devices which
- * recognize the initial descriptor fetch (before the control endpoint's
- * MaxPacketSize is known by the host) by exactly this length.
- */
-usbd_status
-usbd_get_initial_ddesc(struct usbd_device *dev, usb_device_descriptor_t *desc)
-{
-	USBHIST_FUNC();
-	USBHIST_CALLARGS(usbdebug, "dev %#jx", (uintptr_t)dev, 0, 0, 0);
-	usb_device_request_t req;
-	char buf[64];
-	int res, actlen;
-
-	req.bmRequestType = UT_READ_DEVICE;
-	req.bRequest = UR_GET_DESCRIPTOR;
-	USETW2(req.wValue, UDESC_DEVICE, 0);
-	USETW(req.wIndex, 0);
-	USETW(req.wLength, 8);
-	res = usbd_do_request_flags(dev, &req, buf, USBD_SHORT_XFER_OK,
-		&actlen, USBD_DEFAULT_TIMEOUT);
-	if (res)
-		return res;
-	if (actlen < 8)
-		return USBD_SHORT_XFER;
-	memcpy(desc, buf, 8);
-	return USBD_NORMAL_COMPLETION;
 }
 
 /*
@@ -1446,10 +1394,10 @@ usbd_reload_device_desc(struct usbd_device *dev)
 	DPRINTFN(15, "bDeviceSubClass     %5ju", udd->bDeviceSubClass, 0, 0, 0);
 	DPRINTFN(15, "bDeviceProtocol     %5ju", udd->bDeviceProtocol, 0, 0, 0);
 	DPRINTFN(15, "bMaxPacketSize0     %5ju", udd->bMaxPacketSize, 0, 0, 0);
-	DPRINTFN(15, "idVendor            %#02jx %#02jx",
+	DPRINTFN(15, "idVendor            0x%02jx 0x%02jx",
 						    udd->idVendor[0],
 						    udd->idVendor[1], 0, 0);
-	DPRINTFN(15, "idProduct           %#02jx %#02jx",
+	DPRINTFN(15, "idProduct           0x%02jx 0x%02jx",
 						    udd->idProduct[0],
 						    udd->idProduct[1], 0, 0);
 	DPRINTFN(15, "bcdDevice           %2jx.%02jx", udd->bcdDevice[1],
@@ -1514,11 +1462,11 @@ usbd_print(void *aux, const char *pnp)
 	 * by each driver.
 	 */
 	if (uaa->uaa_vendor != UHUB_UNK_VENDOR)
-		aprint_normal(" vendor %#04x", uaa->uaa_vendor);
+		aprint_normal(" vendor 0x%04x", uaa->uaa_vendor);
 	if (uaa->uaa_product != UHUB_UNK_PRODUCT)
-		aprint_normal(" product %#04x", uaa->uaa_product);
+		aprint_normal(" product 0x%04x", uaa->uaa_product);
 	if (uaa->uaa_release != UHUB_UNK_RELEASE)
-		aprint_normal(" release %#04x", uaa->uaa_release);
+		aprint_normal(" release 0x%04x", uaa->uaa_release);
 #endif
 	return UNCONF;
 }
@@ -1540,11 +1488,11 @@ usbd_ifprint(void *aux, const char *pnp)
 	 * by each driver.
 	 */
 	if (uaa->uaa_vendor != UHUB_UNK_VENDOR)
-		aprint_normal(" vendor %#04x", uaa->uaa_vendor);
+		aprint_normal(" vendor 0x%04x", uaa->uaa_vendor);
 	if (uaa->uaa_product != UHUB_UNK_PRODUCT)
-		aprint_normal(" product %#04x", uaa->uaa_product);
+		aprint_normal(" product 0x%04x", uaa->uaa_product);
 	if (uaa->uaa_release != UHUB_UNK_RELEASE)
-		aprint_normal(" release %#04x", uaa->uaa_release);
+		aprint_normal(" release 0x%04x", uaa->uaa_release);
 #endif
 	return UNCONF;
 }

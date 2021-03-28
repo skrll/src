@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm283x_platform.c,v 1.26 2019/09/28 07:39:30 skrll Exp $	*/
+/*	$NetBSD: bcm283x_platform.c,v 1.47 2021/02/04 22:36:53 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.26 2019/09/28 07:39:30 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.47 2021/02/04 22:36:53 thorpej Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bcm283x.h"
@@ -53,6 +53,8 @@ __KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.26 2019/09/28 07:39:30 skrll 
 #include <sys/bus.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
+#include <sys/endian.h>
+#include <sys/kmem.h>
 #include <sys/termios.h>
 
 #include <net/if_ether.h>
@@ -111,9 +113,10 @@ __KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.26 2019/09/28 07:39:30 skrll 
 #define RPI_CPU_MAX	4
 
 void bcm2835_platform_early_putchar(char c);
+void bcm2835_aux_platform_early_putchar(char c);
 void bcm2836_platform_early_putchar(char c);
 void bcm2837_platform_early_putchar(char c);
-void bcm2838_platform_early_putchar(char c);
+void bcm2711_platform_early_putchar(char c);
 
 extern void bcmgenfb_set_console_dev(device_t dev);
 void bcmgenfb_set_ioctl(int(*)(void *, void *, u_long, void *, int, struct lwp *));
@@ -130,19 +133,19 @@ bs_protos(bcm2835);
 bs_protos(bcm2835_a4x);
 bs_protos(bcm2836);
 bs_protos(bcm2836_a4x);
-bs_protos(bcm2838);
-bs_protos(bcm2838_a4x);
+bs_protos(bcm2711);
+bs_protos(bcm2711_a4x);
 
 struct bus_space bcm2835_bs_tag;
 struct bus_space bcm2835_a4x_bs_tag;
 struct bus_space bcm2836_bs_tag;
 struct bus_space bcm2836_a4x_bs_tag;
-struct bus_space bcm2838_bs_tag;
-struct bus_space bcm2838_a4x_bs_tag;
+struct bus_space bcm2711_bs_tag;
+struct bus_space bcm2711_a4x_bs_tag;
 
 static paddr_t bcm2835_bus_to_phys(bus_addr_t);
 static paddr_t bcm2836_bus_to_phys(bus_addr_t);
-static paddr_t bcm2838_bus_to_phys(bus_addr_t);
+static paddr_t bcm2711_bus_to_phys(bus_addr_t);
 
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(...)	printf(__VA_ARGS__)
@@ -179,17 +182,21 @@ bcm2836_bus_to_phys(bus_addr_t ba)
 }
 
 static paddr_t
-bcm2838_bus_to_phys(bus_addr_t ba)
+bcm2711_bus_to_phys(bus_addr_t ba)
 {
 
 	/* Attempt to find the PA device mapping */
 	if (ba >= BCM283X_PERIPHERALS_BASE_BUS &&
 	    ba < BCM283X_PERIPHERALS_BASE_BUS + BCM283X_PERIPHERALS_SIZE)
-		return BCM2838_PERIPHERALS_BUS_TO_PHYS(ba);
+		return BCM2711_PERIPHERALS_BUS_TO_PHYS(ba);
 
-	if (ba >= BCM2838_ARM_LOCAL_BASE &&
-	    ba < BCM2838_ARM_LOCAL_BASE + BCM2838_ARM_LOCAL_SIZE)
-		return ba;
+	if (ba >= BCM2711_SCB_BASE_BUS &&
+	    ba < BCM2711_SCB_BASE_BUS + BCM2711_SCB_SIZE)
+		return BCM2711_SCB_BUS_TO_PHYS(ba);
+
+	if (ba >= BCM2711_ARM_LOCAL_BASE_BUS &&
+	    ba < BCM2711_ARM_LOCAL_BASE_BUS + BCM2711_ARM_LOCAL_SIZE)
+		return BCM2711_ARM_LOCAL_BUS_TO_PHYS(ba);
 
 	return ba & ~BCM2835_BUSADDR_CACHE_MASK;
 }
@@ -243,50 +250,28 @@ bcm2836_a4x_bs_mmap(void *t, bus_addr_t ba, off_t offset, int prot, int flags)
 }
 
 int
-bcm2838_bs_map(void *t, bus_addr_t ba, bus_size_t size, int flag,
+bcm2711_bs_map(void *t, bus_addr_t ba, bus_size_t size, int flag,
     bus_space_handle_t *bshp)
 {
-	const paddr_t pa = bcm2838_bus_to_phys(ba);
+	const paddr_t pa = bcm2711_bus_to_phys(ba);
 
 	return bus_space_map(&arm_generic_bs_tag, pa, size, flag, bshp);
 }
 
 paddr_t
-bcm2838_bs_mmap(void *t, bus_addr_t ba, off_t offset, int prot, int flags)
+bcm2711_bs_mmap(void *t, bus_addr_t ba, off_t offset, int prot, int flags)
 {
-	const paddr_t pa = bcm2838_bus_to_phys(ba);
+	const paddr_t pa = bcm2711_bus_to_phys(ba);
 
 	return bus_space_mmap(&arm_generic_bs_tag, pa, offset, prot, flags);
 }
 
 paddr_t
-bcm2838_a4x_bs_mmap(void *t, bus_addr_t ba, off_t offset, int prot, int flags)
+bcm2711_a4x_bs_mmap(void *t, bus_addr_t ba, off_t offset, int prot, int flags)
 {
 
-	return bcm2838_bs_mmap(t, ba, 4 * offset, prot, flags);
+	return bcm2711_bs_mmap(t, ba, 4 * offset, prot, flags);
 }
-
-struct arm32_dma_range bcm2835_dma_ranges[] = {
-	[0] = {
-		.dr_sysbase = 0,
-		.dr_busbase = BCM2835_BUSADDR_CACHE_COHERENT,
-	}
-};
-
-struct arm32_dma_range bcm2836_dma_ranges[] = {
-	[0] = {
-		.dr_sysbase = 0,
-		.dr_busbase = BCM2835_BUSADDR_CACHE_DIRECT,
-	}
-};
-
-struct arm32_dma_range bcm2838_dma_ranges[] = {
-	[0] = {
-		.dr_sysbase = 0,
-		.dr_busbase = BCM2835_BUSADDR_CACHE_DIRECT,
-	}
-};
-
 
 #if defined(SOC_BCM2835)
 static const struct pmap_devmap *
@@ -324,16 +309,16 @@ bcm2836_platform_devmap(void)
 }
 
 static const struct pmap_devmap *
-bcm2838_platform_devmap(void)
+bcm2711_platform_devmap(void)
 {
 	static const struct pmap_devmap devmap[] = {
-		DEVMAP_ENTRY(BCM2838_PERIPHERALS_VBASE, BCM2838_PERIPHERALS_BASE,
+		DEVMAP_ENTRY(BCM2711_PERIPHERALS_VBASE, BCM2711_PERIPHERALS_BASE,
 		    BCM283X_PERIPHERALS_SIZE),	/* 16Mb */
-		DEVMAP_ENTRY(BCM2838_ARM_LOCAL_VBASE, BCM2838_ARM_LOCAL_BASE,
-		    BCM2838_ARM_LOCAL_SIZE),
+		DEVMAP_ENTRY(BCM2711_ARM_LOCAL_VBASE, BCM2711_ARM_LOCAL_BASE,
+		    BCM2711_ARM_LOCAL_SIZE),
 #if defined(MULTIPROCESSOR) && defined(__aarch64__)
 		/* for fdt cpu spin-table */
-		DEVMAP_ENTRY(BCM2836_ARM_SMP_VBASE, BCM2836_ARM_SMP_BASE,
+		DEVMAP_ENTRY(BCM2711_ARM_SMP_VBASE, BCM2836_ARM_SMP_BASE,
 		    BCM2836_ARM_SMP_SIZE),
 #endif
 		DEVMAP_ENTRY_END
@@ -365,27 +350,28 @@ static struct {
 	struct vcprop_tag end;
 } vb_uart __cacheline_aligned = {
 	.vb_hdr = {
-		.vpb_len = sizeof(vb_uart),
-		.vpb_rcode = VCPROP_PROCESS_REQUEST,
+		.vpb_len = htole32(sizeof(vb_uart)),
+		.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 	},
 	.vbt_uartclockrate = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_CLOCKRATE,
-			.vpt_len = VCPROPTAG_LEN(vb_uart.vbt_uartclockrate),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_CLOCKRATE),
+			.vpt_len =
+			    htole32(VCPROPTAG_LEN(vb_uart.vbt_uartclockrate)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
-		.id = VCPROP_CLK_UART
+		.id = htole32(VCPROP_CLK_UART)
 	},
 	.vbt_vpuclockrate = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_CLOCKRATE,
-			.vpt_len = VCPROPTAG_LEN(vb_uart.vbt_vpuclockrate),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_CLOCKRATE),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb_uart.vbt_vpuclockrate)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
-		.id = VCPROP_CLK_CORE
+		.id = htole32(VCPROP_CLK_CORE)
 	},
 	.end = {
-		.vpt_tag = VCPROPTAG_NULL
+		.vpt_tag = htole32(VCPROPTAG_NULL)
 	}
 };
 
@@ -402,94 +388,104 @@ static struct {
 	struct vcprop_tag_clockrate	vbt_emmcclockrate;
 	struct vcprop_tag_clockrate	vbt_armclockrate;
 	struct vcprop_tag_clockrate	vbt_vpuclockrate;
+	struct vcprop_tag_clockrate	vbt_emmc2clockrate;
 	struct vcprop_tag end;
 } vb __cacheline_aligned = {
 	.vb_hdr = {
-		.vpb_len = sizeof(vb),
-		.vpb_rcode = VCPROP_PROCESS_REQUEST,
+		.vpb_len = htole32(sizeof(vb)),
+		.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 	},
 	.vbt_fwrev = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_FIRMWAREREV,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_fwrev),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_FIRMWAREREV),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_fwrev)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
 	},
 	.vbt_boardmodel = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_BOARDMODEL,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_boardmodel),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_BOARDMODEL),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_boardmodel)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
 	},
 	.vbt_boardrev = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_BOARDREVISION,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_boardrev),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_BOARDREVISION),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_boardrev)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
 	},
 	.vbt_macaddr = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_MACADDRESS,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_macaddr),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_MACADDRESS),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_macaddr)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
 	},
 	.vbt_memory = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_ARMMEMORY,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_memory),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_ARMMEMORY),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_memory)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
 	},
 	.vbt_serial = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_BOARDSERIAL,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_serial),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_BOARDSERIAL),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_serial)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
 	},
 	.vbt_dmachan = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_DMACHAN,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_dmachan),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_DMACHAN),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_dmachan)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
 	},
 	.vbt_cmdline = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_CMDLINE,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_cmdline),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_CMDLINE),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_cmdline)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
 	},
 	.vbt_emmcclockrate = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_CLOCKRATE,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_emmcclockrate),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_CLOCKRATE),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_emmcclockrate)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
-		.id = VCPROP_CLK_EMMC
+		.id = htole32(VCPROP_CLK_EMMC)
 	},
 	.vbt_armclockrate = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_CLOCKRATE,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_armclockrate),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_CLOCKRATE),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_armclockrate)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
-		.id = VCPROP_CLK_ARM
+		.id = htole32(VCPROP_CLK_ARM)
 	},
 	.vbt_vpuclockrate = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_CLOCKRATE,
-			.vpt_len = VCPROPTAG_LEN(vb.vbt_vpuclockrate),
-			.vpt_rcode = VCPROPTAG_REQUEST
+			.vpt_tag = htole32(VCPROPTAG_GET_CLOCKRATE),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb.vbt_vpuclockrate)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
 		},
-		.id = VCPROP_CLK_CORE
+		.id = htole32(VCPROP_CLK_CORE)
+	},
+	.vbt_emmc2clockrate = {
+		.tag = {
+			.vpt_tag = htole32(VCPROPTAG_GET_CLOCKRATE),
+			.vpt_len =
+			    htole32(VCPROPTAG_LEN(vb.vbt_emmc2clockrate)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST)
+		},
+		.id = htole32(VCPROP_CLK_EMMC2)
 	},
 	.end = {
-		.vpt_tag = VCPROPTAG_NULL
+		.vpt_tag = htole32(VCPROPTAG_NULL)
 	}
 };
 
@@ -500,19 +496,19 @@ static struct {
 	struct vcprop_tag end;
 } vb_edid __cacheline_aligned = {
 	.vb_hdr = {
-		.vpb_len = sizeof(vb_edid),
-		.vpb_rcode = VCPROP_PROCESS_REQUEST,
+		.vpb_len = htole32(sizeof(vb_edid)),
+		.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 	},
 	.vbt_edid = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_EDID_BLOCK,
-			.vpt_len = VCPROPTAG_LEN(vb_edid.vbt_edid),
-			.vpt_rcode = VCPROPTAG_REQUEST,
+			.vpt_tag = htole32(VCPROPTAG_GET_EDID_BLOCK),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb_edid.vbt_edid)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 		},
-		.blockno = 0,
+		.blockno = htole32(0),
 	},
 	.end = {
-		.vpt_tag = VCPROPTAG_NULL
+		.vpt_tag = htole32(VCPROPTAG_NULL)
 	}
 };
 
@@ -528,68 +524,69 @@ static struct {
 	struct vcprop_tag end;
 } vb_setfb __cacheline_aligned = {
 	.vb_hdr = {
-		.vpb_len = sizeof(vb_setfb),
-		.vpb_rcode = VCPROP_PROCESS_REQUEST,
+		.vpb_len = htole32(sizeof(vb_setfb)),
+		.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 	},
 	.vbt_res = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_SET_FB_RES,
-			.vpt_len = VCPROPTAG_LEN(vb_setfb.vbt_res),
-			.vpt_rcode = VCPROPTAG_REQUEST,
+			.vpt_tag = htole32(VCPROPTAG_SET_FB_RES),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb_setfb.vbt_res)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 		},
-		.width = 0,
-		.height = 0,
+		.width = htole32(0),
+		.height = htole32(0),
 	},
 	.vbt_vres = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_SET_FB_VRES,
-			.vpt_len = VCPROPTAG_LEN(vb_setfb.vbt_vres),
-			.vpt_rcode = VCPROPTAG_REQUEST,
+			.vpt_tag = htole32(VCPROPTAG_SET_FB_VRES),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb_setfb.vbt_vres)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 		},
-		.width = 0,
-		.height = 0,
+		.width = htole32(0),
+		.height = htole32(0),
 	},
 	.vbt_depth = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_SET_FB_DEPTH,
-			.vpt_len = VCPROPTAG_LEN(vb_setfb.vbt_depth),
-			.vpt_rcode = VCPROPTAG_REQUEST,
+			.vpt_tag = htole32(VCPROPTAG_SET_FB_DEPTH),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb_setfb.vbt_depth)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 		},
-		.bpp = 32,
+		.bpp = htole32(32),
 	},
 	.vbt_alpha = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_SET_FB_ALPHA_MODE,
-			.vpt_len = VCPROPTAG_LEN(vb_setfb.vbt_alpha),
-			.vpt_rcode = VCPROPTAG_REQUEST,
+			.vpt_tag = htole32(VCPROPTAG_SET_FB_ALPHA_MODE),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb_setfb.vbt_alpha)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 		},
-		.state = VCPROP_ALPHA_IGNORED,
+		.state = htole32(VCPROP_ALPHA_IGNORED),
 	},
 	.vbt_allocbuf = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_ALLOCATE_BUFFER,
-			.vpt_len = VCPROPTAG_LEN(vb_setfb.vbt_allocbuf),
-			.vpt_rcode = VCPROPTAG_REQUEST,
+			.vpt_tag = htole32(VCPROPTAG_ALLOCATE_BUFFER),
+			.vpt_len =
+			    htole32(VCPROPTAG_LEN(vb_setfb.vbt_allocbuf)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 		},
-		.address = PAGE_SIZE,	/* alignment */
+		.address = htole32(PAGE_SIZE),	/* alignment */
 	},
 	.vbt_blank = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_BLANK_SCREEN,
-			.vpt_len = VCPROPTAG_LEN(vb_setfb.vbt_blank),
-			.vpt_rcode = VCPROPTAG_REQUEST,
+			.vpt_tag = htole32(VCPROPTAG_BLANK_SCREEN),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb_setfb.vbt_blank)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 		},
-		.state = VCPROP_BLANK_OFF,
+		.state = htole32(VCPROP_BLANK_OFF),
 	},
 	.vbt_pitch = {
 		.tag = {
-			.vpt_tag = VCPROPTAG_GET_FB_PITCH,
-			.vpt_len = VCPROPTAG_LEN(vb_setfb.vbt_pitch),
-			.vpt_rcode = VCPROPTAG_REQUEST,
+			.vpt_tag = htole32(VCPROPTAG_GET_FB_PITCH),
+			.vpt_len = htole32(VCPROPTAG_LEN(vb_setfb.vbt_pitch)),
+			.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 		},
 	},
 	.end = {
-		.vpt_tag = VCPROPTAG_NULL,
+		.vpt_tag = htole32(VCPROPTAG_NULL),
 	},
 };
 
@@ -613,7 +610,7 @@ bcm283x_clk_get_rate_uart(void)
 {
 
 	if (vcprop_tag_success_p(&vb_uart.vbt_uartclockrate.tag))
-		return vb_uart.vbt_uartclockrate.rate;
+		return le32toh(vb_uart.vbt_uartclockrate.rate);
 	return 0;
 }
 
@@ -622,8 +619,8 @@ bcm283x_clk_get_rate_vpu(void)
 {
 
 	if (vcprop_tag_success_p(&vb.vbt_vpuclockrate.tag) &&
-	    vb.vbt_vpuclockrate.rate > 0) {
-		return vb.vbt_vpuclockrate.rate;
+	    vb.vbt_vpuclockrate.rate != 0) {
+		return le32toh(vb.vbt_vpuclockrate.rate);
 	}
 	return 0;
 }
@@ -633,8 +630,19 @@ bcm283x_clk_get_rate_emmc(void)
 {
 
 	if (vcprop_tag_success_p(&vb.vbt_emmcclockrate.tag) &&
-	    vb.vbt_emmcclockrate.rate > 0) {
-		return vb.vbt_emmcclockrate.rate;
+	    vb.vbt_emmcclockrate.rate != 0) {
+		return le32toh(vb.vbt_emmcclockrate.rate);
+	}
+	return 0;
+}
+
+u_int
+bcm283x_clk_get_rate_emmc2(void)
+{
+
+	if (vcprop_tag_success_p(&vb.vbt_emmc2clockrate.tag) &&
+	    vb.vbt_emmc2clockrate.rate != 0) {
+		return le32toh(vb.vbt_emmc2clockrate.rate);
 	}
 	return 0;
 }
@@ -651,10 +659,17 @@ bcm283x_uartinit(bus_space_tag_t iot, bus_space_handle_t ioh)
 
 	bcm2835_mbox_read(iot, ioh, BCMMBOX_CHANARM2VC, &res);
 
+	/*
+	 * RPI4 has Cortex A72 processors which do speculation, so
+	 * we need to invalidate the cache for an updates done by
+	 * the firmware
+	 */
+	cpu_dcache_inv_range((vaddr_t)&vb_uart, sizeof(vb_uart));
+
 	if (vcprop_tag_success_p(&vb_uart.vbt_uartclockrate.tag))
-		uart_clk = vb_uart.vbt_uartclockrate.rate;
+		uart_clk = le32toh(vb_uart.vbt_uartclockrate.rate);
 	if (vcprop_tag_success_p(&vb_uart.vbt_vpuclockrate.tag))
-		core_clk = vb_uart.vbt_vpuclockrate.rate;
+		core_clk = le32toh(vb_uart.vbt_vpuclockrate.rate);
 }
 
 #if defined(SOC_BCM2835)
@@ -681,11 +696,11 @@ bcm2836_uartinit(void)
 }
 
 static void
-bcm2838_uartinit(void)
+bcm2711_uartinit(void)
 {
-	const paddr_t pa = BCM2838_PERIPHERALS_BUS_TO_PHYS(BCM2835_ARMMBOX_BASE);
-	const bus_space_tag_t iot = &bcm2838_bs_tag;
-	const bus_space_handle_t ioh = BCM2838_IOPHYSTOVIRT(pa);
+	const paddr_t pa = BCM2711_PERIPHERALS_BUS_TO_PHYS(BCM2835_ARMMBOX_BASE);
+	const bus_space_tag_t iot = &bcm2711_bs_tag;
+	const bus_space_handle_t ioh = BCM2711_IOPHYSTOVIRT(pa);
 
 	bcm283x_uartinit(iot, ioh);
 }
@@ -724,6 +739,13 @@ bcm283x_bootparams(bus_space_tag_t iot, bus_space_handle_t ioh)
 
 	bcm2835_mbox_read(iot, ioh, BCMMBOX_CHANARM2VC, &res);
 
+	/*
+	 * RPI4 has Cortex A72 processors which do speculation, so
+	 * we need to invalidate the cache for an updates done by
+	 * the firmware
+	 */
+	cpu_dcache_inv_range((vaddr_t)&vb, sizeof(vb));
+
 	if (!vcprop_buffer_success_p(&vb.vb_hdr)) {
 		bootconfig.dramblocks = 1;
 		bootconfig.dram[0].address = 0x0;
@@ -740,16 +762,19 @@ bcm283x_bootparams(bus_space_tag_t iot, bus_space_handle_t ioh)
 		bootconfig.dramblocks = 0;
 
 		for (int i = 0; i < n && i < DRAM_BLOCKS; i++) {
-			bootconfig.dram[i].address = vptp_mem->mem[i].base;
-			bootconfig.dram[i].pages = atop(vptp_mem->mem[i].size);
+			bootconfig.dram[i].address =
+			    le32toh(vptp_mem->mem[i].base);
+			bootconfig.dram[i].pages =
+			    atop(le32toh(vptp_mem->mem[i].size));
 			bootconfig.dramblocks++;
 
-			bcm283x_memorysize += vptp_mem->mem[i].size;
+			bcm283x_memorysize += le32toh(vptp_mem->mem[i].size);
 		}
 	}
 
 	if (vcprop_tag_success_p(&vb.vbt_armclockrate.tag))
-		curcpu()->ci_data.cpu_cc_freq = vb.vbt_armclockrate.rate;
+		curcpu()->ci_data.cpu_cc_freq =
+		    le32toh(vb.vbt_armclockrate.rate);
 
 #ifdef VERBOSE_INIT_ARM
 	if (vcprop_tag_success_p(&vb.vbt_memory.tag))
@@ -757,25 +782,34 @@ bcm283x_bootparams(bus_space_tag_t iot, bus_space_handle_t ioh)
 		    bcm283x_memorysize);
 	if (vcprop_tag_success_p(&vb.vbt_armclockrate.tag))
 		printf("%s: arm clock    %d\n", __func__,
-		    vb.vbt_armclockrate.rate);
+		    le32toh(vb.vbt_armclockrate.rate));
+	if (vcprop_tag_success_p(&vb.vbt_vpuclockrate.tag))
+		printf("%s: vpu clock    %d\n", __func__,
+		    le32toh(vb.vbt_vpuclockrate.rate));
+	if (vcprop_tag_success_p(&vb.vbt_emmcclockrate.tag))
+		printf("%s: emmc clock   %d\n", __func__,
+		    le32toh(vb.vbt_emmcclockrate.rate));
+	if (vcprop_tag_success_p(&vb.vbt_emmc2clockrate.tag))
+		printf("%s: emmc2 clock  %d\n", __func__,
+		    le32toh(vb.vbt_emmcclockrate.rate));
 	if (vcprop_tag_success_p(&vb.vbt_fwrev.tag))
 		printf("%s: firmware rev %x\n", __func__,
-		    vb.vbt_fwrev.rev);
+		    le32toh(vb.vbt_fwrev.rev));
 	if (vcprop_tag_success_p(&vb.vbt_boardmodel.tag))
 		printf("%s: board model  %x\n", __func__,
-		    vb.vbt_boardmodel.model);
+		    le32toh(vb.vbt_boardmodel.model));
 	if (vcprop_tag_success_p(&vb.vbt_macaddr.tag))
 		printf("%s: mac-address  %" PRIx64 "\n", __func__,
-		    vb.vbt_macaddr.addr);
+		    le64toh(vb.vbt_macaddr.addr));
 	if (vcprop_tag_success_p(&vb.vbt_boardrev.tag))
 		printf("%s: board rev    %x\n", __func__,
-		    vb.vbt_boardrev.rev);
+		    le32toh(vb.vbt_boardrev.rev));
 	if (vcprop_tag_success_p(&vb.vbt_serial.tag))
 		printf("%s: board serial %" PRIx64 "\n", __func__,
-		    vb.vbt_serial.sn);
+		    le64toh(vb.vbt_serial.sn));
 	if (vcprop_tag_success_p(&vb.vbt_dmachan.tag))
 		printf("%s: DMA channel mask 0x%08x\n", __func__,
-		    vb.vbt_dmachan.mask);
+		    le32toh(vb.vbt_dmachan.mask));
 
 	if (vcprop_tag_success_p(&vb.vbt_cmdline.tag))
 		printf("%s: cmdline      %s\n", __func__,
@@ -807,11 +841,11 @@ bcm2836_bootparams(void)
 }
 
 static void
-bcm2838_bootparams(void)
+bcm2711_bootparams(void)
 {
-	const paddr_t pa = BCM2838_PERIPHERALS_BUS_TO_PHYS(BCM2835_ARMMBOX_BASE);
-	const bus_space_tag_t iot = &bcm2838_bs_tag;
-	const bus_space_handle_t ioh = BCM2838_IOPHYSTOVIRT(pa);
+	const paddr_t pa = BCM2711_PERIPHERALS_BUS_TO_PHYS(BCM2835_ARMMBOX_BASE);
+	const bus_space_tag_t iot = &bcm2711_bs_tag;
+	const bus_space_handle_t ioh = BCM2711_IOPHYSTOVIRT(pa);
 
 	bcm283x_bootparams(iot, ioh);
 }
@@ -856,11 +890,12 @@ rpi_fb_parse_mode(const char *s, uint32_t *pwidth, uint32_t *pheight)
 	return true;
 }
 
+#define RPI_EDIDSIZE 1024
+
 static bool
 rpi_fb_get_edid_mode(uint32_t *pwidth, uint32_t *pheight)
 {
 	struct edid_info ei;
-	uint8_t edid_data[1024];
 	uint32_t res;
 	int error;
 
@@ -876,7 +911,9 @@ rpi_fb_get_edid_mode(uint32_t *pwidth, uint32_t *pheight)
 	    vb_edid.vbt_edid.status != 0)
 		return false;
 
-	memset(edid_data, 0, sizeof(edid_data));
+	uint8_t *edid_data = kmem_alloc(RPI_EDIDSIZE, KM_SLEEP);
+
+	memset(edid_data, 0, RPI_EDIDSIZE);
 	memcpy(edid_data, vb_edid.vbt_edid.data,
 	    sizeof(vb_edid.vbt_edid.data));
 	edid_parse(edid_data, &ei);
@@ -888,6 +925,8 @@ rpi_fb_get_edid_mode(uint32_t *pwidth, uint32_t *pheight)
 		*pwidth = ei.edid_preferred_mode->hdisplay;
 		*pheight = ei.edid_preferred_mode->vdisplay;
 	}
+
+	kmem_free(edid_data, RPI_EDIDSIZE);
 
 	return true;
 }
@@ -923,10 +962,10 @@ rpi_fb_init(prop_dictionary_t dict, void *aux)
 		height = RPI_FB_HEIGHT;
 	}
 
-	vb_setfb.vbt_res.width = width;
-	vb_setfb.vbt_res.height = height;
-	vb_setfb.vbt_vres.width = width;
-	vb_setfb.vbt_vres.height = height;
+	vb_setfb.vbt_res.width = htole32(width);
+	vb_setfb.vbt_res.height = htole32(height);
+	vb_setfb.vbt_vres.width = htole32(width);
+	vb_setfb.vbt_vres.height = htole32(height);
 	error = bcmmbox_request(BCMMBOX_CHANARM2VC, &vb_setfb,
 	    sizeof(vb_setfb), &res);
 	if (error) {
@@ -947,15 +986,16 @@ rpi_fb_init(prop_dictionary_t dict, void *aux)
 
 #ifdef VERBOSE_INIT_ARM
 	printf("%s: addr = 0x%x size = %d\n", __func__,
-	    vb_setfb.vbt_allocbuf.address,
-	    vb_setfb.vbt_allocbuf.size);
-	printf("%s: depth = %d\n", __func__, vb_setfb.vbt_depth.bpp);
+	    le32toh(vb_setfb.vbt_allocbuf.address),
+	    le32toh(vb_setfb.vbt_allocbuf.size));
+	printf("%s: depth = %d\n", __func__, le32toh(vb_setfb.vbt_depth.bpp));
 	printf("%s: pitch = %d\n", __func__,
-	    vb_setfb.vbt_pitch.linebytes);
+	    le32toh(vb_setfb.vbt_pitch.linebytes));
 	printf("%s: width = %d height = %d\n", __func__,
-	    vb_setfb.vbt_res.width, vb_setfb.vbt_res.height);
+	    le32toh(vb_setfb.vbt_res.width), le32toh(vb_setfb.vbt_res.height));
 	printf("%s: vwidth = %d vheight = %d\n", __func__,
-	    vb_setfb.vbt_vres.width, vb_setfb.vbt_vres.height);
+	    le32toh(vb_setfb.vbt_vres.width),
+	    le32toh(vb_setfb.vbt_vres.height));
 #endif
 
 	if (vb_setfb.vbt_allocbuf.address == 0 ||
@@ -970,13 +1010,16 @@ rpi_fb_init(prop_dictionary_t dict, void *aux)
 		return false;
 	}
 
-	prop_dictionary_set_uint32(dict, "width", vb_setfb.vbt_res.width);
-	prop_dictionary_set_uint32(dict, "height", vb_setfb.vbt_res.height);
-	prop_dictionary_set_uint8(dict, "depth", vb_setfb.vbt_depth.bpp);
+	prop_dictionary_set_uint32(dict, "width",
+	    le32toh(vb_setfb.vbt_res.width));
+	prop_dictionary_set_uint32(dict, "height",
+	    le32toh(vb_setfb.vbt_res.height));
+	prop_dictionary_set_uint8(dict, "depth",
+	    le32toh(vb_setfb.vbt_depth.bpp));
 	prop_dictionary_set_uint16(dict, "linebytes",
-	    vb_setfb.vbt_pitch.linebytes);
+	    le32toh(vb_setfb.vbt_pitch.linebytes));
 	prop_dictionary_set_uint32(dict, "address",
-	    vb_setfb.vbt_allocbuf.address);
+	    le32toh(vb_setfb.vbt_allocbuf.address));
 
 	/*
 	 * Old firmware uses BGR. New firmware uses RGB. The get and set
@@ -1246,22 +1289,22 @@ bcm2836_platform_bootstrap(void)
 }
 
 static void
-bcm2838_platform_bootstrap(void)
+bcm2711_platform_bootstrap(void)
 {
 
-	bcm2838_bs_tag = arm_generic_bs_tag;
-	bcm2838_a4x_bs_tag = arm_generic_a4x_bs_tag;
+	bcm2711_bs_tag = arm_generic_bs_tag;
+	bcm2711_a4x_bs_tag = arm_generic_a4x_bs_tag;
 
-	bcm2838_bs_tag.bs_map = bcm2838_bs_map;
-	bcm2838_bs_tag.bs_mmap = bcm2838_bs_mmap;
-	bcm2838_a4x_bs_tag.bs_map = bcm2838_bs_map;
-	bcm2838_a4x_bs_tag.bs_mmap = bcm2838_a4x_bs_mmap;
+	bcm2711_bs_tag.bs_map = bcm2711_bs_map;
+	bcm2711_bs_tag.bs_mmap = bcm2711_bs_mmap;
+	bcm2711_a4x_bs_tag.bs_map = bcm2711_bs_map;
+	bcm2711_a4x_bs_tag.bs_mmap = bcm2711_a4x_bs_mmap;
 
 	fdtbus_set_decoderegprop(false);
 
-	bcm2838_uartinit();
+	bcm2711_uartinit();
 
-	bcm2838_bootparams();
+	bcm2711_bootparams();
 
 #ifdef MULTIPROCESSOR
 	arm_cpu_max = RPI_CPU_MAX;
@@ -1276,12 +1319,6 @@ bcm2835_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 
 	faa->faa_bst = &bcm2835_bs_tag;
-	faa->faa_a4x_bst = &bcm2835_a4x_bs_tag;
-	faa->faa_dmat = &bcm2835_bus_dma_tag;
-
-	bcm2835_bus_dma_tag._ranges = bcm2835_dma_ranges;
-	bcm2835_bus_dma_tag._nranges = __arraycount(bcm2835_dma_ranges);
-	bcm2835_dma_ranges[0].dr_len = bcm283x_memorysize;
 }
 #endif
 
@@ -1291,30 +1328,18 @@ bcm2836_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 
 	faa->faa_bst = &bcm2836_bs_tag;
-	faa->faa_a4x_bst = &bcm2836_a4x_bs_tag;
-	faa->faa_dmat = &bcm2835_bus_dma_tag;
-
-	bcm2835_bus_dma_tag._ranges = bcm2836_dma_ranges;
-	bcm2835_bus_dma_tag._nranges = __arraycount(bcm2836_dma_ranges);
-	bcm2836_dma_ranges[0].dr_len = bcm283x_memorysize;
 }
 
 static void
-bcm2838_platform_init_attach_args(struct fdt_attach_args *faa)
+bcm2711_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 
-	faa->faa_bst = &bcm2838_bs_tag;
-	faa->faa_a4x_bst = &bcm2838_a4x_bs_tag;
-	faa->faa_dmat = &bcm2835_bus_dma_tag;
-
-	bcm2835_bus_dma_tag._ranges = bcm2838_dma_ranges;
-	bcm2835_bus_dma_tag._nranges = __arraycount(bcm2838_dma_ranges);
-	bcm2838_dma_ranges[0].dr_len = bcm283x_memorysize;
+	faa->faa_bst = &bcm2711_bs_tag;
 }
 #endif
 
 
-static void
+static void __noasan
 bcm283x_platform_early_putchar(vaddr_t va, paddr_t pa, char c)
 {
 	volatile uint32_t *uartaddr =
@@ -1322,16 +1347,30 @@ bcm283x_platform_early_putchar(vaddr_t va, paddr_t pa, char c)
 		(volatile uint32_t *)va :
 		(volatile uint32_t *)pa;
 
-	while ((uartaddr[PL01XCOM_FR / 4] & PL01X_FR_TXFF) != 0)
+	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFF) != 0)
 		continue;
 
-	uartaddr[PL01XCOM_DR / 4] = c;
+	uartaddr[PL01XCOM_DR / 4] = htole32(c);
 
-	while ((uartaddr[PL01XCOM_FR / 4] & PL01X_FR_TXFE) == 0)
+	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFE) == 0)
 		continue;
 }
 
-void
+static void __noasan
+bcm283x_aux_platform_early_putchar(vaddr_t va, paddr_t pa, char c)
+{
+	volatile uint32_t *uartaddr =
+	    cpu_earlydevice_va_p() ?
+		(volatile uint32_t *)va :
+		(volatile uint32_t *)pa;
+
+	while ((le32toh(uartaddr[com_lsr]) & LSR_TXRDY) == 0)
+		continue;
+
+	uartaddr[com_data] = htole32(c);
+}
+
+void __noasan
 bcm2835_platform_early_putchar(char c)
 {
 	paddr_t pa = BCM2835_PERIPHERALS_BUS_TO_PHYS(BCM2835_UART0_BASE);
@@ -1340,7 +1379,16 @@ bcm2835_platform_early_putchar(char c)
 	bcm283x_platform_early_putchar(va, pa, c);
 }
 
-void
+void __noasan
+bcm2835_aux_platform_early_putchar(char c)
+{
+	paddr_t pa = BCM2835_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE);
+	vaddr_t va = BCM2835_IOPHYSTOVIRT(pa);
+
+	bcm283x_aux_platform_early_putchar(va, pa, c);
+}
+
+void __noasan
 bcm2836_platform_early_putchar(char c)
 {
 	paddr_t pa = BCM2836_PERIPHERALS_BUS_TO_PHYS(BCM2835_UART0_BASE);
@@ -1349,40 +1397,22 @@ bcm2836_platform_early_putchar(char c)
 	bcm283x_platform_early_putchar(va, pa, c);
 }
 
-void
+void __noasan
 bcm2837_platform_early_putchar(char c)
 {
-#define AUCONSADDR_PA	BCM2836_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE)
-#define AUCONSADDR_VA	BCM2835_IOPHYSTOVIRT(AUCONSADDR_PA)
-	volatile uint32_t *uartaddr =
-	    cpu_earlydevice_va_p() ?
-		(volatile uint32_t *)AUCONSADDR_VA :
-		(volatile uint32_t *)AUCONSADDR_PA;
+	paddr_t pa = BCM2836_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE);
+	vaddr_t va = BCM2835_IOPHYSTOVIRT(pa);
 
-	while ((uartaddr[com_lsr] & LSR_TXRDY) == 0)
-		;
-
-	uartaddr[com_data] = c;
-#undef AUCONSADDR_VA
-#undef AUCONSADDR_PA
+	bcm283x_aux_platform_early_putchar(va, pa, c);
 }
 
-void
-bcm2838_platform_early_putchar(char c)
+void __noasan
+bcm2711_platform_early_putchar(char c)
 {
-#define AUCONSADDR_PA	BCM2838_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE)
-#define AUCONSADDR_VA	BCM2838_IOPHYSTOVIRT(AUCONSADDR_PA)
-	volatile uint32_t *uartaddr =
-	    cpu_earlydevice_va_p() ?
-		(volatile uint32_t *)AUCONSADDR_VA :
-		(volatile uint32_t *)AUCONSADDR_PA;
+	paddr_t pa = BCM2711_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE);
+	vaddr_t va = BCM2711_IOPHYSTOVIRT(pa);
 
-	while ((uartaddr[com_lsr] & LSR_TXRDY) == 0)
-		;
-
-	uartaddr[com_data] = c;
-#undef AUCONSADDR_VA
-#undef AUCONSADDR_PA
+	bcm283x_aux_platform_early_putchar(va, pa, c);
 }
 
 #define	BCM283x_REF_FREQ	19200000
@@ -1392,10 +1422,12 @@ bcm283x_platform_device_register(device_t dev, void *aux)
 {
 	prop_dictionary_t dict = device_properties(dev);
 
+	fdtbus_device_register(dev, aux);
+
 	if (device_is_a(dev, "bcmdmac") &&
 	    vcprop_tag_success_p(&vb.vbt_dmachan.tag)) {
 		prop_dictionary_set_uint32(dict,
-		    "chanmask", vb.vbt_dmachan.mask);
+		    "chanmask", le32toh(vb.vbt_dmachan.mask));
 	}
 #if NSDHC > 0
 	if (booted_device == NULL &&
@@ -1405,25 +1437,19 @@ bcm283x_platform_device_register(device_t dev, void *aux)
 		booted_device = dev;
 	}
 #endif
-	if ((device_is_a(dev, "usmsc") || device_is_a(dev, "mue")) &&
+	if ((device_is_a(dev, "usmsc") ||
+	     device_is_a(dev, "mue") ||
+	     device_is_a(dev, "genet")) &&
 	    vcprop_tag_success_p(&vb.vbt_macaddr.tag)) {
+		const uint64_t addr = le64toh(vb.vbt_macaddr.addr);
 		const uint8_t enaddr[ETHER_ADDR_LEN] = {
-		     (vb.vbt_macaddr.addr >> 0) & 0xff,
-		     (vb.vbt_macaddr.addr >> 8) & 0xff,
-		     (vb.vbt_macaddr.addr >> 16) & 0xff,
-		     (vb.vbt_macaddr.addr >> 24) & 0xff,
-		     (vb.vbt_macaddr.addr >> 32) & 0xff,
-		     (vb.vbt_macaddr.addr >> 40) & 0xff
+		     (addr >> 0)  & 0xff, (addr >> 8)  & 0xff,
+		     (addr >> 16) & 0xff, (addr >> 24) & 0xff,
+		     (addr >> 32) & 0xff, (addr >> 40) & 0xff
 		};
 
-		prop_data_t pd = prop_data_create_data(enaddr, ETHER_ADDR_LEN);
-		KASSERT(pd != NULL);
-		if (prop_dictionary_set(device_properties(dev), "mac-address",
-		    pd) == false) {
-			aprint_error_dev(dev,
-			    "WARNING: Unable to set mac-address property\n");
-		}
-		prop_object_release(pd);
+		prop_dictionary_set_data(dict, "mac-address", enaddr,
+		    ETHER_ADDR_LEN);
 	}
 
 #if NGENFB > 0
@@ -1455,6 +1481,20 @@ static u_int
 bcm283x_platform_uart_freq(void)
 {
 
+	/*
+	 * We are safe to access stdout phandle - consinit did before
+	 * calling ap_uart_freq
+	 */
+	const int phandle = fdtbus_get_stdout_phandle();
+
+	static const struct device_compatible_entry aux_compat_data[] = {
+		{ .compat = "brcm,bcm2835-aux-uart" },
+		DEVICE_COMPAT_EOL
+	};
+
+	if (of_compatible_match(phandle, aux_compat_data))
+		return core_clk * 2;
+
 	return uart_clk;
 }
 
@@ -1473,12 +1513,6 @@ ARM_PLATFORM(bcm2835, "brcm,bcm2835", &bcm2835_platform);
 #endif
 
 #if defined(SOC_BCM2836)
-static u_int
-bcm2837_platform_uart_freq(void)
-{
-
-	return core_clk * 2;
-}
 
 static const struct arm_platform bcm2836_platform = {
 	.ap_devmap = bcm2836_platform_devmap,
@@ -1498,22 +1532,22 @@ static const struct arm_platform bcm2837_platform = {
 	.ap_device_register = bcm283x_platform_device_register,
 	.ap_reset = bcm2835_system_reset,
 	.ap_delay = gtmr_delay,
-	.ap_uart_freq = bcm2837_platform_uart_freq,
+	.ap_uart_freq = bcm283x_platform_uart_freq,
 	.ap_mpstart = arm_fdt_cpu_mpstart,
 };
 
-static const struct arm_platform bcm2838_platform = {
-	.ap_devmap = bcm2838_platform_devmap,
-	.ap_bootstrap = bcm2838_platform_bootstrap,
-	.ap_init_attach_args = bcm2838_platform_init_attach_args,
+static const struct arm_platform bcm2711_platform = {
+	.ap_devmap = bcm2711_platform_devmap,
+	.ap_bootstrap = bcm2711_platform_bootstrap,
+	.ap_init_attach_args = bcm2711_platform_init_attach_args,
 	.ap_device_register = bcm283x_platform_device_register,
 	.ap_reset = bcm2835_system_reset,
 	.ap_delay = gtmr_delay,
-	.ap_uart_freq = bcm2837_platform_uart_freq,
+	.ap_uart_freq = bcm283x_platform_uart_freq,
 	.ap_mpstart = arm_fdt_cpu_mpstart,
 };
 
 ARM_PLATFORM(bcm2836, "brcm,bcm2836", &bcm2836_platform);
 ARM_PLATFORM(bcm2837, "brcm,bcm2837", &bcm2837_platform);
-ARM_PLATFORM(bcm2838, "brcm,bcm2838", &bcm2838_platform);
+ARM_PLATFORM(bcm2711, "brcm,bcm2711", &bcm2711_platform);
 #endif

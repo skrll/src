@@ -1,4 +1,4 @@
-/* $NetBSD: ciphy.c,v 1.38 2019/11/27 10:19:20 msaitoh Exp $ */
+/* $NetBSD: ciphy.c,v 1.41 2020/08/24 04:23:41 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2004
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ciphy.c,v 1.38 2019/11/27 10:19:20 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ciphy.c,v 1.41 2020/08/24 04:23:41 msaitoh Exp $");
 
 /*
  * Driver for the Cicada CS8201 10/100/1000 copper PHY.
@@ -119,12 +119,16 @@ ciphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_flags = ma->mii_flags;
 	sc->mii_flags |= MIIF_NOISOLATE;
 
+	mii_lock(mii);
+
 	ciphy_reset(sc);
 
 	PHY_READ(sc, MII_BMSR, &sc->mii_capabilities);
 	sc->mii_capabilities &= ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
+
+	mii_unlock(mii);
 
 	mii_phy_add_media(sc);
 }
@@ -134,6 +138,8 @@ ciphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t reg, speed, gig;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -167,7 +173,7 @@ ciphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			if (reg & BMCR_AUTOEN)
 				return 0;
 #endif
-			(void) mii_phy_auto(sc, 0);
+			(void) mii_phy_auto(sc);
 			break;
 		case IFM_1000_T:
 			speed = BMCR_S1000;
@@ -267,7 +273,7 @@ setit:
 		if (sc->mii_ticks <= sc->mii_anegticks)
 			break;
 
-		mii_phy_auto(sc, 0);
+		mii_phy_auto_restart(sc);
 		return 0;
 	}
 
@@ -292,6 +298,8 @@ ciphy_status(struct mii_softc *sc)
 {
 	struct mii_data *mii = sc->mii_pdata;
 	uint16_t bmsr, bmcr, gtsr;
+
+	KASSERT(mii_locked(mii));
 
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
@@ -347,6 +355,8 @@ ciphy_status(struct mii_softc *sc)
 static void
 ciphy_reset(struct mii_softc *sc)
 {
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	mii_phy_reset(sc);
 	DELAY(1000);

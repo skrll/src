@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -592,7 +592,7 @@ CgUpdateHeader (
 
     Checksum = (UINT8) (0 - Sum);
 
-    /* Re-write the the checksum byte */
+    /* Re-write the checksum byte */
 
     FlSeekFile (ASL_FILE_AML_OUTPUT, Op->Asl.FinalAmlOffset +
         ACPI_OFFSET (ACPI_TABLE_HEADER, Checksum));

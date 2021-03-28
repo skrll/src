@@ -1,4 +1,4 @@
-/*	$NetBSD: vmem_impl.h,v 1.3 2013/11/22 21:04:11 christos Exp $	*/
+/*	$NetBSD: vmem_impl.h,v 1.5 2020/07/07 03:23:33 thorpej Exp $	*/
 
 /*-
  * Copyright (c)2006 YAMAMOTO Takashi,
@@ -37,6 +37,7 @@
 
 #if defined(_KERNEL)
 #define	QCACHE
+#include <sys/pool.h>
 #include <sys/vmem.h>
 
 #define	LOCK_DECL(name)		\
@@ -95,7 +96,9 @@ struct vmem {
 	struct vmem_seglist vm_seglist;
 	struct vmem_freelist vm_freelist[VMEM_MAXORDER];
 	size_t vm_hashsize;
+	size_t vm_hashmask;
 	size_t vm_nbusytag;
+	size_t vm_maxbusytag;
 	struct vmem_hashlist *vm_hashlist;
 	struct vmem_hashlist vm_hash0;
 	size_t vm_quantum_mask;

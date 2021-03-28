@@ -1,7 +1,7 @@
-/*	$NetBSD: subr_kcov.c,v 1.11 2019/12/07 19:50:33 kamil Exp $	*/
+/*	$NetBSD: subr_kcov.c,v 1.16 2020/07/03 16:11:11 maxv Exp $	*/
 
 /*
- * Copyright (c) 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2019-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -105,17 +105,24 @@ const struct fileops kcov_fileops = {
  */
 
 typedef struct kcov_desc {
+	/* Local only */
 	kmutex_t lock;
+	bool lwpfree;
+	bool silenced;
+
+	/* Pointer to the end of the structure, if any */
+	struct kcov_desc *remote;
+
+	/* Can be remote */
 	kcov_int_t *buf;
 	struct uvm_object *uobj;
 	size_t bufnent;
 	size_t bufsize;
 	int mode;
 	bool enabled;
-	bool lwpfree;
 } kcov_t;
 
-static specificdata_key_t kcov_lwp_key;
+/* -------------------------------------------------------------------------- */
 
 static void
 kcov_lock(kcov_t *kd)
@@ -131,6 +138,21 @@ kcov_unlock(kcov_t *kd)
 	mutex_exit(&kd->lock);
 }
 
+static bool
+kcov_mode_is_valid(int mode)
+{
+	switch (mode) {
+	case KCOV_MODE_NONE:
+	case KCOV_MODE_TRACE_PC:
+	case KCOV_MODE_TRACE_CMP:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+
 static void
 kcov_free(kcov_t *kd)
 {
@@ -143,10 +165,10 @@ kcov_free(kcov_t *kd)
 	kmem_free(kd, sizeof(*kd));
 }
 
-static void
-kcov_lwp_free(void *arg)
+void
+kcov_lwp_free(struct lwp *l)
 {
-	kcov_t *kd = (kcov_t *)arg;
+	kcov_t *kd = (kcov_t *)l->l_kcov;
 
 	if (kd == NULL) {
 		return;
@@ -196,6 +218,232 @@ kcov_allocbuf(kcov_t *kd, uint64_t nent)
 
 /* -------------------------------------------------------------------------- */
 
+typedef struct kcov_remote {
+	LIST_ENTRY(kcov_remote) list;
+	uint64_t subsystem;
+	uint64_t id;
+	u_int refcount;
+	kcov_t kd;
+} kcov_remote_t;
+
+typedef LIST_HEAD(, kcov_remote) kcov_remote_list_t;
+
+static kcov_remote_list_t kcov_remote_list;
+
+static kcov_remote_t *
+kcov_remote_find(uint64_t subsystem, uint64_t id)
+{
+	kcov_remote_t *kr;
+
+	LIST_FOREACH(kr, &kcov_remote_list, list) {
+		if (kr->subsystem == subsystem && kr->id == id)
+			return kr;
+	}
+
+	return NULL;
+}
+
+void
+kcov_remote_register(uint64_t subsystem, uint64_t id)
+{
+	kcov_remote_t *kr;
+	kcov_t *kd;
+	int error;
+
+	if (kcov_remote_find(subsystem, id) != NULL) {
+		panic("%s: kr already exists", __func__);
+	}
+
+	kr = kmem_zalloc(sizeof(*kr), KM_SLEEP);
+	kr->subsystem = subsystem;
+	kr->id = id;
+	kr->refcount = 0;
+	kd = &kr->kd;
+
+	mutex_init(&kd->lock, MUTEX_DEFAULT, IPL_NONE);
+	error = kcov_allocbuf(kd, KCOV_BUF_MAX_ENTRIES);
+	if (error != 0)
+		panic("%s: failed to allocate buffer", __func__);
+
+	LIST_INSERT_HEAD(&kcov_remote_list, kr, list);
+}
+
+void
+kcov_remote_enter(uint64_t subsystem, uint64_t id)
+{
+	struct lwp *l = curlwp;
+	kcov_remote_t *kr;
+	kcov_t *kd;
+	u_int refs __diagused;
+
+	kr = kcov_remote_find(subsystem, id);
+	if (__predict_false(kr == NULL)) {
+		panic("%s: unable to find kr", __func__);
+	}
+
+	refs = atomic_inc_uint_nv(&kr->refcount);
+	KASSERT(refs == 1);
+
+	KASSERT(l->l_kcov == NULL);
+	kd = &kr->kd;
+	if (atomic_load_relaxed(&kd->enabled)) {
+		l->l_kcov = kd;
+	}
+}
+
+void
+kcov_remote_leave(uint64_t subsystem, uint64_t id)
+{
+	struct lwp *l = curlwp;
+	kcov_remote_t *kr;
+	u_int refs __diagused;
+
+	kr = kcov_remote_find(subsystem, id);
+	if (__predict_false(kr == NULL)) {
+		panic("%s: unable to find kr", __func__);
+	}
+
+	refs = atomic_dec_uint_nv(&kr->refcount);
+	KASSERT(refs == 0);
+
+	l->l_kcov = NULL;
+}
+
+static int
+kcov_remote_enable(kcov_t *kd, int mode)
+{
+	kcov_lock(kd);
+	if (kd->enabled) {
+		kcov_unlock(kd);
+		return EBUSY;
+	}
+	kd->mode = mode;
+	atomic_store_relaxed(&kd->enabled, true);
+	kcov_unlock(kd);
+
+	return 0;
+}
+
+static int
+kcov_remote_disable(kcov_t *kd)
+{
+	kcov_lock(kd);
+	if (!kd->enabled) {
+		kcov_unlock(kd);
+		return ENOENT;
+	}
+	atomic_store_relaxed(&kd->enabled, false);
+	kcov_unlock(kd);
+
+	return 0;
+}
+
+static int
+kcov_remote_attach(kcov_t *kd, struct kcov_ioc_remote_attach *args)
+{
+	kcov_remote_t *kr;
+
+	if (kd->enabled)
+		return EEXIST;
+
+	kr = kcov_remote_find(args->subsystem, args->id);
+	if (kr == NULL)
+		return ENOENT;
+	kd->remote = &kr->kd;
+
+	return 0;
+}
+
+static int
+kcov_remote_detach(kcov_t *kd)
+{
+	if (kd->enabled)
+		return EEXIST;
+	if (kd->remote == NULL)
+		return ENOENT;
+	(void)kcov_remote_disable(kd->remote);
+	kd->remote = NULL;
+	return 0;
+}
+
+/* -------------------------------------------------------------------------- */
+
+static int
+kcov_setbufsize(kcov_t *kd, uint64_t *args)
+{
+	if (kd->remote != NULL)
+		return 0; /* buffer allocated remotely */
+	if (kd->enabled)
+		return EBUSY;
+	return kcov_allocbuf(kd, *((uint64_t *)args));
+}
+
+static int
+kcov_enable(kcov_t *kd, uint64_t *args)
+{
+	struct lwp *l = curlwp;
+	int mode;
+
+	mode = *((int *)args);
+	if (!kcov_mode_is_valid(mode))
+		return EINVAL;
+
+	if (kd->remote != NULL)
+		return kcov_remote_enable(kd->remote, mode);
+
+	if (kd->enabled)
+		return EBUSY;
+	if (l->l_kcov != NULL)
+		return EBUSY;
+	if (kd->buf == NULL)
+		return ENOBUFS;
+
+	l->l_kcov = kd;
+	kd->mode = mode;
+	kd->enabled = true;
+	return 0;
+}
+
+static int
+kcov_disable(kcov_t *kd)
+{
+	struct lwp *l = curlwp;
+
+	if (kd->remote != NULL)
+		return kcov_remote_disable(kd->remote);
+
+	if (!kd->enabled)
+		return ENOENT;
+	if (l->l_kcov != kd)
+		return ENOENT;
+
+	l->l_kcov = NULL;
+	kd->enabled = false;
+	return 0;
+}
+
+/* -------------------------------------------------------------------------- */
+
+void
+kcov_silence_enter(void)
+{
+	kcov_t *kd = curlwp->l_kcov;
+
+	if (kd != NULL)
+		kd->silenced = true;
+}
+
+void
+kcov_silence_leave(void)
+{
+	kcov_t *kd = curlwp->l_kcov;
+
+	if (kd != NULL)
+		kd->silenced = false;
+}
+
+/* -------------------------------------------------------------------------- */
+
 static int
 kcov_open(dev_t dev, int flag, int mode, struct lwp *l)
 {
@@ -219,6 +467,8 @@ kcov_fops_close(file_t *fp)
 	kcov_t *kd = fp->f_data;
 
 	kcov_lock(kd);
+	if (kd->remote != NULL)
+		(void)kcov_remote_disable(kd->remote);
 	if (kd->enabled) {
 		kd->lwpfree = true;
 		kcov_unlock(kd);
@@ -234,9 +484,8 @@ kcov_fops_close(file_t *fp)
 static int
 kcov_fops_ioctl(file_t *fp, u_long cmd, void *addr)
 {
-	int error = 0;
-	int mode;
 	kcov_t *kd;
+	int error;
 
 	kd = fp->f_data;
 	if (kd == NULL)
@@ -245,53 +494,19 @@ kcov_fops_ioctl(file_t *fp, u_long cmd, void *addr)
 
 	switch (cmd) {
 	case KCOV_IOC_SETBUFSIZE:
-		if (kd->enabled) {
-			error = EBUSY;
-			break;
-		}
-		error = kcov_allocbuf(kd, *((uint64_t *)addr));
+		error = kcov_setbufsize(kd, addr);
 		break;
 	case KCOV_IOC_ENABLE:
-		if (kd->enabled) {
-			error = EBUSY;
-			break;
-		}
-		if (lwp_getspecific(kcov_lwp_key) != NULL) {
-			error = EBUSY;
-			break;
-		}
-		if (kd->buf == NULL) {
-			error = ENOBUFS;
-			break;
-		}
-
-		mode = *((int *)addr);
-		switch (mode) {
-		case KCOV_MODE_NONE:
-		case KCOV_MODE_TRACE_PC:
-		case KCOV_MODE_TRACE_CMP:
-			kd->mode = mode;
-			break;
-		default:
-			error = EINVAL;
-		}
-		if (error)
-			break;
-
-		lwp_setspecific(kcov_lwp_key, kd);
-		kd->enabled = true;
+		error = kcov_enable(kd, addr);
 		break;
 	case KCOV_IOC_DISABLE:
-		if (!kd->enabled) {
-			error = ENOENT;
-			break;
-		}
-		if (lwp_getspecific(kcov_lwp_key) != kd) {
-			error = ENOENT;
-			break;
-		}
-		lwp_setspecific(kcov_lwp_key, NULL);
-		kd->enabled = false;
+		error = kcov_disable(kd);
+		break;
+	case KCOV_IOC_REMOTE_ATTACH:
+		error = kcov_remote_attach(kd, addr);
+		break;
+	case KCOV_IOC_REMOTE_DETACH:
+		error = kcov_remote_detach(kd);
 		break;
 	default:
 		error = EINVAL;
@@ -306,7 +521,7 @@ kcov_fops_mmap(file_t *fp, off_t *offp, size_t size, int prot, int *flagsp,
     int *advicep, struct uvm_object **uobjp, int *maxprotp)
 {
 	off_t off = *offp;
-	kcov_t *kd;
+	kcov_t *kd, *kdbuf;
 	int error = 0;
 
 	if (prot & PROT_EXEC)
@@ -323,14 +538,19 @@ kcov_fops_mmap(file_t *fp, off_t *offp, size_t size, int prot, int *flagsp,
 		return ENXIO;
 	kcov_lock(kd);
 
-	if ((size + off) > kd->bufsize) {
+	if (kd->remote != NULL)
+		kdbuf = kd->remote;
+	else
+		kdbuf = kd;
+
+	if ((size + off) > kdbuf->bufsize) {
 		error = ENOMEM;
 		goto out;
 	}
 
-	uao_reference(kd->uobj);
+	uao_reference(kdbuf->uobj);
 
-	*uobjp = kd->uobj;
+	*uobjp = kdbuf->uobj;
 	*maxprotp = prot;
 	*advicep = UVM_ADV_RANDOM;
 
@@ -338,6 +558,13 @@ out:
 	kcov_unlock(kd);
 	return error;
 }
+
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Constraints on the functions here: they must be marked with __nomsan, and
+ * must not make any external call.
+ */
 
 static inline bool __nomsan
 in_interrupt(void)
@@ -364,7 +591,7 @@ __sanitizer_cov_trace_pc(void)
 		return;
 	}
 
-	kd = lwp_getspecific(kcov_lwp_key);
+	kd = curlwp->l_kcov;
 	if (__predict_true(kd == NULL)) {
 		/* Not traced. */
 		return;
@@ -375,10 +602,16 @@ __sanitizer_cov_trace_pc(void)
 		return;
 	}
 
+	if (__predict_false(kd->silenced)) {
+		/* Silenced. */
+		return;
+	}
+
 	if (kd->mode != KCOV_MODE_TRACE_PC) {
 		/* PC tracing mode not enabled */
 		return;
 	}
+	KASSERT(kd->remote == NULL);
 
 	idx = kd->buf[0];
 	if (idx < kd->bufnent) {
@@ -405,7 +638,7 @@ trace_cmp(uint64_t type, uint64_t arg1, uint64_t arg2, intptr_t pc)
 		return;
 	}
 
-	kd = lwp_getspecific(kcov_lwp_key);
+	kd = curlwp->l_kcov;
 	if (__predict_true(kd == NULL)) {
 		/* Not traced. */
 		return;
@@ -416,10 +649,16 @@ trace_cmp(uint64_t type, uint64_t arg1, uint64_t arg2, intptr_t pc)
 		return;
 	}
 
+	if (__predict_false(kd->silenced)) {
+		/* Silenced. */
+		return;
+	}
+
 	if (kd->mode != KCOV_MODE_TRACE_CMP) {
 		/* CMP tracing mode not enabled */
 		return;
 	}
+	KASSERT(kd->remote == NULL);
 
 	idx = kd->buf[0];
 	if ((idx * 4 + 4) <= kd->bufnent) {
@@ -549,20 +788,12 @@ __sanitizer_cov_trace_switch(uint64_t val, uint64_t *cases)
 
 MODULE(MODULE_CLASS_MISC, kcov, NULL);
 
-static void
-kcov_init(void)
-{
-
-	lwp_specific_key_create(&kcov_lwp_key, kcov_lwp_free);
-}
-
 static int
 kcov_modcmd(modcmd_t cmd, void *arg)
 {
 
    	switch (cmd) {
 	case MODULE_CMD_INIT:
-		kcov_init();
 		return 0;
 	case MODULE_CMD_FINI:
 		return EINVAL;

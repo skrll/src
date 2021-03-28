@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.17 2019/11/10 21:16:30 chs Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.20 2020/11/21 17:57:40 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All rights reserved.
@@ -31,13 +31,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.17 2019/11/10 21:16:30 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.20 2020/11/21 17:57:40 thorpej Exp $");
 
 #include <sys/param.h>
-#include <sys/extent.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/autoconf.h>
 #include <sys/bus.h>
@@ -63,6 +62,14 @@ static int mainbus_found;
 struct powerpc_isa_chipset genppc_ict;
 struct genppc_pci_chipset *genppc_pct;
 
+#define	PCI_IO_START	0x00008000
+#define	PCI_IO_END	0x0000ffff
+#define	PCI_IO_SIZE	((PCI_IO_END - PCI_IO_START) + 1)
+
+#define	PCI_MEM_START	0x00000000
+#define	PCI_MEM_END	0x0fffffff
+#define	PCI_MEM_SIZE	((PCI_MEM_END - PCI_MEM_START) + 1)
+
 /*
  * Probe for the mainbus; always succeeds.
  */
@@ -85,9 +92,6 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 #if NPCI > 0
 	struct genppc_pci_chipset_businfo *pbi;
 #endif
-#ifdef PCI_NETBSD_CONFIGURE
-	struct extent *ioext, *memext;
-#endif
 
 	mainbus_found = 1;
 
@@ -103,12 +107,10 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	 * XXX that's not currently possible.
 	 */
 #if NPCI > 0
-	genppc_pct = malloc(sizeof(struct genppc_pci_chipset), M_DEVBUF,
-	    M_WAITOK);
+	genppc_pct = kmem_alloc(sizeof(struct genppc_pci_chipset), KM_SLEEP);
 	mvmeppc_pci_get_chipset_tag(genppc_pct);
 
-	pbi = malloc(sizeof(struct genppc_pci_chipset_businfo),
-	    M_DEVBUF, M_WAITOK);
+	pbi = kmem_alloc(sizeof(struct genppc_pci_chipset_businfo), KM_SLEEP);
 	pbi->pbi_properties = prop_dictionary_create();
 	KASSERT(pbi->pbi_properties != NULL);
 
@@ -116,15 +118,16 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	SIMPLEQ_INSERT_TAIL(&genppc_pct->pc_pbi, pbi, next);
 
 #ifdef PCI_NETBSD_CONFIGURE
-	ioext  = extent_create("pciio",  0x00008000, 0x0000ffff,
-	    NULL, 0, EX_NOWAIT);
-	memext = extent_create("pcimem", 0x00000000, 0x0fffffff,
-	    NULL, 0, EX_NOWAIT);
+	struct pciconf_resources *pcires = pciconf_resource_init();
 
-	pci_configure_bus(genppc_pct, ioext, memext, NULL, 0, CACHELINESIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    PCI_IO_START, PCI_IO_SIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    PCI_MEM_START, PCI_MEM_SIZE);
 
-	extent_destroy(ioext);
-	extent_destroy(memext);
+	pci_configure_bus(genppc_pct, pcires, 0, CACHELINESIZE);
+
+	pciconf_resource_fini(pcires);
 #endif
 
 	pba.pba_iot = &prep_io_space_tag;

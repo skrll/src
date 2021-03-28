@@ -1,4 +1,4 @@
-/*	$NetBSD: locore_subr.S,v 1.57 2019/04/06 03:06:27 thorpej Exp $	*/
+/*	$NetBSD: locore_subr.S,v 1.60 2020/08/03 16:43:44 uwe Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
 #include <sh3/mmu_sh3.h>
 #include <sh3/mmu_sh4.h>
 
-__KERNEL_RCSID(0, "$NetBSD: locore_subr.S,v 1.57 2019/04/06 03:06:27 thorpej Exp $")
+__KERNEL_RCSID(0, "$NetBSD: locore_subr.S,v 1.60 2020/08/03 16:43:44 uwe Exp $")
 
 
 /*
@@ -86,13 +86,10 @@ __KERNEL_RCSID(0, "$NetBSD: locore_subr.S,v 1.57 2019/04/06 03:06:27 thorpej Exp
  *	Return olwp (in the nlwp context).
  */
 ENTRY(cpu_switchto)
-	tst	r4, r4			! olwp can be NULL
-	bt	.L_saved
-
 	!! save old lwp's context to switchframe
 	mov.l	@(L_MD_PCB, r4), r1	! olwp->l_md.md_pcb
 	SAVEPCB(r1)
-.L_saved:
+
 	!! free to use callee-save registers now
 
 	mov.l	.L_curlwp, r2
@@ -301,15 +298,15 @@ NENTRY(_cpu_intr_resume)
  *	if exception occur, jump to 0xa0000000 (hard reset).
  */
 NENTRY(_cpu_exception_suspend)
-	stc	sr,	r0	/* r0 = SR */
-	mov	#0x10,	r1
-	swap.b	r1,	r1
-	mov	r0,	r2	/* r2 = r0 */
-	swap.w	r1,	r1	/* r1 = 0x10000000 */
-	or	r1,	r2	/* r2 |= 0x10000000 */
-	ldc	r2,	sr	/* SR = r2 */
-	rts
-	 and	r1,	r0	/* r0 &= 0x10000000 */
+	stc	sr, r0		/* r0 = SR */
+	mov	#0x10, r1	/* bswap32(PSL_BL) - fits immediate */
+	swap.b	r1, r1
+	mov	r0, r2		/* r2 = r0 */
+	swap.w	r1, r1		/* r1 = PSL_BL */
+	or	r1, r2		/* r2 |= PSL_BL */
+	ldc	r2, sr		/* SR = r2 */
+	rts			/* return old SR */
+	 nop
 	SET_ENTRY_SIZE(_cpu_exception_suspend)
 
 
@@ -318,14 +315,14 @@ NENTRY(_cpu_exception_suspend)
  *	restore 's' exception mask. (SR.BL)
  */
 NENTRY(_cpu_exception_resume)
-	stc	sr,	r0	/* r0 = SR */
-	mov	#0x10,	r1
-	swap.b	r1,	r1
-	swap.w	r1,	r1
-	not	r1,	r1	/* r1 = ~0x10000000 */
-	and	r1,	r0	/* r0 &= ~0x10000000 */
-	or	r4,	r0	/* r0 |= old SR.BL */
-	ldc	r0,	sr	/* SR = r0 (don't move to delay slot) */
+	stc	sr, r0		/* r0 = SR */
+	mov	#0x10, r1	/* bswap32(PSL_BL) - fits immediate */
+	swap.b	r1, r1
+	swap.w	r1, r1
+	not	r1, r1		/* r1 = ~PSL_BL */
+	and	r1, r0		/* r0 &= ~PSL_BL */
+	or	r4, r0		/* r0 |= old SR.BL */
+	ldc	r0, sr		/* SR = r0 (don't move to delay slot) */
 	rts
 	 nop
 	SET_ENTRY_SIZE(_cpu_exception_resume)

@@ -1,4 +1,4 @@
-/* $NetBSD: exynos5410_clock.c,v 1.5 2019/10/18 06:13:38 skrll Exp $ */
+/* $NetBSD: exynos5410_clock.c,v 1.7 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: exynos5410_clock.c,v 1.5 2019/10/18 06:13:38 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: exynos5410_clock.c,v 1.7 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -423,13 +423,17 @@ CFATTACH_DECL_NEW(exynos5410_clock, sizeof(struct exynos5410_clock_softc),
 #define CLOCK_WRITE(sc, reg, val)	\
     bus_space_write_4((sc)->sc_bst, (sc)->sc_bsh, (reg), (val))
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "samsung,exynos5410-clock" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 exynos5410_clock_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = { "samsung,exynos5410-clock", NULL };
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -448,7 +452,7 @@ exynos5410_clock_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_dev = self;
 	sc->sc_bst = faa->faa_bst;
-	
+
 	error = bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh);
 	if (error) {
 		aprint_error(": couldn't map %#" PRIxBUSADDR ": %d",
@@ -583,7 +587,7 @@ exynos5410_clock_get_rate_pll(struct exynos5410_clock_softc *sc,
 	    &clk_parent->base);
 
 	const uint32_t v = CLOCK_READ(sc, epll->con0_reg);
-	
+
 	return PLL_FREQ(rate_parent, v);
 }
 

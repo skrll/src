@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_subr.c,v 1.227 2019/09/16 00:01:16 manu Exp $	*/
+/*	$NetBSD: kern_subr.c,v 1.229 2020/11/21 08:10:27 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 1999, 2002, 2007, 2008 The NetBSD Foundation, Inc.
@@ -79,7 +79,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_subr.c,v 1.227 2019/09/16 00:01:16 manu Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_subr.c,v 1.229 2020/11/21 08:10:27 mlelstv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_md.h"
@@ -405,9 +405,9 @@ setroot_ask(device_t bootdv, int bootpartition)
 			break;
 		}
 		if (len == 4 && strcmp(buf, "halt") == 0)
-			cpu_reboot(RB_HALT, NULL);
+			kern_reboot(RB_HALT, NULL);
 		else if (len == 6 && strcmp(buf, "reboot") == 0)
-			cpu_reboot(0, NULL);
+			kern_reboot(0, NULL);
 #if defined(DDB)
 		else if (len == 3 && strcmp(buf, "ddb") == 0) {
 			console_debugger();
@@ -445,8 +445,20 @@ setroot_ask(device_t bootdv, int bootpartition)
 		}
 	}
 
+	switch (device_class(rootdv)) {
+	case DV_IFNET:
+	case DV_DISK:
+		aprint_normal("root on %s", device_xname(rootdv));
+		if (DEV_USES_PARTITIONS(rootdv))
+			aprint_normal("%c", (int)DISKPART(rootdev) + 'a');
+		break;
+	default:
+		printf("can't determine root device\n");
+		return;
+	}
+
 	root_device = rootdv;
-	setroot_dump(root_device, dumpdv);
+	setroot_dump(rootdv, dumpdv);
 }
 
 /*
@@ -654,9 +666,9 @@ getdisk(const char *str, int len, int defpart, dev_t *devp, int isdump)
 	deviter_t di;
 
 	if (len == 4 && strcmp(str, "halt") == 0)
-		cpu_reboot(RB_HALT, NULL);
+		kern_reboot(RB_HALT, NULL);
 	else if (len == 6 && strcmp(str, "reboot") == 0)
-		cpu_reboot(0, NULL);
+		kern_reboot(0, NULL);
 #if defined(DDB)
 	else if (len == 3 && strcmp(str, "ddb") == 0) {
 		console_debugger();

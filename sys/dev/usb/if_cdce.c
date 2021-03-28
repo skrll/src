@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cdce.c,v 1.67 2019/08/20 06:37:06 mrg Exp $ */
+/*	$NetBSD: if_cdce.c,v 1.72 2020/05/15 19:28:10 maxv Exp $ */
 
 /*
  * Copyright (c) 1997, 1998, 1999, 2000-2003 Bill Paul <wpaul@windriver.com>
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cdce.c,v 1.67 2019/08/20 06:37:06 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cdce.c,v 1.72 2020/05/15 19:28:10 maxv Exp $");
 
 #include <sys/param.h>
 
@@ -78,15 +78,16 @@ static void	cdce_attach(device_t, device_t, void *);
 CFATTACH_DECL_NEW(cdce, sizeof(struct usbnet), cdce_match, cdce_attach,
     usbnet_detach, usbnet_activate);
 
-static void	cdce_rx_loop(struct usbnet *, struct usbnet_chain *, uint32_t);
-static unsigned	cdce_tx_prepare(struct usbnet *, struct mbuf *,
-				struct usbnet_chain *);
-static int	cdce_init(struct ifnet *);
+static void	cdce_uno_rx_loop(struct usbnet *, struct usbnet_chain *,
+				 uint32_t);
+static unsigned	cdce_uno_tx_prepare(struct usbnet *, struct mbuf *,
+				    struct usbnet_chain *);
+static int	cdce_uno_init(struct ifnet *);
 
-static struct usbnet_ops cdce_ops = {
-	.uno_tx_prepare = cdce_tx_prepare,
-	.uno_rx_loop = cdce_rx_loop,
-	.uno_init = cdce_init,
+static const struct usbnet_ops cdce_ops = {
+	.uno_tx_prepare = cdce_uno_tx_prepare,
+	.uno_rx_loop = cdce_uno_rx_loop,
+	.uno_init = cdce_uno_init,
 };
 
 static int
@@ -145,8 +146,9 @@ cdce_attach(device_t parent, device_t self, void *aux)
 	if (un->un_flags & CDCE_NO_UNION)
 		un->un_iface = uiaa->uiaa_iface;
 	else {
-		ud = (const usb_cdc_union_descriptor_t *)usb_find_desc(un->un_udev,
-		    UDESC_CS_INTERFACE, UDESCSUB_CDC_UNION);
+		ud = (const usb_cdc_union_descriptor_t *)usb_find_desc_if(un->un_udev,
+		    UDESC_CS_INTERFACE, UDESCSUB_CDC_UNION,
+		    usbd_get_interface_descriptor(uiaa->uiaa_iface));
 		if (ud == NULL) {
 			aprint_error_dev(self, "no union descriptor\n");
 			return;
@@ -236,13 +238,15 @@ cdce_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	ue = (const usb_cdc_ethernet_descriptor_t *)usb_find_desc(dev,
-	    UDESC_CS_INTERFACE, UDESCSUB_CDC_ENF);
+	ue = (const usb_cdc_ethernet_descriptor_t *)usb_find_desc_if(dev,
+	    UDESC_CS_INTERFACE, UDESCSUB_CDC_ENF,
+	    usbd_get_interface_descriptor(uiaa->uiaa_iface));
 	if (!ue || usbd_get_string(dev, ue->iMacAddress, eaddr_str) ||
 	    ether_aton_r(un->un_eaddr, sizeof(un->un_eaddr), eaddr_str)) {
 		aprint_normal_dev(self, "faking address\n");
 		un->un_eaddr[0] = 0x2a;
-		memcpy(&un->un_eaddr[1], &hardclock_ticks, sizeof(uint32_t));
+		uint32_t ticks = getticks();
+		memcpy(&un->un_eaddr[1], &ticks, sizeof(ticks));
 		un->un_eaddr[5] = (uint8_t)(device_unit(un->un_dev));
 	}
 
@@ -252,12 +256,12 @@ cdce_attach(device_t parent, device_t self, void *aux)
 }
 
 static int
-cdce_init(struct ifnet *ifp)
+cdce_uno_init(struct ifnet *ifp)
 {
 	struct usbnet		*un = ifp->if_softc;
 	int rv;
 
-	usbnet_lock(un);
+	usbnet_lock_core(un);
 	if (usbnet_isdying(un))
 		rv = EIO;
 	else {
@@ -265,13 +269,13 @@ cdce_init(struct ifnet *ifp)
 		rv = usbnet_init_rx_tx(un);
 		usbnet_set_link(un, rv == 0);
 	}
-	usbnet_unlock(un);
+	usbnet_unlock_core(un);
 
 	return rv;
 }
 
 static void
-cdce_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
+cdce_uno_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 {
 	struct ifnet		*ifp = usbnet_ifp(un);
 
@@ -282,7 +286,7 @@ cdce_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 		total_len -= 4;
 
 	if (total_len < sizeof(struct ether_header)) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -290,14 +294,12 @@ cdce_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 }
 
 static unsigned
-cdce_tx_prepare(struct usbnet *un, struct mbuf *m, struct usbnet_chain *c)
+cdce_uno_tx_prepare(struct usbnet *un, struct mbuf *m, struct usbnet_chain *c)
 {
 	/* Zaurus wants a 32-bit CRC appended to every frame */
 	uint32_t		 crc;
 	unsigned		 extra = 0;
 	unsigned		 length;
-
-	usbnet_isowned_tx(un);
 
 	if (un->un_flags & CDCE_ZAURUS)
 		extra = sizeof(crc);

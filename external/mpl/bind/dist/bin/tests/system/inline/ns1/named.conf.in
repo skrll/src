@@ -23,12 +23,11 @@ options {
 	listen-on-v6 { none; };
 	recursion no;
 	notify yes;
-	dnssec-enable yes;
 	dnssec-validation yes;
 };
 
 zone "." {
-	type master;
+	type primary;
 	file "root.db.signed";
 };
 

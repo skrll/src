@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -636,7 +636,7 @@ AcpiDmIsOptimizationIgnored (
      * Only a small subset of ASL/AML operators can be optimized.
      * Can only optimize/fold if there is no target (or targets)
      * specified for the operator. And of course, the operator
-     * is surrrounded by a Store() operator.
+     * is surrounded by a Store() operator.
      */
     switch (StoreArgument->Common.AmlOpcode)
     {

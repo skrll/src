@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - DHCP client daemon
- * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2020 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -47,6 +47,7 @@ struct fd_data {
 	void *data;
 	size_t data_size;
 	size_t data_len;
+	unsigned int data_flags;
 };
 TAILQ_HEAD(fd_data_head, fd_data);
 
@@ -56,21 +57,23 @@ struct fd_list {
 	int fd;
 	unsigned int flags;
 	struct fd_data_head queue;
-	size_t queue_len;
 #ifdef CTL_FREE_LIST
 	struct fd_data_head free_queue;
 #endif
 };
 TAILQ_HEAD(fd_list_head, fd_list);
 
-#define FD_LISTEN	(1<<0)
-#define FD_UNPRIV	(1<<1)
+#define	FD_LISTEN	0x01U
+#define	FD_UNPRIV	0x02U
+#define	FD_SENDLEN	0x04U
 
-int control_start(struct dhcpcd_ctx *, const char *);
+int control_start(struct dhcpcd_ctx *, const char *, sa_family_t);
 int control_stop(struct dhcpcd_ctx *);
-int control_open(const char *);
+int control_open(const char *, sa_family_t, bool);
 ssize_t control_send(struct dhcpcd_ctx *, int, char * const *);
-int control_queue(struct fd_list *, void *, size_t, bool);
-void control_close(struct dhcpcd_ctx *ctx);
-
+struct fd_list *control_new(struct dhcpcd_ctx *, int, unsigned int);
+void control_free(struct fd_list *);
+void control_delete(struct fd_list *);
+int control_queue(struct fd_list *, void *, size_t);
+void control_recvdata(struct fd_list *fd, char *, size_t);
 #endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: scsiconf.c,v 1.285 2019/11/10 21:16:37 chs Exp $	*/
+/*	$NetBSD: scsiconf.c,v 1.290 2020/09/18 15:04:25 jakllsch Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2004 The NetBSD Foundation, Inc.
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: scsiconf.c,v 1.285 2019/11/10 21:16:37 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: scsiconf.c,v 1.290 2020/09/18 15:04:25 jakllsch Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -126,39 +126,43 @@ static void	scsibus_discover_thread(void *);
 static void	scsibus_config(struct scsibus_softc *);
 
 const struct scsipi_bustype scsi_bustype = {
-	SCSIPI_BUSTYPE_BUSTYPE(SCSIPI_BUSTYPE_SCSI, SCSIPI_BUSTYPE_SCSI_PSCSI),
-	scsi_scsipi_cmd,
-	scsipi_interpret_sense,
-	scsi_print_addr,
-	scsi_kill_pending,
-	scsi_async_event_xfer_mode,
+	.bustype_type = SCSIPI_BUSTYPE_BUSTYPE(SCSIPI_BUSTYPE_SCSI,
+	    SCSIPI_BUSTYPE_SCSI_PSCSI),
+	.bustype_cmd = scsi_scsipi_cmd,
+	.bustype_interpret_sense = scsipi_interpret_sense,
+	.bustype_printaddr = scsi_print_addr,
+	.bustype_kill_pending = scsi_kill_pending,
+	.bustype_async_event_xfer_mode = scsi_async_event_xfer_mode,
 };
 
 const struct scsipi_bustype scsi_fc_bustype = {
-	SCSIPI_BUSTYPE_BUSTYPE(SCSIPI_BUSTYPE_SCSI, SCSIPI_BUSTYPE_SCSI_FC),
-	scsi_scsipi_cmd,
-	scsipi_interpret_sense,
-	scsi_print_addr,
-	scsi_kill_pending,
-	scsi_fc_sas_async_event_xfer_mode,
+	.bustype_type = SCSIPI_BUSTYPE_BUSTYPE(SCSIPI_BUSTYPE_SCSI,
+	    SCSIPI_BUSTYPE_SCSI_FC),
+	.bustype_cmd = scsi_scsipi_cmd,
+	.bustype_interpret_sense = scsipi_interpret_sense,
+	.bustype_printaddr = scsi_print_addr,
+	.bustype_kill_pending = scsi_kill_pending,
+	.bustype_async_event_xfer_mode = scsi_fc_sas_async_event_xfer_mode,
 };
 
 const struct scsipi_bustype scsi_sas_bustype = {
-	SCSIPI_BUSTYPE_BUSTYPE(SCSIPI_BUSTYPE_SCSI, SCSIPI_BUSTYPE_SCSI_SAS),
-	scsi_scsipi_cmd,
-	scsipi_interpret_sense,
-	scsi_print_addr,
-	scsi_kill_pending,
-	scsi_fc_sas_async_event_xfer_mode,
+	.bustype_type = SCSIPI_BUSTYPE_BUSTYPE(SCSIPI_BUSTYPE_SCSI,
+	    SCSIPI_BUSTYPE_SCSI_SAS),
+	.bustype_cmd = scsi_scsipi_cmd,
+	.bustype_interpret_sense = scsipi_interpret_sense,
+	.bustype_printaddr = scsi_print_addr,
+	.bustype_kill_pending = scsi_kill_pending,
+	.bustype_async_event_xfer_mode = scsi_fc_sas_async_event_xfer_mode,
 };
 
 const struct scsipi_bustype scsi_usb_bustype = {
-	SCSIPI_BUSTYPE_BUSTYPE(SCSIPI_BUSTYPE_SCSI, SCSIPI_BUSTYPE_SCSI_USB),
-	scsi_scsipi_cmd,
-	scsipi_interpret_sense,
-	scsi_print_addr,
-	scsi_kill_pending,
-	NULL,
+	.bustype_type = SCSIPI_BUSTYPE_BUSTYPE(SCSIPI_BUSTYPE_SCSI,
+	    SCSIPI_BUSTYPE_SCSI_USB),
+	.bustype_cmd = scsi_scsipi_cmd,
+	.bustype_interpret_sense = scsipi_interpret_sense,
+	.bustype_printaddr = scsi_print_addr,
+	.bustype_kill_pending = scsi_kill_pending,
+	.bustype_async_event_xfer_mode = NULL,
 };
 
 static int
@@ -397,7 +401,7 @@ scsi_probe_bus(struct scsibus_softc *sc, int target, int lun)
 
 	/*
 	 * Some HBAs provide an abstracted view of the bus; give them an
-	 * oppertunity to re-scan it before we do.
+	 * opportunity to re-scan it before we do.
 	 */
 	scsipi_adapter_ioctl(chan, SCBUSIOLLSCAN, NULL, 0, curproc);
 
@@ -805,10 +809,10 @@ scsi_probe_device(struct scsibus_softc *sc, int target, int lun)
 	int locs[SCSIBUSCF_NLOCS];
 
 	/*
-	 * Assume no more luns to search after this one.
+	 * Assume no more LUNs to search after this one.
 	 * If we successfully get Inquiry data and after
 	 * merging quirks we find we can probe for more
-	 * luns, we will.
+	 * LUNs, we will.
 	 */
 	docontinue = 0;
 
@@ -887,7 +891,7 @@ scsi_probe_device(struct scsibus_softc *sc, int target, int lun)
 		break;
 	}
 
-	/* Let the adapter driver handle the device separatley if it wants. */
+	/* Let the adapter driver handle the device separately if it wants. */
 	if (chan->chan_adapter->adapt_accesschk != NULL &&
 	    (*chan->chan_adapter->adapt_accesschk)(periph, &sa.sa_inqbuf))
 		goto bad;
@@ -1014,10 +1018,14 @@ scsi_probe_device(struct scsibus_softc *sc, int target, int lun)
 		scsipi_insert_periph(chan, periph);
 
 		/*
-		 * determine supported opcodes and
-		 * timeouts if available
+		 * Determine supported opcodes and timeouts if available.
+		 * Only do this on peripherals reporting SCSI version 3
+		 * or greater - this command isn't in the SCSI-2 spec. and
+		 * it causes either timeouts or peripherals disappearing
+		 * when sent to some SCSI-1 or SCSI-2 peripherals.
 		 */
-		scsipi_get_opcodeinfo(periph);
+		if (periph->periph_version >= 3)
+			scsipi_get_opcodeinfo(periph);
 
 		/*
 		 * XXX Can't assign periph_dev here, because we'll

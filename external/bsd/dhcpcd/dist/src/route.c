@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - route management
- * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2020 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -167,6 +167,23 @@ rt_compare_proto(void *context, const void *node1, const void *node2)
 	c = ifp1->carrier - ifp2->carrier;
 	if (c != 0)
 		return -c;
+
+	/* Prefer roaming over non roaming if both carriers are down. */
+	if (ifp1->carrier == LINK_DOWN && ifp2->carrier == LINK_DOWN) {
+		bool roam1 = if_roaming(ifp1);
+		bool roam2 = if_roaming(ifp2);
+
+		if (roam1 != roam2)
+			return roam1 ? 1 : -1;
+	}
+
+#ifdef INET
+	/* IPv4LL routes always come last */
+	if (rt1->rt_dflags & RTDF_IPV4LL && !(rt2->rt_dflags & RTDF_IPV4LL))
+		return -1;
+	else if (!(rt1->rt_dflags & RTDF_IPV4LL) && rt2->rt_dflags & RTDF_IPV4LL)
+		return 1;
+#endif
 
 	/* Lower metric interfaces come first. */
 	c = (int)(ifp1->metric - ifp2->metric);
@@ -366,6 +383,8 @@ rt_setif(struct rt *rt, struct interface *ifp)
 	rt->rt_ifp = ifp;
 #ifdef HAVE_ROUTE_METRIC
 	rt->rt_metric = ifp->metric;
+	if (if_roaming(ifp))
+		rt->rt_metric += RTMETRIC_ROAM;
 #endif
 }
 
@@ -690,22 +709,31 @@ rt_build(struct dhcpcd_ctx *ctx, int af)
 	ctx->rt_order = 0;
 	ctx->options |= DHCPCD_RTBUILD;
 
-	switch (af) {
 #ifdef INET
-	case AF_INET:
-		if (!inet_getroutes(ctx, &routes))
-			goto getfail;
-		break;
+	if (!inet_getroutes(ctx, &routes))
+		goto getfail;
 #endif
 #ifdef INET6
-	case AF_INET6:
-		if (!inet6_getroutes(ctx, &routes))
-			goto getfail;
-		break;
+	if (!inet6_getroutes(ctx, &routes))
+		goto getfail;
 #endif
-	}
+
+#ifdef BSD
+	/* Rewind the miss filter */
+	ctx->rt_missfilterlen = 0;
+#endif
 
 	RB_TREE_FOREACH_SAFE(rt, &routes, rtn) {
+		if (rt->rt_ifp->active) {
+			if (!(rt->rt_ifp->options->options & DHCPCD_CONFIGURE))
+				continue;
+		} else if (!(ctx->options & DHCPCD_CONFIGURE))
+			continue;
+#ifdef BSD
+		if (rt_is_default(rt) &&
+		    if_missfilter(rt->rt_ifp, &rt->rt_gateway) == -1)
+			logerr("if_missfilter");
+#endif
 		if ((rt->rt_dest.sa_family != af &&
 		    rt->rt_dest.sa_family != AF_UNSPEC) ||
 		    (rt->rt_gateway.sa_family != af &&
@@ -723,6 +751,11 @@ rt_build(struct dhcpcd_ctx *ctx, int af)
 			}
 		}
 	}
+
+#ifdef BSD
+	if (if_missfilter_apply(ctx) == -1 && errno != ENOTSUP)
+		logerr("if_missfilter_apply");
+#endif
 
 	/* Remove old routes we used to manage. */
 	RB_TREE_FOREACH_REVERSE_SAFE(rt, &ctx->routes, rtn) {
@@ -753,7 +786,6 @@ rt_build(struct dhcpcd_ctx *ctx, int af)
 			rt_free(rt);
 		}
 	}
-
 
 getfail:
 	rt_headclear(&routes, AF_UNSPEC);

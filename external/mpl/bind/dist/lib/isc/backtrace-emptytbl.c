@@ -1,16 +1,15 @@
-/*	$NetBSD: backtrace-emptytbl.c,v 1.2 2018/08/12 13:02:37 christos Exp $	*/
+/*	$NetBSD: backtrace-emptytbl.c,v 1.4 2021/02/19 16:42:19 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 /*! \file */
 
@@ -22,10 +21,9 @@
  * (e.g. libisc-nosymbol.a).
  */
 
-#include <config.h>
-
 #include <isc/backtrace.h>
 
 LIBISC_EXTERNAL_DATA const int isc__backtrace_nsymbols = 0;
-LIBISC_EXTERNAL_DATA const
-	isc_backtrace_symmap_t isc__backtrace_symtable[] = { { NULL, "" } };
+LIBISC_EXTERNAL_DATA const isc_backtrace_symmap_t isc__backtrace_symtable[] = {
+	{ NULL, "" }
+};

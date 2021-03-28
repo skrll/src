@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_osdep.h,v 1.25 2019/12/17 05:49:01 msaitoh Exp $ */
+/* $NetBSD: ixgbe_osdep.h,v 1.28 2020/09/01 04:19:16 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -66,9 +66,9 @@ enum {
 	IXGBE_ERROR_CAUTION,
 };
 
-/* The happy-fun DELAY macro is defined in /usr/src/sys/i386/include/clock.h */
-#define usec_delay(x) DELAY(x)
-#define msec_delay(x) DELAY(1000*(x))
+#define usec_delay(x) ixgbe_delay(x)
+#define msec_delay(x) ixgbe_delay((x) * 1000)
+void ixgbe_delay(unsigned int);
 
 #define DBG 0
 #define MSGOUT(S, A, B)     printf(S "\n", A, B)
@@ -139,7 +139,7 @@ enum {
 #define IXGBE_CPU_TO_LE16 htole16
 #define IXGBE_CPU_TO_LE32 htole32
 #define IXGBE_LE32_TO_CPU le32toh
-#define IXGBE_LE32_TO_CPUS(x)
+#define IXGBE_LE32_TO_CPUS(x) (*(x) = le32toh(*(x)))
 #define IXGBE_CPU_TO_BE16 htobe16
 #define IXGBE_CPU_TO_BE32 htobe32
 #define IXGBE_BE32_TO_CPU be32toh
@@ -200,6 +200,7 @@ struct ixgbe_osdep
 	int		   nintrs;
 	void               *ihs[IXG_MAX_NINTR];
 	bool		   attached;
+	bool		   detaching;
 };
 
 /* These routines need struct ixgbe_hw declared */

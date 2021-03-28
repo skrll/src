@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_subr.c,v 1.31 2019/09/24 15:23:34 jmcneill Exp $ */
+/* $NetBSD: fdt_subr.c,v 1.39 2021/01/24 15:43:22 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.31 2019/09/24 15:23:34 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.39 2021/01/24 15:43:22 thorpej Exp $");
 
 #include "opt_fdt.h"
 
@@ -36,6 +36,11 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.31 2019/09/24 15:23:34 jmcneill Exp $
 
 #include <libfdt.h>
 #include <dev/fdt/fdtvar.h>
+#include <dev/fdt/fdt_private.h>
+
+#ifndef FDT_DEFAULT_STDOUT_PATH
+#define	FDT_DEFAULT_STDOUT_PATH		"serial0:115200n8"
+#endif
 
 static const void *fdt_data;
 
@@ -43,13 +48,14 @@ static struct fdt_conslist fdt_console_list =
     TAILQ_HEAD_INITIALIZER(fdt_console_list);
 
 bool
-fdtbus_set_data(const void *data)
+fdtbus_init(const void *data)
 {
 	KASSERT(fdt_data == NULL);
 	if (fdt_check_header(data) != 0) {
 		return false;
 	}
 	fdt_data = data;
+
 	return true;
 }
 
@@ -90,7 +96,7 @@ fdtbus_set_decoderegprop(bool decode)
 	fdtbus_decoderegprop = decode;
 }
 
-static int
+int
 fdtbus_get_addr_cells(int phandle)
 {
 	uint32_t addr_cells;
@@ -101,7 +107,7 @@ fdtbus_get_addr_cells(int phandle)
 	return addr_cells;
 }
 
-static int
+int
 fdtbus_get_size_cells(int phandle)
 {
 	uint32_t size_cells;
@@ -188,7 +194,7 @@ fdtbus_get_path(int phandle, char *buf, size_t buflen)
 	return true;
 }
 
-static uint64_t
+uint64_t
 fdtbus_get_cells(const uint8_t *buf, int cells)
 {
 	switch (cells) {
@@ -238,7 +244,7 @@ fdtbus_decode_range(int phandle, uint64_t paddr)
 		buf += size_cells * 4;
 
 #ifdef FDTBUS_DEBUG
-		printf("%s: %s: cba=0x%#" PRIx64 ", pba=0x%#" PRIx64 ", cl=0x%#" PRIx64 "\n", __func__, fdt_get_name(fdtbus_get_data(), fdtbus_phandle2offset(phandle), NULL), cba, pba, cl);
+		printf("%s: %s: cba=%#" PRIx64 ", pba=%#" PRIx64 ", cl=%#" PRIx64 "\n", __func__, fdt_get_name(fdtbus_get_data(), fdtbus_phandle2offset(phandle), NULL), cba, pba, cl);
 #endif
 
 		if (paddr >= cba && paddr < cba + cl)
@@ -343,6 +349,11 @@ fdtbus_get_console(void)
 		const int phandle = fdtbus_get_stdout_phandle();
 		int best_match = 0;
 
+		if (phandle == -1) {
+			printf("WARNING: no console device\n");
+			return NULL;
+		}
+
 		__link_set_foreach(info, fdt_consoles) {
 			const int match = (*info)->ops->match(phandle);
 			if (match > best_match) {
@@ -364,15 +375,14 @@ fdtbus_get_stdout_path(void)
 	const char *prop;
 
 	const int off = fdt_path_offset(fdtbus_get_data(), "/chosen");
-	if (off < 0)
-		return NULL;
+	if (off >= 0) {
+		prop = fdt_getprop(fdtbus_get_data(), off, "stdout-path", NULL);
+		if (prop != NULL)
+			return prop;
+	}
 
-	prop = fdt_getprop(fdtbus_get_data(), off, "stdout-path", NULL);
-	if (prop != NULL)
-		return prop;
-
-	/* If the stdout-path property is not found, assume serial0 */
-	return "serial0:115200n8";
+	/* If the stdout-path property is not found, return the default */
+	return FDT_DEFAULT_STDOUT_PATH;
 }
 
 int
@@ -492,42 +502,31 @@ fdtbus_get_string(int phandle, const char *prop)
 const char *
 fdtbus_get_string_index(int phandle, const char *prop, u_int index)
 {
-	const char *names, *name;
-	int len, cur;
+	const char *names;
+	int len;
 
 	if ((len = OF_getproplen(phandle, prop)) < 0)
 		return NULL;
 
 	names = fdtbus_get_string(phandle, prop);
 
-	for (name = names, cur = 0; len > 0;
-	     len -= strlen(name) + 1, name += strlen(name) + 1, cur++) {
-		if (index == cur)
-			return name;
-	}
-
-	return NULL;
+	return strlist_string(names, len, index);
 }
 
 int
 fdtbus_get_index(int phandle, const char *prop, const char *name, u_int *idx)
 {
 	const char *p;
-	size_t pl;
-	u_int index;
-	int len;
+	int len, index;
 
 	p = fdtbus_get_prop(phandle, prop, &len);
 	if (p == NULL || len <= 0)
 		return -1;
 
-	for (index = 0; len > 0;
-	    pl = strlen(p) + 1, len -= pl, p += pl, index++) {
-		if (strcmp(p, name) == 0) {
-			*idx = index;
-			return 0;
-		}
-	}
+	index = strlist_index(p, len, name);
+	if (index == -1)
+		return -1;
 
-	return -1;
+	*idx = index;
+	return 0;
 }

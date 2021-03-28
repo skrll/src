@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_topology.c,v 1.16 2019/12/20 21:05:34 ad Exp $	*/
+/*	$NetBSD: cpu_topology.c,v 1.19 2020/02/15 07:20:41 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2009 Mindaugas Rasiukevicius <rmind at NetBSD org>,
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_topology.c,v 1.16 2019/12/20 21:05:34 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_topology.c,v 1.19 2020/02/15 07:20:41 skrll Exp $");
 
 #include "acpica.h"
 
@@ -190,8 +190,9 @@ x86_cpu_topology(struct cpu_info *ci)
 		x86_cpuid(0x8000001e, descs);
 		const u_int threads = ((descs[1] >> 8) & 0xff) + 1;
 
-		KASSERT(smt_bits == 0 && smt_bits <= core_bits);
+		KASSERT(smt_bits == 0);
 		smt_bits = ilog2(threads);
+		KASSERT(smt_bits <= core_bits);
 		core_bits -= smt_bits;
 	}
 

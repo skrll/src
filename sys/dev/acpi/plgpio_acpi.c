@@ -1,4 +1,4 @@
-/* $NetBSD: plgpio_acpi.c,v 1.5 2018/11/23 14:08:40 jmcneill Exp $ */
+/* $NetBSD: plgpio_acpi.c,v 1.7 2021/01/29 15:49:55 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: plgpio_acpi.c,v 1.5 2018/11/23 14:08:40 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plgpio_acpi.c,v 1.7 2021/01/29 15:49:55 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -65,9 +65,9 @@ static int	plgpio_acpi_intr(void *);
 
 CFATTACH_DECL_NEW(plgpio_acpi, sizeof(struct plgpio_acpi_softc), plgpio_acpi_match, plgpio_acpi_attach, NULL, NULL);
 
-static const char * const compatible[] = {
-	"ARMH0061",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "ARMH0061" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -75,10 +75,7 @@ plgpio_acpi_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct acpi_attach_args *aa = aux;
 
-	if (aa->aa_node->ad_type != ACPI_TYPE_DEVICE)
-		return 0;
-
-	return acpi_match_hid(aa->aa_node->ad_devinfo, compatible);
+	return acpi_compatible_match(aa, compat_data);
 }
 
 static void
@@ -131,7 +128,8 @@ plgpio_acpi_attach(device_t parent, device_t self, void *aux)
 		goto done;
 	}
 
-	ih = acpi_intr_establish(self, (uint64_t)asc->sc_handle,
+	ih = acpi_intr_establish(self,
+	    (uint64_t)(uintptr_t)asc->sc_handle,
 	    IPL_VM, false, plgpio_acpi_intr, asc, device_xname(self));
 	if (ih == NULL)
 		aprint_error_dev(self, "couldn't establish interrupt\n");

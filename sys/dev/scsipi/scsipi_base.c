@@ -1,4 +1,4 @@
-/*	$NetBSD: scsipi_base.c,v 1.184 2019/11/10 21:16:37 chs Exp $	*/
+/*	$NetBSD: scsipi_base.c,v 1.187 2020/09/17 01:19:41 jakllsch Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2002, 2003, 2004 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: scsipi_base.c,v 1.184 2019/11/10 21:16:37 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: scsipi_base.c,v 1.187 2020/09/17 01:19:41 jakllsch Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_scsi.h"
@@ -51,6 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: scsipi_base.c,v 1.184 2019/11/10 21:16:37 chs Exp $"
 #include <sys/hash.h>
 #include <sys/atomic.h>
 
+#include <dev/scsipi/scsi_sdt.h>
 #include <dev/scsipi/scsi_spc.h>
 #include <dev/scsipi/scsipi_all.h>
 #include <dev/scsipi/scsipi_disk.h>
@@ -61,6 +62,38 @@ __KERNEL_RCSID(0, "$NetBSD: scsipi_base.c,v 1.184 2019/11/10 21:16:37 chs Exp $"
 #include <dev/scsipi/scsi_message.h>
 
 #include <machine/param.h>
+
+SDT_PROVIDER_DEFINE(scsi);
+
+SDT_PROBE_DEFINE3(scsi, base, tag, get,
+    "struct scsipi_xfer *"/*xs*/, "uint8_t"/*tag*/, "uint8_t"/*type*/);
+SDT_PROBE_DEFINE3(scsi, base, tag, put,
+    "struct scsipi_xfer *"/*xs*/, "uint8_t"/*tag*/, "uint8_t"/*type*/);
+
+SDT_PROBE_DEFINE3(scsi, base, adapter, request__start,
+    "struct scsipi_channel *"/*chan*/,
+    "scsipi_adapter_req_t"/*req*/,
+    "void *"/*arg*/);
+SDT_PROBE_DEFINE3(scsi, base, adapter, request__done,
+    "struct scsipi_channel *"/*chan*/,
+    "scsipi_adapter_req_t"/*req*/,
+    "void *"/*arg*/);
+
+SDT_PROBE_DEFINE1(scsi, base, queue, batch__start,
+    "struct scsipi_channel *"/*chan*/);
+SDT_PROBE_DEFINE2(scsi, base, queue, run,
+    "struct scsipi_channel *"/*chan*/,
+    "struct scsipi_xfer *"/*xs*/);
+SDT_PROBE_DEFINE1(scsi, base, queue, batch__done,
+    "struct scsipi_channel *"/*chan*/);
+
+SDT_PROBE_DEFINE1(scsi, base, xfer, execute,  "struct scsipi_xfer *"/*xs*/);
+SDT_PROBE_DEFINE1(scsi, base, xfer, enqueue,  "struct scsipi_xfer *"/*xs*/);
+SDT_PROBE_DEFINE1(scsi, base, xfer, done,  "struct scsipi_xfer *"/*xs*/);
+SDT_PROBE_DEFINE1(scsi, base, xfer, redone,  "struct scsipi_xfer *"/*xs*/);
+SDT_PROBE_DEFINE1(scsi, base, xfer, complete,  "struct scsipi_xfer *"/*xs*/);
+SDT_PROBE_DEFINE1(scsi, base, xfer, restart,  "struct scsipi_xfer *"/*xs*/);
+SDT_PROBE_DEFINE1(scsi, base, xfer, free,  "struct scsipi_xfer *"/*xs*/);
 
 static int	scsipi_complete(struct scsipi_xfer *);
 static void	scsipi_request_sense(struct scsipi_xfer *);
@@ -108,10 +141,7 @@ scsipi_init(void)
 	/* Initialize the scsipi_xfer pool. */
 	pool_init(&scsipi_xfer_pool, sizeof(struct scsipi_xfer), 0,
 	    0, 0, "scxspl", NULL, IPL_BIO);
-	if (pool_prime(&scsipi_xfer_pool,
-	    PAGE_SIZE / sizeof(struct scsipi_xfer)) == ENOMEM) {
-		printf("WARNING: not enough memory for scsipi_xfer_pool\n");
-	}
+	pool_prime(&scsipi_xfer_pool, 1);
 
 	scsipi_ioctl_init();
 }
@@ -378,6 +408,8 @@ scsipi_get_tag(struct scsipi_xfer *xs)
 	}
 
 	xs->xs_tag_id = tag;
+	SDT_PROBE3(scsi, base, tag, get,
+	    xs, xs->xs_tag_id, xs->xs_tag_type);
 }
 
 /*
@@ -394,6 +426,9 @@ scsipi_put_tag(struct scsipi_xfer *xs)
 	int word, bit;
 
 	KASSERT(mutex_owned(chan_mtx(periph->periph_channel)));
+
+	SDT_PROBE3(scsi, base, tag, put,
+	    xs, xs->xs_tag_id, xs->xs_tag_type);
 
 	word = xs->xs_tag_id >> 5;
 	bit = xs->xs_tag_id & 0x1f;
@@ -541,6 +576,7 @@ scsipi_put_xs(struct scsipi_xfer *xs)
 	struct scsipi_periph *periph = xs->xs_periph;
 	int flags = xs->xs_control;
 
+	SDT_PROBE1(scsi, base, xfer, free,  xs);
 	SC_DEBUG(periph, SCSIPI_DB3, ("scsipi_free_xs\n"));
 	KASSERT(mutex_owned(chan_mtx(periph->periph_channel)));
 
@@ -835,7 +871,7 @@ scsipi_print_cdb(struct scsipi_generic *cmd)
  *	Look at the returned sense and act on the error, determining
  *	the unix error number to pass back.  (0 = report no error)
  *
- *	NOTE: If we return ERESTART, we are expected to haved
+ *	NOTE: If we return ERESTART, we are expected to have
  *	thawed the device!
  *
  *	THIS IS THE DEFAULT ERROR HANDLER FOR SCSI DEVICES.
@@ -1172,7 +1208,7 @@ scsipi_inquire(struct scsipi_periph *periph, struct scsipi_inquiry_data *inqbuf,
 	 * If we request more data than the device can provide, it SHOULD just
 	 * return a short response.  However, some devices error with an
 	 * ILLEGAL REQUEST sense code, and yet others have even more special
-	 * failture modes (such as the GL641USB flash adapter, which goes loony
+	 * failure modes (such as the GL641USB flash adapter, which goes loony
 	 * and sends corrupted CRCs).  To work around this, and to bring our
 	 * behavior more in line with other OSes, we do a shorter inquiry,
 	 * covering all the SCSI-2 information, first, and then request more
@@ -1359,7 +1395,7 @@ scsipi_mode_select_big(struct scsipi_periph *periph, int byte2,
 /*
  * scsipi_get_opcodeinfo:
  *
- * query the device for supported commends and their timeout
+ * query the device for supported commands and their timeout
  * building a timeout lookup table if timeout information is available.
  */
 void
@@ -1478,7 +1514,7 @@ scsipi_get_opcodeinfo(struct scsipi_periph *periph)
 
 /*
  * scsipi_update_timeouts:
- * 	Overide timeout value if device/config provided
+ * 	Override timeout value if device/config provided
  *      timeouts are available.
  */
 static void
@@ -1559,6 +1595,7 @@ scsipi_done(struct scsipi_xfer *xs)
 #endif
 
 	mutex_enter(chan_mtx(chan));
+	SDT_PROBE1(scsi, base, xfer, done,  xs);
 	/*
 	 * The resource this command was using is now free.
 	 */
@@ -1573,6 +1610,7 @@ scsipi_done(struct scsipi_xfer *xs)
 		 * that this won't ever happen (and can be turned into
 		 * a KASSERT().
 		 */
+		SDT_PROBE1(scsi, base, xfer, redone,  xs);
 		mutex_exit(chan_mtx(chan));
 		goto out;
 	}
@@ -1627,9 +1665,9 @@ scsipi_done(struct scsipi_xfer *xs)
 		/*
 		 * If it's a polling job, just return, to unwind the
 		 * call graph.  We don't need to restart the queue,
-		 * because pollings jobs are treated specially, and
+		 * because polling jobs are treated specially, and
 		 * are really only used during crash dumps anyway
-		 * (XXX or during boot-time autconfiguration of
+		 * (XXX or during boot-time autoconfiguration of
 		 * ATAPI devices).
 		 */
 		if (xs->xs_control & XS_CTL_POLL) {
@@ -1703,6 +1741,8 @@ scsipi_complete(struct scsipi_xfer *xs)
 	struct scsipi_periph *periph = xs->xs_periph;
 	struct scsipi_channel *chan = periph->periph_channel;
 	int error;
+
+	SDT_PROBE1(scsi, base, xfer, complete,  xs);
 
 #ifdef DIAGNOSTIC
 	if ((xs->xs_control & XS_CTL_ASYNC) != 0 && xs->bp == NULL)
@@ -1872,6 +1912,7 @@ scsipi_complete(struct scsipi_xfer *xs)
 
 	mutex_enter(chan_mtx(chan));
 	if (error == ERESTART) {
+		SDT_PROBE1(scsi, base, xfer, restart,  xs);
 		/*
 		 * If we get here, the periph has been thawed and frozen
 		 * again if we had to issue recovery commands.  Alternatively,
@@ -1954,7 +1995,7 @@ scsipi_request_sense(struct scsipi_xfer *xs)
 		xs->error = XS_RESET;
 		return;
 	case EIO:
-		 /* request sense coudn't be performed */
+		 /* request sense couldn't be performed */
 		/*
 		 * XXX this isn't quite right but we don't have anything
 		 * better for now
@@ -1980,6 +2021,8 @@ scsipi_enqueue(struct scsipi_xfer *xs)
 {
 	struct scsipi_channel *chan = xs->xs_periph->periph_channel;
 	struct scsipi_xfer *qxs;
+
+	SDT_PROBE1(scsi, base, xfer, enqueue,  xs);
 
 	/*
 	 * If the xfer is to be polled, and there are already jobs on
@@ -2042,6 +2085,7 @@ scsipi_run_queue(struct scsipi_channel *chan)
 	struct scsipi_xfer *xs;
 	struct scsipi_periph *periph;
 
+	SDT_PROBE1(scsi, base, queue, batch__start,  chan);
 	for (;;) {
 		mutex_enter(chan_mtx(chan));
 
@@ -2051,7 +2095,7 @@ scsipi_run_queue(struct scsipi_channel *chan)
 		 */
 		if (chan->chan_qfreeze != 0) {
 			mutex_exit(chan_mtx(chan));
-			return;
+			break;
 		}
 
 		/*
@@ -2081,7 +2125,7 @@ scsipi_run_queue(struct scsipi_channel *chan)
 		 * Can't find any work to do right now.
 		 */
 		mutex_exit(chan_mtx(chan));
-		return;
+		break;
 
  got_one:
 		/*
@@ -2111,7 +2155,7 @@ scsipi_run_queue(struct scsipi_channel *chan)
 				 * XXX: We should be able to note that
 				 * XXX: that resources are needed here!
 				 */
-				return;
+				break;
 			}
 			/*
 			 * scsipi_grow_resources() allocated the resource
@@ -2135,11 +2179,10 @@ scsipi_run_queue(struct scsipi_channel *chan)
 		periph->periph_sent++;
 		mutex_exit(chan_mtx(chan));
 
+		SDT_PROBE2(scsi, base, queue, run,  chan, xs);
 		scsipi_adapter_request(chan, ADAPTER_REQ_RUN_XFER, xs);
 	}
-#ifdef DIAGNOSTIC
-	panic("scsipi_run_queue: impossible");
-#endif
+	SDT_PROBE1(scsi, base, queue, batch__done,  chan);
 }
 
 /*
@@ -2164,6 +2207,7 @@ scsipi_execute_xs(struct scsipi_xfer *xs)
 	xs->error = XS_NOERROR;
 	xs->resid = xs->datalen;
 	xs->status = SCSI_OK;
+	SDT_PROBE1(scsi, base, xfer, execute,  xs);
 
 #ifdef SCSIPI_DEBUG
 	if (xs->xs_periph->periph_dbflags & SCSIPI_DB3) {
@@ -2222,7 +2266,7 @@ scsipi_execute_xs(struct scsipi_xfer *xs)
 		}
 	}
 
-	/* If the adaptor wants us to poll, poll. */
+	/* If the adapter wants us to poll, poll. */
 	if (chan->chan_adapter->adapt_flags & SCSIPI_ADAPT_POLL_ONLY)
 		xs->xs_control |= XS_CTL_POLL;
 
@@ -2294,7 +2338,7 @@ scsipi_execute_xs(struct scsipi_xfer *xs)
 		goto restarted;
 
 	/*
-	 * If it was meant to run async and we cleared aync ourselve,
+	 * If it was meant to run async and we cleared async ourselves,
 	 * don't return an error here. It has already been handled
 	 */
 	if (oasync)
@@ -2783,7 +2827,9 @@ scsipi_adapter_request(struct scsipi_channel *chan,
 	struct scsipi_adapter *adapt = chan->chan_adapter;
 
 	scsipi_adapter_lock(adapt);
+	SDT_PROBE3(scsi, base, adapter, request__start,  chan, req, arg);
 	(adapt->adapt_request)(chan, req, arg);
+	SDT_PROBE3(scsi, base, adapter, request__done,  chan, req, arg);
 	scsipi_adapter_unlock(adapt);
 }
 

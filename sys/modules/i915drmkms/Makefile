@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.14 2019/09/29 23:45:00 mrg Exp $
+# $NetBSD: Makefile,v 1.16 2020/10/18 19:56:41 christos Exp $
 
 .include "../Makefile.inc"
 .include "../drmkms/Makefile.inc"
@@ -25,6 +25,7 @@ CPPFLAGS+=	-DNACPICA=1
 CPPFLAGS+=	-DNVGA=1
 
 CWARNFLAGS+=	-Wno-shadow
+CWARNFLAGS+=	-Wno-pointer-arith
 
 COPTS.i915_drv.c+=	${${ACTIVE_CC} == "gcc":? -Wno-override-init :}
 COPTS.i915_drv.c+=	${${ACTIVE_CC} == "clang":? -Wno-initializer-overrides :}
@@ -119,5 +120,6 @@ COPTS.intel_display.c+=	-Wno-error=implicit-fallthrough
 COPTS.intel_ddi.c+=	-Wno-error=implicit-fallthrough
 COPTS.intel_sdvo.c+=	-Wno-error=implicit-fallthrough
 .endif
+COPTS.i915_guc_submission.c += ${NO_ADDR_OF_PACKED_MEMBER}
 
 .include <bsd.kmodule.mk>

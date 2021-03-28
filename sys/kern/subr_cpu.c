@@ -1,7 +1,8 @@
-/*	$NetBSD: subr_cpu.c,v 1.3 2019/12/21 12:53:53 ad Exp $	*/
+/*	$NetBSD: subr_cpu.c,v 1.16 2020/09/23 12:05:16 simonb Exp $	*/
 
 /*-
- * Copyright (c) 2007, 2008, 2009, 2010, 2012, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2008, 2009, 2010, 2012, 2019, 2020
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -60,9 +61,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_cpu.c,v 1.3 2019/12/21 12:53:53 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_cpu.c,v 1.16 2020/09/23 12:05:16 simonb Exp $");
 
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/systm.h>
 #include <sys/sched.h>
 #include <sys/conf.h>
@@ -71,11 +73,14 @@ __KERNEL_RCSID(0, "$NetBSD: subr_cpu.c,v 1.3 2019/12/21 12:53:53 ad Exp $");
 #include <sys/kernel.h>
 #include <sys/kmem.h>
 
+static void	cpu_topology_fake1(struct cpu_info *);
+
 kmutex_t	cpu_lock		__cacheline_aligned;
 int		ncpu			__read_mostly;
 int		ncpuonline		__read_mostly;
 bool		mp_online		__read_mostly;
 static bool	cpu_topology_present	__read_mostly;
+static bool	cpu_topology_haveslow	__read_mostly;
 int64_t		cpu_counts[CPU_COUNT_MAX];
 
 /* An array of CPUs.  There are ncpu entries. */
@@ -95,12 +100,16 @@ static char cpu_model[128];
 void
 mi_cpu_init(void)
 {
+	struct cpu_info *ci;
 
 	mutex_init(&cpu_lock, MUTEX_DEFAULT, IPL_NONE);
 
 	kcpuset_create(&kcpuset_attached, true);
 	kcpuset_create(&kcpuset_running, true);
 	kcpuset_set(kcpuset_running, 0);
+
+	ci = curcpu();
+	cpu_topology_fake1(ci);
 }
 
 int
@@ -150,6 +159,17 @@ cpu_topology_set(struct cpu_info *ci, u_int package_id, u_int core_id,
 }
 
 /*
+ * Collect CPU relative speed
+ */
+void
+cpu_topology_setspeed(struct cpu_info *ci, bool slow)
+{
+
+	cpu_topology_haveslow |= slow;
+	ci->ci_is_slow = slow;
+}
+
+/*
  * Link a CPU into the given circular list.
  */
 static void
@@ -175,14 +195,21 @@ cpu_topology_link(struct cpu_info *ci, struct cpu_info *ci2, enum cpu_rel rel)
 static void
 cpu_topology_dump(void)
 {
-#if DEBUG 
+#ifdef DEBUG
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci, *ci2;
-	const char *names[] = { "core", "package", "peer", "smt" };
+	const char *names[] = { "core", "pkg", "1st" };
 	enum cpu_rel rel;
 	int i;
 
+	CTASSERT(__arraycount(names) >= __arraycount(ci->ci_sibling));
+	if (ncpu == 1) {
+		return;
+	}
+
 	for (CPU_INFO_FOREACH(cii, ci)) {
+		if (cpu_topology_haveslow)
+			printf("%s ", ci->ci_is_slow ? "slow" : "fast");
 		for (rel = 0; rel < __arraycount(ci->ci_sibling); rel++) {
 			printf("%s has %d %s siblings:", cpu_name(ci),
 			    ci->ci_nsibling[rel], names[rel]);
@@ -197,8 +224,34 @@ cpu_topology_dump(void)
 			}
 			printf("\n");
 		}
+		printf("%s first in package: %s\n", cpu_name(ci),
+		    cpu_name(ci->ci_package1st));
 	}
 #endif	/* DEBUG */
+}
+
+/*
+ * Fake up topology info if we have none, or if what we got was bogus.
+ * Used early in boot, and by cpu_topology_fake().
+ */
+static void
+cpu_topology_fake1(struct cpu_info *ci)
+{
+	enum cpu_rel rel;
+
+	for (rel = 0; rel < __arraycount(ci->ci_sibling); rel++) {
+		ci->ci_sibling[rel] = ci;
+		ci->ci_nsibling[rel] = 1;
+	}
+	if (!cpu_topology_present) {
+		ci->ci_package_id = cpu_index(ci);
+	}
+	ci->ci_schedstate.spc_flags |=
+	    (SPCF_CORE1ST | SPCF_PACKAGE1ST | SPCF_1STCLASS);
+	ci->ci_package1st = ci;
+	if (!cpu_topology_haveslow) {
+		ci->ci_is_slow = false;
+	}
 }
 
 /*
@@ -211,51 +264,53 @@ cpu_topology_fake(void)
 {
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
-	enum cpu_rel rel;
 
 	for (CPU_INFO_FOREACH(cii, ci)) {
-		for (rel = 0; rel < __arraycount(ci->ci_sibling); rel++) {
-			ci->ci_sibling[rel] = ci;
-			ci->ci_nsibling[rel] = 1;
-		}
-		if (!cpu_topology_present) {
-			ci->ci_package_id = cpu_index(ci);
-		}
-		ci->ci_smt_primary = ci;
-		ci->ci_schedstate.spc_flags |= SPCF_SMTPRIMARY;
+		cpu_topology_fake1(ci);
+		/* Undo (early boot) flag set so everything links OK. */
+		ci->ci_schedstate.spc_flags &=
+		    ~(SPCF_CORE1ST | SPCF_PACKAGE1ST | SPCF_1STCLASS);
 	}
-	cpu_topology_dump();
 }
 
 /*
  * Fix up basic CPU topology info.  Right now that means attach each CPU to
- * circular lists of its siblings in the same core, and in the same package. 
+ * circular lists of its siblings in the same core, and in the same package.
  */
 void
 cpu_topology_init(void)
 {
 	CPU_INFO_ITERATOR cii, cii2;
 	struct cpu_info *ci, *ci2, *ci3;
-	u_int ncore, npackage, npeer, minsmt;
-	bool symmetric;
+	u_int minsmt, mincore;
 
 	if (!cpu_topology_present) {
 		cpu_topology_fake();
-		return;
+		goto linkit;
 	}
 
 	/* Find siblings in same core and package. */
 	for (CPU_INFO_FOREACH(cii, ci)) {
+		ci->ci_schedstate.spc_flags &=
+		    ~(SPCF_CORE1ST | SPCF_PACKAGE1ST | SPCF_1STCLASS);
 		for (CPU_INFO_FOREACH(cii2, ci2)) {
 			/* Avoid bad things happening. */
 			if (ci2->ci_package_id == ci->ci_package_id &&
 			    ci2->ci_core_id == ci->ci_core_id &&
 			    ci2->ci_smt_id == ci->ci_smt_id &&
 			    ci2 != ci) {
+#ifdef DEBUG
+				printf("cpu%u %p pkg %u core %u smt %u same as "
+				       "cpu%u %p pkg %u core %u smt %u\n",
+				       cpu_index(ci), ci, ci->ci_package_id,
+				       ci->ci_core_id, ci->ci_smt_id,
+				       cpu_index(ci2), ci2, ci2->ci_package_id,
+				       ci2->ci_core_id, ci2->ci_smt_id);
+#endif
 			    	printf("cpu_topology_init: info bogus, "
 			    	    "faking it\n");
 			    	cpu_topology_fake();
-			    	return;
+			    	goto linkit;
 			}
 			if (ci2 == ci ||
 			    ci2->ci_package_id != ci->ci_package_id) {
@@ -277,54 +332,8 @@ cpu_topology_init(void)
 		}
 	}
 
-	/* Find peers in other packages, and peer SMTs in same package. */
-	for (CPU_INFO_FOREACH(cii, ci)) {
-		if (ci->ci_nsibling[CPUREL_PEER] <= 1) {
-			for (CPU_INFO_FOREACH(cii2, ci2)) {
-				if (ci != ci2 &&
-				    ci->ci_package_id != ci2->ci_package_id &&
-				    ci->ci_core_id == ci2->ci_core_id &&
-				    ci->ci_smt_id == ci2->ci_smt_id) {
-					cpu_topology_link(ci, ci2,
-					    CPUREL_PEER);
-					break;
-				}
-			}
-		}
-		if (ci->ci_nsibling[CPUREL_SMT] <= 1) {
-			for (CPU_INFO_FOREACH(cii2, ci2)) {
-				if (ci != ci2 &&
-				    ci->ci_package_id == ci2->ci_package_id &&
-				    ci->ci_core_id != ci2->ci_core_id &&
-				    ci->ci_smt_id == ci2->ci_smt_id) {
-					cpu_topology_link(ci, ci2,
-					    CPUREL_SMT);
-					break;
-				}
-			}
-		}
-	}
-
-	/* Determine whether the topology is bogus/symmetric. */
-	npackage = curcpu()->ci_nsibling[CPUREL_PACKAGE];
-	ncore = curcpu()->ci_nsibling[CPUREL_CORE];
-	npeer = curcpu()->ci_nsibling[CPUREL_PEER];
-	symmetric = true;
-	for (CPU_INFO_FOREACH(cii, ci)) {
-		if (npackage != ci->ci_nsibling[CPUREL_PACKAGE] ||
-		    ncore != ci->ci_nsibling[CPUREL_CORE] ||
-		    npeer != ci->ci_nsibling[CPUREL_PEER]) {
-			symmetric = false;
-		}
-	}
-	cpu_topology_dump();
-	if (symmetric == false) {
-		printf("cpu_topology_init: not symmetric, faking it\n");
-		cpu_topology_fake();
-		return;
-	}
-
-	/* Identify SMT primary in each core. */
+ linkit:
+	/* Identify lowest numbered SMT in each core. */
 	for (CPU_INFO_FOREACH(cii, ci)) {
 		ci2 = ci3 = ci;
 		minsmt = ci->ci_smt_id;
@@ -335,18 +344,94 @@ cpu_topology_init(void)
 			}
 			ci2 = ci2->ci_sibling[CPUREL_CORE];
 		} while (ci2 != ci);
+		ci3->ci_schedstate.spc_flags |= SPCF_CORE1ST;
+	}
 
-		/*
-		 * Mark the SMT primary, and walk back over the list
-		 * pointing secondaries to the primary.
-		 */
-		ci3->ci_schedstate.spc_flags |= SPCF_SMTPRIMARY;
+	/* Identify lowest numbered SMT in each package. */
+	ci3 = NULL;
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		if ((ci->ci_schedstate.spc_flags & SPCF_CORE1ST) == 0) {
+			continue;
+		}
+		ci2 = ci3 = ci;
+		mincore = ci->ci_core_id;
+		do {
+			if ((ci2->ci_schedstate.spc_flags &
+			    SPCF_CORE1ST) != 0 &&
+			    ci2->ci_core_id < mincore) {
+				ci3 = ci2;
+				mincore = ci2->ci_core_id;
+			}
+			ci2 = ci2->ci_sibling[CPUREL_PACKAGE];
+		} while (ci2 != ci);
+
+		if ((ci3->ci_schedstate.spc_flags & SPCF_PACKAGE1ST) != 0) {
+			/* Already identified - nothing more to do. */
+			continue;
+		}
+		ci3->ci_schedstate.spc_flags |= SPCF_PACKAGE1ST;
+
+		/* Walk through all CPUs in package and point to first. */
+		ci2 = ci3;
+		do {
+			ci2->ci_package1st = ci3;
+			ci2->ci_sibling[CPUREL_PACKAGE1ST] = ci3;
+			ci2 = ci2->ci_sibling[CPUREL_PACKAGE];
+		} while (ci2 != ci3);
+
+		/* Now look for somebody else to link to. */
+		for (CPU_INFO_FOREACH(cii2, ci2)) {
+			if ((ci2->ci_schedstate.spc_flags & SPCF_PACKAGE1ST)
+			    != 0 && ci2 != ci3) {
+			    	cpu_topology_link(ci3, ci2, CPUREL_PACKAGE1ST);
+			    	break;
+			}
+		}
+	}
+
+	/* Walk through all packages, starting with value of ci3 from above. */
+	KASSERT(ci3 != NULL);
+	ci = ci3;
+	do {
+		/* Walk through CPUs in the package and copy in PACKAGE1ST. */
 		ci2 = ci;
 		do {
-			ci2->ci_smt_primary = ci3;
-			ci2 = ci2->ci_sibling[CPUREL_CORE];
+			ci2->ci_sibling[CPUREL_PACKAGE1ST] =
+			    ci->ci_sibling[CPUREL_PACKAGE1ST];
+			ci2->ci_nsibling[CPUREL_PACKAGE1ST] =
+			    ci->ci_nsibling[CPUREL_PACKAGE1ST];
+			ci2 = ci2->ci_sibling[CPUREL_PACKAGE];
 		} while (ci2 != ci);
+		ci = ci->ci_sibling[CPUREL_PACKAGE1ST];
+	} while (ci != ci3);
+
+	if (cpu_topology_haveslow) {
+		/*
+		 * For asymmetric systems where some CPUs are slower than
+		 * others, mark first class CPUs for the scheduler.  This
+		 * conflicts with SMT right now so whinge if observed.
+		 */
+		if (curcpu()->ci_nsibling[CPUREL_CORE] > 1) {
+			printf("cpu_topology_init: asymmetric & SMT??\n");
+		}
+		for (CPU_INFO_FOREACH(cii, ci)) {
+			if (!ci->ci_is_slow) {
+				ci->ci_schedstate.spc_flags |= SPCF_1STCLASS;
+			}
+		}
+	} else {
+		/*
+		 * For any other configuration mark the 1st CPU in each
+		 * core as a first class CPU.
+		 */
+		for (CPU_INFO_FOREACH(cii, ci)) {
+			if ((ci->ci_schedstate.spc_flags & SPCF_CORE1ST) != 0) {
+				ci->ci_schedstate.spc_flags |= SPCF_1STCLASS;
+			}
+		}
 	}
+
+	cpu_topology_dump();
 }
 
 /*
@@ -364,70 +449,56 @@ cpu_count(enum cpu_count idx, int64_t delta)
 
 /*
  * Fetch fresh sum total for all counts.  Expensive - don't call often.
+ *
+ * If poll is true, the the caller is okay with with less recent values (but
+ * no more than 1/hz seconds old).  Where this is called very often that
+ * should be the case.
+ *
+ * This should be reasonably quick so that any value collected get isn't
+ * totally out of whack, and it can also be called from interrupt context,
+ * so go to splvm() while summing the counters.  It's tempting to use a spin
+ * mutex here but this routine is called from DDB.
  */
 void
-cpu_count_sync_all(void)
+cpu_count_sync(bool poll)
 {
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
 	int64_t sum[CPU_COUNT_MAX], *ptr;
+	static int lasttick;
+	int curtick, s;
 	enum cpu_count i;
-	int s;
 
 	KASSERT(sizeof(ci->ci_counts) == sizeof(cpu_counts));
 
-	if (__predict_true(mp_online)) {
-		memset(sum, 0, sizeof(sum));
-		/*
-		 * We want this to be reasonably quick, so any value we get
-		 * isn't totally out of whack, so don't let the current LWP
-		 * get preempted.
-		 */
-		s = splvm();
-		curcpu()->ci_counts[CPU_COUNT_SYNC_ALL]++;
-		for (CPU_INFO_FOREACH(cii, ci)) {
-			ptr = ci->ci_counts;
-			for (i = 0; i < CPU_COUNT_MAX; i += 8) {
-				sum[i+0] += ptr[i+0];
-				sum[i+1] += ptr[i+1];
-				sum[i+2] += ptr[i+2];
-				sum[i+3] += ptr[i+3];
-				sum[i+4] += ptr[i+4];
-				sum[i+5] += ptr[i+5];
-				sum[i+6] += ptr[i+6];
-				sum[i+7] += ptr[i+7];
-			}
-			KASSERT(i == CPU_COUNT_MAX);
-		}
-		memcpy(cpu_counts, sum, sizeof(cpu_counts));
-		splx(s);
-	} else {
+	if (__predict_false(!mp_online)) {
 		memcpy(cpu_counts, curcpu()->ci_counts, sizeof(cpu_counts));
+		return;
 	}
-}
 
-/*
- * Fetch a fresh sum total for one single count.  Expensive - don't call often.
- */
-int64_t
-cpu_count_sync(enum cpu_count count)
-{
-	CPU_INFO_ITERATOR cii;
-	struct cpu_info *ci;
-	int64_t sum;
-	int s;
-
-	if (__predict_true(mp_online)) {
-		s = splvm();
-		curcpu()->ci_counts[CPU_COUNT_SYNC_ONE]++;
-		sum = 0;
-		for (CPU_INFO_FOREACH(cii, ci)) {
-			sum += ci->ci_counts[count];
-		}
+	s = splvm();
+	curtick = getticks();
+	if (poll && atomic_load_acquire(&lasttick) == curtick) {
 		splx(s);
-	} else {
-		/* XXX Early boot, iterator might not be available. */
-		sum = curcpu()->ci_counts[count];
+		return;
 	}
-	return cpu_counts[count] = sum;
+	memset(sum, 0, sizeof(sum));
+	curcpu()->ci_counts[CPU_COUNT_SYNC]++;
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		ptr = ci->ci_counts;
+		for (i = 0; i < CPU_COUNT_MAX; i += 8) {
+			sum[i+0] += ptr[i+0];
+			sum[i+1] += ptr[i+1];
+			sum[i+2] += ptr[i+2];
+			sum[i+3] += ptr[i+3];
+			sum[i+4] += ptr[i+4];
+			sum[i+5] += ptr[i+5];
+			sum[i+6] += ptr[i+6];
+			sum[i+7] += ptr[i+7];
+		}
+		KASSERT(i == CPU_COUNT_MAX);
+	}
+	memcpy(cpu_counts, sum, sizeof(cpu_counts));
+	atomic_store_release(&lasttick, curtick);
+	splx(s);
 }

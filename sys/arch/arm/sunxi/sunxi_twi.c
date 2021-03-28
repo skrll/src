@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_twi.c,v 1.10 2018/07/01 21:16:19 jmcneill Exp $ */
+/* $NetBSD: sunxi_twi.c,v 1.17 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -26,14 +26,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_gttwsi.h"
-#ifdef GTTWSI_ALLWINNER
-# error Do not define GTTWSI_ALLWINNER when using this driver
-#endif
-
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: sunxi_twi.c,v 1.10 2018/07/01 21:16:19 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_twi.c,v 1.17 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -52,22 +47,14 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_twi.c,v 1.10 2018/07/01 21:16:19 jmcneill Exp 
 #define	 TWI_CCR_CLK_M	__BITS(6,3)
 #define	 TWI_CCR_CLK_N	__BITS(2,0)
 
-static uint8_t sunxi_twi_regmap_rd[] = {
-	[TWSI_SLAVEADDR/4]		= 0x00,
-	[TWSI_EXTEND_SLAVEADDR/4]	= 0x04,
-	[TWSI_DATA/4]			= 0x08,
-	[TWSI_CONTROL/4]		= 0x0c,
-	[TWSI_STATUS/4]			= 0x10,
-	[TWSI_SOFTRESET/4]		= 0x18,
-};
-
-static uint8_t sunxi_twi_regmap_wr[] = {
-	[TWSI_SLAVEADDR/4]		= 0x00,
-	[TWSI_EXTEND_SLAVEADDR/4]	= 0x04,
-	[TWSI_DATA/4]			= 0x08,
-	[TWSI_CONTROL/4]		= 0x0c,
-	[TWSI_BAUDRATE/4]		= 0x14,
-	[TWSI_SOFTRESET/4]		= 0x18,
+static const bus_size_t sunxi_twi_regmap[] = {
+	[TWSI_SLAVEADDR]	= TWSI_ALLWINNER_SLAVEADDR,
+	[TWSI_EXTEND_SLAVEADDR]	= TWSI_ALLWINNER_EXTEND_SLAVEADDR,
+	[TWSI_DATA]		= TWSI_ALLWINNER_DATA,
+	[TWSI_CONTROL]		= TWSI_ALLWINNER_CONTROL,
+	[TWSI_STATUS]		= TWSI_ALLWINNER_STATUS,
+	[TWSI_BAUDRATE]		= TWSI_ALLWINNER_BAUDRATE,
+	[TWSI_SOFTRESET]	= TWSI_ALLWINNER_SOFTRESET,
 };
 
 static int sunxi_twi_match(device_t, cfdata_t, void *);
@@ -85,38 +72,14 @@ static const struct sunxi_twi_config sun6i_a31_i2c_config = {
 	.iflg_rwc = true,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "allwinner,sun4i-a10-i2c",	(uintptr_t)&sun4i_a10_i2c_config },
-	{ "allwinner,sun6i-a31-i2c",	(uintptr_t)&sun6i_a31_i2c_config },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun4i-a10-i2c",	.data = &sun4i_a10_i2c_config },
+	{ .compat = "allwinner,sun6i-a31-i2c",	.data = &sun6i_a31_i2c_config },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(sunxi_twi, sizeof(struct gttwsi_softc),
 	sunxi_twi_match, sunxi_twi_attach, NULL, NULL);
-
-static i2c_tag_t
-sunxi_twi_get_tag(device_t dev)
-{
-	struct gttwsi_softc * const sc = device_private(dev);
-
-	return &sc->sc_i2c;
-}
-
-const struct fdtbus_i2c_controller_func sunxi_twi_funcs = {
-	.get_tag = sunxi_twi_get_tag,
-};
-
-static uint32_t
-sunxi_twi_reg_read(struct gttwsi_softc *sc, uint32_t reg)
-{
-	return bus_space_read_4(sc->sc_bust, sc->sc_bush, sunxi_twi_regmap_rd[reg/4]);
-}
-
-static void
-sunxi_twi_reg_write(struct gttwsi_softc *sc, uint32_t reg, uint32_t val)
-{
-	bus_space_write_4(sc->sc_bust, sc->sc_bush, sunxi_twi_regmap_wr[reg/4], val);
-}
 
 static u_int
 sunxi_twi_calc_rate(u_int parent_rate, u_int n, u_int m)
@@ -130,11 +93,12 @@ sunxi_twi_set_clock(struct gttwsi_softc *sc, u_int parent_rate, u_int rate)
 	uint32_t baud;
 	u_int n, m, best_rate;
 
-	baud = sunxi_twi_reg_read(sc, TWSI_BAUDRATE);
+	baud = gttwsi_read_4(sc, TWSI_BAUDRATE);
 
 	for (best_rate = 0, n = 0; n < 8; n++) {
 		for (m = 0; m < 16; m++) {
-			const u_int tmp_rate = sunxi_twi_calc_rate(parent_rate, n, m);
+			const u_int tmp_rate =
+			    sunxi_twi_calc_rate(parent_rate, n, m);
 			if (tmp_rate <= rate && tmp_rate > best_rate) {
 				best_rate = tmp_rate;
 				baud = __SHIFTIN(n, TWI_CCR_CLK_N) |
@@ -143,7 +107,7 @@ sunxi_twi_set_clock(struct gttwsi_softc *sc, u_int parent_rate, u_int rate)
 		}
 	}
 
-	sunxi_twi_reg_write(sc, TWSI_BAUDRATE, baud);
+	gttwsi_write_4(sc, TWSI_BAUDRATE, baud);
 	delay(10000);
 }
 
@@ -152,7 +116,7 @@ sunxi_twi_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -197,14 +161,12 @@ sunxi_twi_attach(device_t parent, device_t self, void *aux)
 			return;
 		}
 
-	conf = (void *)of_search_compatible(phandle, compat_data)->data;
+	conf = of_compatible_lookup(phandle, compat_data)->data;
 	prop_dictionary_set_bool(device_properties(self), "iflg-rwc",
 	    conf->iflg_rwc);
 
 	/* Attach gttwsi core */
-	sc->sc_reg_read = sunxi_twi_reg_read;
-	sc->sc_reg_write = sunxi_twi_reg_write;
-	gttwsi_attach_subr(self, bst, bsh);
+	gttwsi_attach_subr(self, bst, bsh, sunxi_twi_regmap);
 
 	/*
 	 * Set clock rate to 100kHz.
@@ -212,7 +174,8 @@ sunxi_twi_attach(device_t parent, device_t self, void *aux)
 	if (clk != NULL)
 		sunxi_twi_set_clock(sc, clk_get_rate(clk), 100000);
 
-	ih = fdtbus_intr_establish(phandle, 0, IPL_VM, 0, gttwsi_intr, sc);
+	ih = fdtbus_intr_establish_xname(phandle, 0, IPL_VM, 0, gttwsi_intr,
+	    sc, device_xname(self));
 	if (ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt on %s\n",
 		    intrstr);
@@ -220,7 +183,7 @@ sunxi_twi_attach(device_t parent, device_t self, void *aux)
 	}
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
-	fdtbus_register_i2c_controller(self, phandle, &sunxi_twi_funcs);
+	fdtbus_register_i2c_controller(&sc->sc_i2c, phandle);
 
 	fdtbus_attach_i2cbus(self, phandle, &sc->sc_i2c, iicbus_print);
 }

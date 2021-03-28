@@ -1,6 +1,6 @@
 /* Command line option handling.  Code involving global state that
    should not be shared with the driver.
-   Copyright (C) 2002-2018 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -103,10 +103,14 @@ complain_wrong_lang (const struct cl_decoded_option *decoded,
 	   text, bad_lang);
   else if (lang_mask == CL_DRIVER)
     gcc_unreachable ();
-  else
+  else if (ok_langs[0] != '\0')
     /* Eventually this should become a hard error IMO.  */
     warning (0, "command line option %qs is valid for %s but not for %s",
 	     text, ok_langs, bad_lang);
+  else
+    /* Happens for -Werror=warning_name.  */
+    warning (0, "%<-Werror=%> argument %qs is not valid for %s",
+	     text, bad_lang);
 
   free (ok_langs);
   free (bad_lang);
@@ -452,8 +456,8 @@ handle_common_deferred_options (void)
 
 	case OPT_fasan_shadow_offset_:
 	  if (!(flag_sanitize & SANITIZE_KERNEL_ADDRESS))
-	    error ("-fasan-shadow-offset should only be used "
-		   "with -fsanitize=kernel-address");
+	    error ("%<-fasan-shadow-offset%> should only be used "
+		   "with %<-fsanitize=kernel-address%>");
 	  if (!set_asan_shadow_offset (opt->arg))
 	     error ("unrecognized shadow offset %qs", opt->arg);
 	  break;

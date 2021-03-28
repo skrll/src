@@ -1,4 +1,4 @@
-#	$NetBSD: files.acpi,v 1.114 2018/12/25 11:56:14 mlelstv Exp $
+#	$NetBSD: files.acpi,v 1.120 2021/01/24 18:02:51 jmcneill Exp $
 
 include "dev/acpi/acpica/files.acpica"
 
@@ -21,6 +21,7 @@ device	acpi: acpica, acpiapmbus, acpinodebus, acpiecdtbus, acpisdtbus, acpigtdtb
 attach	acpi at acpibus
 file	dev/acpi/acpi.c			acpi
 file	dev/acpi/acpi_debug.c		acpi
+file	dev/acpi/acpi_dev.c		acpi
 file	dev/acpi/acpi_event.c		acpi
 file	dev/acpi/acpi_i2c.c		acpi
 file	dev/acpi/acpi_mcfg.c		acpi & pci
@@ -99,6 +100,21 @@ file	dev/acpi/acpi_tz.c		acpitz
 device	acpiwdrt: sysmon_wdog
 attach	acpiwdrt at acpiwdrtbus
 file	dev/acpi/acpi_wdrt.c		acpiwdrt
+
+# ACPI Processor Container Device
+device	acpipcd
+attach	acpipcd at acpinodebus
+file	dev/acpi/acpi_pcd.c		acpipcd
+
+# Platform Communications Channel
+device	acpipcc
+attach	acpipcc at acpisdtbus
+file	dev/acpi/acpi_pcc.c		acpipcc
+
+# ACPI Collaborative Processor Performance Control
+device	acpicppc: acpipcc
+attach	acpicppc at acpinodebus
+file	dev/acpi/acpi_cppc.c		acpicppc
 
 # Serial interface
 attach	com at acpinodebus with com_acpi
@@ -248,6 +264,11 @@ file	dev/acpi/plgpio_acpi.c		plgpio_acpi
 attach	dwiic at acpinodebus with dwiic_acpi
 file	dev/acpi/dwiic_acpi.c		dwiic_acpi
 
+# NXP Layerscape I2C controller
+device	nxpiic: motoi2c, i2cbus, i2cexec
+attach	nxpiic at acpinodebus with nxpiic_acpi
+file	dev/acpi/nxpiic_acpi.c		nxpiic_acpi
+
 # AMD Cryptographic Coprocessor
 attach	amdccp at acpinodebus with amdccp_acpi
 file	dev/acpi/amdccp_acpi.c		amdccp_acpi
@@ -268,5 +289,9 @@ file	dev/acpi/xhci_acpi.c		xhci_acpi
 device	ipmi_acpi: ipmibus
 attach	ipmi_acpi at acpinodebus
 file	dev/acpi/ipmi_acpi.c		ipmi_acpi
+
+# Broadcom GENETv5
+attach	genet at acpinodebus with genet_acpi
+file	dev/acpi/genet_acpi.c		genet_acpi
 
 include	"dev/acpi/wmi/files.wmi"

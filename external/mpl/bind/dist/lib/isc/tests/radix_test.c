@@ -1,25 +1,22 @@
-/*	$NetBSD: radix_test.c,v 1.4 2019/09/05 19:32:59 christos Exp $	*/
+/*	$NetBSD: radix_test.c,v 1.6 2021/02/19 16:42:20 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-#include <config.h>
-
 #if HAVE_CMOCKA
 
+#include <sched.h> /* IWYU pragma: keep */
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
-#include <setjmp.h>
-
-#include <sched.h> /* IWYU pragma: keep */
 #include <stdlib.h>
 #include <string.h>
 
@@ -67,7 +64,7 @@ isc_radix_search_test(void **state) {
 
 	UNUSED(state);
 
-	result = isc_radix_create(mctx, &radix, 32);
+	result = isc_radix_create(test_mctx, &radix, 32);
 	assert_int_equal(result, ISC_R_SUCCESS);
 
 	in_addr.s_addr = inet_addr("3.3.3.0");
@@ -97,7 +94,7 @@ isc_radix_search_test(void **state) {
 	node = NULL;
 	result = isc_radix_search(radix, &node, &prefix);
 	assert_int_equal(result, ISC_R_SUCCESS);
-	assert_int_equal(node->data[0], (void *)2);
+	assert_ptr_equal(node->data[0], (void *)2);
 
 	isc_refcount_destroy(&prefix.refcount);
 
@@ -107,8 +104,8 @@ isc_radix_search_test(void **state) {
 int
 main(void) {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test_setup_teardown(isc_radix_search_test,
-						_setup, _teardown),
+		cmocka_unit_test_setup_teardown(isc_radix_search_test, _setup,
+						_teardown),
 	};
 
 	return (cmocka_run_group_tests(tests, NULL, NULL));
@@ -124,4 +121,4 @@ main(void) {
 	return (0);
 }
 
-#endif
+#endif /* if HAVE_CMOCKA */

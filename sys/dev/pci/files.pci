@@ -1,4 +1,4 @@
-#	$NetBSD: files.pci,v 1.418 2019/12/10 12:08:52 yamaguchi Exp $
+#	$NetBSD: files.pci,v 1.434 2021/02/17 08:15:43 knakahara Exp $
 #
 # Config file and device description for machine-independent PCI code.
 # Included by ports that need it.  Requires that the SCSI files be
@@ -167,10 +167,11 @@ device	mpii: scsi
 attach	mpii at pci
 file	dev/pci/mpii.c			mpii
 
-# Ethernet driver for DC21040-based boards
-device	de: ether, ifnet, arp
-attach	de at pci
-file	dev/pci/if_de.c			de
+# Aquantia/Atlantic 10-Gigabit Ethernet
+device	aq: ether, ifnet, arp, sysmon_envsys
+attach	aq at pci
+file	dev/pci/if_aq.c			aq
+defflag opt_if_aq.h	AQ_EVENT_COUNTERS
 
 # 3Com 3c590 and 3c595 Ethernet controllers
 # device declaration in sys/conf/files
@@ -182,18 +183,7 @@ file	dev/pci/if_ep_pci.c		ep_pci
 attach	ex at pci with ex_pci
 file	dev/pci/if_ex_pci.c		ex_pci
 
-# Digital DEFPA PCI FDDI Controller
-device	fpa: pdq, fddi, ifnet, arp
-attach	fpa at pci
-file	dev/pci/if_fpa.c		fpa
-
-# AMD am7990 (LANCE) -based Ethernet controllers
-# device declaration in sys/conf/files
-attach	le at pci with le_pci: le32
-file	dev/pci/if_le_pci.c		le_pci
-
 # AMD PCnet-PCI Ethernet controller family
-# Supersedes if_le_pci.c
 device	pcn: ether, ifnet, arp, mii
 attach	pcn at pci
 file	dev/pci/if_pcn.c		pcn
@@ -426,11 +416,6 @@ file	dev/pci/if_tl.c			tl
 attach	ntwoc at pci with ntwoc_pci
 file	dev/pci/if_ntwoc_pci.c		ntwoc_pci
 
-# Essential Communications HIPPI interface
-# device declaration in sys/conf/files
-attach	esh at pci with esh_pci
-file	dev/pci/if_esh_pci.c		esh_pci
-
 # generic PCI VGA
 defflag	opt_vga.h	VGA_POST:	X86EMU
 attach	vga at pci with vga_pci
@@ -514,12 +499,6 @@ file	dev/pci/auvia.c			auvia
 device	auixp: audiobus, ac97, aurateconv
 attach	auixp at pci
 file	dev/pci/auixp.c			auixp
-
-# High Definition Audio
-device	azalia: audiobus, ac97, aurateconv
-attach	azalia at pci
-file	dev/pci/azalia.c		azalia
-file	dev/pci/azalia_codec.c		azalia
 
 # AMD Geode CS5536 Companion Audio
 device	gcscaudio: audiobus, ac97, aurateconv
@@ -695,14 +674,14 @@ file	dev/pci/ixgbe/ixv.c		ixv
 device	wm: ether, ifnet, arp, mii, mii_bitbang
 attach	wm at pci
 file	dev/pci/if_wm.c			wm
-defflag	opt_if_wm.h	WM_EVENT_COUNTERS
+defflag	opt_if_wm.h	WM_EVENT_COUNTERS WM_DISABLE_EVENT_COUNTERS
 defparam opt_if_wm.h	WM_RX_PROCESS_LIMIT_DEFAULT
 			WM_RX_INTR_PROCESS_LIMIT_DEFAULT
 			WM_DISABLE_MSI
 			WM_DISABLE_MSIX
 
 # Mellanox 5th generation Ethernet devices
-device	mcx: ether, ifnet, arp
+device	mcx: ether, ifnet, arp, toeplitz
 attach	mcx at pci
 file	dev/pci/if_mcx.c		mcx
 
@@ -777,6 +756,10 @@ attach	amdpm at pci
 file	dev/pci/amdpm.c			amdpm
 file	dev/pci/amdpm_smbus.c		amdpm
 
+# AMD Cryptographic Coprocessor
+attach	amdccp at pci with amdccp_pci
+file	dev/pci/amdccp_pci.c		amdccp_pci
+
 # Hi/fn 7751
 device	hifn: opencrypto
 attach	hifn at pci
@@ -839,7 +822,7 @@ attach	machfb at pci
 file	dev/pci/machfb.c		machfb
 
 # 3Dfx Voodoo3 framebuffer console driver
-device	voodoofb: wsemuldisplaydev, rasops8, vcons, videomode, drm, i2cbus, i2c_bitbang, ddc_read_edid, edid
+device	voodoofb: wsemuldisplaydev, rasops8, vcons, videomode, drm, i2cexec, i2c_bitbang, ddc_read_edid, edid
 attach	voodoofb at pci
 file	dev/pci/voodoofb.c		voodoofb
 
@@ -850,7 +833,7 @@ file	dev/pci/unichromefb.c		unichromefb needs-flag
 
 # ATI Radeon framebuffer console driver
 # (Note: to enable the BIOS parser, add options RADEON_BIOS_INIT to the config)
-device	radeonfb: wsemuldisplaydev, videomode, rasops8, rasops32, vcons, splash, i2cbus, i2c_bitbang, ddc_read_edid, edid, drm, glyphcache
+device	radeonfb: wsemuldisplaydev, videomode, rasops8, rasops32, vcons, splash, i2cexec, i2c_bitbang, ddc_read_edid, edid, drm, glyphcache
 attach	radeonfb at pci
 file	dev/pci/radeonfb.c	radeonfb
 file	dev/pci/radeonfb_i2c.c	radeonfb
@@ -997,7 +980,7 @@ attach	ichsmb at pci
 file	dev/pci/ichsmb.c		ichsmb
 
 # ATI Rage 128 framebuffer console driver
-device	r128fb: wsemuldisplaydev, rasops8, rasops32, vcons, videomode, i2cbus, i2c_bitbang, glyphcache
+device	r128fb: wsemuldisplaydev, rasops8, rasops32, vcons, glyphcache
 attach	r128fb at pci
 file	dev/pci/r128fb.c		r128fb
 defflag	opt_r128fb.h	R128FB_DEBUG
@@ -1058,13 +1041,13 @@ attach	hdaudio at pci with hdaudio_pci
 file	dev/pci/hdaudio_pci.c		hdaudio_pci
 
 # Permedia 2 / Sun PGX32 / Raptor
-device	pm2fb: wsemuldisplaydev, rasops8, rasops32, vcons, videomode, i2cbus, i2c_bitbang, ddc_read_edid, edid, glyphcache
+device	pm2fb: wsemuldisplaydev, rasops8, rasops32, vcons, videomode, i2cexec, i2c_bitbang, ddc_read_edid, edid, glyphcache
 attach	pm2fb at pci
 file	dev/pci/pm2fb.c		pm2fb
 defflag	opt_pm2fb.h	PM2FB_DEBUG
 
 # Permedia 3 / Oxygen VX1 / Proformance 3  
-device  pm3fb: wsemuldisplaydev, rasops8, vcons, videomode, i2cbus, i2c_bitbang, ddc_read_edid, edid
+device  pm3fb: wsemuldisplaydev, rasops8, vcons, videomode, i2cexec, i2c_bitbang, ddc_read_edid, edid
 attach  pm3fb at pci
 file	dev/pci/pm3fb.c		pm3fb
 
@@ -1135,7 +1118,7 @@ attach	tdvfb at pci
 file	dev/pci/tdvfb.c		tdvfb	
 
 # nvidia geforce framebuffer console driver
-device	gffb: wsemuldisplaydev, rasops8, vcons, videomode, i2cbus, i2c_bitbang, glyphcache
+device	gffb: wsemuldisplaydev, rasops8, vcons, glyphcache
 attach	gffb at pci
 file	dev/pci/gffb.c		gffb
 defflag	opt_gffb.h	GFFB_DEBUG
@@ -1179,3 +1162,24 @@ file	dev/pci/qat/qat_d15xx.c		qat
 device	ixl: ether, ifnet, arp
 attach	ixl at pci
 file	dev/pci/if_ixl.c	ixl
+defflag	opt_if_ixl.h	IXL_DEBUG
+defparam opt_if_ixl.h	IXL_STATS_INTERVAL_MSEC
+			IXL_QUEUE_NUM
+
+# Intel Ethernet Adaptive Virtual Function
+device	iavf: ether, ifnet, arp
+attach	iavf at pci
+file	dev/pci/if_iavf.c	iavf
+
+# Intel XMM 7360 LTE modem
+device  wwanc {} : tty
+attach  wwanc at pci
+device  wwan: ifnet
+attach  wwan at wwanc
+file    dev/pci/xmm7360.c               wwanc | wwan            needs-flag
+
+# VMware VMXNET3 virtual interface
+device	vmx: ether, ifnet, arp
+attach	vmx at pci
+file	dev/pci/if_vmx.c	vmx
+

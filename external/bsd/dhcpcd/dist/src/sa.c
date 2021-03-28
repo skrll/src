@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Socket Address handling for dhcpcd
- * Copyright (c) 2015-2019 Roy Marples <roy@marples.name>
+ * Copyright (c) 2015-2020 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -32,7 +32,7 @@
 #include <arpa/inet.h>
 #ifdef AF_LINK
 #include <net/if_dl.h>
-#elif AF_PACKET
+#elif defined(AF_PACKET)
 #include <linux/if_packet.h>
 #endif
 
@@ -288,7 +288,7 @@ sa_toprefix(const struct sockaddr *sa)
 #ifndef NDEBUG
 	/* Ensure the calculation is correct */
 	if (!sa_inprefix) {
-		union sa_ss ss = { .sa.sa_family = sa->sa_family };
+		union sa_ss ss = { .sa = { .sa_family = sa->sa_family } };
 
 		sa_inprefix = true;
 		sa_fromprefix(&ss.sa, prefix);
@@ -385,7 +385,7 @@ sa_addrtop(const struct sockaddr *sa, char *buf, socklen_t len)
 		}
 		return hwaddr_ntoa(CLLADDR(sdl), sdl->sdl_alen, buf, len);
 	}
-#elif AF_PACKET
+#elif defined(AF_PACKET)
 	if (sa->sa_family == AF_PACKET) {
 		const struct sockaddr_ll *sll;
 

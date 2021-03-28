@@ -1,4 +1,4 @@
-/*	$NetBSD: ufs_inode.c,v 1.106 2019/12/13 20:10:22 ad Exp $	*/
+/*	$NetBSD: ufs_inode.c,v 1.112 2020/09/05 16:30:13 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1991, 1993
@@ -37,12 +37,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ufs_inode.c,v 1.106 2019/12/13 20:10:22 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ufs_inode.c,v 1.112 2020/09/05 16:30:13 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
 #include "opt_quota.h"
 #include "opt_wapbl.h"
+#include "opt_uvmhist.h"
 #endif
 
 #include <sys/param.h>
@@ -67,7 +68,11 @@ __KERNEL_RCSID(0, "$NetBSD: ufs_inode.c,v 1.106 2019/12/13 20:10:22 ad Exp $");
 #include <ufs/ufs/extattr.h>
 #endif
 
+#ifdef UVMHIST
 #include <uvm/uvm.h>
+#endif
+#include <uvm/uvm_page.h>
+#include <uvm/uvm_stat.h>
 
 /*
  * Last reference to an inode.  If necessary, write or delete it.
@@ -98,16 +103,11 @@ ufs_inactive(void *v)
 #ifdef UFS_EXTATTR
 		ufs_extattr_vnode_inactive(vp, curlwp);
 #endif
-
 		/*
 		 * All file blocks must be freed before we can let the vnode
 		 * be reclaimed, so can't postpone full truncating any further.
 		 */
-		if (ip->i_size != 0) {
-			allerror = ufs_truncate_retry(vp, 0, NOCRED);
-			if (allerror)
-				goto out;
-		}
+		ufs_truncate_all(vp);
 
 #if defined(QUOTA) || defined(QUOTA2)
 		error = UFS_WAPBL_BEGIN(mp);
@@ -242,7 +242,7 @@ ufs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 	len += delta;
 
 	genfs_node_wrlock(vp);
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	error = VOP_GETPAGES(vp, pagestart, pgs, &npages, 0,
 	    VM_PROT_WRITE, 0, PGO_SYNCIO | PGO_PASTEOF | PGO_NOBLOCKALLOC |
 	    PGO_NOTIMESTAMP | PGO_GLOCKHELD);
@@ -259,7 +259,7 @@ ufs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 	genfs_node_unlock(vp);
 
 	/*
-	 * if the allocation succeeded, clear PG_CLEAN on all the pages
+	 * if the allocation succeeded, mark all the pages dirty
 	 * and clear PG_RDONLY on any pages that are now fully backed
 	 * by disk blocks.  if the allocation failed, we do not invalidate
 	 * the pages since they might have already existed and been dirty,
@@ -269,7 +269,7 @@ ufs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 	 */
 
 	GOP_SIZE(vp, off + len, &eob, 0);
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	for (i = 0; i < npages; i++) {
 		KASSERT((pgs[i]->flags & PG_RELEASED) == 0);
 		if (!error) {
@@ -277,12 +277,14 @@ ufs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 			    pagestart + ((i + 1) << PAGE_SHIFT) <= eob) {
 				pgs[i]->flags &= ~PG_RDONLY;
 			}
-			pgs[i]->flags &= ~PG_CLEAN;
+			uvm_pagemarkdirty(pgs[i], UVM_PAGE_STATUS_DIRTY);
 		}
+		uvm_pagelock(pgs[i]);
 		uvm_pageactivate(pgs[i]);
+		uvm_pageunlock(pgs[i]);
 	}
 	uvm_page_unbusy(pgs, npages);
-	mutex_exit(uobj->vmobjlock);
+	rw_exit(uobj->vmobjlock);
 
  out:
  	kmem_free(pgs, pgssize);
@@ -290,7 +292,8 @@ ufs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 }
 
 int
-ufs_truncate_retry(struct vnode *vp, uint64_t newsize, kauth_cred_t cred)
+ufs_truncate_retry(struct vnode *vp, int ioflag, uint64_t newsize,
+    kauth_cred_t cred)
 {
 	struct inode *ip = VTOI(vp);
 	struct mount *mp = vp->v_mount;
@@ -306,7 +309,7 @@ ufs_truncate_retry(struct vnode *vp, uint64_t newsize, kauth_cred_t cred)
 		if (error)
 			goto out;
 
-		error = UFS_TRUNCATE(vp, newsize, 0, cred);
+		error = UFS_TRUNCATE(vp, newsize, ioflag, cred);
 		UFS_WAPBL_END(mp);
 
 		if (error != 0 && error != EAGAIN)
@@ -315,4 +318,19 @@ ufs_truncate_retry(struct vnode *vp, uint64_t newsize, kauth_cred_t cred)
 
   out:
 	return error;
+}
+
+/* truncate all the data of the inode including extended attributes */
+int
+ufs_truncate_all(struct vnode *vp)
+{
+	struct inode *ip = VTOI(vp);
+	off_t isize = ip->i_size;
+
+	if (ip->i_ump->um_fstype == UFS2)
+		isize += ip->i_ffs2_extsize;
+
+	if (isize == 0)
+		return 0;
+	return ufs_truncate_retry(vp, IO_NORMAL | IO_EXT, 0, NOCRED);
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: exynos_dwcmmc.c,v 1.9 2019/10/18 06:13:38 skrll Exp $ */
+/* $NetBSD: exynos_dwcmmc.c,v 1.14 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: exynos_dwcmmc.c,v 1.9 2019/10/18 06:13:38 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: exynos_dwcmmc.c,v 1.14 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: exynos_dwcmmc.c,v 1.9 2019/10/18 06:13:38 skrll Exp 
 
 #include <arm/samsung/exynos_var.h>
 
+#include <dev/ic/dwc_mmc_reg.h>
 #include <dev/ic/dwc_mmc_var.h>
 #include <dev/fdt/fdtvar.h>
 
@@ -68,11 +69,12 @@ struct exynos_dwcmmc_softc {
 CFATTACH_DECL_NEW(exynos_dwcmmc, sizeof(struct exynos_dwcmmc_softc),
 	exynos_dwcmmc_match, exynos_dwcmmc_attach, NULL, NULL);
 
-static const char * const exynos_dwcmmc_compat[] = {
-	"samsung,exynos5250-dw-mshc",
-	"samsung,exynos5420-dw-mshc-smu",
-	"samsung,exynos5420-dw-mshc",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+						/* disable encryption mode? */
+	{ .compat = "samsung,exynos5250-dw-mshc",	.value = 0 },
+	{ .compat = "samsung,exynos5420-dw-mshc-smu",	.value = 1 },
+	{ .compat = "samsung,exynos5420-dw-mshc",	.value = 0 },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -80,7 +82,7 @@ exynos_dwcmmc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, exynos_dwcmmc_compat);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -89,6 +91,7 @@ exynos_dwcmmc_attach(device_t parent, device_t self, void *aux)
 	struct exynos_dwcmmc_softc *esc = device_private(self);
 	struct dwc_mmc_softc *sc = &esc->sc;
 	struct fdt_attach_args * const faa = aux;
+	const struct device_compatible_entry *dce;
 	const int phandle = faa->faa_phandle;
 	char intrstr[128];
 	bus_addr_t addr;
@@ -127,9 +130,13 @@ exynos_dwcmmc_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
+	dce = of_compatible_lookup(faa->faa_phandle, compat_data);
+	KASSERT(dce != NULL);
+
 	sc->sc_dev = self;
 	sc->sc_bst = faa->faa_bst;
 	sc->sc_dmat = faa->faa_dmat;
+	sc->sc_intr_cardmask = DWC_MMC_INT_SDIO_INT(8);
 	error = bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh);
 	if (error) {
 		aprint_error(": couldn't map %#" PRIxBUSADDR ": %d\n",
@@ -168,8 +175,7 @@ exynos_dwcmmc_attach(device_t parent, device_t self, void *aux)
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
 	/* Disable encryption mode */
-	const char * compat_enc[] = { "samsung,exynos5420-dw-mshc-smu", NULL };
-	if (of_match_compatible(phandle, compat_enc)) {
+	if (dce->value != 0) {
 		bus_space_write_4(sc->sc_bst, sc->sc_bsh, MPS_BEGIN, 0);
 		bus_space_write_4(sc->sc_bst, sc->sc_bsh, MPS_END, ~0U);
 		bus_space_write_4(sc->sc_bst, sc->sc_bsh, MPS_CTRL,

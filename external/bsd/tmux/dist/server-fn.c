@@ -308,7 +308,7 @@ server_destroy_pane(struct window_pane *wp, int notify)
 		wp->fd = -1;
 	}
 
-	if (options_get_number(w->options, "remain-on-exit")) {
+	if (options_get_number(wp->options, "remain-on-exit")) {
 		if (~wp->flags & PANE_STATUSREADY)
 			return;
 
@@ -369,7 +369,7 @@ server_destroy_session_group(struct session *s)
 	else {
 		TAILQ_FOREACH_SAFE(s, &sg->sessions, gentry, s1) {
 			server_destroy_session(s);
-			session_destroy(s, __func__);
+			session_destroy(s, 1, __func__);
 		}
 	}
 }
@@ -436,39 +436,8 @@ server_check_unattached(void)
 		if (s->attached != 0)
 			continue;
 		if (options_get_number (s->options, "destroy-unattached"))
-			session_destroy(s, __func__);
+			session_destroy(s, 1, __func__);
 	}
-}
-
-/* Set stdin callback. */
-int
-server_set_stdin_callback(struct client *c, void (*cb)(struct client *, int,
-    void *), void *cb_data, char **cause)
-{
-	if (c == NULL || c->session != NULL) {
-		*cause = xstrdup("no client with stdin");
-		return (-1);
-	}
-	if (c->flags & CLIENT_TERMINAL) {
-		*cause = xstrdup("stdin is a tty");
-		return (-1);
-	}
-	if (c->stdin_callback != NULL) {
-		*cause = xstrdup("stdin in use");
-		return (-1);
-	}
-
-	c->stdin_callback_data = cb_data;
-	c->stdin_callback = cb;
-
-	c->references++;
-
-	if (c->stdin_closed)
-		c->stdin_callback(c, 1, c->stdin_callback_data);
-
-	proc_send(c->peer, MSG_STDIN, -1, NULL, 0);
-
-	return (0);
 }
 
 void

@@ -7255,9 +7255,9 @@ dtrace_action_raise(uint64_t sig)
 
 #ifdef __NetBSD__
 	struct proc *p = curproc;
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	psignal(p, sig);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 #endif
 }
 
@@ -7283,9 +7283,9 @@ dtrace_action_stop(void)
 
 #ifdef __NetBSD__
 	struct proc *p = curproc;
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	psignal(p, SIGSTOP);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 #endif
 }
 
@@ -13840,7 +13840,6 @@ doferr:
 	return (NULL);
 #endif /* __FreeBSD__ */
 #ifdef __NetBSD__
-	printf("dtrace: XXX %s not implemented (name=%s)\n", __func__, name);
 	return (NULL);
 #endif /* __NetBSD__ */
 }

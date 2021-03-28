@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_machdep.c,v 1.129 2019/12/18 21:45:44 riastradh Exp $	*/
+/*	$NetBSD: arm32_machdep.c,v 1.139 2020/12/01 02:43:14 rin Exp $	*/
 
 /*
  * Copyright (c) 1994-1998 Mark Brinicombe.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.129 2019/12/18 21:45:44 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.139 2020/12/01 02:43:14 rin Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_arm_start.h"
@@ -50,27 +50,26 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.129 2019/12/18 21:45:44 riastrad
 #include "opt_modular.h"
 #include "opt_md.h"
 #include "opt_multiprocessor.h"
-#include "opt_pmap_debug.h"
 
 #include <sys/param.h>
+
 #include <sys/atomic.h>
-#include <sys/systm.h>
-#include <sys/reboot.h>
-#include <sys/proc.h>
+#include <sys/buf.h>
+#include <sys/cpu.h>
+#include <sys/device.h>
+#include <sys/intr.h>
+#include <sys/ipi.h>
 #include <sys/kauth.h>
 #include <sys/kernel.h>
 #include <sys/mbuf.h>
-#include <sys/mount.h>
-#include <sys/buf.h>
-#include <sys/msgbuf.h>
-#include <sys/device.h>
-#include <sys/sysctl.h>
-#include <sys/cpu.h>
-#include <sys/intr.h>
 #include <sys/module.h>
-#include <sys/atomic.h>
+#include <sys/mount.h>
+#include <sys/msgbuf.h>
+#include <sys/proc.h>
+#include <sys/reboot.h>
+#include <sys/sysctl.h>
+#include <sys/systm.h>
 #include <sys/xcall.h>
-#include <sys/ipi.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -79,6 +78,7 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.129 2019/12/18 21:45:44 riastrad
 
 #include <arm/locore.h>
 
+#include <arm/cpu_topology.h>
 #include <arm/arm32/machdep.h>
 
 #include <machine/bootconfig.h>
@@ -348,10 +348,9 @@ cpu_startup(void)
 	memset(tf, 0, sizeof(*tf));
 	lwp_settrapframe(l, tf);
 
-#if defined(__ARMEB__)
-	tf->tf_spsr = PSR_USR32_MODE | (CPU_IS_ARMV7_P() ? PSR_E_BIT : 0);
-#else
  	tf->tf_spsr = PSR_USR32_MODE;
+#ifdef _ARM_ARCH_BE8
+	tf->tf_spsr |= PSR_E_BIT;
 #endif
 
 	cpu_startup_hook();
@@ -372,12 +371,12 @@ sysctl_machdep_booted_device(SYSCTLFN_ARGS)
 	struct sysctlnode node;
 
 	if (booted_device == NULL)
-		return (EOPNOTSUPP);
+		return EOPNOTSUPP;
 
 	node = *rnode;
 	node.sysctl_data = __UNCONST(device_xname(booted_device));
 	node.sysctl_size = strlen(device_xname(booted_device)) + 1;
-	return (sysctl_lookup(SYSCTLFN_CALL(&node)));
+	return sysctl_lookup(SYSCTLFN_CALL(&node));
 }
 
 static int
@@ -386,12 +385,12 @@ sysctl_machdep_booted_kernel(SYSCTLFN_ARGS)
 	struct sysctlnode node;
 
 	if (booted_kernel == NULL || booted_kernel[0] == '\0')
-		return (EOPNOTSUPP);
+		return EOPNOTSUPP;
 
 	node = *rnode;
 	node.sysctl_data = booted_kernel;
 	node.sysctl_size = strlen(booted_kernel) + 1;
-	return (sysctl_lookup(SYSCTLFN_CALL(&node)));
+	return sysctl_lookup(SYSCTLFN_CALL(&node));
 }
 
 static int
@@ -415,13 +414,13 @@ sysctl_machdep_powersave(SYSCTLFN_ARGS)
 		node.sysctl_flags &= ~CTLFLAG_READWRITE;
 	error = sysctl_lookup(SYSCTLFN_CALL(&node));
 	if (error || newp == NULL || newval == cpu_do_powersave)
-		return (error);
+		return error;
 
 	if (newval < 0 || newval > 1)
-		return (EINVAL);
+		return EINVAL;
 	cpu_do_powersave = newval;
 
-	return (0);
+	return 0;
 }
 
 SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
@@ -472,7 +471,7 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READONLY,
 		       CTLTYPE_INT, "fpu_id", NULL,
-		       NULL, 0, &cpu_info_store.ci_vfp_id, 0,
+		       NULL, 0, &cpu_info_store[0].ci_vfp_id, 0,
 		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
 #endif
 	sysctl_createv(clog, 0, NULL, NULL,
@@ -538,7 +537,14 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       CTLTYPE_INT, "printfataltraps", NULL,
 		       NULL, 0, &cpu_printfataltraps, 0,
 		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
-	cpu_unaligned_sigbus = !CPU_IS_ARMV6_P() && !CPU_IS_ARMV7_P();
+	cpu_unaligned_sigbus =
+#if defined(__ARMEL__)
+	    !CPU_IS_ARMV6_P() && !CPU_IS_ARMV7_P();
+#elif defined(_ARM_ARCH_BE8)
+	    0;
+#else
+	    1;
+#endif
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READONLY,
 		       CTLTYPE_INT, "unaligned_sigbus",
@@ -565,13 +571,6 @@ parse_mi_bootargs(char *args)
 	    || get_bootconf_option(args, "-a", BOOTOPT_TYPE_BOOLEAN, &integer))
 		if (integer)
 			boothowto |= RB_ASKNAME;
-
-#ifdef PMAP_DEBUG
-	if (get_bootconf_option(args, "pmapdebug", BOOTOPT_TYPE_INT, &integer)) {
-		pmap_debug_level = integer;
-		pmap_debug(pmap_debug_level);
-	}
-#endif	/* PMAP_DEBUG */
 
 /*	if (get_bootconf_option(args, "nbuf", BOOTOPT_TYPE_INT, &integer))
 		bufpages = integer;*/
@@ -695,6 +694,9 @@ dosoftints(void)
 void
 module_init_md(void)
 {
+#ifdef FDT
+	arm_fdt_module_init();
+#endif
 }
 #endif /* MODULAR */
 
@@ -731,11 +733,10 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
  * -  kmutex(9) relies on curcpu which isn't setup yet.
  *
  */
-void
+void __noasan
 cpu_init_secondary_processor(int cpuindex)
 {
-	// pmap_kernel has been sucessfully built and we can switch to it
-
+	// pmap_kernel has been successfully built and we can switch to it
 	cpu_domains(DOMAIN_DEFAULT);
 	cpu_idcache_wbinv_all();
 
@@ -774,7 +775,7 @@ cpu_init_secondary_processor(int cpuindex)
 	 */
 	armreg_ttbcr_write(armreg_ttbcr_read() | TTBCR_S_PD0);
 	cpu_setttb(pmap_kernel()->pm_l1_pa , KERNEL_PID);
-	arm_isb();
+	isb();
 #else
 	cpu_setttb(pmap_kernel()->pm_l1->l1_physaddr, true);
 #endif
@@ -794,27 +795,25 @@ cpu_init_secondary_processor(int cpuindex)
 	VPRINTS(")");
 #endif
 
-	VPRINTS(" hatched=");
-	VPRINTX(arm_cpu_hatched | __BIT(cpuindex));
+	struct cpu_info * ci = &cpu_info_store[cpuindex];
+
+	VPRINTS(" ci = ");
+	VPRINTX((int)ci);
+
+	ci->ci_midr = armreg_midr_read();
+	ci->ci_mpidr = armreg_mpidr_read();
+
+	arm_cpu_topology_set(ci, ci->ci_mpidr);
+
+	VPRINTS(" hatched|=");
+	VPRINTX(__BIT(cpuindex));
 	VPRINTS("\n\r");
 
-	atomic_or_uint(&arm_cpu_hatched, __BIT(cpuindex));
+	cpu_set_hatched(cpuindex);
 
-	/* return to assembly to wait for cpu_boot_secondary_processors */
-}
-
-void
-cpu_boot_secondary_processors(void)
-{
-	VPRINTF("%s: writing mbox with %#x\n", __func__, arm_cpu_hatched);
-	arm_cpu_mbox = arm_cpu_hatched;
-	membar_producer();
-#ifdef _ARM_ARCH_7
-	__asm __volatile("sev; sev; sev");
-#endif
-	while (membar_consumer(), arm_cpu_mbox) {
-		__asm __volatile("wfe" ::: "memory");
-	}
+	/*
+	 * return to assembly to wait for cpu_boot_secondary_processors
+	 */
 }
 
 void

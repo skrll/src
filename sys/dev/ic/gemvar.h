@@ -1,4 +1,4 @@
-/*	$NetBSD: gemvar.h,v 1.26 2019/09/13 07:55:06 msaitoh Exp $ */
+/*	$NetBSD: gemvar.h,v 1.28 2021/01/30 07:53:01 jdc Exp $ */
 
 /*
  *
@@ -219,6 +219,7 @@ struct gem_softc {
 #ifdef GEM_COUNTERS
 	struct evcnt sc_ev_txint;
 	struct evcnt sc_ev_rxint;
+	struct evcnt sc_ev_rxoverflow;
 	struct evcnt sc_ev_rxnobuf;
 	struct evcnt sc_ev_rxfull;
 	struct evcnt sc_ev_rxhist[9];
@@ -245,8 +246,6 @@ struct gem_softc {
 
 #define	GEM_CDTXADDR(sc, x)	((sc)->sc_cddma + GEM_CDTXOFF((x)))
 #define	GEM_CDRXADDR(sc, x)	((sc)->sc_cddma + GEM_CDRXOFF((x)))
-
-#define	GEM_CDADDR(sc)	((sc)->sc_cddma + GEM_CDOFF)
 
 #define	GEM_CDTXSYNC(sc, x, n, ops)					\
 do {									\

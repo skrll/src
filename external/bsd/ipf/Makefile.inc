@@ -1,10 +1,11 @@
-#	$NetBSD: Makefile.inc,v 1.4 2019/10/13 07:28:06 mrg Exp $
+#	$NetBSD: Makefile.inc,v 1.6 2021/01/05 11:07:59 simonb Exp $
 
 WARNS?=	1	# XXX -Wcast-qual -Wshadow
 CWARNFLAGS.clang+=	-Wno-format -Wno-tautological-compare \
 			-Wno-self-assign -Wno-array-bounds \
 			-Wno-error=unused-const-variable \
 			-Wno-error=address-of-packed-member
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 .include <bsd.own.mk>
 
@@ -38,3 +39,5 @@ COPTS+=	${GCC_NO_STRINGOP_TRUNCATION}
 	${UDIST}/lib	\
 	${UDIST}/tools	\
 	${UDIST}/man
+
+.include "../../compat/exec.mk"

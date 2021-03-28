@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -67,7 +67,6 @@ static HISTORY_INFO         AcpiGbl_HistoryBuffer[HISTORY_SIZE];
 static UINT16               AcpiGbl_LoHistory = 0;
 static UINT16               AcpiGbl_NumHistory = 0;
 static UINT16               AcpiGbl_NextHistoryIndex = 0;
-UINT32                      AcpiGbl_NextCmdNum = 1;
 
 
 /*******************************************************************************

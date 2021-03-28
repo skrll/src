@@ -1,4 +1,4 @@
-/* $NetBSD: intr.h,v 1.10 2015/06/06 04:31:52 matt Exp $ */
+/* $NetBSD: intr.h,v 1.13 2021/02/16 05:11:26 simonb Exp $ */
 
 /*-
  * Copyright (c) 2009, 2010 The NetBSD Foundation, Inc.
@@ -64,7 +64,7 @@
 #define	IST_LEVEL_HIGH	4		/* level triggered, active high */
 #define	IST_LEVEL_LOW	5		/* level triggered, active low */
 
-#define IST_MPSAFE	0x100		/* interrupt is MPSAFE */
+#define	IST_MPSAFE	0x100		/* interrupt is MPSAFE */
 
 #define	IPI_NOP		0		/* do nothing, interrupt only */
 #define	IPI_AST		1		/* force ast */
@@ -112,9 +112,11 @@ typedef struct {
 
 #ifdef _KERNEL
 
+#if 0
 #if defined(MULTIPROCESSOR) && defined(__HAVE_FAST_SOFTINTS)
-#define __HAVE_PREEMPTION	1
-#define SOFTINT_KPREEMPT	(SOFTINT_COUNT+0)
+#define	__HAVE_PREEMPTION	1
+#define	SOFTINT_KPREEMPT	(SOFTINT_COUNT+0)
+#endif
 #endif
 
 #ifdef __INTR_PRIVATE
@@ -123,7 +125,7 @@ extern	struct ipl_sr_map ipl_sr_map;
 #endif /* __INTR_PRIVATE */
 
 int	splhigh(void);
-int	splhigh_noprof(void);
+int	__noprofile splhigh_noprof(void);
 int	splsched(void);
 int	splvm(void);
 int	splsoftserial(void);
@@ -132,7 +134,7 @@ int	splsoftbio(void);
 int	splsoftclock(void);
 int	splraise(int);
 void	splx(int);
-void	splx_noprof(int);
+void	__noprofile splx_noprof(int);
 void	spl0(void);
 int	splintr(uint32_t *);
 void	_setsoftintr(uint32_t);

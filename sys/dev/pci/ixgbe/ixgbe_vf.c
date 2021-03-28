@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_vf.c,v 1.22 2019/09/20 09:28:37 msaitoh Exp $ */
+/* $NetBSD: ixgbe_vf.c,v 1.26 2021/01/20 06:53:17 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -121,7 +121,8 @@ static void ixgbe_virt_clr_reg(struct ixgbe_hw *hw)
 
 	IXGBE_WRITE_REG(hw, IXGBE_VFPSRTYPE, 0);
 
-	for (i = 0; i < 7; i++) {
+	KASSERT(IXGBE_VF_MAX_TX_QUEUES == IXGBE_VF_MAX_RX_QUEUES);
+	for (i = 0; i < IXGBE_VF_MAX_TX_QUEUES; i++) {
 		IXGBE_WRITE_REG(hw, IXGBE_VFRDH(i), 0);
 		IXGBE_WRITE_REG(hw, IXGBE_VFRDT(i), 0);
 		IXGBE_WRITE_REG(hw, IXGBE_VFRXDCTL(i), 0);
@@ -175,7 +176,7 @@ s32 ixgbe_init_hw_vf(struct ixgbe_hw *hw)
  *  ixgbe_reset_hw_vf - Performs hardware reset
  *  @hw: pointer to hardware structure
  *
- *  Resets the hardware by reseting the transmit and receive units, masks and
+ *  Resets the hardware by resetting the transmit and receive units, masks and
  *  clears all interrupts.
  **/
 s32 ixgbe_reset_hw_vf(struct ixgbe_hw *hw)
@@ -475,7 +476,7 @@ s32 ixgbevf_update_xcast_mode(struct ixgbe_hw *hw, int xcast_mode)
 	 *  On linux's PF driver implementation, the PF replies VF's
 	 * XCAST_MODE_ALLMULTI message not with NACK but with ACK even if the
 	 * virtual function is NOT marked "trust" and act as
-	 * XCAST_MODE_"MULTI". If ixv(4) simply check the return vaule of
+	 * XCAST_MODE_"MULTI". If ixv(4) simply check the return value of
 	 * update_xcast_mode(XCAST_MODE_ALLMULTI), SIOCSADDMULTI success and
 	 * the user may have trouble with some addresses. Fortunately, the
 	 * Linux's PF driver's "ACK" message has not XCAST_MODE_"ALL"MULTI but
@@ -784,7 +785,7 @@ int ixgbevf_get_queues(struct ixgbe_hw *hw, unsigned int *num_tcs,
 		msg[0] &= ~IXGBE_VT_MSGTYPE_CTS;
 
 		/*
-		 * if we we didn't get an ACK there must have been
+		 * if we didn't get an ACK there must have been
 		 * some sort of mailbox error so we should treat it
 		 * as such
 		 */

@@ -1,6 +1,6 @@
-#	$NetBSD: Makefile,v 1.9 2014/06/01 19:51:01 mrg Exp $
+#	$NetBSD: Makefile,v 1.11 2020/09/09 07:23:45 mrg Exp $
 
-SUBDIR=		backward ext bits debug decimal parallel pb profile
+SUBDIR=		backward ext bits debug decimal parallel pb profile pstl
 SUBDIR+=	tr1 tr2
 
 .include <bsd.init.mk>
@@ -24,10 +24,9 @@ INCSDIR=	/usr/include/g++
 
 .PATH: ${DIST}/libstdc++-v3
 .PATH: ${DIST}/libstdc++-v3/libsupc++
-#.PATH: ${DIST}/libstdc++-v3/include/c_compatibility
 .PATH: ${DIST}/libstdc++-v3/include/c_global
 .PATH: ${DIST}/libstdc++-v3/include/std
 
-# Get default targets including <bsd.inc.mk>.
-.include <bsd.prog.mk>
+.include "Makefile.includes"
+
 .include <bsd.subdir.mk>

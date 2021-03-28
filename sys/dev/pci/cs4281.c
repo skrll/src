@@ -1,4 +1,4 @@
-/*	$NetBSD: cs4281.c,v 1.55 2019/05/08 13:40:18 isaki Exp $	*/
+/*	$NetBSD: cs4281.c,v 1.57 2021/02/03 14:44:32 isaki Exp $	*/
 
 /*
  * Copyright (c) 2000 Tatoku Ogaito.  All rights reserved.
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cs4281.c,v 1.55 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cs4281.c,v 1.57 2021/02/03 14:44:32 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -272,8 +272,6 @@ cs4281_attach(device_t parent, device_t self, void *aux)
 	}
 
 	sc->type = TYPE_CS4281;
-	sc->halt_input  = cs4281_halt_input;
-	sc->halt_output = cs4281_halt_output;
 
 	sc->dma_size     = CS4281_BUFFER_SIZE / MAX_CHANNELS;
 	sc->dma_align    = 0x10;
@@ -893,7 +891,7 @@ cs4281_init(struct cs428x_softc *sc, int init)
 	n = 0;
 #if 1
 	/* what document says */
-	while ((BA0READ4(sc, CS4281_CLKCR1)& (CLKCR1_DLLRDY | CLKCR1_CLKON))
+	while ((BA0READ4(sc, CS4281_CLKCR1) & (CLKCR1_DLLRDY | CLKCR1_CLKON))
 		 != (CLKCR1_DLLRDY | CLKCR1_CLKON)) {
 		delay(100);
 		if (++n > 1000) {

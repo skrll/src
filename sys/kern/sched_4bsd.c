@@ -1,7 +1,7 @@
-/*	$NetBSD: sched_4bsd.c,v 1.41 2019/12/06 18:33:19 ad Exp $	*/
+/*	$NetBSD: sched_4bsd.c,v 1.44 2020/05/23 21:24:41 ad Exp $	*/
 
 /*
- * Copyright (c) 1999, 2000, 2004, 2006, 2007, 2008, 2019
+ * Copyright (c) 1999, 2000, 2004, 2006, 2007, 2008, 2019, 2020
  *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sched_4bsd.c,v 1.41 2019/12/06 18:33:19 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sched_4bsd.c,v 1.44 2020/05/23 21:24:41 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_lockdebug.h"
@@ -93,11 +93,11 @@ static void resetpriority(struct lwp *);
 extern unsigned int sched_pstats_ticks; /* defined in kern_synch.c */
 
 /* Number of hardclock ticks per sched_tick() */
-static int rrticks __read_mostly;
+u_int sched_rrticks __read_mostly;
 
 /*
  * Force switch among equal priority processes every 100ms.
- * Called from hardclock every hz/10 == rrticks hardclock ticks.
+ * Called from hardclock every hz/10 == sched_rrticks hardclock ticks.
  */
 /* ARGSUSED */
 void
@@ -107,7 +107,7 @@ sched_tick(struct cpu_info *ci)
 	pri_t pri = PRI_NONE;
 	lwp_t *l;
 
-	spc->spc_ticks = rrticks;
+	spc->spc_ticks = sched_rrticks;
 
 	if (CURCPU_IDLE_P()) {
 		spc_lock(ci);
@@ -147,6 +147,15 @@ sched_tick(struct cpu_info *ci)
 			 * Indicate that the process should yield.
 			 */
 			pri = MAXPRI_KTHREAD;
+			spc->spc_flags |= SPCF_SHOULDYIELD;
+		} else if ((spc->spc_flags & SPCF_1STCLASS) == 0) {
+			/*
+			 * For SMT or assymetric systems push a little
+			 * harder: if this is not a 1st class CPU, try to
+			 * find a better one to run this LWP.
+			 */
+			pri = MAXPRI_KTHREAD;
+			spc->spc_flags |= SPCF_SHOULDYIELD;
 		} else {
 			spc->spc_flags |= SPCF_SEENRR;
 		}
@@ -525,7 +534,7 @@ static int
 sysctl_sched_rtts(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node;
-	int rttsms = hztoms(rrticks);
+	int rttsms = hztoms(sched_rrticks);
 
 	node = *rnode;
 	node.sysctl_data = &rttsms;
@@ -546,7 +555,7 @@ SYSCTL_SETUP(sysctl_sched_4bsd_setup, "sysctl sched setup")
 	if (node == NULL)
 		return;
 
-	rrticks = hz / 10;
+	sched_rrticks = hz / 10;
 
 	sysctl_createv(NULL, 0, &node, NULL,
 		CTLFLAG_PERMANENT,

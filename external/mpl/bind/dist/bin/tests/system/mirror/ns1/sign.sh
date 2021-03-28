@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -33,4 +33,4 @@ $SIGNER -P -g -o $zone $zonefile > /dev/null
 # irrelevant here, so just reuse the root zone key generated above.
 sed "s/^\./nonexistent./;" $keyname1.key > $keyname1.modified.key
 
-keyfile_to_trusted_keys $keyname1 $keyname1.modified > trusted.conf
+keyfile_to_static_ds $keyname1 $keyname1.modified > trusted.conf

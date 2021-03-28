@@ -1,4 +1,4 @@
-/*	$NetBSD: drm_drv.c,v 1.10 2018/08/28 08:20:27 martin Exp $	*/
+/*	$NetBSD: drm_drv.c,v 1.14 2020/04/19 17:19:13 maya Exp $	*/
 
 /*
  * Created: Fri Jan 19 10:48:35 2001 by faith@acm.org
@@ -29,21 +29,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: drm_drv.c,v 1.10 2018/08/28 08:20:27 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: drm_drv.c,v 1.14 2020/04/19 17:19:13 maya Exp $");
 
-#include <linux/err.h>
-#include <linux/export.h>
 #include <linux/debugfs.h>
 #include <linux/fs.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/mount.h>
-#include <linux/printk.h>
 #include <linux/slab.h>
 #include <drm/drmP.h>
 #include <drm/drm_core.h>
 #include "drm_legacy.h"
 #include "drm_internal.h"
+
+#include <linux/nbsd-namespace.h>
 
 unsigned int drm_debug = 0;	/* bitmask of DRM_UT_x */
 EXPORT_SYMBOL(drm_debug);
@@ -541,16 +540,14 @@ EXPORT_SYMBOL(drm_unplug_dev);
 
 #ifdef __NetBSD__
 
-struct inode;
-
-static struct inode *
+static void *
 drm_fs_inode_new(void)
 {
 	return NULL;
 }
 
 static void
-drm_fs_inode_free(struct inode *inode)
+drm_fs_inode_free(void *inode)
 {
 	KASSERT(inode == NULL);
 }
@@ -663,6 +660,14 @@ struct drm_device *drm_dev_alloc(struct drm_driver *driver,
 	kref_init(&dev->ref);
 	dev->dev = parent;
 	dev->driver = driver;
+#ifdef __NetBSD__
+	dev->sc_monitor_hotplug.smpsw_name = PSWITCH_HK_DISPLAY_CYCLE;
+	dev->sc_monitor_hotplug.smpsw_type = PSWITCH_TYPE_HOTKEY;
+
+	ret = sysmon_pswitch_register(&dev->sc_monitor_hotplug);
+	if (ret)
+		goto err_pswitch;
+#endif
 
 	INIT_LIST_HEAD(&dev->filelist);
 	INIT_LIST_HEAD(&dev->ctxlist);
@@ -672,15 +677,9 @@ struct drm_device *drm_dev_alloc(struct drm_driver *driver,
 
 	spin_lock_init(&dev->buf_lock);
 	spin_lock_init(&dev->event_lock);
-#ifdef __NetBSD__
-	linux_mutex_init(&dev->struct_mutex);
-	linux_mutex_init(&dev->ctxlist_mutex);
-	linux_mutex_init(&dev->master_mutex);
-#else
 	mutex_init(&dev->struct_mutex);
 	mutex_init(&dev->ctxlist_mutex);
 	mutex_init(&dev->master_mutex);
-#endif
 
 	dev->anon_inode = drm_fs_inode_new();
 	if (IS_ERR(dev->anon_inode)) {
@@ -731,16 +730,14 @@ err_minors:
 	drm_minor_free(dev, DRM_MINOR_CONTROL);
 	drm_fs_inode_free(dev->anon_inode);
 err_free:
-#ifdef __NetBSD__
-	linux_mutex_destroy(&dev->master_mutex);
-	linux_mutex_destroy(&dev->ctxlist_mutex);
-	linux_mutex_destroy(&dev->struct_mutex);
 	spin_lock_destroy(&dev->event_lock);
 	spin_lock_destroy(&dev->buf_lock);
-#else
 	mutex_destroy(&dev->master_mutex);
 	mutex_destroy(&dev->ctxlist_mutex);
 	mutex_destroy(&dev->struct_mutex);
+#ifdef __NetBSD__
+err_pswitch:
+	sysmon_pswitch_unregister(&dev->sc_monitor_hotplug);
 #endif
 	kfree(dev);
 	return NULL;
@@ -754,6 +751,10 @@ static void drm_dev_release(struct kref *ref)
 	if (drm_core_check_feature(dev, DRIVER_GEM))
 		drm_gem_destroy(dev);
 
+#ifdef __NetBSD__
+	sysmon_pswitch_unregister(&dev->sc_monitor_hotplug);
+#endif
+
 	drm_legacy_ctxbitmap_cleanup(dev);
 	drm_ht_remove(&dev->map_hash);
 	drm_fs_inode_free(dev->anon_inode);
@@ -762,17 +763,11 @@ static void drm_dev_release(struct kref *ref)
 	drm_minor_free(dev, DRM_MINOR_RENDER);
 	drm_minor_free(dev, DRM_MINOR_CONTROL);
 
-#ifdef __NetBSD__
-	linux_mutex_destroy(&dev->master_mutex);
-	linux_mutex_destroy(&dev->ctxlist_mutex);
-	linux_mutex_destroy(&dev->struct_mutex);
 	spin_lock_destroy(&dev->event_lock);
 	spin_lock_destroy(&dev->buf_lock);
-#else
 	mutex_destroy(&dev->master_mutex);
 	mutex_destroy(&dev->ctxlist_mutex);
 	mutex_destroy(&dev->struct_mutex);
-#endif
 	kfree(dev->unique);
 	kfree(dev);
 }

@@ -1,15 +1,16 @@
-#	$NetBSD: Makefile,v 1.17 2018/05/09 08:39:55 mrg Exp $
+#	$NetBSD: Makefile,v 1.21 2021/02/17 03:06:07 mrg Exp $
 
 .include <bsd.own.mk>
 
 PROG=	xterm
 SRCS=	button.c charproc.c charsets.c cursor.c data.c doublechr.c \
-	fontutils.c input.c linedata.c menu.c misc.c print.c ptydata.c \
-	screen.c scrollback.c scrollbar.c tabs.c util.c xstrings.c \
-	TekPrsTbl.c Tekproc.c VTPrsTbl.c main.c charclass.c precompose.c \
-	wcwidth.c xutf8.c cachedGCs.c xtermcap.c version.c
+	graphics.c graphics_sixel.c fontutils.c input.c linedata.c menu.c \
+	misc.c print.c ptydata.c screen.c scrollback.c scrollbar.c tabs.c \
+	util.c xstrings.c TekPrsTbl.c Tekproc.c VTPrsTbl.c main.c \
+	charclass.c precompose.c wcwidth.c xutf8.c cachedGCs.c xtermcap.c \
+	svg.c html.c version.c
 
-# graphics_regis.c graphics_sixel.c
+# XXX
 # xterm.appdata.xml
 
 CPPFLAGS+=	-I. \
@@ -38,7 +39,7 @@ DPADD+=	${LIBXAW} ${LIBXMU} ${LIBXT} ${LIBSM} ${LIBICE} ${LIBXINERAMA}
 LDADD+=	-lXpm -lXext -lX11 -lcurses -lterminfo -lutil
 DPADD+=	${LIBXPM} ${LIBXEXT} ${LIBX11} ${LIBCURSES} ${LIBTERMINFO} ${LIBUTIL}
 
-SUBDIR=	resize uxterm
+SUBDIR=	uxterm
 
 .PATH:	${X11SRCDIR.${PROG}}
 

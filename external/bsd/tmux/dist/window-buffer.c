@@ -38,6 +38,22 @@ static void		 window_buffer_key(struct window_mode_entry *,
 #define WINDOW_BUFFER_DEFAULT_FORMAT \
 	"#{buffer_size} bytes (#{t:buffer_created})"
 
+static const struct menu_item window_buffer_menu_items[] = {
+	{ "Paste", 'p', NULL },
+	{ "Paste Tagged", 'P', NULL },
+	{ "", KEYC_NONE, NULL },
+	{ "Tag", 't', NULL },
+	{ "Tag All", '\024', NULL },
+	{ "Tag None", 'T', NULL },
+	{ "", KEYC_NONE, NULL },
+	{ "Delete", 'd', NULL },
+	{ "Delete Tagged", 'D', NULL },
+	{ "", KEYC_NONE, NULL },
+	{ "Cancel", 'q', NULL },
+
+	{ NULL, KEYC_NONE, NULL }
+};
+
 const struct window_mode window_buffer_mode = {
 	.name = "buffer-mode",
 	.default_format = WINDOW_BUFFER_DEFAULT_FORMAT,
@@ -58,6 +74,7 @@ static const char *window_buffer_sort_list[] = {
 	"name",
 	"size"
 };
+static struct mode_tree_sort_criteria *window_buffer_sort;
 
 struct window_buffer_itemdata {
 	const char	*name;
@@ -66,6 +83,9 @@ struct window_buffer_itemdata {
 };
 
 struct window_buffer_modedata {
+	struct window_pane		 *wp;
+	struct cmd_find_state		  fs;
+
 	struct mode_tree_data		 *data;
 	char				 *command;
 	char				 *format;
@@ -93,43 +113,29 @@ window_buffer_free_item(struct window_buffer_itemdata *item)
 }
 
 static int
-window_buffer_cmp_name(const void *a0, const void *b0)
+window_buffer_cmp(const void *a0, const void *b0)
 {
-	const struct window_buffer_itemdata *const *a = a0;
-	const struct window_buffer_itemdata *const *b = b0;
+	const struct window_buffer_itemdata *const	*a = a0;
+	const struct window_buffer_itemdata *const	*b = b0;
+	int						 result = 0;
 
-	return (strcmp((*a)->name, (*b)->name));
-}
+	if (window_buffer_sort->field == WINDOW_BUFFER_BY_TIME)
+		result = (*b)->order - (*a)->order;
+	else if (window_buffer_sort->field == WINDOW_BUFFER_BY_SIZE)
+		result = (*b)->size - (*a)->size;
 
-static int
-window_buffer_cmp_time(const void *a0, const void *b0)
-{
-	const struct window_buffer_itemdata *const *a = a0;
-	const struct window_buffer_itemdata *const *b = b0;
+	/* Use WINDOW_BUFFER_BY_NAME as default order and tie breaker. */
+	if (result == 0)
+		result = strcmp((*a)->name, (*b)->name);
 
-	if ((*a)->order > (*b)->order)
-		return (-1);
-	if ((*a)->order < (*b)->order)
-		return (1);
-	return (strcmp((*a)->name, (*b)->name));
-}
-
-static int
-window_buffer_cmp_size(const void *a0, const void *b0)
-{
-	const struct window_buffer_itemdata *const *a = a0;
-	const struct window_buffer_itemdata *const *b = b0;
-
-	if ((*a)->size > (*b)->size)
-		return (-1);
-	if ((*a)->size < (*b)->size)
-		return (1);
-	return (strcmp((*a)->name, (*b)->name));
+	if (window_buffer_sort->reversed)
+		result = -result;
+	return (result);
 }
 
 static void
-window_buffer_build(void *modedata, u_int sort_type, __unused uint64_t *tag,
-    const char *filter)
+window_buffer_build(void *modedata, struct mode_tree_sort_criteria *sort_crit,
+    __unused uint64_t *tag, const char *filter)
 {
 	struct window_buffer_modedata	*data = modedata;
 	struct window_buffer_itemdata	*item;
@@ -137,6 +143,9 @@ window_buffer_build(void *modedata, u_int sort_type, __unused uint64_t *tag,
 	struct paste_buffer		*pb;
 	char				*text, *cp;
 	struct format_tree		*ft;
+	struct session			*s = NULL;
+	struct winlink			*wl = NULL;
+	struct window_pane		*wp = NULL;
 
 	for (i = 0; i < data->item_size; i++)
 		window_buffer_free_item(data->item_list[i]);
@@ -152,19 +161,14 @@ window_buffer_build(void *modedata, u_int sort_type, __unused uint64_t *tag,
 		item->order = paste_buffer_order(pb);
 	}
 
-	switch (sort_type) {
-	case WINDOW_BUFFER_BY_NAME:
-		qsort(data->item_list, data->item_size, sizeof *data->item_list,
-		    window_buffer_cmp_name);
-		break;
-	case WINDOW_BUFFER_BY_TIME:
-		qsort(data->item_list, data->item_size, sizeof *data->item_list,
-		    window_buffer_cmp_time);
-		break;
-	case WINDOW_BUFFER_BY_SIZE:
-		qsort(data->item_list, data->item_size, sizeof *data->item_list,
-		    window_buffer_cmp_size);
-		break;
+	window_buffer_sort = sort_crit;
+	qsort(data->item_list, data->item_size, sizeof *data->item_list,
+	    window_buffer_cmp);
+
+	if (cmd_find_valid_state(&data->fs)) {
+		s = data->fs.s;
+		wl = data->fs.wl;
+		wp = data->fs.wp;
 	}
 
 	for (i = 0; i < data->item_size; i++) {
@@ -174,6 +178,7 @@ window_buffer_build(void *modedata, u_int sort_type, __unused uint64_t *tag,
 		if (pb == NULL)
 			continue;
 		ft = format_create(NULL, NULL, FORMAT_NONE, 0);
+		format_defaults(ft, NULL, s, wl, wp);
 		format_defaults_paste_buffer(ft, pb);
 
 		if (filter != NULL) {
@@ -202,9 +207,9 @@ window_buffer_draw(__unused void *modedata, void *itemdata,
 {
 	struct window_buffer_itemdata	*item = itemdata;
 	struct paste_buffer		*pb;
-	char				 line[1024];
-	const char			*pdata, *end, *cp;
-	size_t				 psize, at;
+	const char			*pdata, *start, *end;
+	char				*buf = NULL;
+	size_t				 psize;
 	u_int				 i, cx = ctx->s->cx, cy = ctx->s->cy;
 
 	pb = paste_get_name(item->name);
@@ -213,27 +218,22 @@ window_buffer_draw(__unused void *modedata, void *itemdata,
 
 	pdata = end = paste_buffer_data(pb, &psize);
 	for (i = 0; i < sy; i++) {
-		at = 0;
-		while (end != pdata + psize && *end != '\n') {
-			if ((sizeof line) - at > 5) {
-				cp = vis(line + at, *end, VIS_TAB|VIS_OCTAL, 0);
-				at = cp - line;
-			}
+		start = end;
+		while (end != pdata + psize && *end != '\n')
 			end++;
-		}
-		if (at > sx)
-			at = sx;
-		line[at] = '\0';
-
-		if (*line != '\0') {
+		buf = xreallocarray(buf, 4, end - start + 1);
+		utf8_strvis(buf, start, end - start, VIS_OCTAL|VIS_TAB);
+		if (*buf != '\0') {
 			screen_write_cursormove(ctx, cx, cy + i, 0);
-			screen_write_puts(ctx, &grid_default_cell, "%s", line);
+			screen_write_nputs(ctx, sx, &grid_default_cell, "%s",
+			    buf);
 		}
 
 		if (end == pdata + psize)
 			break;
 		end++;
 	}
+	free(buf);
 }
 
 static int
@@ -252,15 +252,30 @@ window_buffer_search(__unused void *modedata, void *itemdata, const char *ss)
 	return (memmem(bufdata, bufsize, ss, strlen(ss)) != NULL);
 }
 
+static void
+window_buffer_menu(void *modedata, struct client *c, key_code key)
+{
+	struct window_buffer_modedata	*data = modedata;
+	struct window_pane		*wp = data->wp;
+	struct window_mode_entry	*wme;
+
+	wme = TAILQ_FIRST(&wp->modes);
+	if (wme == NULL || wme->data != modedata)
+		return;
+	window_buffer_key(wme, c, NULL, NULL, key, NULL);
+}
+
 static struct screen *
-window_buffer_init(struct window_mode_entry *wme,
-    __unused struct cmd_find_state *fs, struct args *args)
+window_buffer_init(struct window_mode_entry *wme, struct cmd_find_state *fs,
+    struct args *args)
 {
 	struct window_pane		*wp = wme->wp;
 	struct window_buffer_modedata	*data;
 	struct screen			*s;
 
 	wme->data = data = xcalloc(1, sizeof *data);
+	data->wp = wp;
+	cmd_find_copy_state(&data->fs, fs);
 
 	if (args == NULL || !args_has(args, 'F'))
 		data->format = xstrdup(WINDOW_BUFFER_DEFAULT_FORMAT);
@@ -272,8 +287,9 @@ window_buffer_init(struct window_mode_entry *wme,
 		data->command = xstrdup(args->argv[0]);
 
 	data->data = mode_tree_start(wp, args, window_buffer_build,
-	    window_buffer_draw, window_buffer_search, data,
-	    window_buffer_sort_list, nitems(window_buffer_sort_list), &s);
+	    window_buffer_draw, window_buffer_search, window_buffer_menu, data,
+	    window_buffer_menu_items, window_buffer_sort_list,
+	    nitems(window_buffer_sort_list), &s);
 	mode_tree_zoom(data->data, args);
 
 	mode_tree_build(data->data);
@@ -312,7 +328,7 @@ window_buffer_resize(struct window_mode_entry *wme, u_int sx, u_int sy)
 }
 
 static void
-window_buffer_do_delete(void* modedata, void *itemdata,
+window_buffer_do_delete(void *modedata, void *itemdata,
     __unused struct client *c, __unused key_code key)
 {
 	struct window_buffer_modedata	*data = modedata;
@@ -326,7 +342,7 @@ window_buffer_do_delete(void* modedata, void *itemdata,
 }
 
 static void
-window_buffer_do_paste(void* modedata, void *itemdata, struct client *c,
+window_buffer_do_paste(void *modedata, void *itemdata, struct client *c,
     __unused key_code key)
 {
 	struct window_buffer_modedata	*data = modedata;

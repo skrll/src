@@ -1,4 +1,4 @@
-$NetBSD: TODO.usbmp,v 1.16 2019/08/23 07:29:29 mrg Exp $
+$NetBSD: TODO.usbmp,v 1.19 2020/05/16 13:46:12 maya Exp $
 
 
 the majority of the USB MP device interface is documented in usbdivar.h.
@@ -30,7 +30,6 @@ usb_detach_{waitold,wakeup} to usb_detach_{wait,broadcast} conversion:
       uirda.c
       ulpt.c
       umass.c		- done, partially done -- need to check umass_scsipi.c change
-      urio.c
       uscanner.c
       usscanner.c
       ustir.c
@@ -54,9 +53,6 @@ convert uhidev users to MPSAFE:
   pbms(4)
   - depends upon wscons? check intr
 
-  uyurex(4)
-  - sysmon -- hm?
-
 splusb drivers to convert:
   - auvitek_dtv.c
   - auvitek_video.c
@@ -77,7 +73,6 @@ splusb drivers to convert:
   - uirda.c
   - ukbd.c
   - ulpt.c
-  - urio.c
   - usbdi.h
   - uscanner.c
   - usscanner.c
@@ -100,7 +95,6 @@ wakeup/tsleep drivers:
   - ustir.c
   - uthum.c
   - uvscom.c
-  - uyurex.c
 
 missing D_MPSAFE drivers:
   - ucom
@@ -108,7 +102,6 @@ missing D_MPSAFE drivers:
   - ugen		- partially ready
   - uhso
   - ulpt
-  - urio
   - usb
   - uscanner
   - utoppy
@@ -124,7 +117,6 @@ missing CALLOUT_MPSAFE drivers:
   - if_zyd.c
   - ukbd.c
   - ulpt.c
-  - uyurex.c
 
 driver testing:		STATUS
   - uhub		working
@@ -167,11 +159,9 @@ driver testing:		STATUS
   - upl			working
   - uberry
   - uipad
-  - urio
   - uscanner		? (must take kernel lock for scsipi)
   - usscanner
   - utoppy
-  - uyap
   - udsbr
   - ugen		mostly done
   - pseye		working

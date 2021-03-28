@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.c,v 1.38 2017/03/16 16:13:20 chs Exp $	*/
+/*	$NetBSD: fpu.c,v 1.42 2020/07/15 09:19:49 rin Exp $	*/
 
 /*
  * Copyright (C) 1996 Wolfgang Solfrank.
@@ -32,9 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.38 2017/03/16 16:13:20 chs Exp $");
-
-#include "opt_multiprocessor.h"
+__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.42 2020/07/15 09:19:49 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -47,19 +45,15 @@ __KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.38 2017/03/16 16:13:20 chs Exp $");
 #include <machine/fpu.h>
 #include <machine/psl.h>
 
-#ifdef PPC_HAVE_FPU
 static void fpu_state_load(lwp_t *, u_int);
 static void fpu_state_save(lwp_t *);
 static void fpu_state_release(lwp_t *);
-#endif
 
 const pcu_ops_t fpu_ops = {
 	.pcu_id = PCU_FPU,
-#ifdef PPC_HAVE_FPU
 	.pcu_state_load = fpu_state_load,
 	.pcu_state_save = fpu_state_save,
 	.pcu_state_release = fpu_state_release,
-#endif
 };
 
 bool
@@ -74,10 +68,10 @@ fpu_mark_used(lwp_t *l)
 	pcu_discard(&fpu_ops, l, true);
 }
 
-#ifdef PPC_HAVE_FPU
 void
 fpu_state_load(lwp_t *l, u_int flags)
 {
+#ifdef PPC_HAVE_FPU
 	struct pcb * const pcb = lwp_getpcb(l);
 
 	if ((flags & PCU_VALID) == 0) {
@@ -98,6 +92,7 @@ fpu_state_load(lwp_t *l, u_int flags)
 
 	curcpu()->ci_ev_fpusw.ev_count++;
 	l->l_md.md_utf->tf_srr1 |= PSL_FP|(pcb->pcb_flags & (PCB_FE0|PCB_FE1));
+#endif
 }
 
 /*
@@ -106,6 +101,7 @@ fpu_state_load(lwp_t *l, u_int flags)
 void
 fpu_state_save(lwp_t *l)
 {
+#ifdef PPC_HAVE_FPU
 	struct pcb * const pcb = lwp_getpcb(l);
 
 	const register_t msr = mfmsr();
@@ -117,12 +113,15 @@ fpu_state_save(lwp_t *l)
 
 	mtmsr(msr);
 	__asm volatile ("isync");
+#endif
 }
 
 void
 fpu_state_release(lwp_t *l)
 {
+#ifdef PPC_HAVE_FPU
 	l->l_md.md_utf->tf_srr1 &= ~PSL_FP;
+#endif
 }
 
 #define	STICKYBITS	(FPSCR_VX|FPSCR_OX|FPSCR_UX|FPSCR_ZX|FPSCR_XX)
@@ -139,6 +138,7 @@ fpu_get_fault_code(void)
 	uint32_t fpscr, ofpscr;
 	int code;
 
+#ifdef PPC_HAVE_FPU
 	kpreempt_disable();
 
 	struct cpu_info * const ci = curcpu();
@@ -182,6 +182,10 @@ fpu_get_fault_code(void)
 	}
 
 	kpreempt_enable();
+#else /* !PPC_HAVE_FPU */
+	fpscr64 = *(uint64_t *)&pcb->pcb_fpu.fpscr;
+	((uint32_t *)&pcb->pcb_fpu.fpscr)[_QUAD_LOWWORD] &= ~MASKBITS;
+#endif
 
 	/*
 	 * Now determine the fault type.  First we test to see if any of sticky
@@ -207,7 +211,6 @@ fpu_get_fault_code(void)
 	else				code = 0;
 	return code;
 }
-#endif /* PPC_HAVE_FPU */
 
 bool
 fpu_save_to_mcontext(lwp_t *l, mcontext_t *mcp, unsigned int *flagp)

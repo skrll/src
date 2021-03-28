@@ -1,4 +1,4 @@
-/* $NetBSD: sun4i_emac.c,v 1.11 2019/05/28 07:41:46 msaitoh Exp $ */
+/* $NetBSD: sun4i_emac.c,v 1.14 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2013-2017 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: sun4i_emac.c,v 1.11 2019/05/28 07:41:46 msaitoh Exp $");
+__KERNEL_RCSID(1, "$NetBSD: sun4i_emac.c,v 1.14 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -198,9 +198,9 @@ struct sun4i_emac_softc {
 	uint32_t sc_txbuf[EMAC_TXBUF_SIZE/4];
 };
 
-static const char * compatible[] = {
-	"allwinner,sun4i-a10-emac",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun4i-a10-emac" },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(sun4i_emac, sizeof(struct sun4i_emac_softc),
@@ -231,7 +231,7 @@ sun4i_emac_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -299,8 +299,8 @@ sun4i_emac_attach(device_t parent, device_t self, void *aux)
 	sun4i_emac_write(sc, EMAC_INT_STA_REG,
 	    sun4i_emac_read(sc, EMAC_INT_STA_REG));
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_NET, 0,
-	    sun4i_emac_intr, sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_NET, 0,
+	    sun4i_emac_intr, sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt on %s\n",
 		    intrstr);
@@ -569,13 +569,13 @@ sun4i_emac_rx_intr(struct sun4i_emac_softc *sc)
 		uint32_t rxsts = __SHIFTOUT(rxhdr, EMAC_RXHDR_STS);
 
 		if (rxlen < ETHER_MIN_LEN || (rxsts & EMAC_RX_STA_PKTOK) == 0) {
-			sc->sc_ec.ec_if.if_ierrors++;
+			if_statinc(&sc->sc_ec.ec_if, if_ierrors);
 			continue;
 		}
 
 		m = sun4i_emac_mgethdr(sc, rxlen);
 		if (m == NULL) {
-			sc->sc_ec.ec_if.if_ierrors++;
+			if_statinc(&sc->sc_ec.ec_if, if_ierrors);
 			sun4i_emac_rxfifo_consume(sc, rxlen);
 			return;
 		}
@@ -831,7 +831,7 @@ sun4i_emac_ifwatchdog(struct ifnet *ifp)
 
 	device_printf(sc->sc_dev, "device timeout\n");
 
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	sun4i_emac_ifinit(ifp);
 	sun4i_emac_ifstart(ifp);
 }

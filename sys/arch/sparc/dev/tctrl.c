@@ -1,4 +1,4 @@
-/*	$NetBSD: tctrl.c,v 1.61 2017/10/25 08:12:37 maya Exp $	*/
+/*	$NetBSD: tctrl.c,v 1.63 2021/01/04 15:29:34 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2005, 2006 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tctrl.c,v 1.61 2017/10/25 08:12:37 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tctrl.c,v 1.63 2021/01/04 15:29:34 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -260,6 +260,8 @@ tctrl_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_tft_on = 1;
 
+	mutex_init(&sc->sc_requestlock, MUTEX_DEFAULT, IPL_NONE);
+
 	/* clear any pending data.
 	 */
 	for (i = 0; i < 10000; i++) {
@@ -312,7 +314,6 @@ tctrl_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ext_pending = 0;
 		sc->sc_ext_pending = 0;
 
-	mutex_init(&sc->sc_requestlock, MUTEX_DEFAULT, IPL_NONE);
 	selinit(&sc->sc_rsel);
 
 	/* setup sensors and register the power button */
@@ -1217,7 +1218,7 @@ filt_tctrlrdetach(struct knote *kn)
 	int s;
 
 	s = splts102();
-	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_rsel, kn);
 	splx(s);
 }
 
@@ -1242,12 +1243,10 @@ tctrlkqfilter(dev_t dev, struct knote *kn)
 {
 	struct tctrl_softc *sc = device_lookup_private(&tctrl_cd,
 						       TCTRL_STD_DEV);
-	struct klist *klist;
 	int s;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->sc_rsel.sel_klist;
 		kn->kn_fop = &tctrlread_filtops;
 		break;
 
@@ -1258,7 +1257,7 @@ tctrlkqfilter(dev_t dev, struct knote *kn)
 	kn->kn_hook = sc;
 
 	s = splts102();
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(&sc->sc_rsel, kn);
 	splx(s);
 
 	return (0);

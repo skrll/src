@@ -1,6 +1,6 @@
 /* Target-dependent code for NetBSD/powerpc.
 
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2020 Free Software Foundation, Inc.
 
    Contributed by Wasabi Systems, Inc.
 
@@ -28,7 +28,9 @@
 #include "tramp-frame.h"
 
 #include "ppc-tdep.h"
+#include "nbsd-tdep.h"
 #include "ppc-nbsd-tdep.h"
+#include "ppc-tdep.h"
 #include "solib-svr4.h"
 
 /* Register offsets from <machine/reg.h>.  */
@@ -74,8 +76,8 @@ ppcnbsd_return_value (struct gdbarch *gdbarch, struct value *function,
 		      gdb_byte *readbuf, const gdb_byte *writebuf)
 {
 #if 0
-  if ((TYPE_CODE (valtype) == TYPE_CODE_STRUCT
-       || TYPE_CODE (valtype) == TYPE_CODE_UNION)
+  if ((valtype->code () == TYPE_CODE_STRUCT
+       || valtype->code () == TYPE_CODE_UNION)
       && !((TYPE_LENGTH (valtype) == 16 || TYPE_LENGTH (valtype) == 8)
 	    && TYPE_VECTOR (valtype))
       && !(TYPE_LENGTH (valtype) == 1
@@ -173,6 +175,8 @@ static void
 ppcnbsd_init_abi (struct gdbarch_info info,
                   struct gdbarch *gdbarch)
 {
+  nbsd_init_abi (info, gdbarch);
+
   /* For NetBSD, this is an on again, off again thing.  Some systems
      do use the broken struct convention, and some don't.  */
   set_gdbarch_return_value (gdbarch, ppcnbsd_return_value);
@@ -188,14 +192,15 @@ ppcnbsd_init_abi (struct gdbarch_info info,
   tramp_frame_prepend_unwinder (gdbarch, &ppcnbsd2_sigtramp);
 }
 
+void _initialize_ppcnbsd_tdep ();
 void
-_initialize_ppcnbsd_tdep (void)
+_initialize_ppcnbsd_tdep ()
 {
   gdbarch_register_osabi (bfd_arch_powerpc, 0, GDB_OSABI_NETBSD,
 			  ppcnbsd_init_abi);
 
   /* Avoid initializing the register offsets again if they were
-     already initailized by ppcnbsd-nat.c.  */
+     already initialized by ppcnbsd-nat.c.  */
   if (ppcnbsd_reg_offsets.pc_offset == 0)
     {
       /* General-purpose registers.  */

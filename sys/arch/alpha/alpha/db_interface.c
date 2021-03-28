@@ -1,4 +1,4 @@
-/* $NetBSD: db_interface.c,v 1.34 2012/02/06 02:14:10 matt Exp $ */
+/* $NetBSD: db_interface.c,v 1.36 2021/02/23 07:13:51 mrg Exp $ */
 
 /*
  * Mach Operating System
@@ -52,7 +52,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.34 2012/02/06 02:14:10 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.36 2021/02/23 07:13:51 mrg Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -95,7 +95,7 @@ const struct db_command db_machine_command_table[] = {
 	{ DDB_ADD_CMD("cpu",	db_mach_cpu,	0,
 	  "switch to another cpu", "cpu-no", NULL) },
 #endif
-	{ DDB_ADD_CMD(NULL,     NULL,           0,NULL,NULL,NULL) },
+	{ DDB_END_CMD },
 };
 
 static int db_alpha_regop(const struct db_variable *, db_expr_t *, int);
@@ -176,7 +176,7 @@ int
 ddb_trap(unsigned long a0, unsigned long a1, unsigned long a2, unsigned long entry, db_regs_t *regs)
 {
 	struct cpu_info *ci = curcpu();
-	int s;
+	unsigned long psl;
 
 	if (entry != ALPHA_KENTRY_IF ||
 	    (a0 != ALPHA_IF_CODE_BPT && a0 != ALPHA_IF_CODE_BUGCHK)) {
@@ -200,7 +200,12 @@ ddb_trap(unsigned long a0, unsigned long a1, unsigned long a2, unsigned long ent
 	/* Our register state is simply the trapframe. */
 	ddb_regp = ci->ci_db_regs = regs;
 
-	s = splhigh();
+	/*
+	 * Use SWPIPL directly; we want to avoid processing
+	 * software interrrupts when we go back.  Soft ints
+	 * will be caught later, so not to worry.
+	 */
+	psl = alpha_pal_swpipl(ALPHA_PSL_IPL_HIGH);
 
 	db_active++;
 	cnpollc(true);		/* Set polling mode, unblank video */
@@ -210,7 +215,7 @@ ddb_trap(unsigned long a0, unsigned long a1, unsigned long a2, unsigned long ent
 	cnpollc(false);		/* Resume interrupt mode */
 	db_active--;
 
-	splx(s);
+	alpha_pal_swpipl(psl);
 
 	ddb_regp = ci->ci_db_regs = NULL;
 

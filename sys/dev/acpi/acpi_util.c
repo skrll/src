@@ -1,7 +1,7 @@
-/*	$NetBSD: acpi_util.c,v 1.15 2018/12/21 14:51:12 jmcneill Exp $ */
+/*	$NetBSD: acpi_util.c,v 1.24 2021/02/05 17:12:43 thorpej Exp $ */
 
 /*-
- * Copyright (c) 2003, 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 2003, 2007, 2021 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_util.c,v 1.15 2018/12/21 14:51:12 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_util.c,v 1.24 2021/02/05 17:12:43 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -86,6 +86,75 @@ static const char * const acpicpu_ids[] = {
 	"ACPI0007",
 	NULL
 };
+
+/*
+ * ACPI device handle support.
+ */
+
+static device_call_t
+acpi_devhandle_lookup_device_call(devhandle_t handle, const char *name,
+    devhandle_t *call_handlep)
+{
+	__link_set_decl(acpi_device_calls, struct device_call_descriptor);
+	struct device_call_descriptor * const *desc;
+
+	__link_set_foreach(desc, acpi_device_calls) {
+		if (strcmp((*desc)->name, name) == 0) {
+			return (*desc)->call;
+		}
+	}
+	return NULL;
+}
+
+static const struct devhandle_impl acpi_devhandle_impl = {
+	.type = DEVHANDLE_TYPE_ACPI,
+	.lookup_device_call = acpi_devhandle_lookup_device_call,
+};
+
+devhandle_t
+devhandle_from_acpi(ACPI_HANDLE const hdl)
+{
+	devhandle_t handle = {
+		.impl = &acpi_devhandle_impl,
+		.pointer = hdl,
+	};
+
+	return handle;
+}
+
+ACPI_HANDLE
+devhandle_to_acpi(devhandle_t const handle)
+{
+	KASSERT(devhandle_type(handle) == DEVHANDLE_TYPE_ACPI);
+
+	return handle.pointer;
+}
+
+static int
+acpi_device_enumerate_children(device_t dev, devhandle_t call_handle, void *v)
+{
+	struct device_enumerate_children_args *args = v;
+	ACPI_HANDLE hdl = devhandle_to_acpi(call_handle);
+	struct acpi_devnode *devnode, *ad;
+
+	devnode = acpi_match_node(hdl);
+	KASSERT(devnode != NULL);
+
+	SIMPLEQ_FOREACH(ad, &devnode->ad_child_head, ad_child_list) {
+		if (ad->ad_devinfo->Type != ACPI_TYPE_DEVICE ||
+		    !acpi_device_present(ad->ad_handle)) {
+			continue;
+		}
+		if (!args->callback(dev, devhandle_from_acpi(ad->ad_handle),
+				    args->callback_arg)) {
+			break;
+		}
+	}
+
+	return 0;
+}
+ACPI_DEVICE_CALL_REGISTER("device-enumerate-children",
+			  acpi_device_enumerate_children)
 
 /*
  * Evaluate an integer object.
@@ -306,6 +375,153 @@ acpi_name(ACPI_HANDLE handle)
 }
 
 /*
+ * Pack _HID and _CID ID strings into an OpenFirmware-style
+ * string list.
+ */
+char *
+acpi_pack_compat_list(ACPI_DEVICE_INFO *ad, size_t *sizep)
+{
+	KASSERT(sizep != NULL);
+
+	char *sl = NULL;
+	size_t slsize = 0;
+	uint32_t i;
+
+	if ((ad->Valid & ACPI_VALID_HID) != 0) {
+		strlist_append(&sl, &slsize, ad->HardwareId.String);
+	}
+
+	if ((ad->Valid & ACPI_VALID_CID) != 0) {
+		for (i = 0; i < ad->CompatibleIdList.Count; i++) {
+			strlist_append(&sl, &slsize,
+			    ad->CompatibleIdList.Ids[i].String);
+		}
+	}
+
+	*sizep = slsize;
+	return sl;
+}
+
+/*
+ * The ACPI_PNP_DEVICE_ID type is somewhat inconvenient for us to
+ * use.  We'll need some temporary space to pack it into an array
+ * of C strings.  Room for 8 should be plenty, but we can allocate
+ * more if necessary.
+ */
+#define	ACPI_COMPATSTR_MAX	8
+
+static const char **
+acpi_compatible_alloc_strarray(ACPI_PNP_DEVICE_ID *ids,
+    unsigned int count, const char **buf)
+{
+	unsigned int i;
+
+	buf = kmem_tmpbuf_alloc(count * sizeof(const char *),
+	    buf, ACPI_COMPATSTR_MAX * sizeof(const char *), KM_SLEEP);
+	for (i = 0; i < count; i++) {
+		buf[i] = ids[i].String;
+	}
+	return buf;
+}
+
+static void
+acpi_compatible_free_strarray(const char **cpp, unsigned int count,
+    const char **buf)
+{
+	kmem_tmpbuf_free(cpp, count * sizeof(const char *), buf);
+}
+
+/*
+ * acpi_compatible_match --
+ *
+ *	Returns a weighted match value, comparing the _HID and _CID
+ *	IDs against a driver's compatbility data.
+ */
+int
+acpi_compatible_match(const struct acpi_attach_args * const aa,
+    const struct device_compatible_entry * const dce)
+{
+	const char *strings[ACPI_COMPATSTR_MAX * sizeof(const char *)];
+	const char **cpp;
+
+	if (aa->aa_node->ad_type != ACPI_TYPE_DEVICE) {
+		return 0;
+	}
+
+	ACPI_DEVICE_INFO *ad = aa->aa_node->ad_devinfo;
+
+	if ((ad->Valid & ACPI_VALID_HID) != 0) {
+		strings[0] = ad->HardwareId.String;
+
+		/* Matching _HID wins big. */
+		if (device_compatible_pmatch(strings, 1, dce) != 0) {
+			return ACPI_MATCHSCORE_HID;
+		}
+	}
+
+	if ((ad->Valid & ACPI_VALID_CID) != 0) {
+		cpp = acpi_compatible_alloc_strarray(ad->CompatibleIdList.Ids,
+		    ad->CompatibleIdList.Count, strings);
+		int rv;
+
+		rv = device_compatible_pmatch(cpp,
+		    ad->CompatibleIdList.Count, dce);
+		acpi_compatible_free_strarray(cpp, ad->CompatibleIdList.Count,
+		    strings);
+		if (rv) {
+			rv = (rv - 1) + ACPI_MATCHSCORE_CID;
+			if (rv > ACPI_MATCHSCORE_CID_MAX) {
+				rv = ACPI_MATCHSCORE_CID_MAX;
+			}
+			return rv;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * acpi_compatible_lookup --
+ *
+ *	Returns the device_compatible_entry that matches the _HID
+ *	or _CID ID.
+ */
+const struct device_compatible_entry *
+acpi_compatible_lookup(const struct acpi_attach_args * const aa,
+    const struct device_compatible_entry * const dce)
+{
+	const struct device_compatible_entry *rv = NULL;
+	const char *strings[ACPI_COMPATSTR_MAX];
+	const char **cpp;
+
+	if (aa->aa_node->ad_type != ACPI_TYPE_DEVICE) {
+		return NULL;
+	}
+
+	ACPI_DEVICE_INFO *ad = aa->aa_node->ad_devinfo;
+
+	if ((ad->Valid & ACPI_VALID_HID) != 0) {
+		strings[0] = ad->HardwareId.String;
+
+		rv = device_compatible_plookup(strings, 1, dce);
+		if (rv != NULL)
+			return rv;
+	}
+
+	if ((ad->Valid & ACPI_VALID_CID) != 0) {
+		cpp = acpi_compatible_alloc_strarray(ad->CompatibleIdList.Ids,
+		    ad->CompatibleIdList.Count, strings);
+
+		rv = device_compatible_plookup(cpp,
+		    ad->CompatibleIdList.Count, dce);
+		acpi_compatible_free_strarray(cpp, ad->CompatibleIdList.Count,
+		    strings);
+	}
+
+	return rv;
+}
+
+/*
  * Match given IDs against _HID and _CIDs.
  */
 int
@@ -375,7 +591,7 @@ acpi_match_class(ACPI_HANDLE handle, uint8_t pci_class, uint8_t pci_subclass,
 done:
 	if (buf.Pointer)
 		ACPI_FREE(buf.Pointer);
-	return match;
+	return match ? ACPI_MATCHSCORE_CLS : 0;
 }
 
 /*
@@ -550,7 +766,6 @@ out:
 }
 
 struct acpi_irq_handler {
-	ACPI_HANDLE aih_hdl;
 	uint32_t aih_irq;
 	void *aih_ih;
 };
@@ -563,8 +778,7 @@ acpi_intr_establish(device_t dev, uint64_t c, int ipl, bool mpsafe,
 	ACPI_HANDLE hdl = (void *)(uintptr_t)c;
 	struct acpi_resources res;
 	struct acpi_irq *irq;
-	struct acpi_irq_handler *aih = NULL;
-	void *ih;
+	void *aih = NULL;
 
 	rv = acpi_resource_parse(dev, hdl, "_CRS", &res,
 	    &acpi_resource_parse_ops_quiet);
@@ -575,19 +789,48 @@ acpi_intr_establish(device_t dev, uint64_t c, int ipl, bool mpsafe,
 	if (irq == NULL)
 		goto end;
 
-	const int type = (irq->ar_type == ACPI_EDGE_SENSITIVE) ? IST_EDGE : IST_LEVEL;
-	ih = acpi_md_intr_establish(irq->ar_irq, ipl, type, intr, iarg, mpsafe, xname);
-	if (ih == NULL)
-		goto end;
-
-	aih = kmem_alloc(sizeof(struct acpi_irq_handler), KM_SLEEP);
-	aih->aih_hdl = hdl;
-	aih->aih_irq = irq->ar_irq;
-	aih->aih_ih = ih;
+	aih = acpi_intr_establish_irq(dev, irq, ipl, mpsafe,
+	    intr, iarg, xname);
 
 end:
 	acpi_resource_cleanup(&res);
+
 	return aih;
+}
+
+void *
+acpi_intr_establish_irq(device_t dev, struct acpi_irq *irq, int ipl,
+    bool mpsafe, int (*intr)(void *), void *iarg, const char *xname)
+{
+	struct acpi_irq_handler *aih;
+	void *ih;
+
+	const int type = (irq->ar_type == ACPI_EDGE_SENSITIVE) ? IST_EDGE : IST_LEVEL;
+	ih = acpi_md_intr_establish(irq->ar_irq, ipl, type, intr, iarg, mpsafe, xname);
+	if (ih == NULL)
+		return NULL;
+
+	aih = kmem_alloc(sizeof(struct acpi_irq_handler), KM_SLEEP);
+	aih->aih_irq = irq->ar_irq;
+	aih->aih_ih = ih;
+
+	return aih;
+}
+
+void
+acpi_intr_mask(void *c)
+{
+	struct acpi_irq_handler * const aih = c;
+
+	acpi_md_intr_mask(aih->aih_ih);
+}
+
+void
+acpi_intr_unmask(void *c)
+{
+	struct acpi_irq_handler * const aih = c;
+
+	acpi_md_intr_unmask(aih->aih_ih);
 }
 
 void
@@ -609,7 +852,7 @@ acpi_intr_string(void *c, char *buf, size_t size)
 }
 
 /*
- * USB Device-Specific Data (_DSD) support
+ * Device-Specific Data (_DSD) support
  */
 
 static UINT8 acpi_dsd_uuid[ACPI_UUID_LENGTH] = {
@@ -617,23 +860,19 @@ static UINT8 acpi_dsd_uuid[ACPI_UUID_LENGTH] = {
 	0x8a, 0x91, 0xbc, 0x9b, 0xbf, 0x4a, 0xa3, 0x01
 };
 
-ACPI_STATUS
-acpi_dsd_integer(ACPI_HANDLE handle, const char *prop, ACPI_INTEGER *val)
+static ACPI_STATUS
+acpi_dsd_property(ACPI_HANDLE handle, const char *prop, ACPI_BUFFER *pbuf, ACPI_OBJECT_TYPE type, ACPI_OBJECT **ret)
 {
 	ACPI_OBJECT *obj, *uuid, *props, *pobj, *propkey, *propval;
 	ACPI_STATUS rv;
-	ACPI_BUFFER buf;
 	int n;
 
-	buf.Pointer = NULL;
-	buf.Length = ACPI_ALLOCATE_BUFFER;
-
-	rv = AcpiEvaluateObjectTyped(handle, "_DSD", NULL, &buf, ACPI_TYPE_PACKAGE);
+	rv = AcpiEvaluateObjectTyped(handle, "_DSD", NULL, pbuf, ACPI_TYPE_PACKAGE);
 	if (ACPI_FAILURE(rv))
 		return rv;
 
 	props = NULL;
-	obj = (ACPI_OBJECT *)buf.Pointer;
+	obj = (ACPI_OBJECT *)pbuf->Pointer;
 	for (n = 0; (n + 1) < obj->Package.Count; n += 2) {
 		uuid = &obj->Package.Elements[n];
 		if (uuid->Buffer.Length == ACPI_UUID_LENGTH &&
@@ -642,10 +881,8 @@ acpi_dsd_integer(ACPI_HANDLE handle, const char *prop, ACPI_INTEGER *val)
 			break;
 		}
 	}
-	if (props == NULL) {
-		rv = AE_NOT_FOUND;
-		goto done;
-	}
+	if (props == NULL)
+		return AE_NOT_FOUND;
 
 	for (n = 0; n < props->Package.Count; n++) {
 		pobj = &props->Package.Elements[n];
@@ -658,16 +895,152 @@ acpi_dsd_integer(ACPI_HANDLE handle, const char *prop, ACPI_INTEGER *val)
 		if (strcmp(propkey->String.Pointer, prop) != 0)
 			continue;
 
-		if (propval->Type != ACPI_TYPE_INTEGER) {
-			rv = AE_TYPE;
+		if (propval->Type != type) {
+			return AE_TYPE;
 		} else {
-			*val = propval->Integer.Value;
-			rv = AE_OK;
+			*ret = propval;
+			return AE_OK;
 		}
 		break;
 	}
 
-done:
-	ACPI_FREE(buf.Pointer);
+	return AE_NOT_FOUND;
+}
+
+ACPI_STATUS
+acpi_dsd_integer(ACPI_HANDLE handle, const char *prop, ACPI_INTEGER *val)
+{
+	ACPI_OBJECT *propval;
+	ACPI_STATUS rv;
+	ACPI_BUFFER buf;
+
+	buf.Pointer = NULL;
+	buf.Length = ACPI_ALLOCATE_BUFFER;
+
+	rv = acpi_dsd_property(handle, prop, &buf, ACPI_TYPE_INTEGER, &propval);
+	if (ACPI_SUCCESS(rv))
+		*val = propval->Integer.Value;
+
+	if (buf.Pointer != NULL)
+		ACPI_FREE(buf.Pointer);
 	return rv;
+}
+
+ACPI_STATUS
+acpi_dsd_string(ACPI_HANDLE handle, const char *prop, char **val)
+{
+	ACPI_OBJECT *propval;
+	ACPI_STATUS rv;
+	ACPI_BUFFER buf;
+
+	buf.Pointer = NULL;
+	buf.Length = ACPI_ALLOCATE_BUFFER;
+
+	rv = acpi_dsd_property(handle, prop, &buf, ACPI_TYPE_STRING, &propval);
+	if (ACPI_SUCCESS(rv))
+		*val = kmem_strdup(propval->String.Pointer, KM_SLEEP);
+
+	if (buf.Pointer != NULL)
+		ACPI_FREE(buf.Pointer);
+	return rv;
+}
+
+/*
+ * Device Specific Method (_DSM) support
+ */
+
+ACPI_STATUS
+acpi_dsm_typed(ACPI_HANDLE handle, uint8_t *uuid, ACPI_INTEGER rev,
+    ACPI_INTEGER func, const ACPI_OBJECT *arg3, ACPI_OBJECT_TYPE return_type,
+    ACPI_OBJECT **return_obj)
+{
+	ACPI_OBJECT_LIST arg;
+	ACPI_OBJECT obj[4];
+	ACPI_BUFFER buf;
+	ACPI_STATUS status;
+
+	arg.Count = 4;
+	arg.Pointer = obj;
+
+	obj[0].Type = ACPI_TYPE_BUFFER;
+	obj[0].Buffer.Length = ACPI_UUID_LENGTH;
+	obj[0].Buffer.Pointer = uuid;
+
+	obj[1].Type = ACPI_TYPE_INTEGER;
+	obj[1].Integer.Value = rev;
+
+	obj[2].Type = ACPI_TYPE_INTEGER;
+	obj[2].Integer.Value = func;
+
+	if (arg3 != NULL) {
+		obj[3] = *arg3;
+	} else {
+		obj[3].Type = ACPI_TYPE_PACKAGE;
+		obj[3].Package.Count = 0;
+		obj[3].Package.Elements = NULL;
+	}
+
+	buf.Pointer = NULL;
+	buf.Length = ACPI_ALLOCATE_BUFFER;
+
+	if (return_obj == NULL && return_type == ACPI_TYPE_ANY) {
+		status = AcpiEvaluateObject(handle, "_DSM", &arg, NULL);
+	} else {
+		*return_obj = NULL;
+		status = AcpiEvaluateObjectTyped(handle, "_DSM", &arg, &buf,
+		    return_type);
+	}
+	if (ACPI_FAILURE(status)) {
+		return status;
+	}
+	if (return_obj != NULL) {
+		*return_obj = buf.Pointer;
+	} else if (buf.Pointer != NULL) {
+		ACPI_FREE(buf.Pointer);
+	}
+	return AE_OK;
+}
+
+ACPI_STATUS
+acpi_dsm_integer(ACPI_HANDLE handle, uint8_t *uuid, ACPI_INTEGER rev,
+    ACPI_INTEGER func, const ACPI_OBJECT *arg3, ACPI_INTEGER *ret)
+{
+	ACPI_OBJECT *obj;
+	ACPI_STATUS status;
+
+	status = acpi_dsm_typed(handle, uuid, rev, func, arg3,
+	    ACPI_TYPE_INTEGER, &obj);
+	if (ACPI_FAILURE(status)) {
+		return status;
+	}
+
+	*ret = obj->Integer.Value;
+	ACPI_FREE(obj);
+
+	return AE_OK;
+}
+
+ACPI_STATUS
+acpi_dsm(ACPI_HANDLE handle, uint8_t *uuid, ACPI_INTEGER rev,
+    ACPI_INTEGER func, const ACPI_OBJECT *arg3, ACPI_OBJECT **return_obj)
+{
+	return acpi_dsm_typed(handle, uuid, rev, func, arg3, ACPI_TYPE_ANY,
+	    return_obj);
+}
+
+ACPI_STATUS
+acpi_claim_childdevs(device_t dev, struct acpi_devnode *devnode)
+{
+	struct acpi_devnode *ad;
+
+	SIMPLEQ_FOREACH(ad, &devnode->ad_child_head, ad_child_list) {
+		if (ad->ad_device != NULL)
+			continue;
+		aprint_debug_dev(dev, "claiming %s\n",
+		    acpi_name(ad->ad_handle));
+		ad->ad_device = dev;
+		acpi_claim_childdevs(dev, ad);
+	}
+
+	return AE_OK;
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: t_siginfo.c,v 1.36 2019/04/25 20:48:54 kamil Exp $ */
+/* $NetBSD: t_siginfo.c,v 1.45 2021/01/13 06:44:55 skrll Exp $ */
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -53,6 +53,7 @@
 
 #include "isqemu.h"
 
+#ifdef ENABLE_TESTS
 /* for sigbus */
 volatile char *addr;
 
@@ -366,8 +367,8 @@ ATF_TC_BODY(sigfpe_int, tc)
 	struct sigaction sa;
 	long l = strtol("0", NULL, 10);
 
-#if defined(__powerpc__)
-	atf_tc_skip("Test not valid on powerpc");
+#if defined(__powerpc__) || defined(__aarch64__)
+	atf_tc_skip("Integer division by zero doesn't trap");
 #endif
 	if (sigsetjmp(sigfpe_int_env, 0) == 0) {
 		sa.sa_flags = SA_SIGINFO;
@@ -464,11 +465,27 @@ ATF_TC_BODY(sigbus_adraln, tc)
 		atf_tc_skip("No SIGBUS signal for unaligned accesses");
 #endif
 
+#ifdef __powerpc__
+	/*
+	 * SIGBUS is not mandatory for powerpc; most processors (not all)
+	 * can deal with unaligned accesses.
+	 */
+	atf_tc_skip("SIGBUS signal for unaligned accesses is "
+	    "not mandatory for this architecture");
+#endif
+
 	/* m68k (except sun2) never issue SIGBUS (PR lib/49653),
 	 * same for armv8 or newer */
-	if (strcmp(MACHINE_ARCH, "m68k") == 0 ||
-	    strcmp(MACHINE_ARCH, "aarch64") == 0)
-		atf_tc_skip("No SIGBUS signal for unaligned accesses");
+#if (defined(__m68k__) && !defined(__mc68010__)) || \
+    defined(__aarch64__)
+	atf_tc_skip("No SIGBUS signal for unaligned accesses");
+#endif
+
+#if defined(__mips__)
+	/* no way of detecting if on GXemul, so disable everywhere for now */
+	atf_tc_skip("GXemul fails to trap unaligned accesses with "
+	    "correct ENTRYHI");
+#endif
 
 	sa.sa_flags = SA_SIGINFO;
 	sa.sa_sigaction = sigbus_action;
@@ -485,7 +502,7 @@ ATF_TC_BODY(sigbus_adraln, tc)
 	addr = calloc(2, sizeof(int));
 	ATF_REQUIRE(addr != NULL);
 
-	if (isQEMU())
+	if (isQEMU_TCG())
 		atf_tc_expect_fail("QEMU fails to trap unaligned accesses");
 
 	/* Force an unaligned access */
@@ -496,9 +513,25 @@ ATF_TC_BODY(sigbus_adraln, tc)
 	atf_tc_fail("Test did not fault as expected");
 }
 
+#else
+ATF_TC(dummy);
+ATF_TC_HEAD(dummy, tc)
+{
+	atf_tc_set_md_var(tc, "descr", "A dummy test");
+}
+
+ATF_TC_BODY(dummy, tc)
+{
+
+	// Dummy, skipped
+	// The ATF framework requires at least a single defined test.
+}
+#endif
+
 ATF_TP_ADD_TCS(tp)
 {
 
+#ifdef ENABLE_TESTS
 	ATF_TP_ADD_TC(tp, sigalarm);
 	ATF_TP_ADD_TC(tp, sigchild_normal);
 	ATF_TP_ADD_TC(tp, sigchild_dump);
@@ -507,6 +540,9 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sigfpe_int);
 	ATF_TP_ADD_TC(tp, sigsegv);
 	ATF_TP_ADD_TC(tp, sigbus_adraln);
+#else
+	ATF_TP_ADD_TC(tp, dummy);
+#endif
 
 	return atf_no_error();
 }

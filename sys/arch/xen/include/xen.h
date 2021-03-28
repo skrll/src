@@ -1,4 +1,4 @@
-/*	$NetBSD: xen.h,v 1.44 2019/05/09 17:09:50 bouyer Exp $	*/
+/*	$NetBSD: xen.h,v 1.47 2020/05/02 16:44:36 bouyer Exp $	*/
 
 /*
  *
@@ -60,6 +60,8 @@ void	xen_parse_cmdline(int, union xen_cmdline_parseinfo *);
 
 void	xenconscn_attach(void);
 
+void 	xen_pvh_consinit(void);
+
 void	xenprivcmd_init(void);
 
 void	xbdback_init(void);
@@ -69,8 +71,6 @@ void	xen_shm_init(void);
 void	xenevt_event(int);
 void	xenevt_setipending(int, int);
 void	xenevt_notify(void);
-
-void	idle_block(void);
 
 /* xen_machdep.c */
 void	sysctl_xen_suspend_setup(void);
@@ -165,20 +165,6 @@ xen_atomic_xchg(volatile XATOMIC_T *ptr, unsigned long val)
 #endif
 	    :"=r" (result)
 	    :"m" (*ptr), "0" (val)
-	    :"memory");
-
-	return result;
-}
-
-static inline uint16_t
-xen_atomic_cmpxchg16(volatile uint16_t *ptr, uint16_t  val, uint16_t newval)
-{
-	unsigned long result;
-
-        __asm volatile(__LOCK_PREFIX
-	    "cmpxchgw %w1,%2"
-	    :"=a" (result)
-	    :"q"(newval), "m" (*ptr), "0" (val)
 	    :"memory");
 
 	return result;
@@ -309,6 +295,8 @@ xen_feature(int f)
 	KASSERT(f < XENFEAT_NR_SUBMAPS * 32);
 	return xen_feature_tables[f];
 }
+
+void xen_bootconf(void);
 
 #endif /* !__ASSEMBLY__ */
 

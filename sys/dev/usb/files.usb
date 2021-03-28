@@ -1,4 +1,4 @@
-#	$NetBSD: files.usb,v 1.168 2019/09/20 10:34:54 mrg Exp $
+#	$NetBSD: files.usb,v 1.176 2020/07/13 04:44:03 mrg Exp $
 #
 # Config file and device description for machine-independent USB code.
 # Included by ports that need it.  Ports that use it must provide
@@ -27,7 +27,6 @@ defflag opt_usb.h	AUVITEK_I2C_DEBUG: USB_DEBUG
 defflag opt_usb.h	AXE_DEBUG: USB_DEBUG
 defflag opt_usb.h	AXEN_DEBUG: USB_DEBUG
 defflag opt_usb.h	CUE_DEBUG: USB_DEBUG
-defflag opt_usb.h	EZLOAD_DEBUG: USB_DEBUG
 defflag opt_usb.h	KUE_DEBUG: USB_DEBUG
 defflag opt_usb.h	OTUS_DEBUG: USB_DEBUG
 defflag opt_usb.h	RUM_DEBUG: USB_DEBUG
@@ -54,7 +53,6 @@ defflag opt_usb.h	UHSO_DEBUG: USB_DEBUG
 defflag opt_usb.h	UIPAD_DEBUG: USB_DEBUG
 defflag opt_usb.h	UIPAQ_DEBUG: USB_DEBUG
 defflag opt_usb.h	UIRDA_DEBUG: USB_DEBUG
-defflag opt_usb.h	UISDATA_DEBUG: USB_DEBUG
 defflag opt_usb.h	UKBD_DEBUG: USB_DEBUG
 defflag opt_usb.h	UKYOPON_DEBUG: USB_DEBUG
 defflag opt_usb.h	ULPT_DEBUG: USB_DEBUG
@@ -68,11 +66,11 @@ defflag opt_usb.h	UPGT_DEBUG: USB_DEBUG
 defflag opt_usb.h	UPLCOM_DEBUG: USB_DEBUG
 defflag opt_usb.h	UPL_DEBUG: USB_DEBUG
 defflag opt_usb.h	URAL_DEBUG: USB_DEBUG
-defflag opt_usb.h	URIO_DEBUG: USB_DEBUG
 defflag opt_usb.h	URL_DEBUG: USB_DEBUG
 defflag opt_usb.h	URNDIS_DEBUG: USB_DEBUG
 defflag opt_usb.h	URTWN_DEBUG: USB_DEBUG
 defflag opt_usb.h	URTW_DEBUG: USB_DEBUG
+defflag opt_usb.h	USBNET_DEBUG: USB_DEBUG
 defflag opt_usb.h	USCANNER_DEBUG: USB_DEBUG
 defflag opt_usb.h	USLSA_DEBUG: USB_DEBUG
 defflag opt_usb.h	USMSC_DEBUG: USB_DEBUG
@@ -84,7 +82,6 @@ defflag opt_usb.h	UTS_DEBUG: USB_DEBUG
 defflag opt_usb.h	UVIDEO_DEBUG: USB_DEBUG
 defflag opt_usb.h	UVISOR_DEBUG: USB_DEBUG
 defflag opt_usb.h	UVSCOM_DEBUG: USB_DEBUG
-defflag opt_usb.h	UYUREX_DEBUG: USB_DEBUG
 defflag opt_usb.h	ZYD_DEBUG: USB_DEBUG
 
 define	usbroothubif { }
@@ -117,10 +114,6 @@ file	dev/usb/uhub.c			usb
 
 # Modem and com serial port "bus"
 define	ucombus {[ portno = -1 ]}
-
-# EZ-USB firmware loader
-define	ezload
-file	dev/usb/ezload.c		ezload
 
 # Audio devices
 device	uaudio: audiobus
@@ -201,10 +194,9 @@ file	dev/usb/ulpt.c			ulpt			needs-flag
 
 
 # Mass storage
-device	umass: scsi, atapi, ata_hl
+device	umass: scsi, atapi
 attach	umass at usbifif
 file	dev/usb/umass.c			umass
-file	dev/usb/umass_isdata.c		umass & wd & atabus
 file	dev/usb/umass_quirks.c		umass
 file	dev/usb/umass_scsipi.c		umass & (scsibus | atapibus)
 
@@ -282,11 +274,6 @@ device	umodeswitch
 attach	umodeswitch at usbdevif
 file	dev/usb/umodeswitch.c		umodeswitch
 
-# Diamond Multimedia Rio 500
-device	urio
-attach	urio at usbdevif
-file	dev/usb/urio.c			urio			needs-flag
-
 # Apple iPad
 device	uipad
 attach	uipad at usbdevif
@@ -311,11 +298,6 @@ file	dev/usb/ugensa.c		ugensa
 device	u3g: ucombus, umodeswitch
 attach	u3g at usbifif
 file	dev/usb/u3g.c			u3g
-
-# YAP phone firmware loader
-device	uyap: ezload
-attach	uyap at usbdevif
-file	dev/usb/uyap.c			uyap
 
 # D-Link DSB-R100 FM radio
 device	udsbr: radiodev
@@ -436,6 +418,11 @@ device	uvscom: ucombus
 attach	uvscom at usbdevif
 file	dev/usb/uvscom.c		uvscom
 
+# Exar XR21V141x serial driver (mostly CDC)
+device	uxrcom: ucombus, umodem_common
+attach	uxrcom at usbifif
+file	dev/usb/uxrcom.c		uxrcom
+
 # Belkin & other serial driver
 define	ubsa_common
 file	dev/usb/ubsa_common.c		ubsa_common
@@ -527,11 +514,6 @@ file	dev/usb/udl.c			udl
 device	uhso: ifnet
 attach	uhso at usbdevif
 file	dev/usb/uhso.c			uhso
-
-# Maywa-denki/Kayac YUREX
-device	uyurex: hid
-attach	uyurex at uhidbus
-file	dev/usb/uyurex.c		uyurex
 
 # Microsoft RNDIS
 device	urndis: arp, ether, ifnet, usbnet

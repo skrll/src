@@ -1,4 +1,4 @@
-/*	$NetBSD: byte_swap.h,v 1.15 2008/04/28 20:23:24 martin Exp $	*/
+/*	$NetBSD: byte_swap.h,v 1.17 2020/08/10 10:59:33 rin Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -53,12 +53,12 @@ static __inline uint16_t __byte_swap_u16_variable(uint16_t);
 static __inline uint16_t
 __byte_swap_u16_variable(uint16_t x)
 {
-	__asm volatile ("rorw $8, %w1" : "=r" (x) : "0" (x)); 
+	__asm volatile ("rorw $8, %w1" : "=r" (x) : "0" (x));
 	return (x);
 }
 
 __END_DECLS
-#elif defined(_KERNEL) || defined(_LKM)
+#elif defined(_KERNEL)
 #define	__BYTE_SWAP_U32_VARIABLE __byte_swap_u32_variable
 #define	__BYTE_SWAP_U16_VARIABLE __byte_swap_u16_variable
 uint32_t	__byte_swap_u32_variable(uint32_t);

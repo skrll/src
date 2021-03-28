@@ -1,4 +1,4 @@
-/*	$NetBSD: union_subr.c,v 1.77 2018/01/28 15:48:44 christos Exp $	*/
+/*	$NetBSD: union_subr.c,v 1.79 2020/08/18 09:44:07 hannken Exp $	*/
 
 /*
  * Copyright (c) 1994
@@ -72,7 +72,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: union_subr.c,v 1.77 2018/01/28 15:48:44 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: union_subr.c,v 1.79 2020/08/18 09:44:07 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -232,9 +232,10 @@ union_newupper(struct union_node *un, struct vnode *uppervp)
 	unlock_ap.a_desc = VDESC(vop_unlock);
 	unlock_ap.a_vp = UNIONTOV(un);
 	genfs_unlock(&unlock_ap);
-	/* Update union vnode interlock. */
-	mutex_obj_hold(uppervp->v_interlock);
-	uvm_obj_setlock(&UNIONTOV(un)->v_uobj, uppervp->v_interlock);
+	/* Update union vnode interlock & vmobjlock. */
+	vshareilock(UNIONTOV(un), uppervp);
+	rw_obj_hold(uppervp->v_uobj.vmobjlock);
+	uvm_obj_setlock(&UNIONTOV(un)->v_uobj, uppervp->v_uobj.vmobjlock);
 	mutex_exit(&un->un_lock);
 	if (ohash != nhash) {
 		LIST_INSERT_HEAD(&uhashtbl[nhash], un, un_cache);
@@ -479,6 +480,7 @@ found:
 	un->un_dircache = 0;
 	un->un_openl = 0;
 	un->un_cflags = 0;
+	un->un_hooknode = false;
 
 	un->un_uppersz = VNOVAL;
 	un->un_lowersz = VNOVAL;
@@ -572,8 +574,9 @@ union_loadvnode(struct mount *mp, struct vnode *vp,
 	if (svp->v_type == VCHR || svp->v_type == VBLK)
 		spec_node_init(vp, svp->v_rdev);
 
-	mutex_obj_hold(svp->v_interlock);
-	uvm_obj_setlock(&vp->v_uobj, svp->v_interlock);
+	vshareilock(vp, svp);
+	rw_obj_hold(svp->v_uobj.vmobjlock);
+	uvm_obj_setlock(&vp->v_uobj, svp->v_uobj.vmobjlock);
 
 	/* detect the root vnode (and aliases) */
 	if ((un->un_uppervp == um->um_uppervp) &&
@@ -1065,7 +1068,7 @@ union_dircache(struct vnode *vp, struct lwp *l)
 	} else {
 		vpp = dircache;
 		do {
-			if (*vpp++ == VTOUNION(vp)->un_uppervp)
+			if (*vpp++ == VTOUNION(vp)->un_lowervp)
 				break;
 		} while (*vpp != NULLVP);
 	}
@@ -1074,10 +1077,12 @@ union_dircache(struct vnode *vp, struct lwp *l)
 		goto out;
 
 	vref(*vpp);
-	error = union_allocvp(&nvp, vp->v_mount, NULLVP, NULLVP, 0, *vpp, NULLVP, 0);
+	error = union_allocvp(&nvp, vp->v_mount, NULLVP, NULLVP, 0,
+	    NULLVP, *vpp, 0);
 	if (!error) {
 		vn_lock(nvp, LK_EXCLUSIVE | LK_RETRY);
 		VTOUNION(vp)->un_dircache = 0;
+		VTOUNION(nvp)->un_hooknode = true;
 		VTOUNION(nvp)->un_dircache = dircache;
 	}
 

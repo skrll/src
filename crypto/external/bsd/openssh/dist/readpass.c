@@ -1,5 +1,6 @@
-/*	$NetBSD: readpass.c,v 1.13 2019/10/12 18:32:22 christos Exp $	*/
-/* $OpenBSD: readpass.c,v 1.54 2019/06/28 13:35:04 deraadt Exp $ */
+/*	$NetBSD: readpass.c,v 1.15 2020/12/04 18:42:50 christos Exp $	*/
+/* $OpenBSD: readpass.c,v 1.63 2020/08/11 09:45:54 djm Exp $ */
+
 /*
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
  *
@@ -25,7 +26,7 @@
  */
 
 #include "includes.h"
-__RCSID("$NetBSD: readpass.c,v 1.13 2019/10/12 18:32:22 christos Exp $");
+__RCSID("$NetBSD: readpass.c,v 1.15 2020/12/04 18:42:50 christos Exp $");
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -48,7 +49,7 @@ __RCSID("$NetBSD: readpass.c,v 1.13 2019/10/12 18:32:22 christos Exp $");
 #include "uidswap.h"
 
 static char *
-ssh_askpass(const char *askpass, const char *msg)
+ssh_askpass(const char *askpass, const char *msg, const char *env_hint)
 {
 	pid_t pid, ret;
 	size_t len;
@@ -58,25 +59,27 @@ ssh_askpass(const char *askpass, const char *msg)
 	void (*osigchld)(int);
 
 	if (fflush(stdout) != 0)
-		error("ssh_askpass: fflush: %s", strerror(errno));
+		error("%s: fflush: %s", __func__, strerror(errno));
 	if (askpass == NULL)
 		fatal("internal error: askpass undefined");
 	if (pipe(p) == -1) {
-		error("ssh_askpass: pipe: %s", strerror(errno));
+		error("%s: pipe: %s", __func__, strerror(errno));
 		return NULL;
 	}
-	osigchld = signal(SIGCHLD, SIG_DFL);
+	osigchld = ssh_signal(SIGCHLD, SIG_DFL);
 	if ((pid = fork()) == -1) {
-		error("ssh_askpass: fork: %s", strerror(errno));
-		signal(SIGCHLD, osigchld);
+		error("%s: fork: %s", __func__, strerror(errno));
+		ssh_signal(SIGCHLD, osigchld);
 		return NULL;
 	}
 	if (pid == 0) {
 		close(p[0]);
 		if (dup2(p[1], STDOUT_FILENO) == -1)
-			fatal("ssh_askpass: dup2: %s", strerror(errno));
+			fatal("%s: dup2: %s", __func__, strerror(errno));
+		if (env_hint != NULL)
+			setenv("SSH_ASKPASS_PROMPT", env_hint, 1);
 		execlp(askpass, askpass, msg, (char *)NULL);
-		fatal("ssh_askpass: exec(%s): %s", askpass, strerror(errno));
+		fatal("%s: exec(%s): %s", __func__, askpass, strerror(errno));
 	}
 	close(p[1]);
 
@@ -96,7 +99,7 @@ ssh_askpass(const char *askpass, const char *msg)
 	while ((ret = waitpid(pid, &status, 0)) == -1)
 		if (errno != EINTR)
 			break;
-	signal(SIGCHLD, osigchld);
+	ssh_signal(SIGCHLD, osigchld);
 	if (ret == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
 		explicit_bzero(buf, sizeof(buf));
 		return NULL;
@@ -108,6 +111,9 @@ ssh_askpass(const char *askpass, const char *msg)
 	return pass;
 }
 
+/* private/internal read_passphrase flags */
+#define RP_ASK_PERMISSION	0x8000 /* pass hint to askpass for confirm UI */
+
 /*
  * Reads a passphrase from /dev/tty with echo turned off/on.  Returns the
  * passphrase (allocated with xmalloc).  Exits if EOF is encountered. If
@@ -118,11 +124,26 @@ char *
 read_passphrase(const char *prompt, int flags)
 {
 	char cr = '\r', *ret, buf[1024];
-	const char *askpass = NULL;
-	int rppflags, use_askpass = 0, ttyfd;
+	int rppflags, ttyfd, use_askpass = 0, allow_askpass = 0;
+	const char *askpass_hint = NULL, *askpass = NULL;
+	const char *s;
+
+	if ((s = getenv("DISPLAY")) != NULL)
+		allow_askpass = *s != '\0';
+	if ((s = getenv(SSH_ASKPASS_REQUIRE_ENV)) != NULL) {
+		if (strcasecmp(s, "force") == 0) {
+			use_askpass = 1;
+			allow_askpass = 1;
+		} else if (strcasecmp(s, "prefer") == 0)
+			use_askpass = allow_askpass;
+		else if (strcasecmp(s, "never") == 0)
+			allow_askpass = 0;
+	}
 
 	rppflags = (flags & RP_ECHO) ? RPP_ECHO_ON : RPP_ECHO_OFF;
-	if (flags & RP_USE_ASKPASS)
+	if (use_askpass)
+		debug("%s: requested to askpass", __func__);
+	else if (flags & RP_USE_ASKPASS)
 		use_askpass = 1;
 	else if (flags & RP_ALLOW_STDIN) {
 		if (!isatty(STDIN_FILENO)) {
@@ -148,15 +169,17 @@ read_passphrase(const char *prompt, int flags)
 		}
 	}
 
-	if ((flags & RP_USE_ASKPASS) && getenv("DISPLAY") == NULL)
+	if ((flags & RP_USE_ASKPASS) && !allow_askpass)
 		return (flags & RP_ALLOW_EOF) ? NULL : xstrdup("");
 
-	if (use_askpass && getenv("DISPLAY")) {
+	if (use_askpass && allow_askpass) {
 		if (getenv(SSH_ASKPASS_ENV))
 			askpass = getenv(SSH_ASKPASS_ENV);
 		else
 			askpass = _PATH_SSH_ASKPASS_DEFAULT;
-		if ((ret = ssh_askpass(askpass, prompt)) == NULL)
+		if ((flags & RP_ASK_PERMISSION) != 0)
+			askpass_hint = "confirm";
+		if ((ret = ssh_askpass(askpass, prompt, askpass_hint)) == NULL)
 			if (!(flags & RP_ALLOW_EOF))
 				return xstrdup("");
 		return ret;
@@ -184,7 +207,8 @@ ask_permission(const char *fmt, ...)
 	vsnprintf(prompt, sizeof(prompt), fmt, args);
 	va_end(args);
 
-	p = read_passphrase(prompt, RP_USE_ASKPASS|RP_ALLOW_EOF);
+	p = read_passphrase(prompt,
+	    RP_USE_ASKPASS|RP_ALLOW_EOF|RP_ASK_PERMISSION);
 	if (p != NULL) {
 		/*
 		 * Accept empty responses and responses consisting
@@ -197,4 +221,95 @@ ask_permission(const char *fmt, ...)
 	}
 
 	return (allowed);
+}
+
+struct notifier_ctx {
+	pid_t pid;
+	void (*osigchld)(int);
+};
+
+struct notifier_ctx *
+notify_start(int force_askpass, const char *fmt, ...)
+{
+	va_list args;
+	char *prompt = NULL;
+	int devnull;
+	pid_t pid;
+	void (*osigchld)(int);
+	const char *askpass, *s;
+	struct notifier_ctx *ret = NULL;
+
+	va_start(args, fmt);
+	xvasprintf(&prompt, fmt, args);
+	va_end(args);
+
+	if (fflush(NULL) != 0)
+		error("%s: fflush: %s", __func__, strerror(errno));
+	if (!force_askpass && isatty(STDERR_FILENO)) {
+		(void)write(STDERR_FILENO, "\r", 1);
+		(void)write(STDERR_FILENO, prompt, strlen(prompt));
+		(void)write(STDERR_FILENO, "\r\n", 2);
+		goto out;
+	}
+	if ((askpass = getenv("SSH_ASKPASS")) == NULL)
+		askpass = _PATH_SSH_ASKPASS_DEFAULT;
+	if (*askpass == '\0') {
+		debug3("%s: cannot notify: no askpass", __func__);
+		goto out;
+	}
+	if (getenv("DISPLAY") == NULL &&
+	    ((s = getenv(SSH_ASKPASS_REQUIRE_ENV)) == NULL ||
+	    strcmp(s, "force") != 0)) {
+		debug3("%s: cannot notify: no display", __func__);
+		goto out;
+	}
+	osigchld = ssh_signal(SIGCHLD, SIG_DFL);
+	if ((pid = fork()) == -1) {
+		error("%s: fork: %s", __func__, strerror(errno));
+		ssh_signal(SIGCHLD, osigchld);
+		free(prompt);
+		return NULL;
+	}
+	if (pid == 0) {
+		if ((devnull = open(_PATH_DEVNULL, O_RDWR)) == -1)
+			fatal("%s: open %s", __func__, strerror(errno));
+		if (dup2(devnull, STDIN_FILENO) == -1 ||
+		    dup2(devnull, STDOUT_FILENO) == -1)
+			fatal("%s: dup2: %s", __func__, strerror(errno));
+		closefrom(STDERR_FILENO + 1);
+		setenv("SSH_ASKPASS_PROMPT", "none", 1); /* hint to UI */
+		execlp(askpass, askpass, prompt, (char *)NULL);
+		error("%s: exec(%s): %s", __func__, askpass, strerror(errno));
+		_exit(1);
+		/* NOTREACHED */
+	}
+	if ((ret = calloc(1, sizeof(*ret))) == NULL) {
+		kill(pid, SIGTERM);
+		fatal("%s: calloc failed", __func__);
+	}
+	ret->pid = pid;
+	ret->osigchld = osigchld;
+ out:
+	free(prompt);
+	return ret;
+}
+
+void
+notify_complete(struct notifier_ctx *ctx)
+{
+	int ret;
+
+	if (ctx == NULL || ctx->pid <= 0) {
+		free(ctx);
+		return;
+	}
+	kill(ctx->pid, SIGTERM);
+	while ((ret = waitpid(ctx->pid, NULL, 0)) == -1) {
+		if (errno != EINTR)
+			break;
+	}
+	if (ret == -1)
+		fatal("%s: waitpid: %s", __func__, strerror(errno));
+	ssh_signal(SIGCHLD, ctx->osigchld);
+	free(ctx);
 }

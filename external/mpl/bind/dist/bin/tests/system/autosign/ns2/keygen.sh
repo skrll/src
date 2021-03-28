@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -37,9 +37,9 @@ zonefile="${zone}.db"
 infile="${zonefile}.in"
 ksk=`$KEYGEN -a RSASHA1 -3 -q -fk $zone`
 $KEYGEN -a RSASHA1 -3 -q $zone > /dev/null
-keyfile_to_trusted_keys $ksk > private.conf
+keyfile_to_static_ds $ksk > private.conf
 cp private.conf ../ns4/private.conf
-$SIGNER -S -3 beef -A -o $zone -f $zonefile $infile > /dev/null 2>&1
+$SIGNER -S -3 beef -A -o $zone -f $zonefile $infile > /dev/null
 
 # Extract saved keys for the revoke-to-duplicate-key test
 zone=bar

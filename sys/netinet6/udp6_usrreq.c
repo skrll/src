@@ -1,4 +1,4 @@
-/* $NetBSD: udp6_usrreq.c,v 1.147 2019/02/25 07:31:32 maxv Exp $ */
+/* $NetBSD: udp6_usrreq.c,v 1.150 2021/02/19 14:52:00 christos Exp $ */
 /* $KAME: udp6_usrreq.c,v 1.86 2001/05/27 17:33:00 itojun Exp $ */
 /* $KAME: udp6_output.c,v 1.43 2001/10/15 09:19:52 itojun Exp $ */
 
@@ -63,7 +63,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: udp6_usrreq.c,v 1.147 2019/02/25 07:31:32 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udp6_usrreq.c,v 1.150 2021/02/19 14:52:00 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -547,6 +547,30 @@ udp6_realinput(int af, struct sockaddr_in6 *src, struct sockaddr_in6 *dst,
 		}
 #endif
 
+		if (in6p->in6p_overudp_cb != NULL) {
+			int ret;
+			ret = in6p->in6p_overudp_cb(mp, off, in6p->in6p_socket,
+			    sin6tosa(src), in6p->in6p_overudp_arg);
+			switch (ret) {
+			case -1: /* Error, m was freed */
+				rcvcnt = -1;
+				goto bad;
+
+			case 1: /* Foo over UDP */
+				KASSERT(*mp == NULL);
+				rcvcnt++;
+				goto bad;
+
+			case 0: /* plain UDP */
+			default: /* Unexpected */
+				/*
+				 * Normal UDP processing will take place,
+				 * m may have changed.
+				 */
+				break;
+			}
+		}
+
 		udp6_sendup(m, off, sin6tosa(src), in6p->in6p_socket);
 		rcvcnt++;
 	}
@@ -641,7 +665,7 @@ udp6_input(struct mbuf **mp, int *offp, int proto)
 	 * Enforce alignment requirements that are violated in
 	 * some cases, see kern/50766 for details.
 	 */
-	if (UDP_HDR_ALIGNED_P(uh) == 0) {
+	if (ACCESSIBLE_POINTER(uh, struct udphdr) == 0) {
 		m = m_copyup(m, off + sizeof(struct udphdr), 0);
 		if (m == NULL) {
 			IP6_STATINC(IP6_STAT_TOOSHORT);
@@ -650,7 +674,7 @@ udp6_input(struct mbuf **mp, int *offp, int proto)
 		ip6 = mtod(m, struct ip6_hdr *);
 		uh = (struct udphdr *)(mtod(m, char *) + off);
 	}
-	KASSERT(UDP_HDR_ALIGNED_P(uh));
+	KASSERT(ACCESSIBLE_POINTER(uh, struct udphdr));
 	ulen = ntohs((u_short)uh->uh_ulen);
 
 	/*

@@ -1,6 +1,6 @@
 ; Options for the ATMEL AVR port of the compiler.
 
-; Copyright (C) 2005-2018 Free Software Foundation, Inc.
+; Copyright (C) 2005-2019 Free Software Foundation, Inc.
 ;
 ; This file is part of GCC.
 ;
@@ -118,3 +118,7 @@ Assume that all data in static storage can be accessed by LDS / STS.  This optio
 nodevicelib
 Driver Target Report RejectNegative
 Do not link against the device-specific library lib<MCU>.a.
+
+nodevicespecs
+Driver Target Report RejectNegative
+Do not use the device-specific specs file device-specs/specs-<MCU>.

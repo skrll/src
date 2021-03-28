@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - DHCP client daemon
- * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2020 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -41,6 +41,7 @@
 #include <stdint.h>
 
 #include "arp.h"
+#include "bpf.h"
 #include "auth.h"
 #include "dhcp-common.h"
 
@@ -115,6 +116,7 @@ enum DHO {
 	DHO_RAPIDCOMMIT            = 80,  /* RFC 4039 */
 	DHO_FQDN                   = 81,
 	DHO_AUTHENTICATION         = 90,  /* RFC 3118 */
+	DHO_IPV6_PREFERRED_ONLY    = 108, /* RFC 8925 */
 	DHO_AUTOCONFIGURE          = 116, /* RFC 2563 */
 	DHO_DNSSEARCH              = 119, /* RFC 3397 */
 	DHO_CSR                    = 121, /* RFC 3442 */
@@ -137,6 +139,8 @@ enum FQDN {
 	FQDN_PTR        = 0x20,
 	FQDN_BOTH       = 0x31
 };
+
+#define	MIN_V6ONLY_WAIT		300 /* seconds, RFC 8925 */
 
 /* Sizes for BOOTP options */
 #define	BOOTP_CHADDR_LEN	 16
@@ -216,14 +220,13 @@ struct dhcp_state {
 	size_t old_len;
 	struct dhcp_lease lease;
 	const char *reason;
-	time_t interval;
-	time_t nakoff;
+	unsigned int interval;
+	unsigned int nakoff;
 	uint32_t xid;
 	int socket;
 
-	int bpf_fd;
-	unsigned int bpf_flags;
-	int udp_fd;
+	struct bpf *bpf;
+	int udp_rfd;
 	struct ipv4_addr *addr;
 	uint8_t added;
 
@@ -255,6 +258,9 @@ struct dhcp_state {
 ssize_t print_rfc3361(FILE *, const uint8_t *, size_t);
 ssize_t print_rfc3442(FILE *, const uint8_t *, size_t);
 
+int dhcp_openudp(struct in_addr *);
+void dhcp_packet(struct interface *, uint8_t *, size_t, unsigned int);
+void dhcp_recvmsg(struct dhcpcd_ctx *, struct msghdr *);
 void dhcp_printoptions(const struct dhcpcd_ctx *,
     const struct dhcp_opt *, size_t);
 uint16_t dhcp_get_mtu(const struct interface *);

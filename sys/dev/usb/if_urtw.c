@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtw.c,v 1.20 2019/11/28 17:09:10 maxv Exp $	*/
+/*	$NetBSD: if_urtw.c,v 1.24 2020/03/15 23:04:51 thorpej Exp $	*/
 /*	$OpenBSD: if_urtw.c,v 1.39 2011/07/03 15:47:17 matthew Exp $	*/
 
 /*-
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtw.c,v 1.20 2019/11/28 17:09:10 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtw.c,v 1.24 2020/03/15 23:04:51 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -740,7 +740,11 @@ urtw_attach(device_t parent, device_t self, void *aux)
 	/* override state transition machine */
 	sc->sc_newstate = ic->ic_newstate;
 	ic->ic_newstate = urtw_newstate;
-	ieee80211_media_init(ic, urtw_media_change, ieee80211_media_status);
+
+	/* XXX media locking needs revisiting */
+	mutex_init(&sc->sc_media_mtx, MUTEX_DEFAULT, IPL_SOFTUSB);
+	ieee80211_media_init_with_lock(ic,
+	    urtw_media_change, ieee80211_media_status, &sc->sc_media_mtx);
 
 	bpf_attach2(ifp, DLT_IEEE802_11_RADIO,
 	    sizeof(struct ieee80211_frame) + IEEE80211_RADIOTAP_HDRLEN,
@@ -1835,12 +1839,12 @@ urtw_led_on(struct urtw_softc *sc, int type)
 			urtw_write8_m(sc, URTW_GP_ENABLE, 0x00);
 			break;
 		default:
-			panic("unsupported LED PIN type 0x%x",
+			panic("unsupported LED PIN type %#x",
 			    sc->sc_gpio_ledpin);
 			/* NOTREACHED */
 		}
 	} else {
-		panic("unsupported LED type 0x%x", type);
+		panic("unsupported LED type %#x", type);
 		/* NOTREACHED */
 	}
 
@@ -1861,12 +1865,12 @@ urtw_led_off(struct urtw_softc *sc, int type)
 			urtw_write8_m(sc, URTW_GP_ENABLE, 0x01);
 			break;
 		default:
-			panic("unsupported LED PIN type 0x%x",
+			panic("unsupported LED PIN type %#x",
 			    sc->sc_gpio_ledpin);
 			/* NOTREACHED */
 		}
 	} else {
-		panic("unsupported LED type 0x%x", type);
+		panic("unsupported LED type %#x", type);
 		/* NOTREACHED */
 	}
 
@@ -1894,7 +1898,7 @@ urtw_led_mode0(struct urtw_softc *sc, int mode)
 		sc->sc_gpio_ledstate = URTW_LED_ON;
 		break;
 	default:
-		panic("unsupported LED mode 0x%x", mode);
+		panic("unsupported LED mode %#x", mode);
 		/* NOTREACHED */
 	}
 
@@ -1919,7 +1923,7 @@ urtw_led_mode0(struct urtw_softc *sc, int mode)
 		urtw_led_off(sc, URTW_LED_GPIO);
 		break;
 	default:
-		panic("unknown LED status 0x%x", sc->sc_gpio_ledstate);
+		panic("unknown LED status %#x", sc->sc_gpio_ledstate);
 		/* NOTREACHED */
 	}
 	return 0;
@@ -1949,7 +1953,7 @@ urtw_ledusbtask(void *arg)
 	struct urtw_softc *sc = arg;
 
 	if (sc->sc_strategy != URTW_SW_LED_MODE0)
-		panic("could not process a LED strategy 0x%x", sc->sc_strategy);
+		panic("could not process a LED strategy %#x", sc->sc_strategy);
 
 	urtw_led_blink(sc);
 }
@@ -2032,7 +2036,7 @@ urtw_led_blink(struct urtw_softc *sc)
 			callout_schedule(&sc->sc_led_ch, mstohz(100));
 		break;
 	default:
-		panic("unknown LED status 0x%x", sc->sc_gpio_ledstate);
+		panic("unknown LED status %#x", sc->sc_gpio_ledstate);
 		/* NOTREACHED */
 	}
 	return 0;
@@ -2059,7 +2063,7 @@ urtw_update_msr(struct urtw_softc *sc)
 			data |= URTW_MSR_LINK_STA;
 			break;
 		default:
-			panic("unsupported operation mode 0x%x",
+			panic("unsupported operation mode %#x",
 			    ic->ic_opmode);
 			/* NOTREACHED */
 		}
@@ -2489,7 +2493,7 @@ urtw_start(struct ifnet *ifp)
 			if (urtw_tx_start(sc, ni, m0, URTW_PRIORITY_NORMAL)
 			    != 0) {
 				ieee80211_free_node(ni);
-				ifp->if_oerrors++;
+				if_statinc(ifp, if_oerrors);
 				break;
 			}
 		}
@@ -2508,7 +2512,7 @@ urtw_watchdog(struct ifnet *ifp)
 	if (sc->sc_txtimer > 0) {
 		if (--sc->sc_txtimer == 0) {
 			printf("%s: device timeout\n", device_xname(sc->sc_dev));
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return;
 		}
 		ifp->if_timer = 1;
@@ -2537,7 +2541,7 @@ urtw_txeof_low(struct usbd_xfer *xfer, void *priv,
 		if (status == USBD_STALLED)
 			usbd_clear_endpoint_stall_async(sc->sc_txpipe_low);
 
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		return;
 	}
 
@@ -2547,7 +2551,7 @@ urtw_txeof_low(struct usbd_xfer *xfer, void *priv,
 	data->ni = NULL;
 
 	sc->sc_txtimer = 0;
-	ifp->if_opackets++;
+	if_statinc(ifp, if_opackets);
 
 	sc->sc_tx_queued[URTW_PRIORITY_LOW]--;
 	ifp->if_flags &= ~IFF_OACTIVE;
@@ -2576,7 +2580,7 @@ urtw_txeof_normal(struct usbd_xfer *xfer, void *priv,
 		if (status == USBD_STALLED)
 			usbd_clear_endpoint_stall_async(sc->sc_txpipe_normal);
 
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		return;
 	}
 
@@ -2586,7 +2590,7 @@ urtw_txeof_normal(struct usbd_xfer *xfer, void *priv,
 	data->ni = NULL;
 
 	sc->sc_txtimer = 0;
-	ifp->if_opackets++;
+	if_statinc(ifp, if_opackets);
 
 	sc->sc_tx_queued[URTW_PRIORITY_NORMAL]--;
 	ifp->if_flags &= ~IFF_OACTIVE;
@@ -3073,13 +3077,13 @@ urtw_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 
 		if (status == USBD_STALLED)
 			usbd_clear_endpoint_stall_async(sc->sc_rxpipe);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		goto skip;
 	}
 
 	usbd_get_xfer_status(xfer, NULL, NULL, &actlen, NULL);
 	if (actlen < URTW_MIN_RXBUFSZ) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		goto skip;
 	}
 
@@ -3093,7 +3097,7 @@ urtw_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	desc = data->buf + len;
 	flen = ((desc[1] & 0x0f) << 8) + (desc[0] & 0xff);
 	if (flen > actlen) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		goto skip;
 	}
 
@@ -3119,7 +3123,7 @@ urtw_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	if (mnew == NULL) {
 		printf("%s: could not allocate rx mbuf\n",
 		    device_xname(sc->sc_dev));
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		goto skip;
 	}
 	MCLGET(mnew, M_DONTWAIT);
@@ -3127,7 +3131,7 @@ urtw_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		printf("%s: could not allocate rx mbuf cluster\n",
 		    device_xname(sc->sc_dev));
 		m_freem(mnew);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		goto skip;
 	}
 
@@ -3310,7 +3314,7 @@ urtw_8225v2_rf_init(struct urtw_rf *rf)
 	if (error != 0)
 		goto fail;
 	if (data32 != 0xe6)
-		printf("%s: expect 0xe6!! (0x%x)\n", device_xname(sc->sc_dev),
+		printf("%s: expect 0xe6!! (%#x)\n", device_xname(sc->sc_dev),
 		    data32);
 	if (!(data32 & 0x80)) {
 		urtw_8225_write(sc, 0x02, 0x0c4d);

@@ -3,7 +3,7 @@
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -19,18 +19,28 @@
  *****/
 
 /***
- *** Thread-Local Storage
- ***/
-
-#ifdef HAVE___THREAD
-#define thread_local __thread
-#endif
-
-/***
  *** Default strerror_r buffer size
  ***/
 
 #define ISC_STRERRORSIZE 128
+
+/***
+ *** System limitations
+ ***/
+
+#include <limits.h>
+
+#ifndef NAME_MAX
+#define NAME_MAX 256
+#endif
+
+#ifndef PATH_MAX
+#define PATH_MAX 1024
+#endif
+
+#ifndef IOV_MAX
+#define IOV_MAX 1024
+#endif
 
 /***
  *** Miscellaneous.

@@ -21,7 +21,6 @@ options {
 	listen-on-v6 { none; };
 	recursion no;
 	notify yes;
-	dnssec-enable yes;
 	dnssec-validation yes;
 };
 
@@ -40,7 +39,7 @@ zone "." {
 };
 
 zone "example" {
-	type master;
+	type primary;
 	file "example.db.signed";
 	allow-update { any; };
 };

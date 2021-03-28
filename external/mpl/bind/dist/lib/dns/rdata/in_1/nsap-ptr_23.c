@@ -1,11 +1,11 @@
-/*	$NetBSD: nsap-ptr_23.c,v 1.4 2019/11/27 05:48:42 christos Exp $	*/
+/*	$NetBSD: nsap-ptr_23.c,v 1.6 2021/02/19 16:42:18 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -36,8 +36,9 @@ fromtext_in_nsap_ptr(ARGS_FROMTEXT) {
 
 	dns_name_init(&name, NULL);
 	buffer_fromregion(&buffer, &token.value.as_region);
-	if (origin == NULL)
+	if (origin == NULL) {
 		origin = dns_rootname;
+	}
 	RETTOK(dns_name_fromtext(&name, &buffer, origin, options, target));
 	return (ISC_R_SUCCESS);
 }
@@ -174,8 +175,9 @@ freestruct_in_nsap_ptr(ARGS_FREESTRUCT) {
 	REQUIRE(nsap_ptr->common.rdclass == dns_rdataclass_in);
 	REQUIRE(nsap_ptr->common.rdtype == dns_rdatatype_nsap_ptr);
 
-	if (nsap_ptr->mctx == NULL)
+	if (nsap_ptr->mctx == NULL) {
 		return;
+	}
 
 	dns_name_free(&nsap_ptr->owner, nsap_ptr->mctx);
 	nsap_ptr->mctx = NULL;
@@ -210,7 +212,6 @@ digest_in_nsap_ptr(ARGS_DIGEST) {
 
 static inline bool
 checkowner_in_nsap_ptr(ARGS_CHECKOWNER) {
-
 	REQUIRE(type == dns_rdatatype_nsap_ptr);
 	REQUIRE(rdclass == dns_rdataclass_in);
 
@@ -224,7 +225,6 @@ checkowner_in_nsap_ptr(ARGS_CHECKOWNER) {
 
 static inline bool
 checknames_in_nsap_ptr(ARGS_CHECKNAMES) {
-
 	REQUIRE(rdata->type == dns_rdatatype_nsap_ptr);
 	REQUIRE(rdata->rdclass == dns_rdataclass_in);
 
@@ -240,4 +240,4 @@ casecompare_in_nsap_ptr(ARGS_COMPARE) {
 	return (compare_in_nsap_ptr(rdata1, rdata2));
 }
 
-#endif	/* RDATA_IN_1_NSAP_PTR_23_C */
+#endif /* RDATA_IN_1_NSAP_PTR_23_C */

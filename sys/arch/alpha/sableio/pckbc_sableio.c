@@ -1,4 +1,4 @@
-/* $NetBSD: pckbc_sableio.c,v 1.12 2014/03/29 19:28:25 christos Exp $ */
+/* $NetBSD: pckbc_sableio.c,v 1.14 2020/11/18 02:04:30 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -31,14 +31,14 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pckbc_sableio.c,v 1.12 2014/03/29 19:28:25 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pckbc_sableio.c,v 1.14 2020/11/18 02:04:30 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/proc.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/errno.h>
 #include <sys/queue.h>
 #include <sys/intr.h>
@@ -112,8 +112,7 @@ pckbc_sableio_attach(device_t parent, device_t self, void *aux)
 				  1, 0, &ioh_c) != 0)
 			panic("pckbc_sableio_attach: couldn't map");
 
-		t = malloc(sizeof(struct pckbc_internal), M_DEVBUF, M_WAITOK);
-		memset(t, 0, sizeof(struct pckbc_internal));
+		t = kmem_zalloc(sizeof(struct pckbc_internal), KM_SLEEP);
 		t->t_iot = sa->sa_iot;
 		t->t_ioh_d = ioh_d;
 		t->t_ioh_c = ioh_c;
@@ -136,10 +135,13 @@ pckbc_sableio_intr_establish(struct pckbc_softc *sc, pckbc_slot_t slot)
 	struct pckbc_sableio_softc *ssc = (void *) sc;
 	const char *intrstr;
 	char buf[PCI_INTRSTR_LEN];
+	pci_intr_handle_t ih;
 
-	intrstr = pci_intr_string(ssc->sc_pc, ssc->sc_irq[slot], buf,
+	alpha_pci_intr_handle_init(&ih, ssc->sc_irq[slot], 0);
+
+	intrstr = pci_intr_string(ssc->sc_pc, ih, buf,
 	    sizeof(buf));
-	ssc->sc_ih[slot] = pci_intr_establish(ssc->sc_pc, ssc->sc_irq[slot],
+	ssc->sc_ih[slot] = pci_intr_establish(ssc->sc_pc, ih,
 	    IPL_TTY, pckbcintr, sc);
 	if (ssc->sc_ih[slot] == NULL) {
 		aprint_error_dev(sc->sc_dv,

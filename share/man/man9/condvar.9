@@ -1,6 +1,6 @@
-.\"	$NetBSD: condvar.9,v 1.21 2019/12/12 02:34:55 pgoyette Exp $
+.\"	$NetBSD: condvar.9,v 1.30 2020/08/27 14:14:00 fcambus Exp $
 .\"
-.\" Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
+.\" Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
 .\" All rights reserved.
 .\"
 .\" This code is derived from software contributed to The NetBSD Foundation
@@ -27,7 +27,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd December 12, 2019
+.Dd May 2, 2020
 .Dt CONDVAR 9
 .Os
 .Sh NAME
@@ -116,7 +116,9 @@ to display.
 .It Fn cv_destroy "cv"
 .Pp
 Release resources used by a CV.
-The CV must not be in use when it is destroyed, and must not be used afterwards.
+If there could be waiters, they should be awoken first with
+.Fn cv_broadcast .
+The CV must not be used afterwards.
 .It Fn cv_wait "cv" "mtx"
 .Pp
 Cause the current LWP to wait non-interruptably for access to a resource,
@@ -145,10 +147,11 @@ as available until the calling LWP has begun to wait for it.
 Non-interruptable waits have the potential to deadlock the system, and so must
 be kept short (typically, under one second).
 .Pp
-Upon being awakened, the calling LWP should verify the availability
-of the resource (or other condition).
-It should not blindly assume that the resource is now available.
-If the resource is still not available, the calling LWP may call
+.Fn cv_wait
+is typically used within a loop or restartable code sequence, because it
+may awaken spuriously.
+The calling LWP should re-check the condition that caused the wait.
+If necessary, the calling LWP may call
 .Fn cv_wait
 again to continue waiting.
 .It Fn cv_wait_sig "cv" "mtx"
@@ -210,19 +213,41 @@ if the timeout expires.
 .It Fn cv_timedwaitbt "cv" "mtx" "bt" "epsilon"
 .It Fn cv_timedwaitbt_sig "cv" "mtx" "bt" "epsilon"
 .Pp
-Similar to
-.Fn cv_timedwait
+As per
+.Fn cv_wait
 and
-.Fn cv_timedwait_sig ,
-but
+.Fn cv_wait_sig ,
+but will return early if the duration
 .Fa bt
-is decremented in place with the amount of time actually waited, and on
-return contains the amount of time remaining, possibly negative if the
-timeout expired.
+has elapsed, immediately if
+.Fa bt
+is zero.
+On return,
+.Fn cv_timedwaitbt
+and
+.Fn cv_timedwaitbt_sig
+subtract the time elapsed from
+.Fa bt
+in place, or set it to zero if there is no time remaining.
+.Pp
+Note that
+.Fn cv_timedwaitbt
+and
+.Fn cv_timedwaitbt_sig
+may return zero indicating success, rather than
+.Er EWOULDBLOCK ,
+even if they set the timeout to zero; this means that the caller must
+re-check the condition in order to avoid potentially losing a
+.Fn cv_signal ,
+but the
+.Em next
+wait will time out immediately.
 .Pp
 The hint
-.Fa epsilon
-requests that the wakeup not be delayed more than
+.Fa epsilon ,
+which can be
+.Dv DEFAULT_TIMEOUT_EPSILON
+if in doubt, requests that the wakeup not be delayed more than
 .Fa bt Li "+" Fa epsilon ,
 so that the system can coalesce multiple wakeups within their
 respective epsilons into a single high-resolution clock interrupt or
@@ -234,8 +259,12 @@ more than
 .Fa bt Li "+" Fa epsilon .
 .It Fn cv_signal "cv"
 .Pp
-Awaken one LWP (potentially among many) that is waiting on the specified
-condition variable.
+Awaken one LWP waiting on the specified condition variable.
+Where there are waiters sleeping non-interruptaby, more than one
+LWP may be awoken.
+This can be used to avoid a "thundering herd" problem, where a large
+number of LWPs are awoken following an event, but only one LWP can
+process the event.
 The mutex passed to the wait function
 .Po Fa mtx Pc
 must also be held when calling
@@ -281,17 +310,14 @@ Consuming a resource:
 	/*
 	 * Wait for the resource to become available.  Timeout after
 	 * five seconds.  If the resource is not available within the
-	 * alloted time, return an error.
+	 * allotted time, return an error.
 	 */
 	struct bintime timeout = { .sec = 5, .frac = 0 };
-	const struct bintime epsilon = { .sec = 1, .frac = 0 };
 	while (res->state == BUSY) {
-		error = cv_timedwaitbt(&res->condvar, \\
-		    &res->mutex, &timeout, &epsilon);
+		error = cv_timedwaitbt(&res->condvar,
+		    &res->mutex, &timeout, DEFAULT_TIMEOUT_EPSILON);
 		if (error) {
 			KASSERT(error == EWOULDBLOCK);
-			if (res->state != BUSY)
-				break;
 			mutex_exit(&res->mutex);
 			return ETIMEDOUT;
 		}

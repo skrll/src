@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# $NetBSD: ipsec,v 1.15 2018/08/13 09:16:06 christos Exp $
+# $NetBSD: ipsec,v 1.18 2020/09/08 12:52:18 martin Exp $
 #
 
 # PROVIDE: ipsec
-# REQUIRE: root bootconf mountcritlocal tty
+# REQUIRE: root bootconf CRITLOCALMOUNTED tty
 # BEFORE:  DAEMON
 
 $_rc_subr_loaded . /etc/rc.subr
@@ -34,7 +34,7 @@ ipsec_getip() {
 		case "$what" in
 		inet)	echo "local v4_addr=$address;";;
 		inet6)	case "$address" in
-			fe80:)	;;
+			fe80:*)	;;
 			*)	echo "local v6_addr=$address;";;
 			esac;;
 		esac

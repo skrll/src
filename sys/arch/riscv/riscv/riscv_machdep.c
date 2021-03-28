@@ -1,3 +1,5 @@
+/*	$NetBSD: riscv_machdep.c,v 1.13 2020/11/04 20:05:47 skrll Exp $	*/
+
 /*-
  * Copyright (c) 2014, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -31,7 +33,7 @@
 
 #include "opt_modular.h"
 
-__RCSID("$NetBSD: riscv_machdep.c,v 1.6 2019/11/23 19:40:36 ad Exp $");
+__RCSID("$NetBSD: riscv_machdep.c,v 1.13 2020/11/04 20:05:47 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -80,7 +82,7 @@ delay(unsigned long us)
 
 #ifdef MODULAR
 /*
- * Push any modules loaded by the boot loader. 
+ * Push any modules loaded by the boot loader.
  */
 void
 module_init_md(void)
@@ -122,7 +124,9 @@ md_child_return(struct lwp *l)
 
 	tf->tf_a0 = 0;
 	tf->tf_a1 = 1;
+#ifdef FPE
 	tf->tf_sr &= ~SR_EF;		/* Disable FP as we can't be them. */
+#endif
 }
 
 void
@@ -131,7 +135,7 @@ cpu_spawn_return(struct lwp *l)
 	userret(l);
 }
 
-/* 
+/*
  * Start a new LWP
  */
 void
@@ -326,11 +330,14 @@ cpu_startup(void)
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	    VM_PHYS_SIZE, 0, FALSE, NULL);
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 }
 
 void
 init_riscv(vaddr_t kernstart, vaddr_t kernend)
 {
+
+	/* Early VM bootstrap. */
+	pmap_bootstrap();
 }

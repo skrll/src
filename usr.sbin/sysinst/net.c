@@ -1,4 +1,4 @@
-/*	$NetBSD: net.c,v 1.34 2019/11/16 20:26:59 martin Exp $	*/
+/*	$NetBSD: net.c,v 1.36 2021/01/31 22:45:46 rillig Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -279,7 +279,7 @@ do_ifreq(struct ifreq *ifr, unsigned long cmd)
 		return -1;
 
 	memset(ifr, 0, sizeof *ifr);
-	strncpy(ifr->ifr_name, net_dev, sizeof ifr->ifr_name);
+	strlcpy(ifr->ifr_name, net_dev, sizeof ifr->ifr_name);
 	rval = ioctl(sock, cmd, ifr);
 	close(sock);
 
@@ -297,7 +297,7 @@ do_ifmreq(struct ifmediareq *ifmr, unsigned long cmd)
 		return -1;
 
 	memset(ifmr, 0, sizeof *ifmr);
-	strncpy(ifmr->ifm_name, net_dev, sizeof ifmr->ifm_name);
+	strlcpy(ifmr->ifm_name, net_dev, sizeof ifmr->ifm_name);
 	rval = ioctl(sock, cmd, ifmr);
 	close(sock);
 
@@ -539,7 +539,7 @@ again:
 	network_up = 1;
 	dhcp_config = 0;
 
-	strncpy(net_dev, net_devs[selected_net].if_dev, STRSIZE);
+	strlcpy(net_dev, net_devs[selected_net].if_dev, sizeof net_dev);
 
 	if (!handle_license(net_dev))
 		goto done;
@@ -977,7 +977,7 @@ get_pkgsrc(void)
 	int rv = -1;
 
 	process_menu(MENU_pkgsrc, &rv);
-	
+
 	if (rv == SET_SKIP)
 		return SET_SKIP;
 
@@ -996,7 +996,7 @@ get_via_ftp(unsigned int xfer)
 	arg.rv = -1;
 	arg.arg = (void*)(uintptr_t)(xfer);
 	process_menu(MENU_ftpsource, &arg);
-	
+
 	if (arg.rv == SET_RETRY)
 		return SET_RETRY;
 
@@ -1028,7 +1028,7 @@ get_via_nfs(void)
 	/* Get server and filepath */
 	rv = -1;
 	process_menu(MENU_nfssource, &rv);
-	
+
 	if (rv == SET_RETRY)
 		return SET_RETRY;
 
@@ -1083,7 +1083,7 @@ mnt_net_config(void)
 		return;
 
 	/* Write hostname to /etc/rc.conf */
-	if ((net_dhcpconf & DHCPCONF_HOST) == 0) 
+	if ((net_dhcpconf & DHCPCONF_HOST) == 0)
 		if (del_rc_conf("hostname") == 0)
 			add_rc_conf("hostname=%s\n", recombine_host_domain());
 

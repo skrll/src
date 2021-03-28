@@ -1,4 +1,4 @@
-/* $NetBSD: bwfmvar.h,v 1.5 2019/10/28 06:37:51 mlelstv Exp $ */
+/* $NetBSD: bwfmvar.h,v 1.12 2020/07/22 17:23:52 riastradh Exp $ */
 /* $OpenBSD: bwfmvar.h,v 1.1 2017/10/11 17:19:50 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -17,7 +17,25 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <sys/pcq.h>
+#ifndef	_DEV_IC_BWFMVAR_H
+#define	_DEV_IC_BWFMVAR_H
+
+#include <sys/types.h>
+
+#include <sys/cdefs.h>
+#include <sys/device_if.h>
+#include <sys/queue.h>
+#include <sys/workqueue.h>
+
+#include <net/if_ether.h>
+
+#include <net80211/ieee80211.h>
+#include <net80211/ieee80211_proto.h>
+#include <net80211/ieee80211_var.h>
+
+struct ieee80211_key;
+struct mbuf;
+struct pool_cache;
 
 /* Chipcommon Core Chip IDs */
 #define BRCM_CC_43143_CHIP_ID		43143
@@ -30,6 +48,7 @@
 #define BRCM_CC_4330_CHIP_ID		0x4330
 #define BRCM_CC_4334_CHIP_ID		0x4334
 #define BRCM_CC_43340_CHIP_ID		43340
+#define BRCM_CC_43341_CHIP_ID		43341
 #define BRCM_CC_43362_CHIP_ID		43362
 #define BRCM_CC_4335_CHIP_ID		0x4335
 #define BRCM_CC_4339_CHIP_ID		0x4339
@@ -49,8 +68,10 @@
 #define BRCM_CC_43602_CHIP_ID		43602
 #define BRCM_CC_4365_CHIP_ID		0x4365
 #define BRCM_CC_4366_CHIP_ID		0x4366
+#define BRCM_CC_43664_CHIP_ID		43664
 #define BRCM_CC_4371_CHIP_ID		0x4371
 #define CY_CC_4373_CHIP_ID		0x4373
+#define CY_CC_43012_CHIP_ID		43012
 
 /* Defaults */
 #define BWFM_DEFAULT_SCAN_CHANNEL_TIME	40
@@ -59,8 +80,47 @@
 
 #define	BWFM_TASK_COUNT			256
 
-
 struct bwfm_softc;
+
+struct bwfm_firmware_selector {
+	uint32_t	fwsel_chip;	/* chip ID */
+	uint32_t	fwsel_revmask;	/* mask of applicable chip revs */
+	const char	*fwsel_basename;/* firmware file base name */
+};
+#define	BWFM_FW_ENTRY(c, r, b)						\
+	{ .fwsel_chip = (c),						\
+	  .fwsel_revmask = (r),						\
+	  .fwsel_basename = b }
+
+#define	BWFM_FW_ENTRY_END						\
+	{ .fwsel_basename = NULL }
+
+#define	BWFM_FWSEL_REV_EQ(x)	__BIT(x)
+#define	BWFM_FWSEL_REV_LE(x)	__BITS(0,x)
+#define	BWFM_FWSEL_REV_GE(x)	__BITS(x,31)
+#define	BWFM_FWSEL_ALLREVS	__BITS(0,31)
+
+#define	BWFM_FILETYPE_UCODE	0
+#define	BWFM_FILETYPE_NVRAM	1
+#define	BWFM_FILETYPE_CLM	2
+#define	BWFM_NFILETYPES		3
+
+struct bwfm_firmware_context {
+	/* inputs */
+	uint32_t	ctx_chip;
+	uint32_t	ctx_chiprev;
+	const char *	ctx_model;
+	uint32_t	ctx_req;
+
+#define	BWFM_FWREQ(x)		__BIT(x)
+#define	BWFM_FWOPT(x)		__BIT((x)+16)
+
+	/* outputs */
+	struct {
+		void *	ctx_f_data;
+		size_t	ctx_f_size;
+	} ctx_file[BWFM_NFILETYPES];
+};
 
 struct bwfm_core {
 	uint16_t	 co_id;
@@ -113,7 +173,7 @@ struct bwfm_proto_ops {
 	int (*proto_set_dcmd)(struct bwfm_softc *, int, int,
 	    char *, size_t);
 };
-extern struct bwfm_proto_ops bwfm_proto_bcdc_ops;
+extern const struct bwfm_proto_ops bwfm_proto_bcdc_ops;
 
 enum bwfm_task_cmd {
 	BWFM_TASK_NEWSTATE,
@@ -152,9 +212,9 @@ struct bwfm_softc {
 	struct ethercom		 sc_ec;
 #define	sc_if			 sc_ec.ec_if
 
-	struct bwfm_bus_ops	*sc_bus_ops;
-	struct bwfm_buscore_ops	*sc_buscore_ops;
-	struct bwfm_proto_ops	*sc_proto_ops;
+	const struct bwfm_bus_ops	*sc_bus_ops;
+	const struct bwfm_buscore_ops	*sc_buscore_ops;
+	const struct bwfm_proto_ops	*sc_proto_ops;
 	struct bwfm_chip	 sc_chip;
 	uint8_t			 sc_io_type;
 #define		BWFM_IO_TYPE_D11N		1
@@ -163,14 +223,18 @@ struct bwfm_softc {
 	int			 sc_tx_timer;
 
 	bool			 sc_if_attached;
-	struct bwfm_task	 sc_task[BWFM_TASK_COUNT];
-	pcq_t			*sc_freetask;
+	struct pool_cache	*sc_freetask;
 	struct workqueue	*sc_taskq;
 
 	int			(*sc_newstate)(struct ieee80211com *,
 				    enum ieee80211_state, int);
 
 	int			 sc_bcdc_reqid;
+
+	union {
+		struct bwfm_bss_info bss_info;
+		uint8_t padding[BWFM_BSS_INFO_BUFLEN];
+	}			sc_bss_buf;
 };
 
 void bwfm_attach(struct bwfm_softc *);
@@ -187,3 +251,15 @@ int bwfm_chip_sr_capable(struct bwfm_softc *);
 struct bwfm_core *bwfm_chip_get_core(struct bwfm_softc *, int);
 struct bwfm_core *bwfm_chip_get_pmu(struct bwfm_softc *);
 void bwfm_rx(struct bwfm_softc *, struct mbuf *m);
+
+void	bwfm_firmware_context_init(struct bwfm_firmware_context *,
+	    uint32_t, uint32_t, const char *, uint32_t);
+bool	bwfm_firmware_open(struct bwfm_softc *,
+	    const struct bwfm_firmware_selector *,
+	    struct bwfm_firmware_context *);
+void	bwfm_firmware_close(struct bwfm_firmware_context *);
+void *	bwfm_firmware_data(struct bwfm_firmware_context *,
+	    unsigned int, size_t *);
+const char *bwfm_firmware_description(unsigned int);
+
+#endif	/* _DEV_IC_BWFMVAR_H */

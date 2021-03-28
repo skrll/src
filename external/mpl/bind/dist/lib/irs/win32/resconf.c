@@ -1,11 +1,11 @@
-/*	$NetBSD: resconf.c,v 1.3 2019/10/17 16:47:01 christos Exp $	*/
+/*	$NetBSD: resconf.c,v 1.5 2021/02/19 16:42:19 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -24,11 +24,9 @@
 #define HAVE_GET_WIN32_NAMESERVERS 1
 
 #include "../resconf.c"
-
 #include <iphlpapi.h>
 
-#define TCPIP_SUBKEY	\
-	"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters"
+#define TCPIP_SUBKEY "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters"
 
 isc_result_t
 get_win32_searchlist(irs_resconf_t *conf) {
@@ -76,7 +74,7 @@ get_win32_nameservers(irs_resconf_t *conf) {
 
 	REQUIRE(conf != NULL);
 
-	FixedInfo = (FIXED_INFO *) GlobalAlloc(GPTR, BufLen);
+	FixedInfo = (FIXED_INFO *)GlobalAlloc(GPTR, BufLen);
 	if (FixedInfo == NULL) {
 		return (ISC_R_NOMEMORY);
 	}
@@ -100,8 +98,7 @@ get_win32_nameservers(irs_resconf_t *conf) {
 	}
 
 	if (ISC_LIST_EMPTY(conf->searchlist) &&
-	    strlen(FixedInfo->DomainName) > 0)
-	{
+	    strlen(FixedInfo->DomainName) > 0) {
 		result = add_search(conf, FixedInfo->DomainName);
 		if (result != ISC_R_SUCCESS) {
 			goto cleanup;
@@ -124,7 +121,7 @@ get_win32_nameservers(irs_resconf_t *conf) {
 		pIPAddr = pIPAddr->Next;
 	}
 
- cleanup:
+cleanup:
 	if (FixedInfo != NULL) {
 		GlobalFree(FixedInfo);
 	}

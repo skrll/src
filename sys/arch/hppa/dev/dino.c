@@ -1,4 +1,4 @@
-/*	$NetBSD: dino.c,v 1.4 2019/04/16 06:45:04 skrll Exp $ */
+/*	$NetBSD: dino.c,v 1.10 2020/10/23 22:14:47 macallan Exp $ */
 
 /*	$OpenBSD: dino.c,v 1.5 2004/02/13 20:39:31 mickey Exp $	*/
 
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dino.c,v 1.4 2019/04/16 06:45:04 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dino.c,v 1.10 2020/10/23 22:14:47 macallan Exp $");
 
 /* #include "cardbus.h" */
 
@@ -345,6 +345,14 @@ dino_conf_read(void *v, pcitag_t tag, int reg)
 	if ((unsigned int)reg >= PCI_CONF_SIZE)
 		return (pcireg_t) -1;
 
+	/*
+	 * XXX
+	 * accessing dev 1f / func 7 on the 2nd Dino causes a machine check
+	 * exception on my C200
+	 */
+	if ((tag & 0xff00) == 0xff00)
+		return -1;
+
 	/* fix arbitration errata by disabling all pci devs on config read */
 	pamr = r->pamr;
 	r->pamr = 0;
@@ -367,6 +375,13 @@ dino_conf_write(void *v, pcitag_t tag, int reg, pcireg_t data)
 
 	if ((unsigned int)reg >= PCI_CONF_SIZE)
 		return;
+
+	/*
+	 * XXX
+	 * accessing dev 1f / func 7 on the 2nd Dino causes a machine check
+	 * exception on my C200
+	 */
+	if ((tag & 0xff00) == 0xff00) return;
 
 	/* fix arbitration errata by disabling all pci devs on config read */
 	pamr = r->pamr;
@@ -602,7 +617,7 @@ dino_vaddr(void *v, bus_space_handle_t h)
 paddr_t
 dino_mmap(void *v, bus_addr_t addr, off_t off, int prot, int flags)
 {
-	return -1;
+	return btop(addr + off);
 }
 
 uint8_t
@@ -1645,19 +1660,14 @@ dinoattach(device_t parent, device_t self, void *aux)
 
 	snprintf(sc->sc_ioexname, sizeof(sc->sc_ioexname),
 	    "%s_io", device_xname(self));
-	if ((sc->sc_ioex = extent_create(sc->sc_ioexname, 0, 0xffff,
-	    NULL, 0, EX_NOWAIT | EX_MALLOCOK)) == NULL) {
-		aprint_error(": can't allocate I/O extent map\n");
-		bus_space_unmap(sc->sc_bt, sc->sc_bh, PAGE_SIZE);
-		return;
-	}
+	sc->sc_ioex = extent_create(sc->sc_ioexname, 0, 0xffff,
+	    NULL, 0, EX_WAITOK | EX_MALLOCOK);
 
 	/* interrupts guts */
 	s = splhigh();
 	r->icr = 0;
-	r->imr = ~0;
-	(void)r->irr0;
 	r->imr = 0;
+	(void)r->irr0;
 	r->iar0 = ci->ci_hpa | (31 - ca->ca_irq);
 	splx(s);
 	/* Establish the interrupt register. */

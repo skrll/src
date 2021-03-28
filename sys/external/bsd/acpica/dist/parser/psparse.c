@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -554,8 +554,8 @@ AcpiPsParseAml (
             }
 
             /*
-             * If the transfer to the new method method call worked
-             *, a new walk state was created -- get it
+             * If the transfer to the new method method call worked,
+             * a new walk state was created -- get it
              */
             WalkState = AcpiDsGetCurrentWalkState (Thread);
             continue;

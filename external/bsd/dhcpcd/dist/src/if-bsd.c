@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * BSD interface driver for dhcpcd
- * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2020 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -58,8 +58,6 @@
 #endif
 #ifdef __DragonFly__
 #  include <netproto/802_11/ieee80211_ioctl.h>
-#elif __APPLE__
-  /* FIXME: Add apple includes so we can work out SSID */
 #else
 #  include <net80211/ieee80211.h>
 #  include <net80211/ieee80211_ioctl.h>
@@ -92,6 +90,7 @@
 #include "ipv6.h"
 #include "ipv6nd.h"
 #include "logerr.h"
+#include "privsep.h"
 #include "route.h"
 #include "sa.h"
 
@@ -101,18 +100,17 @@
 #define RT_ADVANCE(x, n) (x += RT_ROUNDUP((n)->sa_len))
 #endif
 
-/* Ignore these interface names which look like ethernet but are virtual. */
+/* Ignore these interface names which look like ethernet but are virtual or
+ * just won't work without explicit configuration. */
 static const char * const ifnames_ignore[] = {
 	"bridge",
 	"fwe",		/* Firewire */
+	"fwip",		/* Firewire */
 	"tap",
+	"vether",
+	"xvif",		/* XEN DOM0 -> guest interface */
 	NULL
 };
-
-#ifdef INET6
-static void ifa_setscope(struct sockaddr_in6 *, unsigned int);
-static unsigned int ifa_getscope(const struct sockaddr_in6 *);
-#endif
 
 struct priv {
 	int pf_inet6_fd;
@@ -123,6 +121,12 @@ struct rtm
 	struct rt_msghdr hdr;
 	char buffer[sizeof(struct sockaddr_storage) * RTAX_MAX];
 };
+
+int
+os_init(void)
+{
+	return 0;
+}
 
 int
 if_init(__unused struct interface *iface)
@@ -166,6 +170,10 @@ if_opensockets_os(struct dhcpcd_ctx *ctx)
 
 #ifdef INET6
 	priv->pf_inet6_fd = xsocket(PF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+#ifdef PRIVSEP_RIGHTS
+	if (IN_PRIVSEP(ctx))
+		ps_rights_limit_ioctl(priv->pf_inet6_fd);
+#endif
 	/* Don't return an error so we at least work on kernels witout INET6
 	 * even though we expect INET6 support.
 	 * We will fail noisily elsewhere anyway. */
@@ -173,11 +181,15 @@ if_opensockets_os(struct dhcpcd_ctx *ctx)
 	priv->pf_inet6_fd = -1;
 #endif
 
-#define SOCK_FLAGS	(SOCK_CLOEXEC | SOCK_NONBLOCK)
-	ctx->link_fd = xsocket(PF_ROUTE, SOCK_RAW | SOCK_FLAGS, AF_UNSPEC);
-#undef SOCK_FLAGS
+	ctx->link_fd = xsocket(PF_ROUTE, SOCK_RAW | SOCK_CXNB, AF_UNSPEC);
 	if (ctx->link_fd == -1)
 		return -1;
+
+#ifdef SO_RERROR
+	n = 1;
+	if (setsockopt(ctx->link_fd, SOL_SOCKET, SO_RERROR, &n,sizeof(n)) == -1)
+		logerr("%s: SO_RERROR", __func__);
+#endif
 
 	/* Ignore our own route(4) messages.
 	 * Sadly there is no way of doing this for route(4) messages
@@ -203,6 +215,13 @@ if_opensockets_os(struct dhcpcd_ctx *ctx)
 #warning kernel does not support route message filtering
 #endif
 
+#ifdef PRIVSEP_RIGHTS
+	/* We need to getsockopt for SO_RCVBUF and
+	 * setsockopt for RO_MISSFILTER. */
+	if (IN_PRIVSEP(ctx))
+		ps_rights_limit_fd_sockopt(ctx->link_fd);
+#endif
+
 	return 0;
 }
 
@@ -214,6 +233,69 @@ if_closesockets_os(struct dhcpcd_ctx *ctx)
 	priv = (struct priv *)ctx->priv;
 	if (priv->pf_inet6_fd != -1)
 		close(priv->pf_inet6_fd);
+	free(priv);
+	ctx->priv = NULL;
+}
+
+#if defined(SIOCALIFADDR) && defined(IFLR_ACTIVE) /*NetBSD */
+static int
+if_ioctllink(struct dhcpcd_ctx *ctx, unsigned long req, void *data, size_t len)
+{
+	int s;
+	int retval;
+
+#ifdef PRIVSEP
+	if (ctx->options & DHCPCD_PRIVSEP)
+		return (int)ps_root_ioctllink(ctx, req, data, len);
+#else
+	UNUSED(ctx);
+#endif
+
+	s = socket(PF_LINK, SOCK_DGRAM, 0);
+	if (s == -1)
+		return -1;
+	retval = ioctl(s, req, data, len);
+	close(s);
+	return retval;
+}
+#endif
+
+int
+if_setmac(struct interface *ifp, void *mac, uint8_t maclen)
+{
+
+	if (ifp->hwlen != maclen) {
+		errno = EINVAL;
+		return -1;
+	}
+
+#if defined(SIOCALIFADDR) && defined(IFLR_ACTIVE) /*NetBSD */
+	struct if_laddrreq iflr = { .flags = IFLR_ACTIVE };
+	struct sockaddr_dl *sdl = satosdl(&iflr.addr);
+	int retval;
+
+	strlcpy(iflr.iflr_name, ifp->name, sizeof(iflr.iflr_name));
+	sdl->sdl_family = AF_LINK;
+	sdl->sdl_len = sizeof(*sdl);
+	sdl->sdl_alen = maclen;
+	memcpy(LLADDR(sdl), mac, maclen);
+	retval = if_ioctllink(ifp->ctx, SIOCALIFADDR, &iflr, sizeof(iflr));
+
+	/* Try and remove the old address */
+	memcpy(LLADDR(sdl), ifp->hwaddr, ifp->hwlen);
+	if_ioctllink(ifp->ctx, SIOCDLIFADDR, &iflr, sizeof(iflr));
+
+	return retval;
+#else
+	struct ifreq ifr = {
+		.ifr_addr.sa_family = AF_LINK,
+		.ifr_addr.sa_len = maclen,
+	};
+
+	strlcpy(ifr.ifr_name, ifp->name, sizeof(ifr.ifr_name));
+	memcpy(ifr.ifr_addr.sa_data, mac, maclen);
+	return if_ioctl(ifp->ctx, SIOCSIFLLADDR, &ifr, sizeof(ifr));
+#endif
 }
 
 static bool
@@ -228,6 +310,38 @@ if_ignore1(const char *drvname)
 	return false;
 }
 
+#ifdef SIOCGIFGROUP
+int
+if_ignoregroup(int s, const char *ifname)
+{
+	struct ifgroupreq ifgr = { .ifgr_len = 0 };
+	struct ifg_req *ifg;
+	size_t ifg_len;
+
+	/* Sadly it is possible to remove the device name
+	 * from the interface groups, but hopefully this
+	 * will be very unlikely.... */
+
+	strlcpy(ifgr.ifgr_name, ifname, sizeof(ifgr.ifgr_name));
+	if (ioctl(s, SIOCGIFGROUP, &ifgr) == -1 ||
+	    (ifgr.ifgr_groups = malloc(ifgr.ifgr_len)) == NULL ||
+	    ioctl(s, SIOCGIFGROUP, &ifgr) == -1)
+	{
+		logerr(__func__);
+		return -1;
+	}
+
+	for (ifg = ifgr.ifgr_groups, ifg_len = ifgr.ifgr_len;
+	     ifg && ifg_len >= sizeof(*ifg);
+	     ifg++, ifg_len -= sizeof(*ifg))
+	{
+		if (if_ignore1(ifg->ifgrq_group))
+			return 1;
+	}
+	return 0;
+}
+#endif
+
 bool
 if_ignore(struct dhcpcd_ctx *ctx, const char *ifname)
 {
@@ -240,48 +354,75 @@ if_ignore(struct dhcpcd_ctx *ctx, const char *ifname)
 		return true;
 
 #ifdef SIOCGIFGROUP
-	struct ifgroupreq ifgr = { .ifgr_len = 0 };
-	struct ifg_req *ifg;
-	size_t ifg_len;
-
-	/* Sadly it is possible to remove the device name
-	 * from the interface groups, but hopefully this
-	 * will be very unlikely.... */
-
-	strlcpy(ifgr.ifgr_name, ifname, sizeof(ifgr.ifgr_name));
-	if (ioctl(ctx->pf_inet_fd, SIOCGIFGROUP, &ifgr) == -1 ||
-	    (ifgr.ifgr_groups = malloc(ifgr.ifgr_len)) == NULL ||
-	    ioctl(ctx->pf_inet_fd, SIOCGIFGROUP, &ifgr) == -1)
-	{
-		logerr(__func__);
-		return false;
-	}
-
-	for (ifg = ifgr.ifgr_groups, ifg_len = ifgr.ifgr_len;
-	     ifg && ifg_len >= sizeof(*ifg);
-	     ifg++, ifg_len -= sizeof(*ifg))
-	{
-		if (if_ignore1(ifg->ifgrq_group))
-			return true;
-	}
+#if defined(PRIVSEP) && defined(HAVE_PLEDGE)
+	if (IN_PRIVSEP(ctx))
+		return ps_root_ifignoregroup(ctx, ifname) == 1 ? true : false;
+#endif
+	else
+		return if_ignoregroup(ctx->pf_inet_fd, ifname) == 1 ?
+		    true : false;
 #else
 	UNUSED(ctx);
+	return false;
+#endif
+}
+
+static int if_indirect_ioctl(struct dhcpcd_ctx *ctx,
+    const char *ifname, unsigned long cmd, void *data, size_t len)
+{
+	struct ifreq ifr = { .ifr_flags = 0 };
+
+#if defined(PRIVSEP) && (defined(HAVE_CAPSICUM) || defined(HAVE_PLEDGE))
+	if (IN_PRIVSEP(ctx))
+		return (int)ps_root_indirectioctl(ctx, cmd, ifname, data, len);
+#else
+	UNUSED(len);
 #endif
 
-	return false;
+	strlcpy(ifr.ifr_name, ifname, IFNAMSIZ);
+	ifr.ifr_data = data;
+	return ioctl(ctx->pf_inet_fd, cmd, &ifr);
 }
 
 int
-if_carrier(struct interface *ifp)
+if_carrier(struct interface *ifp, const void *ifadata)
 {
-	struct ifmediareq ifmr = { .ifm_status = 0 };
+	const struct if_data *ifi = ifadata;
 
-	strlcpy(ifmr.ifm_name, ifp->name, sizeof(ifmr.ifm_name));
-	if (ioctl(ifp->ctx->pf_inet_fd, SIOCGIFMEDIA, &ifmr) == -1 ||
-	    !(ifmr.ifm_status & IFM_AVALID))
+	/*
+	 * Every BSD returns this and it is the sole source of truth.
+	 * Not all BSD's support SIOCGIFDATA and not all interfaces
+	 * support SIOCGIFMEDIA.
+	 */
+	assert(ifadata != NULL);
+
+	if (ifi->ifi_link_state >= LINK_STATE_UP)
+		return LINK_UP;
+	if (ifi->ifi_link_state == LINK_STATE_UNKNOWN) {
+		/*
+		 * Work around net80211 issues in some BSDs.
+		 * Wireless MUST support link state change.
+		 */
+		if (ifp->wireless)
+			return LINK_DOWN;
 		return LINK_UNKNOWN;
+	}
+	return LINK_DOWN;
+}
 
-	return (ifmr.ifm_status & IFM_ACTIVE) ? LINK_UP : LINK_DOWN;
+bool
+if_roaming(struct interface *ifp)
+{
+
+/* Check for NetBSD as a safety measure.
+ * If other BSD's gain IN_IFF_TENTATIVE check they re-do DAD
+ * when the carrier comes up again. */
+#if defined(IN_IFF_TENTATIVE) && defined(__NetBSD__)
+	return ifp->flags & IFF_UP && ifp->carrier == LINK_DOWN;
+#else
+	UNUSED(ifp);
+	return false;
+#endif
 }
 
 static void
@@ -295,28 +436,8 @@ if_linkaddr(struct sockaddr_dl *sdl, const struct interface *ifp)
 	sdl->sdl_index = (unsigned short)ifp->index;
 }
 
-#if defined(SIOCG80211NWID) || defined(SIOCGETVLAN)
-static int if_direct_ioctl(int s, const char *ifname,
-    unsigned long cmd, void *data)
-{
-
-	strlcpy(data, ifname, IFNAMSIZ);
-	return ioctl(s, cmd, data);
-}
-
-static int if_indirect_ioctl(int s, const char *ifname,
-    unsigned long cmd, void *data)
-{
-	struct ifreq ifr;
-
-	memset(&ifr, 0, sizeof(ifr));
-	ifr.ifr_data = data;
-	return if_direct_ioctl(s, ifname, cmd, &ifr);
-}
-#endif
-
 static int
-if_getssid1(int s, const char *ifname, void *ssid)
+if_getssid1(struct dhcpcd_ctx *ctx, const char *ifname, void *ssid)
 {
 	int retval = -1;
 #if defined(SIOCG80211NWID)
@@ -328,7 +449,9 @@ if_getssid1(int s, const char *ifname, void *ssid)
 
 #if defined(SIOCG80211NWID) /* NetBSD */
 	memset(&nwid, 0, sizeof(nwid));
-	if (if_indirect_ioctl(s, ifname, SIOCG80211NWID, &nwid) == 0) {
+	if (if_indirect_ioctl(ctx, ifname, SIOCG80211NWID,
+	    &nwid, sizeof(nwid)) == 0)
+	{
 		if (ssid == NULL)
 			retval = nwid.i_len;
 		else if (nwid.i_len > IF_SSIDLEN)
@@ -345,7 +468,7 @@ if_getssid1(int s, const char *ifname, void *ssid)
 	ireq.i_val = -1;
 	memset(nwid, 0, sizeof(nwid));
 	ireq.i_data = &nwid;
-	if (ioctl(s, SIOCG80211, &ireq) == 0) {
+	if (ioctl(ctx->pf_inet_fd, SIOCG80211, &ireq) == 0) {
 		if (ssid == NULL)
 			retval = ireq.i_len;
 		else if (ireq.i_len > IF_SSIDLEN)
@@ -367,7 +490,7 @@ if_getssid(struct interface *ifp)
 {
 	int r;
 
-	r = if_getssid1(ifp->ctx->pf_inet_fd, ifp->name, ifp->ssid);
+	r = if_getssid1(ifp->ctx, ifp->name, ifp->ssid);
 	if (r != -1)
 		ifp->ssid_len = (unsigned int)r;
 	else
@@ -384,12 +507,11 @@ if_getssid(struct interface *ifp)
  * returning the SSID gives an error.
  */
 int
-if_vimaster(const struct dhcpcd_ctx *ctx, const char *ifname)
+if_vimaster(struct dhcpcd_ctx *ctx, const char *ifname)
 {
 	int r;
-	struct ifmediareq ifmr;
+	struct ifmediareq ifmr = { .ifm_active = 0 };
 
-	memset(&ifmr, 0, sizeof(ifmr));
 	strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
 	r = ioctl(ctx->pf_inet_fd, SIOCGIFMEDIA, &ifmr);
 	if (r == -1)
@@ -397,7 +519,7 @@ if_vimaster(const struct dhcpcd_ctx *ctx, const char *ifname)
 	if (ifmr.ifm_status & IFM_AVALID &&
 	    IFM_TYPE(ifmr.ifm_active) == IFM_IEEE80211)
 	{
-		if (if_getssid1(ctx->pf_inet_fd, ifname, NULL) == -1)
+		if (if_getssid1(ctx, ifname, NULL) == -1)
 			return 1;
 	}
 	return 0;
@@ -407,17 +529,15 @@ unsigned short
 if_vlanid(const struct interface *ifp)
 {
 #ifdef SIOCGETVLAN
-	struct vlanreq vlr;
+	struct vlanreq vlr = { .vlr_tag = 0 };
 
-	memset(&vlr, 0, sizeof(vlr));
-	if (if_indirect_ioctl(ifp->ctx->pf_inet_fd,
-	    ifp->name, SIOCGETVLAN, &vlr) != 0)
+	if (if_indirect_ioctl(ifp->ctx, ifp->name, SIOCGETVLAN,
+	    &vlr, sizeof(vlr)) != 0)
 		return 0; /* 0 means no VLANID */
 	return vlr.vlr_tag;
 #elif defined(SIOCGVNETID)
-	struct ifreq ifr;
+	struct ifreq ifr = { .ifr_vnetid = 0 };
 
-	memset(&ifr, 0, sizeof(ifr));
 	strlcpy(ifr.ifr_name, ifp->name, sizeof(ifr.ifr_name));
 	if (ioctl(ifp->ctx->pf_inet_fd, SIOCGVNETID, &ifr) != 0)
 		return 0; /* 0 means no VLANID */
@@ -517,7 +637,7 @@ if_findsa(struct dhcpcd_ctx *ctx, const struct sockaddr *sa)
 		struct ipv6_addr *ia;
 
 		sin = (const void *)sa;
-		scope = ifa_getscope(sin);
+		scope = ipv6_getscope(sin);
 		if (scope != 0)
 			return if_findindex(ctx->ifaces, scope);
 		if ((ia = ipv6_findmaskaddr(ctx, &sin->sin6_addr)))
@@ -647,9 +767,7 @@ if_route(unsigned char cmd, const struct rt *rt)
 		} else
 			rtm->rtm_flags |= RTF_GATEWAY;
 
-		/* Emulate the kernel by marking address generated
-		 * network routes non-static. */
-		if (!(rt->rt_dflags & RTDF_IFA_ROUTE))
+		if (rt->rt_dflags & RTDF_STATIC)
 			rtm->rtm_flags |= RTF_STATIC;
 
 		if (rt->rt_mtu != 0) {
@@ -674,7 +792,7 @@ if_route(unsigned char cmd, const struct rt *rt)
 			if_copysa(&gateway.sa, &rt->rt_gateway);
 #ifdef INET6
 			if (gateway.sa.sa_family == AF_INET6)
-				ifa_setscope(&gateway.sin6, rt->rt_ifp->index);
+				ipv6_setscope(&gateway.sin6, rt->rt_ifp->index);
 #endif
 			ADDSA(&gateway.sa);
 		}
@@ -692,9 +810,40 @@ if_route(unsigned char cmd, const struct rt *rt)
 #undef ADDSA
 
 	rtm->rtm_msglen = (unsigned short)(bp - (char *)rtm);
+
+#ifdef PRIVSEP
+	if (ctx->options & DHCPCD_PRIVSEP) {
+		if (ps_root_route(ctx, rtm, rtm->rtm_msglen) == -1)
+			return -1;
+		return 0;
+	}
+#endif
 	if (write(ctx->link_fd, rtm, rtm->rtm_msglen) == -1)
 		return -1;
 	return 0;
+}
+
+static bool
+if_realroute(const struct rt_msghdr *rtm)
+{
+
+#ifdef RTF_CLONED
+	if (rtm->rtm_flags & RTF_CLONED)
+		return false;
+#endif
+#ifdef RTF_WASCLONED
+	if (rtm->rtm_flags & RTF_WASCLONED)
+		return false;
+#endif
+#ifdef RTF_LOCAL
+	if (rtm->rtm_flags & RTF_LOCAL)
+		return false;
+#endif
+#ifdef RTF_BROADCAST
+	if (rtm->rtm_flags & RTF_BROADCAST)
+		return false;
+#endif
+	return true;
 }
 
 static int
@@ -710,30 +859,6 @@ if_copyrt(struct dhcpcd_ctx *ctx, struct rt *rt, const struct rt_msghdr *rtm)
 		errno = EINVAL;
 		return -1;
 	}
-#ifdef RTF_CLONED
-	if (rtm->rtm_flags & RTF_CLONED) {
-		errno = ENOTSUP;
-		return -1;
-	}
-#endif
-#ifdef RTF_WASCLONED
-	if (rtm->rtm_flags & RTF_WASCLONED) {
-		errno = ENOTSUP;
-		return -1;
-	}
-#endif
-#ifdef RTF_LOCAL
-	if (rtm->rtm_flags & RTF_LOCAL) {
-		errno = ENOTSUP;
-		return -1;
-	}
-#endif
-#ifdef RTF_BROADCAST
-	if (rtm->rtm_flags & RTF_BROADCAST) {
-		errno = ENOTSUP;
-		return -1;
-	}
-#endif
 
 	if (get_addrs(rtm->rtm_addrs, (const char *)rtm + sizeof(*rtm),
 	              rtm->rtm_msglen - sizeof(*rtm), rti_info) == -1)
@@ -820,6 +945,8 @@ if_initrt(struct dhcpcd_ctx *ctx, rb_tree_t *kroutes, int af)
 			errno = EINVAL;
 			break;
 		}
+		if (!if_realroute(rtm))
+			continue;
 		if (if_copyrt(ctx, &rt, rtm) != 0)
 			continue;
 		if ((rtn = rt_new(rt.rt_ifp)) == NULL) {
@@ -840,6 +967,7 @@ if_address(unsigned char cmd, const struct ipv4_addr *ia)
 {
 	int r;
 	struct in_aliasreq ifra;
+	struct dhcpcd_ctx *ctx = ia->iface->ctx;
 
 	memset(&ifra, 0, sizeof(ifra));
 	strlcpy(ifra.ifra_name, ia->iface->name, sizeof(ifra.ifra_name));
@@ -855,12 +983,10 @@ if_address(unsigned char cmd, const struct ipv4_addr *ia)
 		ADDADDR(&ifra.ifra_broadaddr, &ia->brd);
 #undef ADDADDR
 
-	r = ioctl(ia->iface->ctx->pf_inet_fd,
-	    cmd == RTM_DELADDR ? SIOCDIFADDR : SIOCAIFADDR, &ifra);
+	r = if_ioctl(ctx,
+	    cmd == RTM_DELADDR ? SIOCDIFADDR : SIOCAIFADDR, &ifra,sizeof(ifra));
 	return r;
 }
-
-
 
 #if !(defined(HAVE_IFADDRS_ADDRFLAGS) && defined(HAVE_IFAM_ADDRFLAGS))
 int
@@ -889,72 +1015,41 @@ if_addrflags(const struct interface *ifp, const struct in_addr *addr,
 #endif /* INET */
 
 #ifdef INET6
-static void
-ifa_setscope(struct sockaddr_in6 *sin, unsigned int ifindex)
+static int
+if_ioctl6(struct dhcpcd_ctx *ctx, unsigned long req, void *data, size_t len)
 {
+	struct priv *priv;
 
-#ifdef __KAME__
-	/* KAME based systems want to store the scope inside the sin6_addr
-	 * for link local addresses */
-	if (IN6_IS_ADDR_LINKLOCAL(&sin->sin6_addr)) {
-		uint16_t scope = htons((uint16_t)ifindex);
-		memcpy(&sin->sin6_addr.s6_addr[2], &scope,
-		    sizeof(scope));
-	}
-	sin->sin6_scope_id = 0;
-#else
-	if (IN6_IS_ADDR_LINKLOCAL(&sin->sin6_addr))
-		sin->sin6_scope_id = ifindex;
-	else
-		sin->sin6_scope_id = 0;
-#endif
-}
-
-static unsigned int
-ifa_getscope(const struct sockaddr_in6 *sin)
-{
-#ifdef __KAME__
-	uint16_t scope;
+#ifdef PRIVSEP
+	if (ctx->options & DHCPCD_PRIVSEP)
+		return (int)ps_root_ioctl6(ctx, req, data, len);
 #endif
 
-	if (!IN6_IS_ADDR_LINKLOCAL(&sin->sin6_addr))
-		return 0;
-#ifdef __KAME__
-	memcpy(&scope, &sin->sin6_addr.s6_addr[2], sizeof(scope));
-	return (unsigned int)ntohs(scope);
-#else
-	return (unsigned int)sin->sin6_scope_id;
-#endif
+	priv = ctx->priv;
+	return ioctl(priv->pf_inet6_fd, req, data, len);
 }
 
 int
 if_address6(unsigned char cmd, const struct ipv6_addr *ia)
 {
-	struct in6_aliasreq ifa;
+	struct in6_aliasreq ifa = { .ifra_flags = 0 };
 	struct in6_addr mask;
-	struct priv *priv;
+	struct dhcpcd_ctx *ctx = ia->iface->ctx;
 
-	priv = (struct priv *)ia->iface->ctx->priv;
-
-	memset(&ifa, 0, sizeof(ifa));
 	strlcpy(ifa.ifra_name, ia->iface->name, sizeof(ifa.ifra_name));
-	/*
-	 * We should not set IN6_IFF_TENTATIVE as the kernel should be
-	 * able to work out if it's a new address or not.
-	 *
-	 * We should set IN6_IFF_AUTOCONF, but the kernel won't let us.
-	 * This is probably a safety measure, but still it's not entirely right
-	 * either.
-	 */
-#if 0
-	if (ia->autoconf)
-		ifa.ifra_flags |= IN6_IFF_AUTOCONF;
-#endif
 #if defined(__FreeBSD__) || defined(__DragonFly__)
+	/* This is a bug - the kernel should work this out. */
 	if (ia->addr_flags & IN6_IFF_TENTATIVE)
 		ifa.ifra_flags |= IN6_IFF_TENTATIVE;
 #endif
-#ifdef IPV6_MANGETEMPADDR
+#if (defined(__NetBSD__) || defined(__OpenBSD__)) && \
+    (defined(IPV6CTL_ACCEPT_RTADV) || defined(ND6_IFF_ACCEPT_RTADV))
+	/* These kernels don't accept userland setting IN6_IFF_AUTOCONF */
+#else
+	if (ia->flags & IPV6_AF_AUTOCONF)
+		ifa.ifra_flags |= IN6_IFF_AUTOCONF;
+#endif
+#ifdef IPV6_MANAGETEMPADDR
 	if (ia->flags & IPV6_AF_TEMPORARY)
 		ifa.ifra_flags |= IN6_IFF_TEMPORARY;
 #endif
@@ -966,7 +1061,7 @@ if_address6(unsigned char cmd, const struct ipv6_addr *ia)
 	}
 
 	ADDADDR(&ifa.ifra_addr, &ia->addr);
-	ifa_setscope(&ifa.ifra_addr, ia->iface->index);
+	ipv6_setscope(&ifa.ifra_addr, ia->iface->index);
 	ipv6_mask(&mask, ia->prefix_len);
 	ADDADDR(&ifa.ifra_prefixmask, &mask);
 
@@ -1006,7 +1101,7 @@ if_address6(unsigned char cmd, const struct ipv6_addr *ia)
 	if (cmd == RTM_NEWADDR && !(ia->flags & IPV6_AF_ADDED)) {
 		ifa.ifra_lifetime.ia6t_vltime = ND6_INFINITE_LIFETIME;
 		ifa.ifra_lifetime.ia6t_pltime = ND6_INFINITE_LIFETIME;
-		(void)ioctl(priv->pf_inet6_fd, SIOCAIFADDR_IN6, &ifa);
+		(void)if_ioctl6(ctx, SIOCAIFADDR_IN6, &ifa, sizeof(ifa));
 	}
 #endif
 
@@ -1027,8 +1122,9 @@ if_address6(unsigned char cmd, const struct ipv6_addr *ia)
 	ifa.ifra_lifetime.ia6t_pltime = ia->prefix_pltime;
 #endif
 
-	return ioctl(priv->pf_inet6_fd,
-	    cmd == RTM_DELADDR ? SIOCDIFADDR_IN6 : SIOCAIFADDR_IN6, &ifa);
+	return if_ioctl6(ctx,
+	    cmd == RTM_DELADDR ? SIOCDIFADDR_IN6 : SIOCAIFADDR_IN6,
+	    &ifa, sizeof(ifa));
 }
 
 int
@@ -1043,7 +1139,7 @@ if_addrflags6(const struct interface *ifp, const struct in6_addr *addr,
 	strlcpy(ifr6.ifr_name, ifp->name, sizeof(ifr6.ifr_name));
 	ifr6.ifr_addr.sin6_family = AF_INET6;
 	ifr6.ifr_addr.sin6_addr = *addr;
-	ifa_setscope(&ifr6.ifr_addr, ifp->index);
+	ipv6_setscope(&ifr6.ifr_addr, ifp->index);
 	priv = (struct priv *)ifp->ctx->priv;
 	if (ioctl(priv->pf_inet6_fd, SIOCGIFAFLAG_IN6, &ifr6) != -1)
 		flags = ifr6.ifr_ifru.ifru_flags6;
@@ -1064,7 +1160,7 @@ if_getlifetime6(struct ipv6_addr *ia)
 	strlcpy(ifr6.ifr_name, ia->iface->name, sizeof(ifr6.ifr_name));
 	ifr6.ifr_addr.sin6_family = AF_INET6;
 	ifr6.ifr_addr.sin6_addr = ia->addr;
-	ifa_setscope(&ifr6.ifr_addr, ia->iface->index);
+	ipv6_setscope(&ifr6.ifr_addr, ia->iface->index);
 	priv = (struct priv *)ia->iface->ctx->priv;
 	if (ioctl(priv->pf_inet6_fd, SIOCGIFALIFETIME_IN6, &ifr6) == -1)
 		return -1;
@@ -1126,24 +1222,8 @@ if_ifinfo(struct dhcpcd_ctx *ctx, const struct if_msghdr *ifm)
 	if ((ifp = if_findindex(ctx->ifaces, ifm->ifm_index)) == NULL)
 		return 0;
 
-	switch (ifm->ifm_data.ifi_link_state) {
-	case LINK_STATE_UNKNOWN:
-		link_state = LINK_UNKNOWN;
-		break;
-#ifdef LINK_STATE_FULL_DUPLEX
-	case LINK_STATE_HALF_DUPLEX:	/* FALLTHROUGH */
-	case LINK_STATE_FULL_DUPLEX:	/* FALLTHROUGH */
-#endif
-	case LINK_STATE_UP:
-		link_state = LINK_UP;
-		break;
-	default:
-		link_state = LINK_DOWN;
-		break;
-	}
-
-	dhcpcd_handlecarrier(ctx, link_state,
-	    (unsigned int)ifm->ifm_flags, ifp->name);
+	link_state = if_carrier(ifp, &ifm->ifm_data);
+	dhcpcd_handlecarrier(ifp, link_state, (unsigned int)ifm->ifm_flags);
 	return 0;
 }
 
@@ -1160,6 +1240,14 @@ if_rtm(struct dhcpcd_ctx *ctx, const struct rt_msghdr *rtm)
 	/* Ignore errors. */
 	if (rtm->rtm_errno != 0)
 		return 0;
+
+	/* Ignore messages from ourself. */
+#ifdef PRIVSEP
+	if (ctx->ps_root_pid != 0) {
+		if (rtm->rtm_pid == ctx->ps_root_pid)
+			return 0;
+	}
+#endif
 
 	if (if_copyrt(ctx, &rt, rtm) == -1)
 		return errno == ENOTSUP ? 0 : -1;
@@ -1184,7 +1272,7 @@ if_rtm(struct dhcpcd_ctx *ctx, const struct rt_msghdr *rtm)
 	}
 #endif
 
-	if (rtm->rtm_type != RTM_MISS)
+	if (rtm->rtm_type != RTM_MISS && if_realroute(rtm))
 		rt_recvrt(rtm->rtm_type, &rt, rtm->rtm_pid);
 	return 0;
 }
@@ -1194,13 +1282,35 @@ if_ifa(struct dhcpcd_ctx *ctx, const struct ifa_msghdr *ifam)
 {
 	struct interface *ifp;
 	const struct sockaddr *rti_info[RTAX_MAX];
-	int addrflags;
+	int flags;
 	pid_t pid;
 
 	if (ifam->ifam_msglen < sizeof(*ifam)) {
 		errno = EINVAL;
 		return -1;
 	}
+
+#ifdef HAVE_IFAM_PID
+	/* Ignore address deletions from ourself.
+	 * We need to process address flag changes though. */
+	if (ifam->ifam_type == RTM_DELADDR) {
+#ifdef PRIVSEP
+		if (ctx->ps_root_pid != 0) {
+			if (ifam->ifam_pid == ctx->ps_root_pid)
+				return 0;
+		} else
+#endif
+			/* address management is done via ioctl,
+			 * so SO_USELOOPBACK has no effect,
+			 * so we do need to check the pid. */
+			if (ifam->ifam_pid == getpid())
+				return 0;
+	}
+	pid = ifam->ifam_pid;
+#else
+	pid = 0;
+#endif
+
 	if (~ifam->ifam_addrs & RTA_IFA)
 		return 0;
 	if ((ifp = if_findindex(ctx->ifaces, ifam->ifam_index)) == NULL)
@@ -1210,15 +1320,6 @@ if_ifa(struct dhcpcd_ctx *ctx, const struct ifa_msghdr *ifam)
 		      ifam->ifam_msglen - sizeof(*ifam), rti_info) == -1)
 		return -1;
 
-#ifdef HAVE_IFAM_PID
-	pid = ifam->ifam_pid;
-#else
-	pid = 0;
-#endif
-
-#ifdef HAVE_IFAM_ADDRFLAGS
-	addrflags = ifam->ifam_addrflags;
-#endif
 	switch (rti_info[RTAX_IFA]->sa_family) {
 	case AF_LINK:
 	{
@@ -1232,7 +1333,8 @@ if_ifa(struct dhcpcd_ctx *ctx, const struct ifa_msghdr *ifam)
 			break;
 #endif
 		memcpy(&sdl, rti_info[RTAX_IFA], rti_info[RTAX_IFA]->sa_len);
-		dhcpcd_handlehwaddr(ctx, ifp->name, CLLADDR(&sdl),sdl.sdl_alen);
+		dhcpcd_handlehwaddr(ifp, ifp->hwtype,
+		    CLLADDR(&sdl), sdl.sdl_alen);
 		break;
 	}
 #ifdef INET
@@ -1252,78 +1354,86 @@ if_ifa(struct dhcpcd_ctx *ctx, const struct ifa_msghdr *ifam)
 		bcast.s_addr = sin != NULL && sin->sin_family == AF_INET ?
 		    sin->sin_addr.s_addr : INADDR_ANY;
 
-#if defined(__NetBSD_Version__) && __NetBSD_Version__ < 800000000
 		/*
 		 * NetBSD-7 and older send an invalid broadcast address.
 		 * So we need to query the actual address to get
 		 * the right one.
+		 * We can also use this to test if the address
+		 * has really been added or deleted.
 		 */
-		{
-#else
-		/*
-		 * If the address was deleted, lets check if it's
-		 * a late message and it still exists (maybe modified).
-		 * If so, ignore it as deleting an address causes
-		 * dhcpcd to drop any lease to which it belongs.
-		 */
-		if (ifam->ifam_type == RTM_DELADDR) {
-#endif
 #ifdef SIOCGIFALIAS
-			struct in_aliasreq ifra;
+		struct in_aliasreq ifra;
 
-			memset(&ifra, 0, sizeof(ifra));
-			strlcpy(ifra.ifra_name, ifp->name,
-			    sizeof(ifra.ifra_name));
-			ifra.ifra_addr.sin_family = AF_INET;
-			ifra.ifra_addr.sin_len = sizeof(ifra.ifra_addr);
-			ifra.ifra_addr.sin_addr = addr;
-			if (ioctl(ctx->pf_inet_fd, SIOCGIFALIAS, &ifra) == -1) {
-				if (errno != ENXIO && errno != EADDRNOTAVAIL)
-					logerr("%s: SIOCGIFALIAS", __func__);
-				if (ifam->ifam_type != RTM_DELADDR)
-					break;
-			}
+		memset(&ifra, 0, sizeof(ifra));
+		strlcpy(ifra.ifra_name, ifp->name, sizeof(ifra.ifra_name));
+		ifra.ifra_addr.sin_family = AF_INET;
+		ifra.ifra_addr.sin_len = sizeof(ifra.ifra_addr);
+		ifra.ifra_addr.sin_addr = addr;
+		if (ioctl(ctx->pf_inet_fd, SIOCGIFALIAS, &ifra) == -1) {
+			if (errno != ENXIO && errno != EADDRNOTAVAIL)
+				logerr("%s: SIOCGIFALIAS", __func__);
+			if (ifam->ifam_type != RTM_DELADDR)
+				break;
+		} else {
+			if (ifam->ifam_type == RTM_DELADDR)
+				break;
 #if defined(__NetBSD_Version__) && __NetBSD_Version__ < 800000000
-			else
-				bcast = ifra.ifra_broadaddr.sin_addr;
+			bcast = ifra.ifra_broadaddr.sin_addr;
 #endif
+		}
 #else
 #warning No SIOCGIFALIAS support
-			/*
-			 * No SIOCGIFALIAS? That sucks!
-			 * This makes this call very heavy weight, but we
-			 * really need to know if the message is late or not.
-			 */
-			const struct sockaddr *sa;
-			struct ifaddrs *ifaddrs = NULL, *ifa;
+		/*
+		 * No SIOCGIFALIAS? That sucks!
+		 * This makes this call very heavy weight, but we
+		 * really need to know if the message is late or not.
+		 */
+		const struct sockaddr *sa;
+		struct ifaddrs *ifaddrs = NULL, *ifa;
 
-			sa = rti_info[RTAX_IFA];
-			getifaddrs(&ifaddrs);
-			for (ifa = ifaddrs; ifa; ifa = ifa->ifa_next) {
-				if (ifa->ifa_addr == NULL)
-					continue;
-				if (sa_cmp(ifa->ifa_addr, sa) == 0 &&
-				    strcmp(ifa->ifa_name, ifp->name) == 0)
-					break;
+		sa = rti_info[RTAX_IFA];
+#ifdef PRIVSEP_GETIFADDRS
+		if (IN_PRIVSEP(ctx)) {
+			if (ps_root_getifaddrs(ctx, &ifaddrs) == -1) {
+				logerr("ps_root_getifaddrs");
+				break;
 			}
-			freeifaddrs(ifaddrs);
-			if (ifa != NULL)
-				return 0;
+		} else
 #endif
-		}
-
-#ifndef HAVE_IFAM_ADDRFLAGS
-		if (ifam->ifam_type == RTM_DELADDR)
-			addrflags = 0 ;
-		else if ((addrflags = if_addrflags(ifp, &addr, NULL)) == -1) {
-			if (errno != EADDRNOTAVAIL)
-				logerr("%s: if_addrflags", __func__);
+		if (getifaddrs(&ifaddrs) == -1) {
+			logerr("getifaddrs");
 			break;
 		}
+		for (ifa = ifaddrs; ifa; ifa = ifa->ifa_next) {
+			if (ifa->ifa_addr == NULL)
+				continue;
+			if (sa_cmp(ifa->ifa_addr, sa) == 0 &&
+			    strcmp(ifa->ifa_name, ifp->name) == 0)
+				break;
+		}
+#ifdef PRIVSEP_GETIFADDRS
+		if (IN_PRIVSEP(ctx))
+			free(ifaddrs);
+		else
+#endif
+		freeifaddrs(ifaddrs);
+		if (ifam->ifam_type == RTM_DELADDR) {
+			if (ifa != NULL)
+				break;
+		} else {
+			if (ifa == NULL)
+				break;
+		}
+#endif
+
+#ifdef HAVE_IFAM_ADDRFLAGS
+		flags = ifam->ifam_addrflags;
+#else
+		flags = 0;
 #endif
 
 		ipv4_handleifa(ctx, ifam->ifam_type, NULL, ifp->name,
-		    &addr, &mask, &bcast, addrflags, pid);
+		    &addr, &mask, &bcast, flags, pid);
 		break;
 	}
 #endif
@@ -1332,7 +1442,6 @@ if_ifa(struct dhcpcd_ctx *ctx, const struct ifa_msghdr *ifam)
 	{
 		struct in6_addr addr6, mask6;
 		const struct sockaddr_in6 *sin6;
-		int flags;
 
 		sin6 = (const void *)rti_info[RTAX_IFA];
 		addr6 = sin6->sin6_addr;
@@ -1344,20 +1453,17 @@ if_ifa(struct dhcpcd_ctx *ctx, const struct ifa_msghdr *ifam)
 		 * a late message and it still exists (maybe modified).
 		 * If so, ignore it as deleting an address causes
 		 * dhcpcd to drop any lease to which it belongs.
+		 * Also check an added address was really added.
 		 */
-		if (ifam->ifam_type == RTM_DELADDR) {
-			flags = if_addrflags6(ifp, &addr6, NULL);
-			if (flags != -1)
-				break;
-			addrflags = 0;
-		}
-#ifndef HAVE_IFAM_ADDRFLAGS
-		else if ((addrflags = if_addrflags6(ifp, &addr6, NULL)) == -1) {
-			if (errno != EADDRNOTAVAIL)
+		flags = if_addrflags6(ifp, &addr6, NULL);
+		if (flags == -1) {
+			if (errno != ENXIO && errno != EADDRNOTAVAIL)
 				logerr("%s: if_addrflags6", __func__);
+			if (ifam->ifam_type != RTM_DELADDR)
+				break;
+			flags = 0;
+		} else if (ifam->ifam_type == RTM_DELADDR)
 			break;
-		}
-#endif
 
 #ifdef __KAME__
 		if (IN6_IS_ADDR_LINKLOCAL(&addr6))
@@ -1366,7 +1472,7 @@ if_ifa(struct dhcpcd_ctx *ctx, const struct ifa_msghdr *ifam)
 #endif
 
 		ipv6_handleifa(ctx, ifam->ifam_type, NULL,
-		    ifp->name, &addr6, ipv6_prefixlen(&mask6), addrflags, pid);
+		    ifp->name, &addr6, ipv6_prefixlen(&mask6), flags, pid);
 		break;
 	}
 #endif
@@ -1411,6 +1517,75 @@ if_dispatch(struct dhcpcd_ctx *ctx, const struct rt_msghdr *rtm)
 	return 0;
 }
 
+static int
+if_missfilter0(struct dhcpcd_ctx *ctx, struct interface *ifp,
+    struct sockaddr *sa)
+{
+	size_t salen = (size_t)RT_ROUNDUP(sa->sa_len);
+	size_t newlen = ctx->rt_missfilterlen + salen;
+	size_t diff = salen - (sa->sa_len);
+	uint8_t *cp;
+
+	if (ctx->rt_missfiltersize < newlen) {
+		void *n = realloc(ctx->rt_missfilter, newlen);
+		if (n == NULL)
+			return -1;
+		ctx->rt_missfilter = n;
+		ctx->rt_missfiltersize = newlen;
+	}
+
+#ifdef INET6
+	if (sa->sa_family == AF_INET6)
+		ipv6_setscope(satosin6(sa), ifp->index);
+#else
+	UNUSED(ifp);
+#endif
+
+	cp = ctx->rt_missfilter + ctx->rt_missfilterlen;
+	memcpy(cp, sa, sa->sa_len);
+	if (diff != 0)
+		memset(cp + sa->sa_len, 0, diff);
+	ctx->rt_missfilterlen += salen;
+
+#ifdef INET6
+	if (sa->sa_family == AF_INET6)
+		ipv6_setscope(satosin6(sa), 0);
+#endif
+
+	return 0;
+}
+
+int
+if_missfilter(struct interface *ifp, struct sockaddr *sa)
+{
+
+	return if_missfilter0(ifp->ctx, ifp, sa);
+}
+
+int
+if_missfilter_apply(struct dhcpcd_ctx *ctx)
+{
+#ifdef RO_MISSFILTER
+	if (ctx->rt_missfilterlen == 0) {
+		struct sockaddr sa = {
+		    .sa_family = AF_UNSPEC,
+		    .sa_len = sizeof(sa),
+		};
+
+		if (if_missfilter0(ctx, NULL, &sa) == -1)
+			return -1;
+	}
+
+	return setsockopt(ctx->link_fd, PF_ROUTE, RO_MISSFILTER,
+	    ctx->rt_missfilter, (socklen_t)ctx->rt_missfilterlen);
+#else
+#warning kernel does not support RTM_MISS DST filtering
+	UNUSED(ctx);
+	errno = ENOTSUP;
+	return -1;
+#endif
+}
+
 __CTASSERT(offsetof(struct rt_msghdr, rtm_msglen) == 0);
 int
 if_handlelink(struct dhcpcd_ctx *ctx)
@@ -1442,7 +1617,7 @@ if_handlelink(struct dhcpcd_ctx *ctx)
 }
 
 #ifndef SYS_NMLN	/* OSX */
-#  define SYS_NMLN 256
+#  define SYS_NMLN __SYS_NAMELEN
 #endif
 #ifndef HW_MACHINE_ARCH
 #  ifdef HW_MODEL	/* OpenBSD */
@@ -1453,18 +1628,12 @@ int
 if_machinearch(char *str, size_t len)
 {
 	int mib[2] = { CTL_HW, HW_MACHINE_ARCH };
-	char march[SYS_NMLN];
-	size_t marchlen = sizeof(march);
 
-	if (sysctl(mib, sizeof(mib) / sizeof(mib[0]),
-	    march, &marchlen, NULL, 0) != 0)
-		return -1;
-	return snprintf(str, len, ":%s", march);
+	return sysctl(mib, sizeof(mib) / sizeof(mib[0]), str, &len, NULL, 0);
 }
 
 #ifdef INET6
 #if (defined(IPV6CTL_ACCEPT_RTADV) && !defined(ND6_IFF_ACCEPT_RTADV)) || \
-    defined(IPV6CTL_USETEMPADDR) || defined(IPV6CTL_TEMPVLTIME) || \
     defined(IPV6CTL_FORWARDING)
 #define get_inet6_sysctl(code) inet6_sysctl(code, 0, 0)
 #define set_inet6_sysctl(code, val) inet6_sysctl(code, val, 1)
@@ -1492,19 +1661,32 @@ int
 if_applyra(const struct ra *rap)
 {
 #ifdef SIOCSIFINFO_IN6
-	struct in6_ndireq ndi = { .ndi.chlim = 0 };
-	struct priv *priv = rap->iface->ctx->priv;
+	struct in6_ndireq nd = { .ndi.chlim = 0 };
+	struct dhcpcd_ctx *ctx = rap->iface->ctx;
 	int error;
 
-	strlcpy(ndi.ifname, rap->iface->name, sizeof(ndi.ifname));
-	if (ioctl(priv->pf_inet6_fd, SIOCGIFINFO_IN6, &ndi) == -1)
+	strlcpy(nd.ifname, rap->iface->name, sizeof(nd.ifname));
+
+#ifdef IPV6CTL_ACCEPT_RTADV
+	struct priv *priv = ctx->priv;
+
+	/*
+	 * NetBSD changed SIOCSIFINFO_IN6 to NOT set flags when kernel
+	 * RA was removed, however both FreeBSD and DragonFlyBSD still do.
+	 * linkmtu was also removed.
+	 * Hopefully this guard will still work if either remove kernel RA.
+	 */
+	if (ioctl(priv->pf_inet6_fd, SIOCGIFINFO_IN6, &nd, sizeof(nd)) == -1)
 		return -1;
 
-	ndi.ndi.linkmtu = rap->mtu;
-	ndi.ndi.chlim = rap->hoplimit;
-	ndi.ndi.retrans = rap->retrans;
-	ndi.ndi.basereachable = rap->reachable;
-	error = ioctl(priv->pf_inet6_fd, SIOCSIFINFO_IN6, &ndi);
+	nd.ndi.linkmtu = rap->mtu;
+#endif
+
+	nd.ndi.chlim = rap->hoplimit;
+	nd.ndi.retrans = rap->retrans;
+	nd.ndi.basereachable = rap->reachable;
+	error = if_ioctl6(ctx, SIOCSIFINFO_IN6, &nd, sizeof(nd));
+#ifdef IPV6CTL_ACCEPT_RTADV
 	if (error == -1 && errno == EINVAL) {
 		/*
 		 * Very likely that this is caused by a dodgy MTU
@@ -1513,9 +1695,10 @@ if_applyra(const struct ra *rap)
 		 * Doesn't really matter as we fix the MTU against the
 		 * routes we add as not all OS support SIOCSIFINFO_IN6.
 		 */
-		ndi.ndi.linkmtu = 0;
-		error = ioctl(priv->pf_inet6_fd, SIOCSIFINFO_IN6, &ndi);
+		nd.ndi.linkmtu = 0;
+		error = if_ioctl6(ctx, SIOCSIFINFO_IN6, &nd, sizeof(nd));
 	}
+#endif
 	return error;
 #else
 #warning OS does not allow setting of RA bits hoplimit, retrans or reachable
@@ -1524,8 +1707,7 @@ if_applyra(const struct ra *rap)
 #endif
 }
 
-#ifdef IPV6_MANAGETEMPADDR
-#ifndef IPV6CTL_TEMPVLTIME
+#ifndef IPV6CTL_FORWARDING
 #define get_inet6_sysctlbyname(code) inet6_sysctlbyname(code, 0, 0)
 #define set_inet6_sysctlbyname(code, val) inet6_sysctlbyname(code, val, 1)
 static int
@@ -1546,46 +1728,6 @@ inet6_sysctlbyname(const char *name, int val, int action)
 #endif
 
 int
-ip6_use_tempaddr(__unused const char *ifname)
-{
-	int val;
-
-#ifdef IPV6CTL_USETEMPADDR
-	val = get_inet6_sysctl(IPV6CTL_USETEMPADDR);
-#else
-	val = get_inet6_sysctlbyname("net.inet6.ip6.use_tempaddr");
-#endif
-	return val == -1 ? 0 : val;
-}
-
-int
-ip6_temp_preferred_lifetime(__unused const char *ifname)
-{
-	int val;
-
-#ifdef IPV6CTL_TEMPPLTIME
-	val = get_inet6_sysctl(IPV6CTL_TEMPPLTIME);
-#else
-	val = get_inet6_sysctlbyname("net.inet6.ip6.temppltime");
-#endif
-	return val < 0 ? TEMP_PREFERRED_LIFETIME : val;
-}
-
-int
-ip6_temp_valid_lifetime(__unused const char *ifname)
-{
-	int val;
-
-#ifdef IPV6CTL_TEMPVLTIME
-	val = get_inet6_sysctl(IPV6CTL_TEMPVLTIME);
-#else
-	val = get_inet6_sysctlbyname("net.inet6.ip6.tempvltime");
-#endif
-	return val < 0 ? TEMP_VALID_LIFETIME : val;
-}
-#endif
-
-int
 ip6_forwarding(__unused const char *ifname)
 {
 	int val;
@@ -1600,25 +1742,26 @@ ip6_forwarding(__unused const char *ifname)
 
 #ifdef SIOCIFAFATTACH
 static int
-af_attach(int s, const struct interface *ifp, int af)
+if_af_attach(const struct interface *ifp, int af)
 {
 	struct if_afreq ifar;
 
 	strlcpy(ifar.ifar_name, ifp->name, sizeof(ifar.ifar_name));
 	ifar.ifar_af = af;
-	return ioctl(s, SIOCIFAFATTACH, (void *)&ifar);
+	return if_ioctl6(ifp->ctx, SIOCIFAFATTACH, &ifar, sizeof(ifar));
 }
 #endif
 
 #ifdef SIOCGIFXFLAGS
 static int
-set_ifxflags(int s, const struct interface *ifp)
+if_set_ifxflags(const struct interface *ifp)
 {
 	struct ifreq ifr;
 	int flags;
+	struct priv *priv = ifp->ctx->priv;
 
 	strlcpy(ifr.ifr_name, ifp->name, sizeof(ifr.ifr_name));
-	if (ioctl(s, SIOCGIFXFLAGS, (void *)&ifr) == -1)
+	if (ioctl(priv->pf_inet6_fd, SIOCGIFXFLAGS, &ifr) == -1)
 		return -1;
 	flags = ifr.ifr_flags;
 #ifdef IFXF_NOINET6
@@ -1645,7 +1788,7 @@ set_ifxflags(int s, const struct interface *ifp)
 	if (ifr.ifr_flags == flags)
 		return 0;
 	ifr.ifr_flags = flags;
-	return ioctl(s, SIOCSIFXFLAGS, (void *)&ifr);
+	return if_ioctl6(ifp->ctx, SIOCSIFXFLAGS, &ifr, sizeof(ifr));
 }
 #endif
 
@@ -1697,8 +1840,7 @@ if_setup_inet6(const struct interface *ifp)
 #endif
 
 #ifdef ND6_IFF_AUTO_LINKLOCAL
-	/* Unlike the kernel,
-	 * dhcpcd make make a stable private address. */
+	/* Unlike the kernel, dhcpcd make make a stable private address. */
 	flags &= ~ND6_IFF_AUTO_LINKLOCAL;
 #endif
 
@@ -1728,7 +1870,8 @@ if_setup_inet6(const struct interface *ifp)
 #ifdef ND6_NDI_FLAGS
 	if (nd.ndi.flags != (uint32_t)flags) {
 		nd.ndi.flags = (uint32_t)flags;
-		if (ioctl(s, SIOCSIFINFO_FLAGS, &nd) == -1)
+		if (if_ioctl6(ifp->ctx, SIOCSIFINFO_FLAGS,
+		    &nd, sizeof(nd)) == -1)
 			logerr("%s: SIOCSIFINFO_FLAGS", ifp->name);
 	}
 #endif
@@ -1737,16 +1880,16 @@ if_setup_inet6(const struct interface *ifp)
 	 * last action undertaken to ensure kernel RS and
 	 * LLADDR auto configuration are disabled where applicable. */
 #ifdef SIOCIFAFATTACH
-	if (af_attach(s, ifp, AF_INET6) == -1)
-		logerr("%s: af_attach", ifp->name);
+	if (if_af_attach(ifp, AF_INET6) == -1)
+		logerr("%s: if_af_attach", ifp->name);
 #endif
 
 #ifdef SIOCGIFXFLAGS
-	if (set_ifxflags(s, ifp) == -1)
+	if (if_set_ifxflags(ifp) == -1)
 		logerr("%s: set_ifxflags", ifp->name);
 #endif
 
-#if defined(IPV6CTL_ACCEPT_RTADV) || defined(ND6_IFF_ACCEPT_RTADV)
+#ifdef SIOCSRTRFLUSH_IN6
 	/* Flush the kernel knowledge of advertised routers
 	 * and prefixes so the kernel does not expire prefixes
 	 * and default routes we are trying to own. */
@@ -1755,12 +1898,16 @@ if_setup_inet6(const struct interface *ifp)
 
 		memset(&ifr, 0, sizeof(ifr));
 		strlcpy(ifr.ifr_name, ifp->name, sizeof(ifr.ifr_name));
-		if (ioctl(s, SIOCSRTRFLUSH_IN6, &ifr) == -1 &&
-		    errno != ENOTSUP)
-			logwarn("SIOCSRTRFLUSH_IN6");
-		if (ioctl(s, SIOCSPFXFLUSH_IN6, &ifr) == -1 &&
-		    errno != ENOTSUP)
+		if (if_ioctl6(ifp->ctx, SIOCSRTRFLUSH_IN6,
+		    &ifr, sizeof(ifr)) == -1 &&
+		    errno != ENOTSUP && errno != ENOTTY)
+			logwarn("SIOCSRTRFLUSH_IN6 %d", errno);
+#ifdef SIOCSPFXFLUSH_IN6
+		if (if_ioctl6(ifp->ctx, SIOCSPFXFLUSH_IN6,
+		    &ifr, sizeof(ifr)) == -1 &&
+		    errno != ENOTSUP && errno != ENOTTY)
 			logwarn("SIOCSPFXFLUSH_IN6");
+#endif
 	}
 #endif
 }

@@ -1,4 +1,4 @@
-#	$NetBSD: t_hello.sh,v 1.8 2019/02/09 02:36:28 mrg Exp $
+#	$NetBSD: t_hello.sh,v 1.10 2020/10/13 06:49:27 rin Exp $
 #
 # Copyright (c) 2011 The NetBSD Foundation, Inc.
 # All rights reserved.

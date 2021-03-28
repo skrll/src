@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_codec.c,v 1.7 2019/06/08 08:02:37 isaki Exp $ */
+/* $NetBSD: sunxi_codec.c,v 1.12 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_ddb.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_codec.c,v 1.7 2019/06/08 08:02:37 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_codec.c,v 1.12 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -88,11 +88,12 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_codec.c,v 1.7 2019/06/08 08:02:37 isaki Exp $"
 #define	AC_DAC_CNT(_sc)		((_sc)->sc_cfg->DAC_CNT)
 #define	AC_ADC_CNT(_sc)		((_sc)->sc_cfg->ADC_CNT)
 
-static const struct of_compat_data compat_data[] = {
+static const struct device_compatible_entry compat_data[] = {
 	A10_CODEC_COMPATDATA,
 	A31_CODEC_COMPATDATA,
 	H3_CODEC_COMPATDATA,
-	{ NULL }
+
+	DEVICE_COMPAT_EOL
 };
 
 #define	CODEC_READ(sc, reg)			\
@@ -258,16 +259,6 @@ sunxi_codec_get_props(void *priv)
 
 	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE|
 	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
-}
-
-static int
-sunxi_codec_round_blocksize(void *priv, int bs, int mode,
-    const audio_params_t *params)
-{
-	bs &= ~3;
-	if (bs == 0)
-		bs = 4;
-	return bs;
 }
 
 static int
@@ -475,7 +466,6 @@ static const struct audio_hw_if sunxi_codec_hw_if = {
 	.get_port = sunxi_codec_get_port,
 	.query_devinfo = sunxi_codec_query_devinfo,
 	.get_props = sunxi_codec_get_props,
-	.round_blocksize = sunxi_codec_round_blocksize,
 	.trigger_output = sunxi_codec_trigger_output,
 	.trigger_input = sunxi_codec_trigger_input,
 	.halt_output = sunxi_codec_halt_output,
@@ -584,7 +574,7 @@ sunxi_codec_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -615,7 +605,7 @@ sunxi_codec_attach(device_t parent, device_t self, void *aux)
 	}
 	sc->sc_dmat = faa->faa_dmat;
 	LIST_INIT(&sc->sc_dmalist);
-	sc->sc_cfg = (void *)of_search_compatible(phandle, compat_data)->data;
+	sc->sc_cfg = of_compatible_lookup(phandle, compat_data)->data;
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 

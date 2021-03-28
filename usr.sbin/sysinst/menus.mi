@@ -1,4 +1,4 @@
-/*	$NetBSD: menus.mi,v 1.19 2019/07/23 16:02:32 martin Exp $	*/
+/*	$NetBSD: menus.mi,v 1.24 2020/11/04 14:29:40 martin Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -195,16 +195,6 @@ remove_lvm_options()
 }
 
 void
-remove_gpt_options()
-{
-	/*
-	 * No GPT available, remove the following menu entries:
-	 */
-	remove_menu_option(MENU_pmdiskentry, MSG_switchgpt);
-	remove_menu_option(MENU_pmpartentry, MSG_switchgpt);
-}
-
-void
 remove_cgd_options()
 {
 	/*
@@ -331,14 +321,18 @@ menu sizechoice, sub menu, y=0, title MSG_Choose_your_size_specifier;
 			menu->cursel = 2;
 		else if (sizemult == 1)
 			menu->cursel = 3;
-		else if (sizemult == (GIG/512))
+		else if (sizemult == (GIG/pm->sectorsize))
 			menu->cursel = 0;
 		else
 			menu->cursel = 1; };
-	option MSG_Gigabytes, exit, action { set_sizemult(GIG/512); };
-	option MSG_Megabytes, exit, action { set_sizemult(MEG/512); };
-	option MSG_Cylinders, exit, action { set_sizemult(pm->current_cylsize); };
-	option MSG_Sectors, exit, action { set_sizemult(1); };
+	option MSG_Gigabytes, exit, action
+		{ set_sizemult(GIG, pm->sectorsize); };
+	option MSG_Megabytes, exit, action
+		{ set_sizemult(MEG, pm->sectorsize); };
+	option MSG_Cylinders, exit, action
+		{ set_sizemult(pm->current_cylsize*pm->sectorsize, pm->sectorsize); };
+	option MSG_Sectors, exit, action
+		{ set_sizemult(pm->sectorsize, pm->sectorsize); };
 
 menu ptnsize_replace_existing_partition, sub menu, y=0,
 	title MSG_ptnsize_replace_existing;
@@ -368,8 +362,10 @@ menu distset, title MSG_Select_your_distribution, exit,
 
 menu ftpsource, y=-4, x=0, w=70, no box, no clear,
 	    exitstring MSG_Get_Distribution;
-	display action { msg_fmt_display(MSG_ftpsource, "%s",
-	    url_proto((uintptr_t)((arg_rv*)arg)->arg)); };
+	display action {
+		msg_display_subst(MSG_ftpsource, 2, "." SETS_TAR_SUFF,
+		    url_proto((uintptr_t)((arg_rv*)arg)->arg));
+	    };
 	option {src_legend(menu, MSG_Host, ftp.xfer_host[(uintptr_t)((arg_rv*)arg)->arg]);},
 		action { src_prompt(MSG_Host, ftp.xfer_host[(uintptr_t)((arg_rv*)arg)->arg], sizeof ftp.xfer_host[(uintptr_t)((arg_rv*)arg)->arg]); };
 	option {src_legend(menu, MSG_Base_dir, ftp.dir);},
@@ -418,7 +414,8 @@ menu ftpsource, y=-4, x=0, w=70, no box, no clear,
 
 menu nfssource, y=-4, x=0, w=70, no box, no clear,
 	    exitstring MSG_Get_Distribution;
-	display action { msg_display(MSG_nfssource); };
+	display action { const char suff[] = "." SETS_TAR_SUFF;
+		msg_display_subst(MSG_nfssource, 1, &suff); };
 	option {src_legend(menu, MSG_Host, nfs_host);},
 		action { src_prompt(MSG_Host, nfs_host, sizeof nfs_host); };
 	option {src_legend(menu, MSG_Base_dir, nfs_dir);},
@@ -465,17 +462,20 @@ menu floppysource, y=-4, x=0, w=70, no box, no clear, exitstring MSG_Continue;
 	option MSG_exit_menu_generic, exit, action { *((int*)arg) = SET_RETRY; };
 
 menu cdromsource, y=-4, x=0, w=70, no box, no clear, exitstring MSG_Continue;
-	display action { msg_display(MSG_cdromsource); };
+	display action { const char suff[] = "." SETS_TAR_SUFF;
+		msg_display_add_subst(MSG_cdromsource, 1, &suff); };
 	option {src_legend(menu, MSG_Device, cdrom_dev);},
 		action { src_prompt(MSG_dev, cdrom_dev, sizeof cdrom_dev); };
 	option {src_legend(menu, MSG_Set_dir_bin, set_dir_bin);},
 		action { src_prompt(MSG_Set_dir_bin, set_dir_bin, sizeof set_dir_bin); };
 	option {src_legend(menu, MSG_Set_dir_src, set_dir_src);},
 		action { src_prompt(MSG_Set_dir_src, set_dir_src, sizeof set_dir_src); };
-	option MSG_exit_menu_generic, exit, action { *((int*)arg) = SET_RETRY; };
+	option MSG_abort_install, exit, action { *((int*)arg) = SET_ABANDON; };
+	option MSG_source_sel_retry, exit, action { *((int*)arg) = SET_RETRY; };
 
 menu localfssource, y=-4, x=0, w=70, no box, no clear, exitstring MSG_Continue;
-	display action { msg_display(MSG_localfssource); };
+	display action { const char suff[] = "." SETS_TAR_SUFF;
+		msg_display_subst(MSG_localfssource, 1, &suff); };
 	option {src_legend(menu, MSG_Device, localfs_dev);},
 		action { src_prompt(MSG_dev, localfs_dev, sizeof localfs_dev);};
 	option {src_legend(menu, MSG_File_system, localfs_fs);},
@@ -489,7 +489,8 @@ menu localfssource, y=-4, x=0, w=70, no box, no clear, exitstring MSG_Continue;
 	option MSG_exit_menu_generic, exit, action { *((int*)arg) = SET_RETRY; };
 
 menu localdirsource, y=-4, x=0, w=70, no box, no clear, exitstring MSG_Continue;
-	display action { msg_display(MSG_localdir); };
+	display action { const char suff[] = "." SETS_TAR_SUFF;
+		msg_display_subst(MSG_localdir, 1, &suff); };
 	option {src_legend(menu, MSG_Base_dir, localfs_dir);},
 		action { src_prompt(MSG_Base_dir, localfs_dir, 60); };
 	option {src_legend(menu, MSG_Set_dir_bin, set_dir_bin);},
@@ -660,5 +661,3 @@ menu reedit, title MSG_reeditpart, y=-10;
 	    action  {((arg_rep_int*)arg)->rv = 2;};
 	option MSG_abort_installation,       exit,
 	    action  {((arg_rep_int*)arg)->rv = 0;};
-
-

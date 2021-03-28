@@ -1,4 +1,4 @@
-/* $NetBSD: arm_fdtvar.h,v 1.15 2019/01/31 13:06:10 skrll Exp $ */
+/* $NetBSD: arm_fdtvar.h,v 1.17 2020/06/21 17:25:03 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -52,6 +52,8 @@ struct arm_platform_info {
 	const struct arm_platform *	api_ops;
 };
 
+#define ARM_PLATFORM_DEFAULT		""
+
 #define _ARM_PLATFORM_REGISTER(name)	\
 	__link_set_add_rodata(arm_platforms, __CONCAT(name,_platinfo));
 
@@ -94,5 +96,7 @@ void	arm_fdt_irq_set_handler(void (*)(void *));
 void	arm_fdt_irq_handler(void *);
 
 void	arm_fdt_memory_dump(paddr_t);
+
+void	arm_fdt_module_init(void);
 
 #endif /* !_ARM_ARM_FDTVAR_H */

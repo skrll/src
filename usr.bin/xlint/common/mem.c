@@ -1,4 +1,4 @@
-/*	$NetBSD: mem.c,v 1.7 2004/06/20 22:20:16 jmc Exp $	*/
+/*	$NetBSD: mem.c,v 1.11 2020/12/29 11:35:11 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,12 +37,13 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: mem.c,v 1.7 2004/06/20 22:20:16 jmc Exp $");
+__RCSID("$NetBSD: mem.c,v 1.11 2020/12/29 11:35:11 rillig Exp $");
 #endif
 
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -55,7 +56,7 @@ xmalloc(size_t s)
 
 	if ((p = malloc(s)) == NULL)
 		nomem();
-	return (p);
+	return p;
 }
 
 void *
@@ -65,7 +66,7 @@ xcalloc(size_t n, size_t s)
 
 	if ((p = calloc(n, s)) == NULL)
 		nomem();
-	return (p);
+	return p;
 }
 
 void *
@@ -78,7 +79,7 @@ xrealloc(void *p, size_t s)
 		nomem();
 	}
 	p = n;
-	return (p);
+	return p;
 }
 
 char *
@@ -88,7 +89,7 @@ xstrdup(const char *s)
 
 	if ((s2 = strdup(s)) == NULL)
 		nomem();
-	return (s2);
+	return s2;
 }
 
 void
@@ -96,6 +97,19 @@ nomem(void)
 {
 
 	errx(1, "virtual memory exhausted");
+}
+
+void
+xasprintf(char **buf, const char *fmt, ...)
+{
+	int e;
+	va_list ap;
+
+	va_start(ap, fmt);
+	e = vasprintf(buf, fmt, ap);
+	va_end(ap);
+	if (e < 0)
+		nomem();
 }
 
 #if defined(MAP_ANONYMOUS) && !defined(MAP_ANON)

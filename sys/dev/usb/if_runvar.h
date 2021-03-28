@@ -1,4 +1,4 @@
-/*	$NetBSD: if_runvar.h,v 1.6 2019/10/08 07:30:58 mlelstv Exp $	*/
+/*	$NetBSD: if_runvar.h,v 1.9 2020/06/06 13:53:43 gson Exp $	*/
 /*	$OpenBSD: if_runvar.h,v 1.8 2010/02/08 18:46:47 damien Exp $	*/
 
 /*-
@@ -93,7 +93,7 @@ struct run_tx_ring {
 	struct run_tx_data	data[RUN_TX_RING_COUNT];
 	struct usbd_pipe *	pipeh;
 	int			cur;
-	int			queued;
+	volatile unsigned	queued;
 	uint8_t			pipe_no;
 };
 
@@ -143,6 +143,8 @@ struct run_softc {
 					    enum ieee80211_state, int);
 	int				(*sc_srom_read)(struct run_softc *,
 					    uint16_t, uint16_t *);
+
+	kmutex_t			sc_media_mtx;	/* XXX */
 
 	struct usbd_device *		sc_udev;
 	struct usbd_interface *		sc_iface;
@@ -199,8 +201,9 @@ struct run_softc {
 	int				sc_tx_timer;
 	struct ieee80211_beacon_offsets	sc_bo;
 	int				sc_flags;
-#define RUN_FWLOADED	(1 << 0)
-#define RUN_DETACHING	(1 << 1)
+#define RUN_FWLOADED		(1 << 0)
+#define RUN_DETACHING		(1 << 1)
+#define RUN_USE_BLOCK_WRITE	(1 << 2)
 
 	struct bpf_if *			sc_drvbpf;
 

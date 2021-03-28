@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -51,7 +51,7 @@ rm -f K${zone}.+*+*.private
 keyname=`$KEYGEN -q -a RSASHA1 -b 1024 -n zone $zone`
 keyname=`$KEYGEN -q -a RSASHA1 -b 1024 -n zone -f KSK $zone`
 $DSFROMKEY -T 1200 $keyname >> ../ns1/root.db
-$SIGNER -S -O raw -L 2000042407 -o ${zone} ${zone}.db > /dev/null 2>&1
+$SIGNER -S -O raw -L 2000042407 -o ${zone} ${zone}.db > /dev/null
 cp master2.db.in updated.db
 
 # signatures are expired and should be regenerated on startup
@@ -61,7 +61,7 @@ rm -f K${zone}.+*+*.private
 keyname=`$KEYGEN -q -a RSASHA1 -b 1024 -n zone $zone`
 keyname=`$KEYGEN -q -a RSASHA1 -b 1024 -n zone -f KSK $zone`
 $DSFROMKEY -T 1200 $keyname >> ../ns1/root.db
-$SIGNER -PS -s 20100101000000 -e 20110101000000 -O raw -L 2000042407 -o ${zone} ${zone}.db > /dev/null 2>&1
+$SIGNER -PS -s 20100101000000 -e 20110101000000 -O raw -L 2000042407 -o ${zone} ${zone}.db > /dev/null
 
 zone=retransfer
 rm -f K${zone}.+*+*.key
@@ -150,9 +150,9 @@ do
     rm -f $k1.private 
     mv $k1.key a-file
     $IMPORTKEY -P now -D now+3600 -f a-file $zone > /dev/null 2>&1 ||
-        ( echo "importkey failed: $alg" )
+        ( echo_i "importkey failed: $alg" )
     rm -f $k2.private 
     mv $k2.key a-file
     $IMPORTKEY -f a-file $zone > /dev/null 2>&1 ||
-        ( echo "importkey failed: $alg" )
+        ( echo_i "importkey failed: $alg" )
 done

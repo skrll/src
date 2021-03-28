@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.76 2019/08/19 18:12:50 perseant Exp $	*/
+/*	$NetBSD: main.c,v 1.78 2020/12/03 08:25:57 kre Exp $	*/
 
 /*-
  * Copyright (c) 1980, 1991, 1993, 1994
@@ -39,7 +39,7 @@ __COPYRIGHT("@(#) Copyright (c) 1980, 1991, 1993, 1994\
 #if 0
 static char sccsid[] = "@(#)main.c	8.6 (Berkeley) 5/1/95";
 #else
-__RCSID("$NetBSD: main.c,v 1.76 2019/08/19 18:12:50 perseant Exp $");
+__RCSID("$NetBSD: main.c,v 1.78 2020/12/03 08:25:57 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -69,9 +69,46 @@ __RCSID("$NetBSD: main.c,v 1.76 2019/08/19 18:12:50 perseant Exp $");
 #include "pathnames.h"
 #include "snapshot.h"
 
+union u_spcl u_spcl;
+struct ufsi *ufsib;
+int	mapsize;
+char	*usedinomap;
+char	*dumpdirmap;
+char	*dumpinomap;
+char	*disk;
+char	*disk_dev;
+const char *tape;
+const char *dumpdates;
+const char *temp;
+char	lastlevel;
+char	level;
+int	uflag;
+const char *dumpdev;
+int	eflag;
+int	lflag;
+int	diskfd;
+int	tapefd;
+int	pipeout;
+int	trueinc;
+ino_t	curino;
+int	newtape;
+u_int64_t	tapesize;
+long	tsize;
+long	asize;
+int	etapes;
+int	nonodump;
+int	unlimited;
+time_t	tstart_writing;
+time_t	tstart_volume;
+int	xferrate;
+char	sblock_buf[MAXBSIZE];
+int	dev_bshift;
+int	tp_bshift;
+int needswap;
+
 int	timestamp;		/* print message timestamps */
 int	notify;			/* notify operator flag */
-int	blockswritten;		/* number of blocks written on current tape */
+u_int64_t	blockswritten;	/* number of blocks written on current tape */
 int	tapeno;			/* current tape number */
 int	density;		/* density in bytes/0.1" */
 int	ntrec = NTREC;		/* # tape blocks in each tape record */

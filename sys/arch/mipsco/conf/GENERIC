@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.94 2019/04/26 21:40:31 sevan Exp $
+# $NetBSD: GENERIC,v 1.97 2020/09/27 13:48:52 roy Exp $
 #
 # GENERIC machine description file
 # 
@@ -169,11 +169,10 @@ pseudo-device	carp			# Common Address Redundancy Protocol
 # options 	RF_INCLUDE_PARITY_DECLUSTERING=1
 # options	RF_INCLUDE_PARITY_DECLUSTERING_DS=1
 pseudo-device	fss			# file system snapshot device
-#pseudo-device	strip			# radio clock
 #pseudo-device	npf			# NPF packet filter
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	clockctl		# user control of clock subsystem
 

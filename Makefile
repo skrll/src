@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.331 2019/08/27 22:48:54 kamil Exp $
+#	$NetBSD: Makefile,v 1.333 2020/10/29 20:26:24 uwe Exp $
 
 #
 # This is the top-level makefile for building NetBSD. For an outline of
@@ -140,7 +140,7 @@ _SUBDIR=	tools .WAIT lib
 .if ${MKLLVM} != "no"
 _SUBDIR+=	external/bsd/compiler_rt
 .endif
-_SUBDIR+=	 include external crypto/external bin
+_SUBDIR+=	include external crypto/external bin
 _SUBDIR+=	games libexec sbin usr.bin
 _SUBDIR+=	usr.sbin share sys etc tests compat
 _SUBDIR+=	.WAIT rescue .WAIT distrib regress
@@ -207,6 +207,7 @@ postinstall-fix-obsolete: .NOTMAIN .PHONY
 postinstall-fix-obsolete_stand: .NOTMAIN .PHONY
 	@echo "   === Removing obsolete files ==="
 	${_POSTINSTALL_ENV} ${HOST_SH} ${_POSTINSTALL} -s ${.CURDIR} ${_POSTINSTALL_X11} -d ${DESTDIR}/ fix obsolete_stand
+	${_POSTINSTALL_ENV} ${HOST_SH} ${_POSTINSTALL} -s ${.CURDIR} ${_POSTINSTALL_X11} -d ${DESTDIR}/ fix obsolete_stand_debug
 	@echo "   ==============================="
 
 

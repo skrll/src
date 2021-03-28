@@ -1748,14 +1748,14 @@ unionfs_putpages(void *v)
 	struct vnode *vp = ap->a_vp, *tvp;
 	struct unionfs_node *unp;
 
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_lock_held(vp->v_uobj.vmobjlock));
 
 	unp = VTOUNIONFS(vp);
 	tvp = (unp->un_uppervp != NULLVP ? unp->un_uppervp : unp->un_lowervp);
-	KASSERT(tvp->v_interlock == vp->v_interlock);
+	KASSERT(tvp->v_uobj.vmobjlock == vp->v_uobj.vmobjlock);
 
 	if (ap->a_flags & PGO_RECLAIM) {
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		return 0;
 	}
 	return VOP_PUTPAGES(tvp, ap->a_offlo, ap->a_offhi, ap->a_flags);
@@ -1777,11 +1777,11 @@ unionfs_getpages(void *v)
 	struct vnode *vp = ap->a_vp, *tvp;
 	struct unionfs_node *unp;
 
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_lock_held(vp->v_uobj.vmobjlock));
 
 	unp = VTOUNIONFS(vp);
 	tvp = (unp->un_uppervp != NULLVP ? unp->un_uppervp : unp->un_lowervp);
-	KASSERT(tvp->v_interlock == vp->v_interlock);
+	KASSERT(tvp->v_uobj.vmobjlock == vp->v_uobj.vmobjlock);
 
 	if (ap->a_flags & PGO_LOCKED) {
 		return EBUSY;
@@ -1821,6 +1821,7 @@ const struct vnodeopv_entry_desc unionfs_vnodeop_entries[] = {
 	{ &vop_open_desc, unionfs_open },		/* open */
 	{ &vop_close_desc, unionfs_close },		/* close */
 	{ &vop_access_desc, unionfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, unionfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, unionfs_setattr },		/* setattr */
 	{ &vop_read_desc, unionfs_read },		/* read */

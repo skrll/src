@@ -1,4 +1,4 @@
-LIST OF CHANGES FROM PREVIOUS RELEASES:			<$Revision: 1.152 $>
+LIST OF CHANGES FROM PREVIOUS RELEASES:			<$Revision: 1.157 $>
 
 
 Changes from 386bsd 0.1 + patchkit 0.2.2 to NetBSD 0.8:
@@ -1062,7 +1062,7 @@ Changes from NetBSD 0.9 to NetBSD 1.0:
 	compat/sunos, m68k, sparc: move sunos emulation code code to
 		/sys/compat/sunos, for use by all m68k and sparc ports.
 		significantly cleaned and extended up from Torek's base, with
-		help at implimenting various system calls and ioctl's from mw
+		help at implementing various system calls and ioctl's from mw
 		& pk. (deraadt)
 	don't permit TIOCSCTTY on /dev/tty, or kernel recursion happens.
 		from Lars Fredriksen <ludvig!lars@wixer.bga.com> (deraadt)
@@ -1077,7 +1077,7 @@ Changes from NetBSD 0.9 to NetBSD 1.0:
 		execve(), or the registers might get dumped on someone
 		else's stack... (deraadt)
 	execve(2): keep execve arg buffer around for later use (deraadt & cgd)
-	STACKGAP: a small optional buffer located near the top of the stack
+	stackgap: a small optional buffer located near the top of the stack
 		where binary compatibility functions can copyout/copyin
 		argument buffers that are copyin/copyout'd at low levels
 		by various system calls (deraadt)
@@ -1092,7 +1092,7 @@ Changes from NetBSD 0.9 to NetBSD 1.0:
 	tunnel driver cleanup done by Brad Parker <brad@fcr.com>
 		and myself (deraadt)
 	upgraded lex to version 2.4.5. (jtc)
-	tty subsystem VMIN/VTIME implimentation from Marc Teitelbaum
+	tty subsystem VMIN/VTIME implementation from Marc Teitelbaum
 		<marc@vangogh.cs.berkeley.edu> (deraadt)
 	multicast patches added.
 		Original code by Steve Mccanne and LBL. NetBSD patches
@@ -1759,7 +1759,7 @@ Changes from NetBSD 1.0 to NetBSD 1.1:
 	scsi: Made the SCSI disk drivers wait for the disc to spin up on open.
 		[mycroft 19950126]
 	add sysctl() variable kern.maxpartitions, so one can easily get
-		the value of MAXPARITIONS w/o compiling it in. (cgd)
+		the value of MAXPARTITIONS w/o compiling it in. (cgd)
 	remove ability to export null and umap file systems, by having
 		their fhtovp and vptofh functions return EOPNOTSUPP. (cgd)
 	config(8): fix config.new to handle differing values of MAXPARTITIONS.
@@ -2684,7 +2684,7 @@ Changes from NetBSD 1.1 to NetBSD 1.2:
 		scripts have been rewritten to deal with this. Also added
 		an option to install from a 'normal' (== hd/mo/...) disk
 		partition to allow people to gather the sets using the
-		native OS and mount that parition from the installer.
+		native OS and mount that partition from the installer.
 		XXX: All of the above changes can (and should) be merged
 		XXX: into the MI-miniroot.
 		[leo 19960519]
@@ -8798,6 +8798,7 @@ Changes from NetBSD 4.0 to NetBSD 5.0:
 		to locate files within an emulation's root directory.
 		Instead get namei() to check the emulation root first.
 		[dsl 20070422]
+	stackgap: Now only used by systrace(4) [dsl 20070422]
 	pax(1): Add a '-V' flag to pax for verbose summary without listing.
 		[christos 20070423]
 	prep: Add support for the MTX604 RAVEN based machine. Other RAVEN
@@ -9205,6 +9206,8 @@ Changes from NetBSD 4.0 to NetBSD 5.0:
 	hp700: Kernels are now compiled with -O2. [skrll 20071230]
 	compat_hpux: Removed. [ad 20071231]
 	systrace(1): Removed. [ad 20071231]
+	stackgap: Removed stackgap support functions due to systrace(4)
+		removal [ad 20071231]
 	arm: Add support for kernel crashdump to arm32. [chris 20080101]
 	tprof: Add tprof, a simple performance monitor based profiler,
 		inspired from linux oprofile.  it's still very experimental.
@@ -9229,8 +9232,8 @@ Changes from NetBSD 4.0 to NetBSD 5.0:
 		(introduce run-length detection to msdosfs_bmap(),
 		from FreeBSD).  [christos 20080105]
 	gem(4): Add support for Sun PCI SX fibre cards.  [jdc 20080105]
-	amiga: Add timecounter(9) support and coutner-based delay(9) from i386.
-		[mhitch 20080106]
+	amiga: Add timecounter(9) support and counter-based delay(9) from
+		i386. [mhitch 20080106]
 	mvme68k: Add timecounter(9) support. [tsutsui 20080107]
 	vax: Add timecounter(9) support. [joerg 20080107]
 	evbppc: Add timecounter(9) support. [joerg 20080108]
@@ -9331,7 +9334,7 @@ Changes from NetBSD 4.0 to NetBSD 5.0:
 	iwn(4): Added a driver for the Intel Pro/Wireless Lan 4965AGN          
 		Mini-PCI Adapter, ported from OpenBSD. [ober 20080209]
 	pcc(1): Import PCC 0.9.9-080210. [ragge 20080210]
-	uhmodem(4): Add suport for NTT DoCoMo A2502 3G/HSDPA modem.
+	uhmodem(4): Add support for NTT DoCoMo A2502 3G/HSDPA modem.
 		[ichiro 20080211]
 	libc: Enable atomic_ops(3) in userspace. [ad 20080210]
 	ofppc: Add support for the 7046-B50. [garbled 20080213]

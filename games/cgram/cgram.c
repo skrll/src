@@ -1,9 +1,11 @@
+/* $NetBSD: cgram.c,v 1.17 2021/02/26 15:18:40 rillig Exp $ */
+
 /*-
- * Copyright (c) 2013 The NetBSD Foundation, Inc.
+ * Copyright (c) 2013, 2021 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by David A. Holland.
+ * by David A. Holland and Roland Illig.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,52 +29,150 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <time.h>
-#include <err.h>
+#include <sys/cdefs.h>
+#if defined(__RCSID) && !defined(lint)
+__RCSID("$NetBSD: cgram.c,v 1.17 2021/02/26 15:18:40 rillig Exp $");
+#endif
+
 #include <assert.h>
+#include <ctype.h>
 #include <curses.h>
+#include <err.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
 #include "pathnames.h"
 
 ////////////////////////////////////////////////////////////
 
-static char *xstrdup(const char *s) {
-   char *ret;
+static char
+ch_toupper(char ch)
+{
+	return (char)toupper((unsigned char)ch);
+}
 
-   ret = malloc(strlen(s) + 1);
-   if (ret == NULL) {
-      errx(1, "Out of memory");
-   }
-   strcpy(ret, s);
-   return ret;
+static char
+ch_tolower(char ch)
+{
+	return (char)tolower((unsigned char)ch);
+}
+
+static bool
+ch_isalpha(char ch)
+{
+	return isalpha((unsigned char)ch) != 0;
+}
+
+static bool
+ch_islower(char ch)
+{
+	return islower((unsigned char)ch) != 0;
+}
+
+static bool
+ch_isspace(char ch)
+{
+	return isspace((unsigned char)ch) != 0;
+}
+
+static bool
+ch_isupper(char ch)
+{
+	return isupper((unsigned char)ch) != 0;
+}
+
+static int
+imax(int a, int b)
+{
+	return a > b ? a : b;
+}
+
+static int
+imin(int a, int b)
+{
+	return a < b ? a : b;
 }
 
 ////////////////////////////////////////////////////////////
 
-struct stringarray {
-   char **v;
-   int num;
+struct string {
+	char *s;
+	size_t len;
+	size_t cap;
 };
 
-static void stringarray_init(struct stringarray *a) {
-   a->v = NULL;
-   a->num = 0;
+struct stringarray {
+	struct string *v;
+	size_t num;
+};
+
+static void
+string_init(struct string *s)
+{
+	s->s = NULL;
+	s->len = 0;
+	s->cap = 0;
 }
 
-static void stringarray_cleanup(struct stringarray *a) {
-   free(a->v);
+static void
+string_add(struct string *s, char ch)
+{
+	if (s->len >= s->cap) {
+		s->cap = 2 * s->cap + 16;
+		s->s = realloc(s->s, s->cap);
+		if (s->s == NULL)
+			errx(1, "Out of memory");
+	}
+	s->s[s->len++] = ch;
 }
 
-static void stringarray_add(struct stringarray *a, const char *s) {
-   a->v = realloc(a->v, (a->num + 1) * sizeof(a->v[0]));
-   if (a->v == NULL) {
-      errx(1, "Out of memory");
-   }
-   a->v[a->num] = xstrdup(s);
-   a->num++;
+static void
+string_finish(struct string *s)
+{
+	string_add(s, '\0');
+	s->len--;
+}
+
+static void
+stringarray_init(struct stringarray *a)
+{
+	a->v = NULL;
+	a->num = 0;
+}
+
+static void
+stringarray_cleanup(struct stringarray *a)
+{
+	for (size_t i = 0; i < a->num; i++)
+		free(a->v[i].s);
+	free(a->v);
+}
+
+static void
+stringarray_add(struct stringarray *a, struct string *s)
+{
+	size_t num = a->num++;
+	a->v = realloc(a->v, a->num * sizeof a->v[0]);
+	if (a->v == NULL)
+		errx(1, "Out of memory");
+	a->v[num] = *s;
+}
+
+static void
+stringarray_dup(struct stringarray *dst, const struct stringarray *src)
+{
+	assert(dst->num == 0);
+	for (size_t i = 0; i < src->num; i++) {
+		struct string str;
+		string_init(&str);
+		for (const char *p = src->v[i].s; *p != '\0'; p++)
+			string_add(&str, *p);
+		string_finish(&str);
+		stringarray_add(dst, &str);
+	}
 }
 
 ////////////////////////////////////////////////////////////
@@ -80,265 +180,402 @@ static void stringarray_add(struct stringarray *a, const char *s) {
 static struct stringarray lines;
 static struct stringarray sollines;
 static bool hinting;
-static int scrolldown;
-static unsigned curx;
-static int cury;
+static int extent_x;
+static int extent_y;
+static int offset_x;
+static int offset_y;
+static int cursor_x;
+static int cursor_y;
 
-static void readquote(void) {
-   FILE *f = popen(_PATH_FORTUNE, "r");
-   if (!f) {
-      err(1, "%s", _PATH_FORTUNE);
-   }
-
-   char buf[128], buf2[8*sizeof(buf)];
-   while (fgets(buf, sizeof(buf), f)) {
-      char *s = strrchr(buf, '\n');
-      assert(s);
-      assert(strlen(s)==1);
-      *s = 0;
-
-      int i,j;
-      for (i=j=0; buf[i]; i++) {
-	 if (buf[i]=='\t') {
-	    buf2[j++] = ' ';
-	    while (j%8) buf2[j++] = ' ';
-	 }
-	 else if (buf[i]=='\b') {
-	    if (j>0) j--;
-	 }
-	 else {
-	    buf2[j++] = buf[i];
-	 }
-      }
-      buf2[j] = 0;
-
-      stringarray_add(&lines, buf2);
-      stringarray_add(&sollines, buf2);
-   }
-
-   pclose(f);
+static int
+cur_max_x(void)
+{
+	return (int)lines.v[cursor_y].len;
 }
 
-static void encode(void) {
-   int used[26];
-   for (int i=0; i<26; i++) used[i] = 0;
-
-   int key[26];
-   int keypos=0;
-   while (keypos < 26) {
-      int c = random()%26;
-      if (used[c]) continue;
-      key[keypos++] = c;
-      used[c] = 1;
-   }
-
-   for (int y=0; y<lines.num; y++) {
-      for (unsigned x=0; lines.v[y][x]; x++) {
-	 if (islower((unsigned char)lines.v[y][x])) {
-	    int q = lines.v[y][x]-'a';
-	    lines.v[y][x] = 'a'+key[q];
-	 }
-	 if (isupper((unsigned char)lines.v[y][x])) {
-	    int q = lines.v[y][x]-'A';
-	    lines.v[y][x] = 'A'+key[q];
-	 }
-      }
-   }
+static int
+cur_max_y(void)
+{
+	return extent_y - 1;
 }
 
-static int substitute(int ch) {
-   assert(cury>=0 && cury<lines.num);
-   if (curx >= strlen(lines.v[cury])) {
-      beep();
-      return -1;
-   }
-
-   int och = lines.v[cury][curx];
-   if (!isalpha((unsigned char)och)) {
-      beep();
-      return -1;
-   }
-
-   int loch = tolower((unsigned char)och);
-   int uoch = toupper((unsigned char)och);
-   int lch = tolower((unsigned char)ch);
-   int uch = toupper((unsigned char)ch);
-
-   for (int y=0; y<lines.num; y++) {
-      for (unsigned x=0; lines.v[y][x]; x++) {
-	 if (lines.v[y][x]==loch) {
-	    lines.v[y][x] = lch;
-	 }
-	 else if (lines.v[y][x]==uoch) {
-	    lines.v[y][x] = uch;
-	 }
-	 else if (lines.v[y][x]==lch) {
-	    lines.v[y][x] = loch;
-	 }
-	 else if (lines.v[y][x]==uch) {
-	    lines.v[y][x] = uoch;
-	 }
-      }
-   }
-   return 0;
+static char
+char_left_of_cursor(void)
+{
+	if (cursor_x > 0)
+		return lines.v[cursor_y].s[cursor_x - 1];
+	assert(cursor_y > 0);
+	return '\n'; /* eol of previous line */
 }
 
-////////////////////////////////////////////////////////////
-
-static void redraw(void) {
-   erase();
-   bool won = true;
-   for (int i=0; i<LINES-1; i++) {
-      move(i, 0);
-      int ln = i+scrolldown;
-      if (ln < lines.num) {
-	 for (unsigned j=0; lines.v[i][j]; j++) {
-	    int ch = lines.v[i][j];
-	    if (ch != sollines.v[i][j] && isalpha((unsigned char)ch)) {
-	       won = false;
-	    }
-	    bool bold=false;
-	    if (hinting && ch==sollines.v[i][j] &&
-		isalpha((unsigned char)ch)) {
-	       bold = true;
-	       attron(A_BOLD);
-	    }
-	    addch(lines.v[i][j]);
-	    if (bold) {
-	       attroff(A_BOLD);
-	    }
-	 }
-      }
-      clrtoeol();
-   }
-
-   move(LINES-1, 0);
-   if (won) {
-      addstr("*solved* ");
-   }
-   addstr("~ to quit, * to cheat, ^pnfb to move");
-
-   move(LINES-1, 0);
-
-   move(cury-scrolldown, curx);
-
-   refresh();
+static char
+char_at_cursor(void)
+{
+	if (cursor_x == cur_max_x())
+		return '\n';
+	return lines.v[cursor_y].s[cursor_x];
 }
 
-static void opencurses(void) {
-    initscr();
-    cbreak();
-    noecho();
+static void
+readquote(void)
+{
+	FILE *f = popen(_PATH_FORTUNE, "r");
+	if (f == NULL)
+		err(1, "%s", _PATH_FORTUNE);
+
+	struct string line;
+	string_init(&line);
+
+	int ch;
+	while ((ch = fgetc(f)) != EOF) {
+		if (ch == '\n') {
+			string_finish(&line);
+			stringarray_add(&lines, &line);
+			string_init(&line);
+		} else if (ch == '\t') {
+			string_add(&line, ' ');
+			while (line.len % 8 != 0)
+				string_add(&line, ' ');
+		} else if (ch == '\b') {
+			if (line.len > 0)
+				line.len--;
+		} else {
+			string_add(&line, (char)ch);
+		}
+	}
+
+	stringarray_dup(&sollines, &lines);
+
+	extent_y = (int)lines.num;
+	for (int i = 0; i < extent_y; i++)
+		extent_x = imax(extent_x, (int)lines.v[i].len);
+
+	if (pclose(f) != 0)
+		exit(1); /* error message must come from child process */
 }
 
-static void closecurses(void) {
-   endwin();
+static void
+encode(void)
+{
+	int key[26];
+
+	for (int i = 0; i < 26; i++)
+		key[i] = i;
+
+	for (int i = 26; i > 1; i--) {
+		int c = (int)(random() % i);
+		int t = key[i - 1];
+		key[i - 1] = key[c];
+		key[c] = t;
+	}
+
+	for (int y = 0; y < extent_y; y++) {
+		for (char *p = lines.v[y].s; *p != '\0'; p++) {
+			if (ch_islower(*p))
+				*p = (char)('a' + key[*p - 'a']);
+			if (ch_isupper(*p))
+				*p = (char)('A' + key[*p - 'A']);
+		}
+	}
+}
+
+static void
+substitute(char a, char b)
+{
+	char la = ch_tolower(a);
+	char ua = ch_toupper(a);
+	char lb = ch_tolower(b);
+	char ub = ch_toupper(b);
+
+	for (int y = 0; y < (int)lines.num; y++) {
+		for (char *p = lines.v[y].s; *p != '\0'; p++) {
+			if (*p == la)
+				*p = lb;
+			else if (*p == ua)
+				*p = ub;
+			else if (*p == lb)
+				*p = la;
+			else if (*p == ub)
+				*p = ua;
+		}
+	}
+}
+
+static bool
+is_solved(void)
+{
+	for (size_t i = 0; i < lines.num; i++)
+		if (strcmp(lines.v[i].s, sollines.v[i].s) != 0)
+			return false;
+	return true;
 }
 
 ////////////////////////////////////////////////////////////
 
-static void loop(void) {
-   bool done=false;
-   while (!done) {
-      redraw();
-      int ch = getch();
-      switch (ch) {
-       case 1: /* ^A */
-	curx=0;
-	break;
-       case 2: /* ^B */
-	if (curx > 0) {
-	   curx--;
+static void
+redraw(void)
+{
+	erase();
+
+	int max_y = imin(LINES - 1, extent_y - offset_y);
+	for (int y = 0; y < max_y; y++) {
+		move(y, 0);
+
+		int len = (int)lines.v[offset_y + y].len;
+		int max_x = imin(COLS - 1, len - offset_x);
+		const char *line = lines.v[offset_y + y].s;
+		const char *solline = sollines.v[offset_y + y].s;
+
+		for (int x = 0; x < max_x; x++) {
+			char ch = line[offset_x + x];
+			bool bold = hinting &&
+			    ch == solline[offset_x + x] &&
+			    ch_isalpha(ch);
+
+			if (bold)
+				attron(A_BOLD);
+			addch(ch);
+			if (bold)
+				attroff(A_BOLD);
+		}
+		clrtoeol();
 	}
-	else if (cury > 0) {
-	   cury--;
-	   curx = strlen(lines.v[cury]);
+
+	move(LINES - 1, 0);
+	addstr("~ to quit, * to cheat, ^pnfb to move");
+
+	if (is_solved()) {
+		if (extent_y + 1 - offset_y < LINES - 2)
+			move(extent_y + 1 - offset_y, 0);
+		else
+			addch(' ');
+		attron(A_BOLD | A_STANDOUT);
+		addstr("*solved*");
+		attroff(A_BOLD | A_STANDOUT);
 	}
-	break;
-       case 5: /* ^E */
-	curx = strlen(lines.v[cury]);
-	break;
-       case 6: /* ^F */
-	if (curx < strlen(lines.v[cury])) {
-	   curx++;
-	}
-	else if (cury < lines.num - 1) {
-	   cury++;
-	   curx = 0;
-	}
-	break;
-       case 12: /* ^L */
-	clear();
-	break;
-       case 14: /* ^N */
-	if (cury < lines.num-1) {
-	   cury++;
-	}
-	if (curx > strlen(lines.v[cury])) {
-	   curx =  strlen(lines.v[cury]);
-	}
-	if (scrolldown < cury - (LINES-2)) {
-	   scrolldown = cury - (LINES-2);
-	}
-	break;
-       case 16: /* ^P */
-	if (cury > 0) {
-	   cury--;
-	}
-	if (curx > strlen(lines.v[cury])) {
-	   curx = strlen(lines.v[cury]);
-	}
-	if (scrolldown > cury) {
-	   scrolldown = cury;
-	}
-	break;
-       case '*':
-	hinting = !hinting;
-	break;
-       case '~':
-	done = true;
-	break;
-       default:
-	if (isalpha(ch)) {
-	   if (!substitute(ch)) {
-	      if (curx < strlen(lines.v[cury])) {
-		 curx++;
-	      }
-	      if (curx==strlen(lines.v[cury]) && cury < lines.num-1) {
-		 curx=0;
-		 cury++;
-	      }
-	   }
-	}
-	else if (curx < strlen(lines.v[cury]) && ch==lines.v[cury][curx]) {
-	   curx++;
-	   if (curx==strlen(lines.v[cury]) && cury < lines.num-1) {
-	      curx=0;
-	      cury++;
-	   }
-	}
-	else {
-	   beep();
-	}
-	break;
-      }
-   }
+
+	move(cursor_y - offset_y, cursor_x - offset_x);
+
+	refresh();
 }
 
 ////////////////////////////////////////////////////////////
 
-int main(void) {
-   stringarray_init(&lines);
-   stringarray_init(&sollines);
-   srandom(time(NULL));
-   readquote();
-   encode();
-   opencurses();
+static void
+saturate_cursor(void)
+{
+	cursor_y = imax(cursor_y, 0);
+	cursor_y = imin(cursor_y, cur_max_y());
 
-   loop();
+	assert(cursor_x >= 0);
+	cursor_x = imin(cursor_x, cur_max_x());
+}
 
-   closecurses();
-   stringarray_cleanup(&sollines);
-   stringarray_cleanup(&lines);
-   return 0;
+static void
+scroll_into_view(void)
+{
+	if (cursor_x < offset_x)
+		offset_x = cursor_x;
+	if (cursor_x > offset_x + COLS - 1)
+		offset_x = cursor_x - (COLS - 1);
+
+	if (cursor_y < offset_y)
+		offset_y = cursor_y;
+	if (cursor_y > offset_y + LINES - 2)
+		offset_y = cursor_y - (LINES - 2);
+}
+
+static bool
+can_go_left(void)
+{
+	return cursor_y > 0 ||
+	    (cursor_y == 0 && cursor_x > 0);
+}
+
+static bool
+can_go_right(void)
+{
+	return cursor_y < cur_max_y() ||
+	    (cursor_y == cur_max_y() && cursor_x < cur_max_x());
+}
+
+static void
+go_to_prev_line(void)
+{
+	cursor_y--;
+	cursor_x = cur_max_x();
+}
+
+static void
+go_to_next_line(void)
+{
+	cursor_x = 0;
+	cursor_y++;
+}
+
+static void
+go_left(void)
+{
+	if (cursor_x > 0)
+		cursor_x--;
+	else if (cursor_y > 0)
+		go_to_prev_line();
+}
+
+static void
+go_right(void)
+{
+	if (cursor_x < cur_max_x())
+		cursor_x++;
+	else if (cursor_y < cur_max_y())
+		go_to_next_line();
+}
+
+static void
+go_to_prev_word(void)
+{
+	while (can_go_left() && ch_isspace(char_left_of_cursor()))
+		go_left();
+
+	while (can_go_left() && !ch_isspace(char_left_of_cursor()))
+		go_left();
+}
+
+static void
+go_to_next_word(void)
+{
+	while (can_go_right() && !ch_isspace(char_at_cursor()))
+		go_right();
+
+	while (can_go_right() && ch_isspace(char_at_cursor()))
+		go_right();
+}
+
+static bool
+can_substitute_here(int ch)
+{
+	return isascii(ch) &&
+	    ch_isalpha((char)ch) &&
+	    cursor_x < cur_max_x() &&
+	    ch_isalpha(char_at_cursor());
+}
+
+static void
+handle_char_input(int ch)
+{
+	if (ch == char_at_cursor())
+		go_right();
+	else if (can_substitute_here(ch)) {
+		substitute(char_at_cursor(), (char)ch);
+		go_right();
+	} else
+		beep();
+}
+
+static bool
+handle_key(void)
+{
+	int ch = getch();
+
+	switch (ch) {
+	case 1:			/* ^A */
+	case KEY_HOME:
+		cursor_x = 0;
+		break;
+	case 2:			/* ^B */
+	case KEY_LEFT:
+		go_left();
+		break;
+	case 5:			/* ^E */
+	case KEY_END:
+		cursor_x = cur_max_x();
+		break;
+	case 6:			/* ^F */
+	case KEY_RIGHT:
+		go_right();
+		break;
+	case '\t':
+		go_to_next_word();
+		break;
+	case KEY_BTAB:
+		go_to_prev_word();
+		break;
+	case '\n':
+		go_to_next_line();
+		break;
+	case 12:		/* ^L */
+		clear();
+		break;
+	case 14:		/* ^N */
+	case KEY_DOWN:
+		cursor_y++;
+		break;
+	case 16:		/* ^P */
+	case KEY_UP:
+		cursor_y--;
+		break;
+	case KEY_PPAGE:
+		cursor_y -= LINES - 2;
+		break;
+	case KEY_NPAGE:
+		cursor_y += LINES - 2;
+		break;
+	case '*':
+		hinting = !hinting;
+		break;
+	case '~':
+		return false;
+	case KEY_RESIZE:
+		break;
+	default:
+		handle_char_input(ch);
+		break;
+	}
+	return true;
+}
+
+static void
+init(void)
+{
+	stringarray_init(&lines);
+	stringarray_init(&sollines);
+	srandom((unsigned int)time(NULL));
+	readquote();
+	encode();
+
+	initscr();
+	cbreak();
+	noecho();
+	keypad(stdscr, true);
+}
+
+static void
+loop(void)
+{
+	for (;;) {
+		redraw();
+		if (!handle_key())
+			break;
+		saturate_cursor();
+		scroll_into_view();
+	}
+}
+
+static void
+clean_up(void)
+{
+	endwin();
+
+	stringarray_cleanup(&sollines);
+	stringarray_cleanup(&lines);
+}
+
+////////////////////////////////////////////////////////////
+
+int
+main(void)
+{
+	init();
+	loop();
+	clean_up();
 }

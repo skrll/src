@@ -1,4 +1,4 @@
-.\" $NetBSD: legal.common,v 1.124 2019/12/03 16:45:21 uwe Exp $
+.\" $NetBSD: legal.common,v 1.126 2020/05/15 09:21:59 kamil Exp $
 .\"
 .\" Copyright (c) 1999-2004 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -85,7 +85,7 @@ Hannum.
 This product includes software developed by Alex Zepeda.
 .It
 This product includes software developed by Alex Zepeda, and
-Colin Wood for the NetBSD Projet.
+Colin Wood for the NetBSD Project.
 .It
 This product includes software developed by Allen Briggs.
 .It
@@ -399,8 +399,6 @@ This product includes software developed by WIDE Project and
 its contributors.
 .It
 This product includes software developed by Winning Strategies, Inc.
-.It
-This product includes software developed by Yasushi Yamasaki
 .It
 This product includes software developed by Yen Yen Lim and
 North Dakota State University

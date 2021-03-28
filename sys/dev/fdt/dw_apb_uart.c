@@ -1,4 +1,4 @@
-/* $NetBSD: dw_apb_uart.c,v 1.5 2019/07/21 15:57:23 rin Exp $ */
+/* $NetBSD: dw_apb_uart.c,v 1.10 2021/01/27 03:10:21 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: dw_apb_uart.c,v 1.5 2019/07/21 15:57:23 rin Exp $");
+__KERNEL_RCSID(1, "$NetBSD: dw_apb_uart.c,v 1.10 2021/01/27 03:10:21 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -45,9 +45,9 @@ __KERNEL_RCSID(1, "$NetBSD: dw_apb_uart.c,v 1.5 2019/07/21 15:57:23 rin Exp $");
 static int dw_apb_uart_match(device_t, cfdata_t, void *);
 static void dw_apb_uart_attach(device_t, device_t, void *);
 
-static const char * const compatible[] = {
-	"snps,dw-apb-uart",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "snps,dw-apb-uart" },
+	DEVICE_COMPAT_EOL
 };
 
 struct dw_apb_uart_softc {
@@ -67,7 +67,7 @@ dw_apb_uart_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -76,8 +76,8 @@ dw_apb_uart_attach(device_t parent, device_t self, void *aux)
 	struct dw_apb_uart_softc * const ssc = device_private(self);
 	struct com_softc * const sc = &ssc->ssc_sc;
 	struct fdt_attach_args * const faa = aux;
+	bus_space_tag_t bst = faa->faa_bst;
 	bus_space_handle_t bsh;
-	bus_space_tag_t bst;
 	char intrstr[128];
 	bus_addr_t addr;
 	bus_size_t size;
@@ -91,17 +91,7 @@ dw_apb_uart_attach(device_t parent, device_t self, void *aux)
 
 	if (of_getprop_uint32(faa->faa_phandle, "reg-shift", &reg_shift)) {
 		/* missing or bad reg-shift property, assume 2 */
-		bst = faa->faa_a4x_bst;
-	} else {
-		if (reg_shift == 2) {
-			bst = faa->faa_a4x_bst;
-		} else if (reg_shift == 0) {
-			bst = faa->faa_bst;
-		} else {
-			aprint_error(": unsupported reg-shift value %d\n",
-			    reg_shift);
-			return;
-		}
+		reg_shift = 2;
 	}
 
 	sc->sc_dev = self;
@@ -137,7 +127,7 @@ dw_apb_uart_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	com_init_regs(&sc->sc_regs, bst, bsh, addr);
+	com_init_regs_stride(&sc->sc_regs, bst, bsh, addr, reg_shift);
 
 	com_attach_subr(sc);
 
@@ -146,8 +136,8 @@ dw_apb_uart_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	ssc->ssc_ih = fdtbus_intr_establish(faa->faa_phandle, 0, IPL_SERIAL,
-	    FDT_INTR_MPSAFE, comintr, sc);
+	ssc->ssc_ih = fdtbus_intr_establish_xname(faa->faa_phandle, 0,
+	    IPL_SERIAL, FDT_INTR_MPSAFE, comintr, sc, device_xname(self));
 	if (ssc->ssc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt on %s\n",
 		    intrstr);
@@ -162,16 +152,19 @@ dw_apb_uart_attach(device_t parent, device_t self, void *aux)
 static int
 dw_apb_uart_console_match(int phandle)
 {
-	return of_match_compatible(phandle, compatible);
+	return of_compatible_match(phandle, compat_data);
 }
 
 static void
 dw_apb_uart_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 {
 	const int phandle = faa->faa_phandle;
-	bus_space_tag_t bst = faa->faa_a4x_bst;
+	bus_space_tag_t bst = faa->faa_bst;
+	bus_space_handle_t dummy_bsh;
+	struct com_regs regs;
 	bus_addr_t addr;
 	tcflag_t flags;
+	u_int reg_shift;
 	int speed;
 
 	fdtbus_get_reg(phandle, 0, &addr, NULL);
@@ -180,10 +173,16 @@ dw_apb_uart_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 		speed = 115200;	/* default */
 	flags = fdtbus_get_stdout_flags();
 
-	if (comcnattach(bst, addr, speed, uart_freq, COM_TYPE_DW_APB, flags))
-		panic("Cannot initialize dw-apb-uart console");
+	if (of_getprop_uint32(phandle, "reg-shift", &reg_shift)) {
+		/* missing or bad reg-shift property, assume 2 */
+		reg_shift = 2;
+	}
 
-	cn_set_magic("+++++");
+	memset(&dummy_bsh, 0, sizeof(dummy_bsh));
+	com_init_regs_stride(&regs, bst, dummy_bsh, addr, reg_shift);
+
+	if (comcnattach1(&regs, speed, uart_freq, COM_TYPE_DW_APB, flags))
+		panic("Cannot initialize dw-apb-uart console");
 }
 
 static const struct fdt_console dw_apb_uart_console = {

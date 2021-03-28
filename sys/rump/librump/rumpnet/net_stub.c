@@ -1,4 +1,4 @@
-/*	$NetBSD: net_stub.c,v 1.37 2018/12/12 01:46:47 rin Exp $	*/
+/*	$NetBSD: net_stub.c,v 1.41 2020/11/06 14:50:13 christos Exp $	*/
 
 /*
  * Copyright (c) 2008 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: net_stub.c,v 1.37 2018/12/12 01:46:47 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: net_stub.c,v 1.41 2020/11/06 14:50:13 christos Exp $");
 
 #include <sys/mutex.h>
 #include <sys/param.h>
@@ -34,8 +34,6 @@ __KERNEL_RCSID(0, "$NetBSD: net_stub.c,v 1.37 2018/12/12 01:46:47 rin Exp $");
 #include <sys/socketvar.h>
 #include <sys/pslist.h>
 #include <sys/psref.h>
-#include <sys/sysctl.h>
-#include <sys/un.h>
 
 #include <net/if.h>
 #include <net/route.h>
@@ -64,6 +62,7 @@ rumpnet_stub(void)
 __weak_alias(bridge_ifdetach,rumpnet_stub);
 __weak_alias(bridge_output,rumpnet_stub);
 __weak_alias(bridge_calc_csum_flags,rumpnet_stub);
+__weak_alias(bridge_calc_link_state,rumpnet_stub);
 
 /* agr */
 __weak_alias(agr_input,rumpnet_stub);
@@ -77,6 +76,7 @@ __weak_alias(pppoedisc_input,rumpnet_stub);
 /* vlan */
 __weak_alias(vlan_input,rumpnet_stub);
 __weak_alias(vlan_ifdetach,rumpnet_stub);
+__weak_alias(vlan_link_state_changed,rumpnet_stub);
 
 /* ipsec */
 /* FIXME: should modularize netipsec and reduce reverse symbol references */
@@ -85,12 +85,6 @@ int ipsec_enabled;
 int ipsec_used;
 percpu_t *ipsecstat_percpu;
 u_int ipsec_spdgen;
-
-/* sysctl */
-void
-unp_sysctl_create(struct sysctllog **clog)
-{
-}
 
 __weak_alias(ah4_ctlinput,rumpnet_stub);
 __weak_alias(ah6_ctlinput,rumpnet_stub);
@@ -102,7 +96,7 @@ __weak_alias(ipsec6_common_input,rumpnet_stub);
 __weak_alias(ipsec6_check_policy,rumpnet_stub);
 __weak_alias(ipsec6_process_packet,rumpnet_stub);
 __weak_alias(ipsec_mtu,rumpnet_stub);
-__weak_alias(ipsec_ip_input,rumpnet_stub);
+__weak_alias(ipsec_ip_input_checkpolicy,rumpnet_stub);
 __weak_alias(ipsec_set_policy,rumpnet_stub);
 __weak_alias(ipsec_get_policy,rumpnet_stub);
 __weak_alias(ipsec_delete_pcbpolicy,rumpnet_stub);

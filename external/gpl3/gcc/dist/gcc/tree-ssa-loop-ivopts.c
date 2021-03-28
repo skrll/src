@@ -1,5 +1,5 @@
 /* Induction variable optimizations.
-   Copyright (C) 2003-2018 Free Software Foundation, Inc.
+   Copyright (C) 2003-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -543,7 +543,7 @@ struct ivopts_data
 {
   /* The currently optimized loop.  */
   struct loop *current_loop;
-  source_location loop_loc;
+  location_t loop_loc;
 
   /* Numbers of iterations for all exits of the current loop.  */
   hash_map<edge, tree_niter_desc *> *niters;
@@ -581,6 +581,9 @@ struct ivopts_data
 
   /* The common candidates.  */
   vec<iv_common_cand *> iv_common_cands;
+
+  /* Hash map recording base object information of tree exp.  */
+  hash_map<tree, tree> *base_object_map;
 
   /* The maximum invariant variable id.  */
   unsigned max_inv_var_id;
@@ -985,6 +988,16 @@ contains_abnormal_ssa_name_p (tree expr)
   code = TREE_CODE (expr);
   codeclass = TREE_CODE_CLASS (code);
 
+  if (code == CALL_EXPR)
+    {
+      tree arg;
+      call_expr_arg_iterator iter;
+      FOR_EACH_CALL_EXPR_ARG (arg, iter, expr)
+	if (contains_abnormal_ssa_name_p (arg))
+	  return true;
+      return false;
+    }
+
   if (code == SSA_NAME)
     return SSA_NAME_OCCURS_IN_ABNORMAL_PHI (expr) != 0;
 
@@ -1093,61 +1106,68 @@ tree_ssa_iv_optimize_init (struct ivopts_data *data)
   data->vcands.create (20);
   data->inv_expr_tab = new hash_table<iv_inv_expr_hasher> (10);
   data->name_expansion_cache = NULL;
+  data->base_object_map = NULL;
   data->iv_common_cand_tab = new hash_table<iv_common_cand_hasher> (10);
   data->iv_common_cands.create (20);
   decl_rtl_to_reset.create (20);
   gcc_obstack_init (&data->iv_obstack);
 }
 
-/* Returns a memory object to that EXPR points.  In case we are able to
-   determine that it does not point to any such object, NULL is returned.  */
+/* walk_tree callback for determine_base_object.  */
 
 static tree
-determine_base_object (tree expr)
+determine_base_object_1 (tree *tp, int *walk_subtrees, void *wdata)
 {
-  enum tree_code code = TREE_CODE (expr);
-  tree base, obj;
-
-  /* If this is a pointer casted to any type, we need to determine
-     the base object for the pointer; so handle conversions before
-     throwing away non-pointer expressions.  */
-  if (CONVERT_EXPR_P (expr))
-    return determine_base_object (TREE_OPERAND (expr, 0));
-
-  if (!POINTER_TYPE_P (TREE_TYPE (expr)))
-    return NULL_TREE;
-
-  switch (code)
+  tree_code code = TREE_CODE (*tp);
+  tree obj = NULL_TREE;
+  if (code == ADDR_EXPR)
     {
-    case INTEGER_CST:
-      return NULL_TREE;
-
-    case ADDR_EXPR:
-      obj = TREE_OPERAND (expr, 0);
-      base = get_base_address (obj);
-
+      tree base = get_base_address (TREE_OPERAND (*tp, 0));
       if (!base)
-	return expr;
-
-      if (TREE_CODE (base) == MEM_REF)
-	return determine_base_object (TREE_OPERAND (base, 0));
-
-      return fold_convert (ptr_type_node,
-			   build_fold_addr_expr (base));
-
-    case POINTER_PLUS_EXPR:
-      return determine_base_object (TREE_OPERAND (expr, 0));
-
-    case PLUS_EXPR:
-    case MINUS_EXPR:
-      /* Pointer addition is done solely using POINTER_PLUS_EXPR.  */
-      gcc_unreachable ();
-
-    default:
-      if (POLY_INT_CST_P (expr))
-	return NULL_TREE;
-      return fold_convert (ptr_type_node, expr);
+	obj = *tp;
+      else if (TREE_CODE (base) != MEM_REF)
+	obj = fold_convert (ptr_type_node, build_fold_addr_expr (base));
     }
+  else if (code == SSA_NAME && POINTER_TYPE_P (TREE_TYPE (*tp)))
+	obj = fold_convert (ptr_type_node, *tp);
+
+  if (!obj)
+    {
+      if (!EXPR_P (*tp))
+	*walk_subtrees = 0;
+
+      return NULL_TREE;
+    }
+  /* Record special node for multiple base objects and stop.  */
+  if (*static_cast<tree *> (wdata))
+    {
+      *static_cast<tree *> (wdata) = integer_zero_node;
+      return integer_zero_node;
+    }
+  /* Record the base object and continue looking.  */
+  *static_cast<tree *> (wdata) = obj;
+  return NULL_TREE;
+}
+
+/* Returns a memory object to that EXPR points with caching.  Return NULL if we
+   are able to determine that it does not point to any such object; specially
+   return integer_zero_node if EXPR contains multiple base objects.  */
+
+static tree
+determine_base_object (struct ivopts_data *data, tree expr)
+{
+  tree *slot, obj = NULL_TREE;
+  if (data->base_object_map)
+    {
+      if ((slot = data->base_object_map->get(expr)) != NULL)
+	return *slot;
+    }
+  else
+    data->base_object_map = new hash_map<tree, tree>;
+
+  (void) walk_tree_without_duplicates (&expr, determine_base_object_1, &obj);
+  data->base_object_map->put (expr, obj);
+  return obj;
 }
 
 /* Return true if address expression with non-DECL_P operand appears
@@ -1205,7 +1225,7 @@ alloc_iv (struct ivopts_data *data, tree base, tree step,
     }
 
   iv->base = base;
-  iv->base_object = determine_base_object (base);
+  iv->base_object = determine_base_object (data, base);
   iv->step = step;
   iv->biv_p = false;
   iv->nonlin_use = NULL;
@@ -1428,9 +1448,9 @@ find_givs_in_stmt_scev (struct ivopts_data *data, gimple *stmt, affine_iv *iv)
     return false;
 
   /* If STMT could throw, then do not consider STMT as defining a GIV.
-     While this will suppress optimizations, we can not safely delete this
+     While this will suppress optimizations, we cannot safely delete this
      GIV and associated statements, even if it appears it is not used.  */
-  if (stmt_could_throw_p (stmt))
+  if (stmt_could_throw_p (cfun, stmt))
     return false;
 
   return true;
@@ -2237,6 +2257,10 @@ may_be_nonaddressable_p (tree expr)
 {
   switch (TREE_CODE (expr))
     {
+    case VAR_DECL:
+      /* Check if it's a register variable.  */
+      return DECL_HARD_REGISTER (expr);
+
     case TARGET_MEM_REF:
       /* TARGET_MEM_REFs are translated directly to valid MEMs on the
 	 target, thus they are always addressable.  */
@@ -3027,7 +3051,7 @@ find_inv_vars (struct ivopts_data *data, tree *expr_p, bitmap *inv_vars)
    It's hard to make decision whether constant part should be stripped
    or not.  We choose to not strip based on below facts:
      1) We need to count ADD cost for constant part if it's stripped,
-	which is't always trivial where this functions is called.
+	which isn't always trivial where this functions is called.
      2) Stripping constant away may be conflict with following loop
 	invariant hoisting pass.
      3) Not stripping constant away results in more invariant exprs,
@@ -3212,7 +3236,7 @@ add_autoinc_candidates (struct ivopts_data *data, tree base, tree step,
      statement.  */
   if (use_bb->loop_father != data->current_loop
       || !dominated_by_p (CDI_DOMINATORS, data->current_loop->latch, use_bb)
-      || stmt_can_throw_internal (use->stmt)
+      || stmt_can_throw_internal (cfun, use->stmt)
       || !cst_and_fits_in_hwi (step))
     return;
 
@@ -7244,11 +7268,10 @@ rewrite_groups (struct ivopts_data *data)
 /* Removes the ivs that are not used after rewriting.  */
 
 static void
-remove_unused_ivs (struct ivopts_data *data)
+remove_unused_ivs (struct ivopts_data *data, bitmap toremove)
 {
   unsigned j;
   bitmap_iterator bi;
-  bitmap toremove = BITMAP_ALLOC (NULL);
 
   /* Figure out an order in which to release SSA DEFs so that we don't
      release something that we'd have to propagate into a debug stmt
@@ -7370,10 +7393,6 @@ remove_unused_ivs (struct ivopts_data *data)
 	    }
 	}
     }
-
-  release_defs_bitset (toremove);
-
-  BITMAP_FREE (toremove);
 }
 
 /* Frees memory occupied by struct tree_niter_desc in *VALUE. Callback
@@ -7487,6 +7506,8 @@ tree_ssa_iv_optimize_finalize (struct ivopts_data *data)
   delete data->inv_expr_tab;
   data->inv_expr_tab = NULL;
   free_affine_expand_cache (&data->name_expansion_cache);
+  if (data->base_object_map)
+    delete data->base_object_map;
   delete data->iv_common_cand_tab;
   data->iv_common_cand_tab = NULL;
   data->iv_common_cands.release ();
@@ -7516,7 +7537,8 @@ loop_body_includes_call (basic_block *body, unsigned num_nodes)
 /* Optimizes the LOOP.  Returns true if anything changed.  */
 
 static bool
-tree_ssa_iv_optimize_loop (struct ivopts_data *data, struct loop *loop)
+tree_ssa_iv_optimize_loop (struct ivopts_data *data, struct loop *loop,
+			   bitmap toremove)
 {
   bool changed = false;
   struct iv_ca *iv_ca;
@@ -7525,7 +7547,7 @@ tree_ssa_iv_optimize_loop (struct ivopts_data *data, struct loop *loop)
 
   gcc_assert (!data->niters);
   data->current_loop = loop;
-  data->loop_loc = find_loop_location (loop);
+  data->loop_loc = find_loop_location (loop).get_location_t ();
   data->speed = optimize_loop_for_speed_p (loop);
 
   if (dump_file && (dump_flags & TDF_DETAILS))
@@ -7586,12 +7608,7 @@ tree_ssa_iv_optimize_loop (struct ivopts_data *data, struct loop *loop)
   rewrite_groups (data);
 
   /* Remove the ivs that are unused after rewriting.  */
-  remove_unused_ivs (data);
-
-  /* We have changed the structure of induction variables; it might happen
-     that definitions in the scev database refer to some of them that were
-     eliminated.  */
-  scev_reset ();
+  remove_unused_ivs (data, toremove);
 
 finish:
   free_loop_data (data);
@@ -7606,6 +7623,7 @@ tree_ssa_iv_optimize (void)
 {
   struct loop *loop;
   struct ivopts_data data;
+  auto_bitmap toremove;
 
   tree_ssa_iv_optimize_init (&data);
 
@@ -7615,8 +7633,18 @@ tree_ssa_iv_optimize (void)
       if (dump_file && (dump_flags & TDF_DETAILS))
 	flow_loop_dump (loop, dump_file, NULL, 1);
 
-      tree_ssa_iv_optimize_loop (&data, loop);
+      tree_ssa_iv_optimize_loop (&data, loop, toremove);
     }
+
+  /* Remove eliminated IV defs.  */
+  release_defs_bitset (toremove);
+
+  /* We have changed the structure of induction variables; it might happen
+     that definitions in the scev database refer to some of them that were
+     eliminated.  */
+  scev_reset_htab ();
+  /* Likewise niter and control-IV information.  */
+  free_numbers_of_iterations_estimates (cfun);
 
   tree_ssa_iv_optimize_finalize (&data);
 }

@@ -1,11 +1,11 @@
-/*	$NetBSD: a_1.c,v 1.4 2019/11/27 05:48:42 christos Exp $	*/
+/*	$NetBSD: a_1.c,v 1.7 2021/02/19 16:42:18 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -38,11 +38,13 @@ fromtext_in_a(ARGS_FROMTEXT) {
 	RETERR(isc_lex_getmastertoken(lexer, &token, isc_tokentype_string,
 				      false));
 
-	if (inet_pton(AF_INET, DNS_AS_STR(token), &addr) != 1)
+	if (inet_pton(AF_INET, DNS_AS_STR(token), &addr) != 1) {
 		RETTOK(DNS_R_BADDOTTEDQUAD);
+	}
 	isc_buffer_availableregion(target, &region);
-	if (region.length < 4)
+	if (region.length < 4) {
 		return (ISC_R_NOSPACE);
+	}
 	memmove(region.base, &addr, 4);
 	isc_buffer_add(target, 4);
 	return (ISC_R_SUCCESS);
@@ -59,7 +61,7 @@ totext_in_a(ARGS_TOTEXT) {
 	UNUSED(tctx);
 
 	dns_rdata_toregion(rdata, &region);
-	return (inet_totext(AF_INET, &region, target));
+	return (inet_totext(AF_INET, tctx->flags, &region, target));
 }
 
 static inline isc_result_t
@@ -77,10 +79,12 @@ fromwire_in_a(ARGS_FROMWIRE) {
 
 	isc_buffer_activeregion(source, &sregion);
 	isc_buffer_availableregion(target, &tregion);
-	if (sregion.length < 4)
+	if (sregion.length < 4) {
 		return (ISC_R_UNEXPECTEDEND);
-	if (tregion.length < 4)
+	}
+	if (tregion.length < 4) {
 		return (ISC_R_NOSPACE);
+	}
 
 	memmove(tregion.base, sregion.base, 4);
 	isc_buffer_forward(source, 4);
@@ -99,8 +103,9 @@ towire_in_a(ARGS_TOWIRE) {
 	UNUSED(cctx);
 
 	isc_buffer_availableregion(target, &region);
-	if (region.length < rdata->length)
+	if (region.length < rdata->length) {
 		return (ISC_R_NOSPACE);
+	}
 	memmove(region.base, rdata->data, rdata->length);
 	isc_buffer_add(target, 4);
 	return (ISC_R_SUCCESS);
@@ -141,7 +146,6 @@ fromstruct_in_a(ARGS_FROMSTRUCT) {
 
 	return (uint32_tobuffer(n, target));
 }
-
 
 static inline isc_result_t
 tostruct_in_a(ARGS_TOSTRUCT) {
@@ -205,6 +209,7 @@ digest_in_a(ARGS_DIGEST) {
 static inline bool
 checkowner_in_a(ARGS_CHECKOWNER) {
 	dns_name_t prefix, suffix;
+	unsigned int labels, i;
 
 	REQUIRE(type == dns_rdatatype_a);
 	REQUIRE(rdclass == dns_rdataclass_in);
@@ -212,17 +217,41 @@ checkowner_in_a(ARGS_CHECKOWNER) {
 	UNUSED(type);
 	UNUSED(rdclass);
 
-	/*
-	 * Handle Active Diretory gc._msdcs.<forest> name.
-	 */
-	if (dns_name_countlabels(name) > 2U) {
+	labels = dns_name_countlabels(name);
+	if (labels > 2U) {
+		/*
+		 * Handle Active Directory gc._msdcs.<forest> name.
+		 */
 		dns_name_init(&prefix, NULL);
 		dns_name_init(&suffix, NULL);
-		dns_name_split(name, dns_name_countlabels(name) - 2,
-			       &prefix, &suffix);
+		dns_name_split(name, labels - 2, &prefix, &suffix);
 		if (dns_name_equal(&gc_msdcs, &prefix) &&
-		    dns_name_ishostname(&suffix, false))
+		    dns_name_ishostname(&suffix, false)) {
 			return (true);
+		}
+
+		/*
+		 * Handle SPF exists targets when the seperating label is:
+		 * - "_spf" RFC7208, section 5.7
+		 * - "_spf_verify" RFC7208, Appendix D1
+		 * - "_spf_rate" RFC7208, Appendix D1
+		 */
+		for (i = 0; i < labels - 2; i++) {
+			dns_label_t label;
+			dns_name_getlabel(name, i, &label);
+			if ((label.length == 5 &&
+			     strncasecmp((char *)label.base, "\x04_spf", 5) ==
+				     0) ||
+			    (label.length == 12 &&
+			     strncasecmp((char *)label.base, "\x0b_spf_verify",
+					 12) == 0) ||
+			    (label.length == 10 &&
+			     strncasecmp((char *)label.base, "\x09_spf_rate",
+					 10) == 0))
+			{
+				return (true);
+			}
+		}
 	}
 
 	return (dns_name_ishostname(name, wildcard));
@@ -230,7 +259,6 @@ checkowner_in_a(ARGS_CHECKOWNER) {
 
 static inline bool
 checknames_in_a(ARGS_CHECKNAMES) {
-
 	REQUIRE(rdata->type == dns_rdatatype_a);
 	REQUIRE(rdata->rdclass == dns_rdataclass_in);
 
@@ -246,4 +274,4 @@ casecompare_in_a(ARGS_COMPARE) {
 	return (compare_in_a(rdata1, rdata2));
 }
 
-#endif	/* RDATA_IN_1_A_1_C */
+#endif /* RDATA_IN_1_A_1_C */

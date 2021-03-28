@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_pv.h,v 1.6 2019/11/13 12:55:10 maxv Exp $	*/
+/*	$NetBSD: pmap_pv.h,v 1.17 2020/03/17 22:29:19 ad Exp $	*/
 
 /*-
  * Copyright (c)2008 YAMAMOTO Takashi,
@@ -31,8 +31,10 @@
 
 #include <sys/mutex.h>
 #include <sys/queue.h>
+#include <sys/rbtree.h>
 
 struct vm_page;
+struct pmap_page;
 
 /*
  * structures to track P->V mapping
@@ -50,13 +52,14 @@ struct pv_pte {
 };
 
 /*
- * pv_entry: plug pv_pte into lists.
+ * pv_entry: plug pv_pte into lists.  32 bytes on i386, 64 on amd64.
  */
 
 struct pv_entry {
 	struct pv_pte pve_pte;		/* should be the first member */
-	LIST_ENTRY(pv_entry) pve_list;	/* on pv_head::pvh_list */
-	SLIST_ENTRY(pv_entry) pve_hash;
+	LIST_ENTRY(pv_entry) pve_list;	/* on pmap_page::pp_pvlist */
+	rb_node_t pve_rb;		/* red-black tree node */
+	struct pmap_page *pve_pp;	/* backpointer to mapped page */
 };
 #define	pve_next	pve_list.le_next
 
@@ -66,30 +69,35 @@ struct pv_entry {
 
 struct pmap_page {
 	union {
-		/* PP_EMBEDDED */
-		struct pv_pte u_pte;
-
-		/* !PP_EMBEDDED */
-		struct pv_head {
-			LIST_HEAD(, pv_entry) pvh_list;
-		} u_head;
-
 		/* PTPs */
-		struct vm_page *u_link;
+		rb_tree_t rb;
+
+		/* PTPs, when being freed */
+		LIST_ENTRY(vm_page) link;
+
+		/* Non-PTPs (i.e. normal pages) */
+		struct {
+			struct pv_pte pte;
+			LIST_HEAD(, pv_entry) pvlist;
+			uint8_t attrs;
+		} s;
 	} pp_u;
-#define	pp_pte	pp_u.u_pte
-#define	pp_head	pp_u.u_head
-#define	pp_link	pp_u.u_link
-	uint8_t pp_flags;
-	uint8_t pp_attrs;
+	kmutex_t	pp_lock;
+#define	pp_rb		pp_u.rb
+#define	pp_link		pp_u.link
+#define	pp_pte		pp_u.s.pte
+#define pp_pvlist	pp_u.s.pvlist
+#define	pp_attrs	pp_u.s.attrs
+};
+
 #define PP_ATTRS_D	0x01	/* Dirty */
 #define PP_ATTRS_A	0x02	/* Accessed */
 #define PP_ATTRS_W	0x04	/* Writable */
-};
 
-/* pp_flags */
-#define	PP_EMBEDDED	1
-
-#define	PMAP_PAGE_INIT(pp)	/* none */
+#define	PMAP_PAGE_INIT(pp) \
+do { \
+	LIST_INIT(&(pp)->pp_pvlist); \
+	mutex_init(&(pp)->pp_lock, MUTEX_NODEBUG, IPL_VM); \
+} while (/* CONSTCOND */ 0);
 
 #endif /* !_X86_PMAP_PV_H_ */

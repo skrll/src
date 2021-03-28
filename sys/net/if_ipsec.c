@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ipsec.c,v 1.25 2019/11/01 04:28:14 knakahara Exp $  */
+/*	$NetBSD: if_ipsec.c,v 1.30 2020/10/14 18:48:05 roy Exp $  */
 
 /*
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -27,13 +27,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ipsec.c,v 1.25 2019/11/01 04:28:14 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ipsec.c,v 1.30 2020/10/14 18:48:05 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
 #endif
 
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/mbuf.h>
@@ -335,7 +336,7 @@ if_ipsec_attach0(struct ipsec_softc *sc)
 	sc->ipsec_if.if_flags  = IFF_POINTOPOINT | IFF_MULTICAST;
 	/* set ipsec(4) specific default flags. */
 	sc->ipsec_if.if_flags  |= IFF_FWD_IPV6;
-	sc->ipsec_if.if_extflags = IFEF_NO_LINK_STATE_CHANGE | IFEF_MPSAFE;
+	sc->ipsec_if.if_extflags = IFEF_MPSAFE;
 	sc->ipsec_if.if_ioctl  = if_ipsec_ioctl;
 	sc->ipsec_if.if_output = if_ipsec_output;
 	sc->ipsec_if.if_type   = IFT_IPSEC;
@@ -343,6 +344,7 @@ if_ipsec_attach0(struct ipsec_softc *sc)
 	sc->ipsec_if.if_softc  = sc;
 	IFQ_SET_READY(&sc->ipsec_if.if_snd);
 	if_initialize(&sc->ipsec_if);
+	sc->ipsec_if.if_link_state = LINK_STATE_DOWN;
 	if_alloc_sadl(&sc->ipsec_if);
 	bpf_attach(&sc->ipsec_if, DLT_NULL, sizeof(u_int));
 	if_register(&sc->ipsec_if);
@@ -538,7 +540,7 @@ end:
 	curlwp_bindx(bound);
 noref_end:
 	if (error)
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 
 	return error;
 }
@@ -566,8 +568,7 @@ if_ipsec_out_direct(struct ipsec_variant *var, struct mbuf *m, int family)
 	if (error)
 		return error;
 
-	ifp->if_opackets++;
-	ifp->if_obytes += len;
+	if_statadd2(ifp, if_opackets, 1, if_obytes, len);
 
 	return 0;
 }
@@ -609,7 +610,7 @@ if_ipsec_in_enqueue(struct mbuf *m, int af, struct ifnet *ifp)
 		break;
 #endif
 	default:
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		m_freem(m);
 		return;
 	}
@@ -621,10 +622,9 @@ if_ipsec_in_enqueue(struct mbuf *m, int af, struct ifnet *ifp)
 #endif
 	pktlen = m->m_pkthdr.len;
 	if (__predict_true(pktq_enqueue(pktq, m, h))) {
-		ifp->if_ibytes += pktlen;
-		ifp->if_ipackets++;
+		if_statadd2(ifp, if_ibytes, pktlen, if_ipackets, 1);
 	} else {
-		ifp->if_iqdrops++;
+		if_statinc(ifp, if_iqdrops);
 		m_freem(m);
 	}
 
@@ -775,12 +775,14 @@ if_ipsec_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		error = if_ipsec_set_tunnel(&sc->ipsec_if, src, dst);
 		if (error)
 			goto bad;
+		if_link_state_change(&sc->ipsec_if, LINK_STATE_UP);
 		curlwp_bindx(bound);
 		break;
 
 	case SIOCDIFPHYADDR:
 		bound = curlwp_bind();
 		if_ipsec_delete_tunnel(&sc->ipsec_if);
+		if_link_state_change(&sc->ipsec_if, LINK_STATE_DOWN);
 		curlwp_bindx(bound);
 		break;
 
@@ -1132,7 +1134,6 @@ if_ipsec_set_tunnel(struct ifnet *ifp,
 	if_ipsec_copy_variant(nullvar, ovar);
 	if_ipsec_clear_config(nullvar);
 	psref_target_init(&nullvar->iv_psref, iv_psref_class);
-	membar_producer();
 	/*
 	 * (2-3) Swap variant include its SPs.
 	 */
@@ -1238,7 +1239,6 @@ if_ipsec_delete_tunnel(struct ifnet *ifp)
 	if_ipsec_copy_variant(nullvar, ovar);
 	if_ipsec_clear_config(nullvar);
 	psref_target_init(&nullvar->iv_psref, iv_psref_class);
-	membar_producer();
 	/*
 	 * (2-3) Swap variant include its SPs.
 	 */
@@ -1325,7 +1325,6 @@ if_ipsec_ensure_flags(struct ifnet *ifp, u_short oflags)
 	if_ipsec_copy_variant(nullvar, ovar);
 	if_ipsec_clear_config(nullvar);
 	psref_target_init(&nullvar->iv_psref, iv_psref_class);
-	membar_producer();
 	/*
 	 * (2-3) Swap variant include its SPs.
 	 */
@@ -1588,7 +1587,10 @@ if_ipsec_set_sadb_x_policy(struct sadb_x_policy *xpl,
 		xisr->sadb_x_ipsecrequest_proto = IPPROTO_ESP;
 		xisr->sadb_x_ipsecrequest_mode = IPSEC_MODE_TRANSPORT;
 		xisr->sadb_x_ipsecrequest_level = level;
-		xisr->sadb_x_ipsecrequest_reqid = key_newreqid();
+		if (level == IPSEC_LEVEL_UNIQUE)
+			xisr->sadb_x_ipsecrequest_reqid = key_newreqid();
+		else
+			xisr->sadb_x_ipsecrequest_reqid = 0;
 	}
 
 	return size;
@@ -1683,7 +1685,7 @@ if_ipsec_add_sp0(struct sockaddr *src, in_port_t sport,
 	ext_msg_len += PFKEY_UNIT64(size);
 	size = if_ipsec_set_sadb_dst(&xdst, dst, proto);
 	ext_msg_len += PFKEY_UNIT64(size);
-	size = if_ipsec_set_sadb_x_policy(&xpl, &xisr, policy, dir, 0, level, src, dst);
+	size = if_ipsec_set_sadb_x_policy(&xpl, &xisr, policy, dir, 0, level, NULL, NULL);
 	ext_msg_len += PFKEY_UNIT64(size);
 	if_ipsec_set_sadb_msg_add(&msg, ext_msg_len);
 
@@ -1896,16 +1898,16 @@ if_ipsec_update_variant(struct ipsec_softc *sc, struct ipsec_variant *nvar,
 	 * we stop packet processing while replacing SPs, that is, we set
 	 * "null" config variant to sc->ipsec_var.
 	 */
-	sc->ipsec_var = nullvar;
+	atomic_store_release(&sc->ipsec_var, nullvar);
 	pserialize_perform(sc->ipsec_psz);
 	psref_target_destroy(&ovar->iv_psref, iv_psref_class);
 
 	error = if_ipsec_replace_sp(sc, ovar, nvar);
 	if (!error)
-		sc->ipsec_var = nvar;
+		atomic_store_release(&sc->ipsec_var, nvar);
 	else {
-		sc->ipsec_var = ovar; /* rollback */
 		psref_target_init(&ovar->iv_psref, iv_psref_class);
+		atomic_store_release(&sc->ipsec_var, ovar); /* rollback */
 	}
 
 	pserialize_perform(sc->ipsec_psz);

@@ -1,4 +1,4 @@
-/*	$NetBSD: ualea.c,v 1.9 2018/01/21 13:57:12 skrll Exp $	*/
+/*	$NetBSD: ualea.c,v 1.12 2020/07/13 13:53:04 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2017 The NetBSD Foundation, Inc.
@@ -30,14 +30,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ualea.c,v 1.9 2018/01/21 13:57:12 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ualea.c,v 1.12 2020/07/13 13:53:04 simonb Exp $");
 
 #include <sys/types.h>
 #include <sys/atomic.h>
 #include <sys/device_if.h>
 #include <sys/kmem.h>
 #include <sys/module.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 
 #include <dev/usb/usb.h>
@@ -54,7 +53,6 @@ struct ualea_softc {
 	/*
 	 * Lock covers:
 	 * - sc_needed
-	 * - sc_attached
 	 * - sc_inflight
 	 * - usbd_transfer(sc_xfer)
 	 */
@@ -107,9 +105,6 @@ ualea_attach(device_t parent, device_t self, void *aux)
 	/* Initialize the softc.  */
 	sc->sc_dev = self;
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_SOFTUSB);
-	rndsource_setcb(&sc->sc_rnd, ualea_get, sc);
-	rnd_attach_source(&sc->sc_rnd, device_xname(self), RND_TYPE_RNG,
-	    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
 
 	/* Get endpoint descriptor 0.  Make sure it's bulk-in.  */
 	ed = usbd_interface2endpoint_descriptor(uiaa->uiaa_iface, 0);
@@ -144,18 +139,11 @@ ualea_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	/* Setup the xfer to call ualea_xfer_done with sc.  */
-	usbd_setup_xfer(sc->sc_xfer, sc, usbd_get_buffer(sc->sc_xfer),
-	    sc->sc_maxpktsize, USBD_SHORT_XFER_OK, USBD_NO_TIMEOUT,
-	    ualea_xfer_done);
-
 	/* Success!  We are ready to run.  */
-	mutex_enter(&sc->sc_lock);
 	sc->sc_attached = true;
-	mutex_exit(&sc->sc_lock);
-
-	/* Get some initial entropy now.  */
-	ualea_get(RND_POOLBITS/NBBY, sc);
+	rndsource_setcb(&sc->sc_rnd, ualea_get, sc);
+	rnd_attach_source(&sc->sc_rnd, device_xname(self), RND_TYPE_RNG,
+	    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
 }
 
 static int
@@ -164,9 +152,8 @@ ualea_detach(device_t self, int flags)
 	struct ualea_softc *sc = device_private(self);
 
 	/* Prevent new use of xfer.  */
-	mutex_enter(&sc->sc_lock);
-	sc->sc_attached = false;
-	mutex_exit(&sc->sc_lock);
+	if (sc->sc_attached)
+		rnd_detach_source(&sc->sc_rnd);
 
 	/* Cancel pending xfer.  */
 	if (sc->sc_pipe)
@@ -178,7 +165,6 @@ ualea_detach(device_t self, int flags)
 		usbd_destroy_xfer(sc->sc_xfer);
 	if (sc->sc_pipe)
 		(void)usbd_close_pipe(sc->sc_pipe);
-	rnd_detach_source(&sc->sc_rnd);
 	mutex_destroy(&sc->sc_lock);
 
 	return 0;
@@ -197,13 +183,15 @@ ualea_xfer(struct ualea_softc *sc)
 	if (sc->sc_needed == 0)
 		return;
 
+	/* Setup the xfer to call ualea_xfer_done with sc.  */
+	usbd_setup_xfer(sc->sc_xfer, sc, usbd_get_buffer(sc->sc_xfer),
+	    sc->sc_maxpktsize, USBD_SHORT_XFER_OK, USBD_NO_TIMEOUT,
+	    ualea_xfer_done);
+
 	/* Issue xfer or complain if we can't.  */
-	/*
-	 * XXX Does USBD_NORMAL_COMPLETION (= 0) make sense here?  The
-	 * xfer can't complete synchronously because of the lock.
-	 */
 	status = usbd_transfer(sc->sc_xfer);
-	if (status && status != USBD_IN_PROGRESS) {
+	KASSERT(status != USBD_NORMAL_COMPLETION); /* asynchronous xfer */
+	if (status != USBD_IN_PROGRESS) {
 		aprint_error_dev(sc->sc_dev, "failed to issue xfer: %d\n",
 		    status);
 		/* We failed -- let someone else have a go.  */
@@ -220,22 +208,10 @@ ualea_get(size_t nbytes, void *cookie)
 	struct ualea_softc *sc = cookie;
 
 	mutex_enter(&sc->sc_lock);
-
-	/* Do nothing if not yet attached.  */
-	if (!sc->sc_attached)
-		goto out;
-
-	/* Update how many bytes we need.  */
 	sc->sc_needed = MAX(sc->sc_needed, nbytes);
-
-	/* Do nothing if xfer is already in flight.  */
-	if (sc->sc_inflight)
-		goto out;
-
-	/* Issue xfer.  */
-	ualea_xfer(sc);
-
-out:	mutex_exit(&sc->sc_lock);
+	if (!sc->sc_inflight)
+		ualea_xfer(sc);
+	mutex_exit(&sc->sc_lock);
 }
 
 static void

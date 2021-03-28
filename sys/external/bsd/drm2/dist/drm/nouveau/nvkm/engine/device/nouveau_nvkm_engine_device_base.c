@@ -1,4 +1,4 @@
-/*	$NetBSD: nouveau_nvkm_engine_device_base.c,v 1.8 2018/08/27 14:51:33 riastradh Exp $	*/
+/*	$NetBSD: nouveau_nvkm_engine_device_base.c,v 1.10 2020/04/19 18:02:36 riastradh Exp $	*/
 
 /*
  * Copyright 2012 Red Hat Inc.
@@ -24,7 +24,7 @@
  * Authors: Ben Skeggs
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nouveau_nvkm_engine_device_base.c,v 1.8 2018/08/27 14:51:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nouveau_nvkm_engine_device_base.c,v 1.10 2020/04/19 18:02:36 riastradh Exp $");
 
 #include "priv.h"
 #include "acpi.h"
@@ -35,6 +35,7 @@ __KERNEL_RCSID(0, "$NetBSD: nouveau_nvkm_engine_device_base.c,v 1.8 2018/08/27 1
 #include <subdev/bios.h>
 
 #ifdef __NetBSD__
+#include <linux/nbsd-namespace.h>
 static struct mutex nv_devices_mutex;
 static struct list_head nv_devices = LIST_HEAD_INIT(nv_devices);
 
@@ -2303,11 +2304,7 @@ nvkm_device_del(struct nvkm_device **pdevice)
 			nvkm_subdev_del(&subdev);
 		}
 
-#ifdef __NetBSD__
-		linux_mutex_destroy(&device->mutex);
-#else
 		mutex_destroy(&device->mutex);
-#endif
 
 		nvkm_event_fini(&device->event);
 
@@ -2389,7 +2386,7 @@ nvkm_device_ctor(const struct nvkm_device_func *func,
 #ifndef __BIG_ENDIAN
 		if (bus_space_read_stream_4(mmiot, mmioh, 4) != 0)
 #else
-		if (bus_space_read_stream_4(mmiot, mmioh, 4) != 1)
+		if (bus_space_read_stream_4(mmiot, mmioh, 4) == 0)
 #endif
 		{
 			bus_space_write_stream_4(mmiot, mmioh, 4, 0x01000001);
@@ -2581,11 +2578,7 @@ nvkm_device_ctor(const struct nvkm_device_func *func,
 #endif
 	}
 
-#ifdef __NetBSD__
-	linux_mutex_init(&device->mutex);
-#else
 	mutex_init(&device->mutex);
-#endif
 
 	for (i = 0; i < NVKM_SUBDEV_NR; i++) {
 #define _(s,m) case s:                                                         \

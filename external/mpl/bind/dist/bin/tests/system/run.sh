@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -16,34 +16,42 @@
 SYSTEMTESTTOP="$(cd -P -- "$(dirname -- "$0")" && pwd -P)"
 . $SYSTEMTESTTOP/conf.sh
 
+if [ "$(id -u)" -eq "0" ] && ! ${NAMED} -V | grep -q -F -- "enable-developer"; then
+    echofail "Refusing to run test as root. Build with --enable-developer to override." >&2
+    exit 1
+fi
+
 export SYSTEMTESTTOP
+
+date_with_args() (
+    date "+%Y-%m-%dT%T%z"
+)
 
 stopservers=true
 baseport=5300
 
 if [ ${SYSTEMTEST_NO_CLEAN:-0} -eq 1 ]; then
-	clean=false
+    clean=false
 else
-	clean=true
+    clean=true
 fi
 
 while getopts "knp:r-:" flag; do
     case "$flag" in
-	-) case "${OPTARG}" in
+    -) case "${OPTARG}" in
                keep) stopservers=false ;;
                noclean) clean=false ;;
            esac
            ;;
-	k) stopservers=false ;;
-	n) clean=false ;;
-	p) baseport=$OPTARG ;;
-	r) runall="-r" ;;
+    k) stopservers=false ;;
+    n) clean=false ;;
+    p) baseport=$OPTARG ;;
     esac
 done
 shift `expr $OPTIND - 1`
 
 if [ $# -eq 0 ]; then
-    echofail "Usage: $0 [-k] [-n] [-p <PORT>] [-r] test-directory [test-options]" >&2;
+    echofail "Usage: $0 [-k] [-n] [-p <PORT>] test-directory [test-options]" >&2;
     exit 1
 fi
 
@@ -110,7 +118,38 @@ export CONTROLPORT
 export LOWPORT
 export HIGHPORT
 
-echostart "S:$systest:`date`"
+restart=false
+
+start_servers_failed() {
+    echoinfo "I:$systest:starting servers failed"
+    echofail "R:$systest:FAIL"
+    echoend  "E:$systest:$(date_with_args)"
+    exit 1
+}
+
+start_servers() {
+    echoinfo "I:$systest:starting servers"
+    if $restart; then
+        $PERL start.pl --restart --port "$PORT" "$systest" || start_servers_failed
+    else
+        restart=true
+        $PERL start.pl --port "$PORT" "$systest" || start_servers_failed
+    fi
+}
+
+stop_servers() {
+    if $stopservers; then
+        echoinfo "I:$systest:stopping servers"
+        if ! $PERL stop.pl "$systest"; then
+            echoinfo "I:$systest:stopping servers failed"
+            echofail "R:$systest:FAIL"
+            echoend  "E:$systest:$(date_with_args)"
+            exit 1
+        fi
+    fi
+}
+
+echostart "S:$systest:$(date_with_args)"
 echoinfo  "T:$systest:1:A"
 echoinfo  "A:$systest:System test $systest"
 echoinfo  "I:$systest:PORTRANGE:${LOWPORT} - ${HIGHPORT}"
@@ -119,14 +158,14 @@ if [ x${PERL:+set} = x ]
 then
     echowarn "I:$systest:Perl not available.  Skipping test."
     echowarn "R:$systest:UNTESTED"
-    echoend  "E:$systest:`date $dateargs`"
+    echoend  "E:$systest:$(date_with_args)"
     exit 0;
 fi
 
 $PERL testsock.pl -p $PORT  || {
     echowarn "I:$systest:Network interface aliases not set up.  Skipping test."
     echowarn "R:$systest:UNTESTED"
-    echoend  "E:$systest:`date $dateargs`"
+    echoend  "E:$systest:$(date_with_args)"
     exit 0;
 }
 
@@ -139,7 +178,7 @@ if [ $result -eq 0 ]; then
 else
     echowarn "I:$systest:Prerequisites missing, skipping test."
     [ $result -eq 255 ] && echowarn "R:$systest:SKIPPED" || echowarn "R:$systest:UNTESTED"
-    echoend "E:$systest:`date $dateargs`"
+    echoend "E:$systest:$(date_with_args)"
     exit 0
 fi
 
@@ -151,27 +190,66 @@ then
 else
     echowarn "I:$systest:Need PKCS#11, skipping test."
     echowarn "R:$systest:PKCS11ONLY"
-    echoend  "E:$systest:`date $dateargs`"
+    echoend  "E:$systest:$(date_with_args)"
     exit 0
+fi
+
+# Clean up files left from any potential previous runs
+if test -f $systest/clean.sh
+then
+    if ! ( cd "${systest}" && $SHELL clean.sh "$@" ); then
+    echowarn "I:$systest:clean.sh script failed"
+    echofail "R:$systest:FAIL"
+    echoend  "E:$systest:$(date_with_args)"
+    exit 1
+    fi
 fi
 
 # Set up any dynamically generated test data
 if test -f $systest/setup.sh
 then
-   ( cd $systest && $SHELL setup.sh "$@" )
-fi
-
-# Start name servers running
-$PERL start.pl --port $PORT $systest
-if [ $? -ne 0 ]; then
+    if ! ( cd "${systest}" && $SHELL setup.sh "$@" ); then
+    echowarn "I:$systest:setup.sh script failed"
     echofail "R:$systest:FAIL"
-    echoend  "E:$systest:`date $dateargs`"
+    echoend  "E:$systest:$(date_with_args)"
     exit 1
+    fi
 fi
 
+status=0
+run=0
 # Run the tests
-( cd $systest ; $SHELL tests.sh "$@" )
-status=$?
+if [ -r "$systest/tests.sh" ]; then
+    start_servers
+    ( cd "$systest" && $SHELL tests.sh "$@" )
+    status=$?
+    run=$((run+1))
+    stop_servers
+fi
+
+if [ -n "$PYTEST" ]; then
+    run=$((run+1))
+    for test in $(cd "${systest}" && find . -name "tests*.py"); do
+    start_servers
+    rm -f "$systest/$test.status"
+    test_status=0
+    (cd "$systest" && "$PYTEST" -v "$test" "$@" || echo "$?" > "$test.status") | SYSTESTDIR="$systest" cat_d
+    if [ -f "$systest/$test.status" ]; then
+        echo_i "FAILED"
+        test_status=$(cat "$systest/$test.status")
+    fi
+    status=$((status+test_status))
+    stop_servers
+    done
+else
+    echoinfo "I:$systest:pytest not installed, skipping python tests"
+fi
+
+if [ "$run" -eq "0" ]; then
+    echoinfo "I:$systest:No tests were found and run"
+    status=255
+fi
+
 
 if $stopservers
 then
@@ -180,41 +258,68 @@ else
     exit $status
 fi
 
-# Shutdown
-$PERL stop.pl $systest
+get_core_dumps() {
+    find "$systest/" \( -name 'core' -or -name 'core.*' -or -name '*.core' \) ! -name '*.gz' ! -name '*.txt' | sort
+}
 
-status=`expr $status + $?`
-
-if [ $status != 0 ]; then
+core_dumps=$(get_core_dumps | tr '\n' ' ')
+assertion_failures=$(find "$systest/" -name named.run -print0 | xargs -0 grep "assertion failure" | wc -l)
+sanitizer_summaries=$(find "$systest/" -name 'tsan.*' | wc -l)
+if [ -n "$core_dumps" ]; then
+    echoinfo "I:$systest:Core dump(s) found: $core_dumps"
     echofail "R:$systest:FAIL"
-    # Do not clean up - we need the evidence.
-else
-    core_dumps="$(find $systest/ -name 'core*' | sort | tr '\n' ' ')"
-    assertion_failures=$(find $systest/ -name named.run | xargs grep "assertion failure" | wc -l)
-    if [ -n "$core_dumps" ]; then
-        echoinfo "I:$systest:Test claims success despite crashes: $core_dumps"
-        echofail "R:$systest:FAIL"
-        # Do not clean up - we need the evidence.
-    elif [ $assertion_failures -ne 0 ]; then
-        echoinfo "I:$systest:Test claims success despite $assertion_failures assertion failure(s)"
-        echofail "R:$systest:FAIL"
-        # Do not clean up - we need the evidence.
-    else
-        echopass "R:$systest:PASS"
-        if $clean
-        then
-            $SHELL clean.sh $runall $systest "$@"
-            if test -d ../../../.git
-            then
-                git status -su --ignored $systest 2>/dev/null | \
-                sed -n -e 's|^?? \(.*\)|I:file \1 not removed|p' \
-                -e 's|^!! \(.*/named.run\)$|I:file \1 not removed|p' \
-                -e 's|^!! \(.*/named.memstats\)$|I:file \1 not removed|p'
-            fi
+    get_core_dumps | while read -r coredump; do
+        SYSTESTDIR="$systest"
+        echoinfo "D:$systest:backtrace from $coredump:"
+        echoinfo "D:$systest:--------------------------------------------------------------------------------"
+        binary=$(gdb --batch --core="$coredump" 2>/dev/null | sed -ne "s|Core was generated by \`\([^' ]*\)[' ].*|\1|p")
+        if [ ! -f "${binary}" ]; then
+            binary=$(find "${TOP}" -path "*/.libs/${binary}" -type f)
         fi
+        "${TOP}/libtool" --mode=execute gdb \
+                                  -batch \
+                                  -ex bt \
+                                  -core="$coredump" \
+                                  -- \
+                                  "$binary" 2>/dev/null | sed -n '/^Core was generated by/,$p' | cat_d
+        echoinfo "D:$systest:--------------------------------------------------------------------------------"
+        coredump_backtrace="${coredump}-backtrace.txt"
+        echoinfo "D:$systest:full backtrace from $coredump saved in $coredump_backtrace"
+        "${TOP}/libtool" --mode=execute gdb \
+                      -batch \
+                      -command=run.gdb \
+                      -core="$coredump" \
+                      -- \
+                      "$binary" > "$coredump_backtrace" 2>&1
+        echoinfo "D:$systest:core dump $coredump archived as $coredump.gz"
+        gzip -1 "${coredump}"
+    done
+    status=$((status+1))
+elif [ "$assertion_failures" -ne 0 ]; then
+    SYSTESTDIR="$systest"
+    echoinfo "I:$systest:$assertion_failures assertion failure(s) found"
+    find "$systest/" -name 'tsan.*' -print0 | xargs -0 grep "SUMMARY: " | sort -u | cat_d
+    echofail "R:$systest:FAIL"
+    status=$((status+1))
+elif [ "$sanitizer_summaries" -ne 0 ]; then
+    echoinfo "I:$systest:$sanitizer_summaries sanitizer report(s) found"
+    echofail "R:$systest:FAIL"
+    status=$((status+1))
+elif [ "$status" -ne 0 ]; then
+    echofail "R:$systest:FAIL"
+else
+    echopass "R:$systest:PASS"
+    if $clean; then
+       ( cd $systest && $SHELL clean.sh "$@" )
+       if test -d ../../../.git; then
+           git status -su --ignored "${systest}" 2>/dev/null | \
+           sed -n -e 's|^?? \(.*\)|I:file \1 not removed|p' \
+           -e 's|^!! \(.*/named.run\)$|I:file \1 not removed|p' \
+           -e 's|^!! \(.*/named.memstats\)$|I:file \1 not removed|p'
+       fi
     fi
 fi
 
-echoend "E:$systest:`date $dateargs`"
+echoend "E:$systest:$(date_with_args)"
 
 exit $status

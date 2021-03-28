@@ -1,7 +1,7 @@
-/*	$NetBSD: partitions.c,v 1.8 2019/12/15 12:01:05 martin Exp $	*/
+/*	$NetBSD: partitions.c,v 1.12 2020/11/06 12:23:10 martin Exp $	*/
 
 /*
- * Copyright 2018 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -13,18 +13,17 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY PIERMONT INFORMATION SYSTEMS INC. ``AS IS''
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL PIERMONT INFORMATION SYSTEMS INC. BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
  * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
  * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
  * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "defs.h"
@@ -41,27 +40,47 @@ const struct disk_partitioning_scheme **available_part_schemes;
  */
 size_t num_available_part_schemes;
 
+extern const struct disk_partitioning_scheme disklabel_parts;
+
 /*
- * Generic reader - query a disk device and read all partitions from it
+ * Generic reader - query a disk device and read all partitions from it.
+ * disk_size is in units of physical sector size, which is passe as
+ * bytes_per_sec.
  */
 struct disk_partitions *
-partitions_read_disk(const char *dev, daddr_t disk_size, bool no_mbr)
+partitions_read_disk(const char *dev, daddr_t disk_size, size_t bytes_per_sec,
+    bool no_mbr)
 {
 	const struct disk_partitioning_scheme **ps;
+#ifdef HAVE_MBR
+	bool mbr_done = false, disklabel_done = false;
+#endif
 
 	if (!available_part_schemes)
 		return NULL;
 
 	for (ps = available_part_schemes; *ps; ps++) {
 #ifdef HAVE_MBR
+		if (!no_mbr && (*ps) == &disklabel_parts && !mbr_done)
+			continue;
 		if (no_mbr && (*ps)->name == MSG_parttype_mbr)
 			continue;
+		if ((*ps)->name == MSG_parttype_mbr)
+			mbr_done = true;
+		if ((*ps)->read_from_disk == disklabel_parts.read_from_disk)
+			disklabel_done = true;
 #endif
 		struct disk_partitions *parts =
-		    (*ps)->read_from_disk(dev, 0, disk_size, *ps);
+		    (*ps)->read_from_disk(dev, 0, disk_size, bytes_per_sec,
+		        *ps);
 		if (parts)
 			return parts;
 	}
+#ifdef HAVE_MBR
+	if (!disklabel_done)
+		return disklabel_parts.read_from_disk(dev, 0, disk_size,
+		    bytes_per_sec, &disklabel_parts);
+#endif
 	return NULL;
 }
 
@@ -113,8 +132,7 @@ extern const struct disk_partitioning_scheme gpt_parts;
 extern const struct disk_partitioning_scheme mbr_parts;
 #endif
 
-extern const struct disk_partitioning_scheme disklabel_parts;
-#if RAW_PART != 2
+#if RAW_PART == 3
 static struct disk_partitioning_scheme only_disklabel_parts;
 
 /*
@@ -144,7 +162,7 @@ partitions_init(void)
 	 * only offer very few entries.
 	 */
 static const struct part_scheme_desc all_descs[] = {
-#if RAW_PART == 2	/* only available as primary on some architectures */
+#if RAW_PART != 3	/* only available as primary on some architectures */
 		{ NULL, &disklabel_parts },
 #endif
 #ifdef HAVE_GPT
@@ -153,7 +171,7 @@ static const struct part_scheme_desc all_descs[] = {
 #ifdef HAVE_MBR
 		{ NULL, &mbr_parts },
 #endif
-#if RAW_PART != 2	/* "whole disk NetBSD" disklabel variant */
+#if RAW_PART == 3	/* "whole disk NetBSD" disklabel variant */
 		{ NULL, &only_disklabel_parts },
 #endif
 	};
@@ -165,7 +183,7 @@ static const struct part_scheme_desc all_descs[] = {
 
 	check_available_binaries();
 
-#if RAW_PART != 2
+#if RAW_PART == 3
 	/* generate a variant of disklabel w/o parent scheme */
 	only_disklabel_parts = disklabel_parts;
 	only_disklabel_parts.name = MSG_parttype_only_disklabel;

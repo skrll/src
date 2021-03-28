@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_rnmreg.h,v 1.1 2015/04/29 08:32:01 hikaru Exp $	*/
+/*	$NetBSD: octeon_rnmreg.h,v 1.5 2020/06/22 03:05:07 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -33,14 +33,20 @@
 #ifndef _OCTEON_RNMREG_H_
 #define _OCTEON_RNMREG_H_
 
+/* ---- IO address IDs */
+#define	RNM_MAJOR_DID				8
+#define	RNM_SUB_DID				0
+
 /* ---- register addresses */
 
-#define	RNM_CTL_STATUS				0x0001180040000000ULL
-#define	RNM_BIST_STATUS				0x0001180040000008ULL
+#define	RNM_CTL_STATUS				UINT64_C(0x0001180040000000)
+#define	RNM_BIST_STATUS				UINT64_C(0x0001180040000008)
 
 /* ---- register bits */
 
-#define RNM_CTL_STATUS_XXX_63_4			UINT64_C(0xfffffffffffffff0)
+#define RNM_CTL_STATUS_XXX_63_5			UINT64_C(0xfffffffffffffe00)
+#define RNM_CTL_STATUS_ENT_SEL_MASK		UINT64_C(0x00000000000001e0)
+#define RNM_CTL_STATUS_EXP_ENT			UINT64_C(0x0000000000000010)
 #define RNM_CTL_STATUS_RNG_RST			UINT64_C(0x0000000000000008)
 #define RNM_CTL_STATUS_RNM_RST			UINT64_C(0x0000000000000004)
 #define RNM_CTL_STATUS_RNG_EN			UINT64_C(0x0000000000000002)
@@ -49,32 +55,6 @@
 #define RNM_BIST_STATUS_XXX_63_2		UINT64_C(0xfffffffffffffffc)
 #define RNM_BIST_STATUS_RRC			UINT64_C(0x0000000000000002)
 #define RNM_BIST_STATUS_MEM			UINT64_C(0x0000000000000001)
-
-/* ---- operations */
-#define RNM_OPERATION_BASE_IO_BIT		UINT64_C(0x0001000000000000)
-#define RNM_OPERATION_BASE_MAJOR_DID		UINT64_C(0x0000f80000000000)
-#define RNM_OPERATION_BASE_SUB_DID		UINT64_C(0x0000070000000000)
-#define	RNM_OPERATION_BASE_MAJOR_DID_SHIFT	43
-#define	RNM_OPERATION_BASE_SUB_DID_SHIFT	40
-#define	RNM_OPERATION_BASE_IO_BIT_SHIFT	48
-
-/* ---- snprintb */
-
-#define	RNM_CTL_STATUS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x03"		"RNG_RST\0" \
-	"b\x02"		"RNM_RST\0" \
-	"b\x01"		"RNG_EN\0" \
-	"b\x00"		"ENT_EN\0"
-
-#define	RNM_BIST_STATUS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x01"		"RRC\0" \
-	"b\x00"		"MEM\0"
 
 /* ---- bus_space */
 

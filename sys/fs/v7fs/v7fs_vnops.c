@@ -1,4 +1,4 @@
-/*	$NetBSD: v7fs_vnops.c,v 1.26 2017/05/26 14:21:01 riastradh Exp $	*/
+/*	$NetBSD: v7fs_vnops.c,v 1.31 2020/06/27 17:29:18 christos Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2011 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: v7fs_vnops.c,v 1.26 2017/05/26 14:21:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: v7fs_vnops.c,v 1.31 2020/06/27 17:29:18 christos Exp $");
 #if defined _KERNEL_OPT
 #include "opt_v7fs.h"
 #endif
@@ -138,7 +138,7 @@ v7fs_lookup(void *v)
 		if ((nameiop == RENAME) && islastcn) {
 			return EISDIR; /* t_vnops rename_dir(3) */
 		}
-		vref(dvp); /* v_usecount++ */
+		vref(dvp); /* usecount++ */
 		*a->a_vpp = dvp;
 		DPRINTF("done.(.)\n");
 		return 0;
@@ -174,7 +174,8 @@ v7fs_lookup(void *v)
 		VOP_UNLOCK(dvp); /* preserve reference count. (not vput) */
 	}
 	DPRINTF("enter vget\n");
-	if ((error = v7fs_vget(dvp->v_mount, ino, &vpp))) {
+	error = v7fs_vget(dvp->v_mount, ino, LK_EXCLUSIVE, &vpp);
+	if (error != 0) {
 		DPRINTF("***can't get vnode.\n");
 		return error;
 	}
@@ -230,7 +231,8 @@ v7fs_create(void *v)
 
 	/* Get myself vnode. */
 	*a->a_vpp = 0;
-	if ((error = v7fs_vget(mp, ino, a->a_vpp))) {
+	error = v7fs_vget(mp, ino, LK_EXCLUSIVE, a->a_vpp);
+	if (error != 0) {
 		DPRINTF("v7fs_vget failed.\n");
 		return error;
 	}
@@ -284,7 +286,8 @@ v7fs_mknod(void *v)
 	/* Sync dirent size change. */
 	uvm_vnp_setsize(dvp, v7fs_inode_filesize(&parent_node->inode));
 
-	if ((error = v7fs_vget(mp, ino, a->a_vpp))) {
+	error = v7fs_vget(mp, ino, LK_EXCLUSIVE, a->a_vpp);
+	if (error != 0) {
 		DPRINTF("can't get vnode.\n");
 		return error;
 	}
@@ -369,33 +372,33 @@ v7fs_check_possible(struct vnode *vp, struct v7fs_node *v7node,
 
 static int
 v7fs_check_permitted(struct vnode *vp, struct v7fs_node *v7node,
-    mode_t mode, kauth_cred_t cred)
+    accmode_t accmode, kauth_cred_t cred)
 {
 
 	struct v7fs_inode *inode = &v7node->inode;
 
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(mode,
-	    vp->v_type, inode->mode), vp, NULL, genfs_can_access(vp->v_type,
-	    inode->mode, inode->uid, inode->gid, mode, cred));
+	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(accmode,
+	    vp->v_type, inode->mode), vp, NULL, genfs_can_access(vp, cred,
+	    inode->uid, inode->gid, inode->mode, NULL, accmode));
 }
 
 int
 v7fs_access(void *v)
 {
 	struct vop_access_args /* {
-				  struct vnode	*a_vp;
-				  int		a_mode;
-				  kauth_cred_t	a_cred;
-				  } */ *ap = v;
+		struct vnode	*a_vp;
+		accmode_t	a_accmode;
+		kauth_cred_t	a_cred;
+	} */ *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct v7fs_node *v7node = vp->v_data;
 	int error;
 
-	error = v7fs_check_possible(vp, v7node, ap->a_mode);
+	error = v7fs_check_possible(vp, v7node, ap->a_accmode);
 	if (error)
 		return error;
 
-	error = v7fs_check_permitted(vp, v7node, ap->a_mode, ap->a_cred);
+	error = v7fs_check_permitted(vp, v7node, ap->a_accmode, ap->a_cred);
 
 	return error;
 }
@@ -489,7 +492,7 @@ v7fs_setattr(void *v)
 	/* File pointer mode. */
 	if (vap->va_flags != VNOVAL) {
 		error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_FLAGS,
-		    vp, NULL, genfs_can_chflags(cred, vp->v_type, inode->uid,
+		    vp, NULL, genfs_can_chflags(vp, cred, inode->uid,
 		    false));
 		if (error)
 			return error;
@@ -512,7 +515,7 @@ v7fs_setattr(void *v)
 		uid = vap->va_uid;
 		error = kauth_authorize_vnode(cred,
 		    KAUTH_VNODE_CHANGE_OWNERSHIP, vp, NULL,
-		    genfs_can_chown(cred, inode->uid, inode->gid, uid,
+		    genfs_can_chown(vp, cred, inode->uid, inode->gid, uid,
 		    gid));
 		if (error)
 			return error;
@@ -522,7 +525,7 @@ v7fs_setattr(void *v)
 		gid = vap->va_gid;
 		error = kauth_authorize_vnode(cred,
 		    KAUTH_VNODE_CHANGE_OWNERSHIP, vp, NULL,
-		    genfs_can_chown(cred, inode->uid, inode->gid, uid,
+		    genfs_can_chown(vp, cred, inode->uid, inode->gid, uid,
 		    gid));
 		if (error)
 			return error;
@@ -531,7 +534,7 @@ v7fs_setattr(void *v)
 	if (vap->va_mode != (mode_t)VNOVAL) {
 		mode_t mode = vap->va_mode;
 		error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_SECURITY,
-		    vp, NULL, genfs_can_chmod(vp->v_type, cred, inode->uid, inode->gid,
+		    vp, NULL, genfs_can_chmod(vp, cred, inode->uid, inode->gid,
 		    mode));
 		if (error) {
 			return error;
@@ -542,8 +545,8 @@ v7fs_setattr(void *v)
 	    (vap->va_mtime.tv_sec != VNOVAL) ||
 	    (vap->va_ctime.tv_sec != VNOVAL)) {
 		error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_TIMES, vp,
-		    NULL, genfs_can_chtimes(vp, vap->va_vaflags, inode->uid,
-		    cred));
+		    NULL, genfs_can_chtimes(vp, cred, inode->uid,
+		    vap->va_vaflags));
 		if (error)
 			return error;
 
@@ -589,7 +592,7 @@ v7fs_read(void *v)
 			break;
 
 		error = ubc_uiomove(&vp->v_uobj, uio, sz, advice, UBC_READ |
-		    UBC_PARTIALOK | UBC_UNMAP_FLAG(v));
+		    UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 		if (error) {
 			break;
 		}
@@ -641,7 +644,7 @@ v7fs_write(void *v)
 	while (uio->uio_resid > 0) {
 		sz = uio->uio_resid;
 		if ((error = ubc_uiomove(&vp->v_uobj, uio, sz, advice,
-			    UBC_WRITE | UBC_UNMAP_FLAG(v))))
+			    UBC_WRITE | UBC_VNODE_FLAGS(vp))))
 			break;
 		DPRINTF("write %zubyte\n", sz);
 	}
@@ -714,9 +717,9 @@ v7fs_remove(void *v)
 
 out:
 	if (dvp == vp)
-		vrele(vp); /* v_usecount-- of unlocked vp */
+		vrele(vp); /* usecount-- of unlocked vp */
 	else
-		vput(vp); /* unlock vp and then v_usecount-- */
+		vput(vp); /* unlock vp and then usecount-- */
 
 	return error;
 }
@@ -847,7 +850,8 @@ v7fs_mkdir(void *v)
 	/* Sync dirent size change. */
 	uvm_vnp_setsize(dvp, v7fs_inode_filesize(&parent_node->inode));
 
-	if ((error = v7fs_vget(mp, ino, a->a_vpp))) {
+	error = v7fs_vget(mp, ino, LK_EXCLUSIVE, a->a_vpp);
+	if (error != 0) {
 		DPRINTF("can't get vnode.\n");
 	}
 	struct v7fs_node *newnode = (*a->a_vpp)->v_data;
@@ -1168,48 +1172,43 @@ int
 v7fs_pathconf(void *v)
 {
 	struct vop_pathconf_args /* {
-				    struct vnode *a_vp;
-				    int a_name;
-				    register_t *a_retval;
-				    } */ *a = v;
-	int err = 0;
+		struct vnode *a_vp;
+		int a_name;
+		register_t *a_retval;
+	} */ *ap = v;
+	DPRINTF("%p\n", ap->a_vp);
 
-	DPRINTF("%p\n", a->a_vp);
-
-	switch (a->a_name) {
+	switch (ap->a_name) {
 	case _PC_LINK_MAX:
-		*a->a_retval = V7FS_LINK_MAX;
-		break;
+		*ap->a_retval = V7FS_LINK_MAX;
+		return 0;
 	case _PC_NAME_MAX:
-		*a->a_retval = V7FS_NAME_MAX;
-		break;
+		*ap->a_retval = V7FS_NAME_MAX;
+		return 0;
 	case _PC_PATH_MAX:
-		*a->a_retval = V7FS_PATH_MAX;
-		break;
+		*ap->a_retval = V7FS_PATH_MAX;
+		return 0;
 	case _PC_CHOWN_RESTRICTED:
-		*a->a_retval = 1;
-		break;
+		*ap->a_retval = 1;
+		return 0;
 	case _PC_NO_TRUNC:
-		*a->a_retval = 0;
-		break;
+		*ap->a_retval = 0;
+		return 0;
 	case _PC_SYNC_IO:
-		*a->a_retval = 1;
-		break;
+		*ap->a_retval = 1;
+		return 0;
 	case _PC_FILESIZEBITS:
-		*a->a_retval = 30; /* ~1G */
-		break;
+		*ap->a_retval = 30; /* ~1G */
+		return 0;
 	case _PC_SYMLINK_MAX:
-		*a->a_retval = V7FSBSD_MAXSYMLINKLEN;
-		break;
+		*ap->a_retval = V7FSBSD_MAXSYMLINKLEN;
+		return 0;
 	case _PC_2_SYMLINKS:
-		*a->a_retval = 1;
-		break;
+		*ap->a_retval = 1;
+		return 0;
 	default:
-		err = EINVAL;
-		break;
+		return genfs_pathconf(ap);
 	}
-
-	return err;
 }
 
 int
@@ -1287,7 +1286,8 @@ v7fs_symlink(void *v)
 	uvm_vnp_setsize(a->a_dvp, v7fs_inode_filesize(&parent_node->inode));
 
 	/* Get myself vnode. */
-	if ((error = v7fs_vget(v7fsmount->mountp, ino, a->a_vpp))) {
+	error = v7fs_vget(v7fsmount->mountp, ino, LK_EXCLUSIVE, a->a_vpp);
+	if (error != 0) {
 		DPRINTF("can't get vnode.\n");
 	}
 

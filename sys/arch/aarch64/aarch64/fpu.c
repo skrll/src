@@ -1,4 +1,4 @@
-/* $NetBSD: fpu.c,v 1.3 2018/11/07 06:47:38 riastradh Exp $ */
+/* $NetBSD: fpu.c,v 1.11 2020/12/11 18:03:33 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,13 +31,20 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: fpu.c,v 1.3 2018/11/07 06:47:38 riastradh Exp $");
+__KERNEL_RCSID(1, "$NetBSD: fpu.c,v 1.11 2020/12/11 18:03:33 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
+#include <sys/cpu.h>
+#include <sys/kthread.h>
 #include <sys/lwp.h>
 #include <sys/evcnt.h>
 
+#include <arm/cpufunc.h>
+#include <arm/fpu.h>
+#include <arm/cpufunc.h>
+
+#include <aarch64/locore.h>
 #include <aarch64/reg.h>
 #include <aarch64/pcb.h>
 #include <aarch64/armreg.h>
@@ -140,7 +147,7 @@ fpu_state_load(lwp_t *l, unsigned int flags)
 	/* allow user process to use FP */
 	l->l_md.md_cpacr = CPACR_FPEN_ALL;
 	reg_cpacr_el1_write(CPACR_FPEN_ALL);
-	__asm __volatile ("isb");
+	isb();
 
 	if ((flags & PCU_REENABLE) == 0)
 		load_fpregs(&pcb->pcb_fpregs);
@@ -154,12 +161,12 @@ fpu_state_save(lwp_t *l)
 	curcpu()->ci_vfp_save.ev_count++;
 
 	reg_cpacr_el1_write(CPACR_FPEN_EL1);	/* fpreg access enable */
-	__asm __volatile ("isb");
+	isb();
 
 	save_fpregs(&pcb->pcb_fpregs);
 
 	reg_cpacr_el1_write(CPACR_FPEN_NONE);	/* fpreg access disable */
-	__asm __volatile ("isb");
+	isb();
 }
 
 static void
@@ -170,5 +177,104 @@ fpu_state_release(lwp_t *l)
 	/* disallow user process to use FP */
 	l->l_md.md_cpacr = CPACR_FPEN_NONE;
 	reg_cpacr_el1_write(CPACR_FPEN_NONE);
-	__asm __volatile ("isb");
+	isb();
+}
+
+static const struct fpreg zero_fpreg;
+
+/*
+ * True if this is a system thread with its own private FPU state.
+ */
+static inline bool
+lwp_system_fpu_p(struct lwp *l)
+{
+
+	return (l->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) ==
+	    (LW_SYSTEM|LW_SYSTEM_FPU);
+}
+
+void
+fpu_kern_enter(void)
+{
+	struct cpu_info *ci;
+	int s;
+
+	if (lwp_system_fpu_p(curlwp) && !cpu_intr_p()) {
+		KASSERT(!cpu_softintr_p());
+		return;
+	}
+
+	/*
+	 * Block interrupts up to IPL_VM.  We must block preemption
+	 * since -- if this is a user thread -- there is nowhere to
+	 * save the kernel fpu state, and if we want this to be usable
+	 * in interrupts, we can't let interrupts interfere with the
+	 * fpu state in use since there's nowhere for them to save it.
+	 */
+	s = splvm();
+	ci = curcpu();
+	KASSERTMSG(ci->ci_cpl <= IPL_VM, "cpl=%d", ci->ci_cpl);
+	KASSERT(ci->ci_kfpu_spl == -1);
+	ci->ci_kfpu_spl = s;
+
+	/* Save any fpu state on the current CPU.  */
+	pcu_save_all_on_cpu();
+
+	/*
+	 * Enable the fpu, and wait until it is enabled before
+	 * executing any further instructions.
+	 */
+	reg_cpacr_el1_write(CPACR_FPEN_ALL);
+	isb();
+}
+
+void
+fpu_kern_leave(void)
+{
+	struct cpu_info *ci;
+	int s;
+
+	if (lwp_system_fpu_p(curlwp) && !cpu_intr_p()) {
+		KASSERT(!cpu_softintr_p());
+		return;
+	}
+
+	ci = curcpu();
+
+	KASSERT(ci->ci_cpl == IPL_VM);
+	KASSERT(ci->ci_kfpu_spl != -1);
+
+	/*
+	 * Zero the fpu registers; otherwise we might leak secrets
+	 * through Spectre-class attacks to userland, even if there are
+	 * no bugs in fpu state management.
+	 */
+	load_fpregs(&zero_fpreg);
+
+	/*
+	 * Disable the fpu so that the kernel can't accidentally use
+	 * it again.
+	 */
+	reg_cpacr_el1_write(CPACR_FPEN_NONE);
+	isb();
+
+	s = ci->ci_kfpu_spl;
+	ci->ci_kfpu_spl = -1;
+	splx(s);
+}
+
+void
+kthread_fpu_enter_md(void)
+{
+
+	fpu_load(curlwp);
+}
+
+void
+kthread_fpu_exit_md(void)
+{
+
+	/* XXX Should fpu_state_release zero the registers itself?  */
+	load_fpregs(&zero_fpreg);
+	fpu_discard(curlwp, 0);
 }

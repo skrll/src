@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.38 2019/10/02 09:45:10 maya Exp $
+#	$NetBSD: Makefile,v 1.42 2020/04/04 17:57:16 christos Exp $
 
 NOLIBCSANITIZER=	# defined
 NOSANITIZER=		# defined
@@ -15,12 +15,16 @@ DBG+=		-Os
 DBG+=		-ffunction-sections
 .endif
 
-CRUNCHGEN_FLAGS=-d "${DBG}"
+CRUNCHGEN_FLAGS+=-V DBG="${DBG}"
 
 .if ${MKSTATICPIE:Uno} == "yes"
-CRUNCHGEN_FLAGS+=-p
 CFLAGS+=-fPIE
+CRUNCHGEN_FLAGS+=-V LDSTATIC="-static -pie"
+.else
+CRUNCHGEN_FLAGS+=-V LDSTATIC="-static" -V NOPIE=
 .endif
+
+CRUNCHGEN_FLAGS+=-V NOLIBCSANITIZER= -V NOSANITIZER= -V NOMAN=
 
 RESCUEDIR=	/rescue
 CRUNCHBIN=	rescue
@@ -48,9 +52,6 @@ LISTS+=		${.CURDIR}/list.ldd
 LDD_ELF32DIR!=	cd ${NETBSDSRCDIR}/usr.bin/ldd/elf32 && ${PRINTOBJDIR}
 LDD_ELF64DIR!=	cd ${NETBSDSRCDIR}/usr.bin/ldd/elf64 && ${PRINTOBJDIR}
 PARSELISTENV+=	LDD_ELF32DIR=${LDD_ELF32DIR} LDD_ELF64DIR=${LDD_ELF64DIR}
-
-SMB_LIBDIR!=	cd ${NETBSDSRCDIR}/external/bsd/smbfs/lib/libsmb && ${PRINTOBJDIR}
-PARSELISTENV+=	SMB_LIBDIR=${SMB_LIBDIR}
 
 #	Specially built objects to override the behaviour of
 #	various library functions

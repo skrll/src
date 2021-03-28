@@ -22,9 +22,7 @@ options {
 	recursion yes;
 	notify yes;
 	disable-algorithms . { @ALTERNATIVE_ALGORITHM@; };
-	dnssec-enable yes;
 	dnssec-validation yes;
-	dnssec-lookaside . trust-anchor dlv;
 };
 
 zone "." {
@@ -33,7 +31,7 @@ zone "." {
 };
 
 zone "optout-tld" {
-	type master;
+	type primary;
 	file "optout-tld.db.signed";
 };
 

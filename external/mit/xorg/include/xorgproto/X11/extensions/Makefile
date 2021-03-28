@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1 2018/03/14 08:55:36 mrg Exp $
+#	$NetBSD: Makefile,v 1.3 2020/12/05 21:36:21 nia Exp $
 
 .include <bsd.own.mk>
 
@@ -11,12 +11,10 @@ INCS=	EVI.h \
 	XI2proto.h \
 	XIproto.h \
 	XKB.h \
-	XKBgeom.h \
 	XKBproto.h \
 	XKBsrv.h \
 	XKBstr.h \
 	XResproto.h \
-	Xeviestr.h \
 	Xv.h \
 	XvMC.h \
 	XvMCproto.h \
@@ -70,7 +68,6 @@ INCS=	EVI.h \
 	syncconst.h \
 	syncproto.h \
 	syncstr.h \
-	vldXvMC.h \
 	xcmiscproto.h \
 	xcmiscstr.h \
 	xf86bigfont.h \

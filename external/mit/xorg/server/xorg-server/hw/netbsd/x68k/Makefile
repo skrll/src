@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.5 2019/01/03 23:26:58 mrg Exp $
+#	$NetBSD: Makefile,v 1.10 2021/02/07 16:56:00 tsutsui Exp $
 
 .include <bsd.own.mk>
 
@@ -18,6 +18,7 @@ WARNS?=	2
 .PATH:	${X11SRCDIR.xorg-server}/hw/netbsd/x68k
 SRCS=	x68kInit.c x68kConfig.c x68kIo.c x68kMouse.c x68kKbd.c x68kKeyMap.c \
 	x68kFb.c x68kGraph.c x68kText.c
+SRCS+=	mouseEmu3btn.c
 
 .PATH:	${X11SRCDIR.xorg-server}/Xi
 SRCS+=	stubs.c
@@ -25,23 +26,13 @@ SRCS+=	stubs.c
 .PATH:	${X11SRCDIR.xorg-server}/mi
 SRCS+=	miinitext.c
 
-.PATH:	${X11SRCDIR.xorg-server}/fb
-SRCS+=	fbcmap_mi.c
-
-CPPFLAGS+=	-I${X11SRCDIR.xorg-server}/include \
-		-I${X11SRCDIR.xorg-server}/hw/netbsd/x68k \
-		-I${X11SRCDIR.xorg-server}/hw/xfree86/common \
-		-I${X11SRCDIR.xorg-server}/fb \
-		-I${X11SRCDIR.xorg-server}/mi \
-		-I${X11SRCDIR.xorg-server}/render \
-		-I${X11SRCDIR.xorg-server}/present \
-		-I${X11SRCDIR.xorg-server}/miext/damage \
-		-I${DESTDIR}${X11INCDIR}/X11
+CPPFLAGS+=	-I${X11SRCDIR.xorg-server}/hw/netbsd/x68k \
+		${X11INCS.DIX}
 
 CPPFLAGS+=	-UXFree86LOADER -UXF86VIDMODE -UXFreeXDGA -UXF86MISC \
 		-UXF86DRI -UXF86BIGFONT
 
-CPPFLAGS+=	-DHAVE_DIX_CONFIG_H
+CPPFLAGS+=	-UHAVE_XORG_CONFIG_H
 CPPFLAGS+=	-DHAVE_STRCASECMP
 
 CPPFLAGS.x68kConfig.c=	 -DX11_LIBDIR=\"${X11ETCDIR}\"
@@ -61,10 +52,9 @@ LDADD+= ${LDADD.dix} \
 	${LDADD.xfixes} \
 	${LDADD.damageext} \
 	${LDADD.miext/damage} \
-	${LDADD.miext/shadow} \
 	${LDADD.miext/sync} \
 	${LDADD.Xi} \
-	-lXfont \
+	-lXfont2 \
 	-lpixman-1 \
 	-lXext \
 	-lX11 \
@@ -83,10 +73,9 @@ DPADD+= ${LDADD.dix} \
 	${DPADD.xfixes} \
 	${DPADD.damageext} \
 	${DPADD.miext/damage} \
-	${DPADD.miext/shadow} \
 	${DPADD.miext/sync} \
 	${DPADD.Xi} \
-	${LIBXFONT} \
+	${LIBXFONT2} \
 	${LIBPIXMAN-1} \
 	${LIBXEXT} \
 	${LIBX11} \

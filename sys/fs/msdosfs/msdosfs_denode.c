@@ -1,4 +1,4 @@
-/*	$NetBSD: msdosfs_denode.c,v 1.57 2018/05/28 21:04:37 chs Exp $	*/
+/*	$NetBSD: msdosfs_denode.c,v 1.59 2020/04/23 21:47:07 ad Exp $	*/
 
 /*-
  * Copyright (C) 1994, 1995, 1997 Wolfgang Solfrank.
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: msdosfs_denode.c,v 1.57 2018/05/28 21:04:37 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: msdosfs_denode.c,v 1.59 2020/04/23 21:47:07 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -425,7 +425,7 @@ detrunc(struct denode *dep, u_long length, int flags, kauth_cred_t cred)
 		} else {
 			ubc_zerorange(&DETOV(dep)->v_uobj, length,
 				      pmp->pm_bpcluster - boff,
-				      UBC_UNMAP_FLAG(DETOV(dep)));
+				      UBC_VNODE_FLAGS(DETOV(dep)));
 		}
 	}
 
@@ -523,7 +523,7 @@ deextend(struct denode *dep, u_long length, kauth_cred_t cred)
 	dep->de_flag |= DE_UPDATE|DE_MODIFIED;
 	ubc_zerorange(&DETOV(dep)->v_uobj, (off_t)osize,
 	    (size_t)(round_page(dep->de_FileSize) - osize),
-	    UBC_UNMAP_FLAG(DETOV(dep)));
+	    UBC_VNODE_FLAGS(DETOV(dep)));
 	uvm_vnp_setsize(DETOV(dep), (voff_t)dep->de_FileSize);
 	return (deupdat(dep, 1));
 }
@@ -611,8 +611,8 @@ out:
 	 * so that it can be reused immediately.
 	 */
 #ifdef MSDOSFS_DEBUG
-	printf("msdosfs_inactive(): v_usecount %d, de_Name[0] %x\n",
-		vp->v_usecount, dep->de_Name[0]);
+	printf("msdosfs_inactive(): usecount %d, de_Name[0] %x\n",
+		vrefcnt(vp), dep->de_Name[0]);
 #endif
 	*ap->a_recycle = (dep->de_Name[0] == SLOT_DELETED);
 

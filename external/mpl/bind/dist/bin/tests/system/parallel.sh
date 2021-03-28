@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -29,6 +29,6 @@ port=${STARTPORT:-5000}
 for directory in $PARALLELDIRS ; do
         echo
         echo "test-`echo $directory | tr _ -`: check_interfaces"
-        echo "	@${SHELL} ./run.sh -r -p $port $directory 2>&1 | tee $directory/test.output"
+        echo "	@${SHELL} ./run.sh -p $port $directory 2>&1 | tee test.output.$directory"
         port=`expr $port + 100`
 done

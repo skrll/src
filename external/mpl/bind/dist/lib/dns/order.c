@@ -1,11 +1,11 @@
-/*	$NetBSD: order.c,v 1.4 2019/11/27 05:48:41 christos Exp $	*/
+/*	$NetBSD: order.c,v 1.6 2021/02/19 16:42:16 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -13,15 +13,13 @@
 
 /*! \file */
 
-#include <config.h>
-
 #include <stdbool.h>
 
 #include <isc/magic.h>
 #include <isc/mem.h>
+#include <isc/refcount.h>
 #include <isc/types.h>
 #include <isc/util.h>
-#include <isc/refcount.h>
 
 #include <dns/fixedname.h>
 #include <dns/name.h>
@@ -31,22 +29,22 @@
 
 typedef struct dns_order_ent dns_order_ent_t;
 struct dns_order_ent {
-	dns_fixedname_t			name;
-	dns_rdataclass_t		rdclass;
-	dns_rdatatype_t			rdtype;
-	unsigned int			mode;
-	ISC_LINK(dns_order_ent_t)	link;
+	dns_fixedname_t name;
+	dns_rdataclass_t rdclass;
+	dns_rdatatype_t rdtype;
+	unsigned int mode;
+	ISC_LINK(dns_order_ent_t) link;
 };
 
 struct dns_order {
-	unsigned int			magic;
-	isc_refcount_t          	references;
-	ISC_LIST(dns_order_ent_t)	ents;
-	isc_mem_t			*mctx;
+	unsigned int magic;
+	isc_refcount_t references;
+	ISC_LIST(dns_order_ent_t) ents;
+	isc_mem_t *mctx;
 };
 
-#define DNS_ORDER_MAGIC ISC_MAGIC('O','r','d','r')
-#define DNS_ORDER_VALID(order)	ISC_MAGIC_VALID(order, DNS_ORDER_MAGIC)
+#define DNS_ORDER_MAGIC	       ISC_MAGIC('O', 'r', 'd', 'r')
+#define DNS_ORDER_VALID(order) ISC_MAGIC_VALID(order, DNS_ORDER_MAGIC)
 
 isc_result_t
 dns_order_create(isc_mem_t *mctx, dns_order_t **orderp) {
@@ -55,8 +53,6 @@ dns_order_create(isc_mem_t *mctx, dns_order_t **orderp) {
 	REQUIRE(orderp != NULL && *orderp == NULL);
 
 	order = isc_mem_get(mctx, sizeof(*order));
-	if (order == NULL)
-		return (ISC_R_NOMEMORY);
 
 	ISC_LIST_INIT(order->ents);
 
@@ -73,18 +69,16 @@ dns_order_create(isc_mem_t *mctx, dns_order_t **orderp) {
 isc_result_t
 dns_order_add(dns_order_t *order, const dns_name_t *name,
 	      dns_rdatatype_t rdtype, dns_rdataclass_t rdclass,
-	      unsigned int mode)
-{
+	      unsigned int mode) {
 	dns_order_ent_t *ent;
 
 	REQUIRE(DNS_ORDER_VALID(order));
 	REQUIRE(mode == DNS_RDATASETATTR_RANDOMIZE ||
 		mode == DNS_RDATASETATTR_FIXEDORDER ||
-		mode == DNS_RDATASETATTR_CYCLIC);
+		mode == DNS_RDATASETATTR_CYCLIC ||
+		mode == DNS_RDATASETATTR_NONE);
 
 	ent = isc_mem_get(order->mctx, sizeof(*ent));
-	if (ent == NULL)
-		return (ISC_R_NOMEMORY);
 
 	dns_fixedname_init(&ent->name);
 	dns_name_copynf(name, dns_fixedname_name(&ent->name));
@@ -98,29 +92,31 @@ dns_order_add(dns_order_t *order, const dns_name_t *name,
 
 static inline bool
 match(const dns_name_t *name1, const dns_name_t *name2) {
-
-	if (dns_name_iswildcard(name2))
-		return(dns_name_matcheswildcard(name1, name2));
+	if (dns_name_iswildcard(name2)) {
+		return (dns_name_matcheswildcard(name1, name2));
+	}
 	return (dns_name_equal(name1, name2));
 }
 
 unsigned int
 dns_order_find(dns_order_t *order, const dns_name_t *name,
-	       dns_rdatatype_t rdtype, dns_rdataclass_t rdclass)
-{
+	       dns_rdatatype_t rdtype, dns_rdataclass_t rdclass) {
 	dns_order_ent_t *ent;
 	REQUIRE(DNS_ORDER_VALID(order));
 
-	for (ent = ISC_LIST_HEAD(order->ents);
-	     ent != NULL;
-	     ent = ISC_LIST_NEXT(ent, link)) {
-		if (ent->rdtype != rdtype && ent->rdtype != dns_rdatatype_any)
+	for (ent = ISC_LIST_HEAD(order->ents); ent != NULL;
+	     ent = ISC_LIST_NEXT(ent, link))
+	{
+		if (ent->rdtype != rdtype && ent->rdtype != dns_rdatatype_any) {
 			continue;
+		}
 		if (ent->rdclass != rdclass &&
-		    ent->rdclass != dns_rdataclass_any)
+		    ent->rdclass != dns_rdataclass_any) {
 			continue;
-		if (match(name, dns_fixedname_name(&ent->name)))
+		}
+		if (match(name, dns_fixedname_name(&ent->name))) {
 			return (ent->mode);
+		}
 	}
 	return (DNS_RDATASETATTR_NONE);
 }

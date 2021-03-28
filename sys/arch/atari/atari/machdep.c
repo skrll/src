@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.180 2019/06/29 03:22:52 tsutsui Exp $	*/
+/*	$NetBSD: machdep.c,v 1.184 2021/01/03 17:42:10 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.180 2019/06/29 03:22:52 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.184 2021/01/03 17:42:10 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
@@ -57,7 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.180 2019/06/29 03:22:52 tsutsui Exp $"
 #include <sys/conf.h>
 #include <sys/file.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/mbuf.h>
 #include <sys/msgbuf.h>
 #include <sys/vnode.h>
@@ -211,7 +211,7 @@ cpu_startup(void)
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	/*
@@ -630,7 +630,7 @@ add_sicallback(void (*function)(void *, void *), void *rock1, void *rock2)
 	splx(s);
 
 	if (si == NULL) {
-		si = malloc(sizeof(*si), M_TEMP, M_NOWAIT);
+		si = kmem_intr_alloc(sizeof(*si), KM_NOSLEEP);
 #ifdef DIAGNOSTIC
 		if (si)
 			++ncbd;		/* count # dynamically allocated */

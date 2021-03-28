@@ -1,5 +1,5 @@
-/*	$NetBSD: auth-options.h,v 1.12 2019/10/12 18:32:22 christos Exp $	*/
-/* $OpenBSD: auth-options.h,v 1.28 2019/07/09 04:15:00 djm Exp $ */
+/*	$NetBSD: auth-options.h,v 1.14 2020/12/04 18:42:49 christos Exp $	*/
+/* $OpenBSD: auth-options.h,v 1.30 2020/08/27 01:07:09 djm Exp $ */
 
 /*
  * Copyright (c) 2018 Damien Miller <djm@mindrot.org>
@@ -69,6 +69,11 @@ struct sshauthopt {
 	 */
 	char *required_from_host_cert;
 	char *required_from_host_keys;
+
+	/* Key requires user presence asserted */
+	int no_require_user_presence;
+	/* Key requires user verification (e.g. PIN) */
+	int require_verify;
 };
 
 struct sshauthopt *sshauthopt_new(void);

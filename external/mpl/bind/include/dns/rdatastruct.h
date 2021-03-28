@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1998-2019  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 1998-2021  Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -20,12 +20,11 @@
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 #ifndef DNS_RDATASTRUCT_H
 #define DNS_RDATASTRUCT_H 1
@@ -39,15 +38,15 @@
 ISC_LANG_BEGINDECLS
 
 typedef struct dns_rdatacommon {
-	dns_rdataclass_t			rdclass;
-	dns_rdatatype_t				rdtype;
-	ISC_LINK(struct dns_rdatacommon)	link;
+	dns_rdataclass_t rdclass;
+	dns_rdatatype_t rdtype;
+	ISC_LINK(struct dns_rdatacommon) link;
 } dns_rdatacommon_t;
 
 #define DNS_RDATACOMMON_INIT(_data, _rdtype, _rdclass) \
-	do { \
-		(_data)->common.rdtype = (_rdtype); \
-		(_data)->common.rdclass = (_rdclass); \
+	do {                                           \
+		(_data)->common.rdtype = (_rdtype);    \
+		(_data)->common.rdclass = (_rdclass);  \
 		ISC_LINK_INIT(&(_data)->common, link); \
 	} while (0)
 /*
@@ -55,7 +54,7 @@ typedef struct dns_rdatacommon {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -65,10 +64,9 @@ typedef struct dns_rdatacommon {
 #ifndef IN_1_A_1_H
 #define IN_1_A_1_H 1
 
-
 typedef struct dns_rdata_in_a {
-	dns_rdatacommon_t	common;
-	struct in_addr          in_addr;
+	dns_rdatacommon_t common;
+	struct in_addr in_addr;
 } dns_rdata_in_a_t;
 
 #endif /* IN_1_A_1_H */
@@ -77,12 +75,11 @@ typedef struct dns_rdata_in_a {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 /* by Bjorn.Victor@it.uu.se, 2005-05-07 */
 /* Based on generic/mx_15.h */
@@ -93,10 +90,12 @@ typedef struct dns_rdata_in_a {
 typedef uint16_t ch_addr_t;
 
 typedef struct dns_rdata_ch_a {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		ch_addr_dom; /* ch-addr domain for back mapping */
-	ch_addr_t		ch_addr; /* chaos address (16 bit) network order */
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t ch_addr_dom; /* ch-addr domain for back mapping
+				 * */
+	ch_addr_t ch_addr;	/* chaos address (16 bit) network
+				 * order */
 } dns_rdata_ch_a_t;
 
 #endif /* CH_3_A_1_H */
@@ -105,7 +104,7 @@ typedef struct dns_rdata_ch_a {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -115,10 +114,9 @@ typedef struct dns_rdata_ch_a {
 #ifndef HS_4_A_1_H
 #define HS_4_A_1_H 1
 
-
 typedef struct dns_rdata_hs_a {
-	dns_rdatacommon_t	common;
-	struct in_addr          in_addr;
+	dns_rdatacommon_t common;
+	struct in_addr in_addr;
 } dns_rdata_hs_a_t;
 
 #endif /* HS_4_A_1_H */
@@ -127,7 +125,7 @@ typedef struct dns_rdata_hs_a {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -137,13 +135,11 @@ typedef struct dns_rdata_hs_a {
 #ifndef GENERIC_NS_2_H
 #define GENERIC_NS_2_H 1
 
-
 typedef struct dns_rdata_ns {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		name;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t name;
 } dns_rdata_ns_t;
-
 
 #endif /* GENERIC_NS_2_H */
 /*
@@ -151,7 +147,7 @@ typedef struct dns_rdata_ns {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -161,13 +157,11 @@ typedef struct dns_rdata_ns {
 #ifndef GENERIC_MD_3_H
 #define GENERIC_MD_3_H 1
 
-
 typedef struct dns_rdata_md {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		md;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t md;
 } dns_rdata_md_t;
-
 
 #endif /* GENERIC_MD_3_H */
 /*
@@ -175,7 +169,7 @@ typedef struct dns_rdata_md {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -185,11 +179,10 @@ typedef struct dns_rdata_md {
 #ifndef GENERIC_MF_4_H
 #define GENERIC_MF_4_H 1
 
-
 typedef struct dns_rdata_mf {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		mf;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t mf;
 } dns_rdata_mf_t;
 
 #endif /* GENERIC_MF_4_H */
@@ -198,20 +191,19 @@ typedef struct dns_rdata_mf {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
 #ifndef GENERIC_CNAME_5_H
 #define GENERIC_CNAME_5_H 1
 
 typedef struct dns_rdata_cname {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		cname;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t cname;
 } dns_rdata_cname_t;
 
 #endif /* GENERIC_CNAME_5_H */
@@ -220,7 +212,7 @@ typedef struct dns_rdata_cname {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -230,19 +222,17 @@ typedef struct dns_rdata_cname {
 #ifndef GENERIC_SOA_6_H
 #define GENERIC_SOA_6_H 1
 
-
 typedef struct dns_rdata_soa {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		origin;
-	dns_name_t		contact;
-	uint32_t		serial;		/*%< host order */
-	uint32_t		refresh;	/*%< host order */
-	uint32_t		retry;		/*%< host order */
-	uint32_t		expire;		/*%< host order */
-	uint32_t		minimum;	/*%< host order */
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t origin;
+	dns_name_t contact;
+	uint32_t serial;  /*%< host order */
+	uint32_t refresh; /*%< host order */
+	uint32_t retry;	  /*%< host order */
+	uint32_t expire;  /*%< host order */
+	uint32_t minimum; /*%< host order */
 } dns_rdata_soa_t;
-
 
 #endif /* GENERIC_SOA_6_H */
 /*
@@ -250,7 +240,7 @@ typedef struct dns_rdata_soa {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -260,11 +250,10 @@ typedef struct dns_rdata_soa {
 #ifndef GENERIC_MB_7_H
 #define GENERIC_MB_7_H 1
 
-
 typedef struct dns_rdata_mb {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		mb;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t mb;
 } dns_rdata_mb_t;
 
 #endif /* GENERIC_MB_7_H */
@@ -273,7 +262,7 @@ typedef struct dns_rdata_mb {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -283,11 +272,10 @@ typedef struct dns_rdata_mb {
 #ifndef GENERIC_MG_8_H
 #define GENERIC_MG_8_H 1
 
-
 typedef struct dns_rdata_mg {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		mg;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t mg;
 } dns_rdata_mg_t;
 
 #endif /* GENERIC_MG_8_H */
@@ -296,7 +284,7 @@ typedef struct dns_rdata_mg {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -306,11 +294,10 @@ typedef struct dns_rdata_mg {
 #ifndef GENERIC_MR_9_H
 #define GENERIC_MR_9_H 1
 
-
 typedef struct dns_rdata_mr {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		mr;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t mr;
 } dns_rdata_mr_t;
 
 #endif /* GENERIC_MR_9_H */
@@ -319,7 +306,7 @@ typedef struct dns_rdata_mr {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -329,14 +316,12 @@ typedef struct dns_rdata_mr {
 #ifndef GENERIC_NULL_10_H
 #define GENERIC_NULL_10_H 1
 
-
 typedef struct dns_rdata_null {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		length;
-	unsigned char		*data;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t length;
+	unsigned char *data;
 } dns_rdata_null_t;
-
 
 #endif /* GENERIC_NULL_10_H */
 /*
@@ -344,7 +329,7 @@ typedef struct dns_rdata_null {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -353,14 +338,13 @@ typedef struct dns_rdata_null {
 #ifndef IN_1_WKS_11_H
 #define IN_1_WKS_11_H 1
 
-
-typedef	struct dns_rdata_in_wks {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	struct in_addr		in_addr;
-	uint16_t		protocol;
-	unsigned char		*map;
-	uint16_t		map_len;
+typedef struct dns_rdata_in_wks {
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	struct in_addr in_addr;
+	uint16_t protocol;
+	unsigned char *map;
+	uint16_t map_len;
 } dns_rdata_in_wks_t;
 
 #endif /* IN_1_WKS_11_H */
@@ -369,7 +353,7 @@ typedef	struct dns_rdata_in_wks {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -379,11 +363,10 @@ typedef	struct dns_rdata_in_wks {
 #ifndef GENERIC_PTR_12_H
 #define GENERIC_PTR_12_H 1
 
-
 typedef struct dns_rdata_ptr {
-	dns_rdatacommon_t       common;
-	isc_mem_t               *mctx;
-	dns_name_t              ptr;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t ptr;
 } dns_rdata_ptr_t;
 
 #endif /* GENERIC_PTR_12_H */
@@ -392,7 +375,7 @@ typedef struct dns_rdata_ptr {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -401,14 +384,13 @@ typedef struct dns_rdata_ptr {
 #ifndef GENERIC_HINFO_13_H
 #define GENERIC_HINFO_13_H 1
 
-
 typedef struct dns_rdata_hinfo {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	char			*cpu;
-	char			*os;
-	uint8_t		cpu_len;
-	uint8_t		os_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	char *cpu;
+	char *os;
+	uint8_t cpu_len;
+	uint8_t os_len;
 } dns_rdata_hinfo_t;
 
 #endif /* GENERIC_HINFO_13_H */
@@ -417,7 +399,7 @@ typedef struct dns_rdata_hinfo {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -427,12 +409,11 @@ typedef struct dns_rdata_hinfo {
 #ifndef GENERIC_MINFO_14_H
 #define GENERIC_MINFO_14_H 1
 
-
 typedef struct dns_rdata_minfo {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		rmailbox;
-	dns_name_t		emailbox;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t rmailbox;
+	dns_name_t emailbox;
 } dns_rdata_minfo_t;
 
 #endif /* GENERIC_MINFO_14_H */
@@ -441,7 +422,7 @@ typedef struct dns_rdata_minfo {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -451,12 +432,11 @@ typedef struct dns_rdata_minfo {
 #ifndef GENERIC_MX_15_H
 #define GENERIC_MX_15_H 1
 
-
 typedef struct dns_rdata_mx {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		pref;
-	dns_name_t		mx;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t pref;
+	dns_name_t mx;
 } dns_rdata_mx_t;
 
 #endif /* GENERIC_MX_15_H */
@@ -465,7 +445,7 @@ typedef struct dns_rdata_mx {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -475,19 +455,18 @@ typedef struct dns_rdata_mx {
 #ifndef GENERIC_TXT_16_H
 #define GENERIC_TXT_16_H 1
 
-
 typedef struct dns_rdata_txt_string {
-		uint8_t    length;
-		unsigned char   *data;
+	uint8_t length;
+	unsigned char *data;
 } dns_rdata_txt_string_t;
 
 typedef struct dns_rdata_txt {
-	dns_rdatacommon_t       common;
-	isc_mem_t               *mctx;
-	unsigned char           *txt;
-	uint16_t            txt_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *txt;
+	uint16_t txt_len;
 	/* private */
-	uint16_t            offset;
+	uint16_t offset;
 } dns_rdata_txt_t;
 
 /*
@@ -510,7 +489,7 @@ dns_rdata_txt_current(dns_rdata_txt_t *, dns_rdata_txt_string_t *);
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -519,17 +498,15 @@ dns_rdata_txt_current(dns_rdata_txt_t *, dns_rdata_txt_string_t *);
 #ifndef GENERIC_RP_17_H
 #define GENERIC_RP_17_H 1
 
-
 /*!
  *  \brief Per RFC1183 */
 
 typedef struct dns_rdata_rp {
-	dns_rdatacommon_t       common;
-	isc_mem_t               *mctx;
-	dns_name_t              mail;
-	dns_name_t              text;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t mail;
+	dns_name_t text;
 } dns_rdata_rp_t;
-
 
 #endif /* GENERIC_RP_17_H */
 /*
@@ -537,7 +514,7 @@ typedef struct dns_rdata_rp {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -546,25 +523,23 @@ typedef struct dns_rdata_rp {
 #ifndef GENERIC_AFSDB_18_H
 #define GENERIC_AFSDB_18_H 1
 
-
 /*!
  *  \brief Per RFC1183 */
 
 typedef struct dns_rdata_afsdb {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		subtype;
-	dns_name_t		server;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t subtype;
+	dns_name_t server;
 } dns_rdata_afsdb_t;
 
 #endif /* GENERIC_AFSDB_18_H */
-
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -573,15 +548,14 @@ typedef struct dns_rdata_afsdb {
 #ifndef GENERIC_X25_19_H
 #define GENERIC_X25_19_H 1
 
-
 /*!
  *  \brief Per RFC1183 */
 
 typedef struct dns_rdata_x25 {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	unsigned char		*x25;
-	uint8_t		x25_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *x25;
+	uint8_t x25_len;
 } dns_rdata_x25_t;
 
 #endif /* GENERIC_X25_19_H */
@@ -590,7 +564,7 @@ typedef struct dns_rdata_x25 {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -599,17 +573,16 @@ typedef struct dns_rdata_x25 {
 #ifndef GENERIC_ISDN_20_H
 #define GENERIC_ISDN_20_H 1
 
-
 /*!
  * \brief Per RFC1183 */
 
 typedef struct dns_rdata_isdn {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	char			*isdn;
-	char			*subaddress;
-	uint8_t		isdn_len;
-	uint8_t		subaddress_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	char *isdn;
+	char *subaddress;
+	uint8_t isdn_len;
+	uint8_t subaddress_len;
 } dns_rdata_isdn_t;
 
 #endif /* GENERIC_ISDN_20_H */
@@ -618,7 +591,7 @@ typedef struct dns_rdata_isdn {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -627,15 +600,14 @@ typedef struct dns_rdata_isdn {
 #ifndef GENERIC_RT_21_H
 #define GENERIC_RT_21_H 1
 
-
 /*!
  *  \brief Per RFC1183 */
 
 typedef struct dns_rdata_rt {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		preference;
-	dns_name_t		host;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t preference;
+	dns_name_t host;
 } dns_rdata_rt_t;
 
 #endif /* GENERIC_RT_21_H */
@@ -644,7 +616,7 @@ typedef struct dns_rdata_rt {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -653,15 +625,14 @@ typedef struct dns_rdata_rt {
 #ifndef IN_1_NSAP_22_H
 #define IN_1_NSAP_22_H 1
 
-
 /*!
  *  \brief Per RFC1706 */
 
 typedef struct dns_rdata_in_nsap {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	unsigned char		*nsap;
-	uint16_t		nsap_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *nsap;
+	uint16_t nsap_len;
 } dns_rdata_in_nsap_t;
 
 #endif /* IN_1_NSAP_22_H */
@@ -670,7 +641,7 @@ typedef struct dns_rdata_in_nsap {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -679,14 +650,13 @@ typedef struct dns_rdata_in_nsap {
 #ifndef IN_1_NSAP_PTR_23_H
 #define IN_1_NSAP_PTR_23_H 1
 
-
 /*!
  *  \brief Per RFC1348.  Obsoleted in RFC 1706 - use PTR instead. */
 
 typedef struct dns_rdata_in_nsap_ptr {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		owner;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t owner;
 } dns_rdata_in_nsap_ptr_t;
 
 #endif /* IN_1_NSAP_PTR_23_H */
@@ -695,7 +665,7 @@ typedef struct dns_rdata_in_nsap_ptr {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -704,25 +674,23 @@ typedef struct dns_rdata_in_nsap_ptr {
 #ifndef GENERIC_SIG_24_H
 #define GENERIC_SIG_24_H 1
 
-
 /*!
  *  \brief Per RFC2535 */
 
 typedef struct dns_rdata_sig_t {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	dns_rdatatype_t		covered;
-	dns_secalg_t		algorithm;
-	uint8_t		labels;
-	uint32_t		originalttl;
-	uint32_t		timeexpire;
-	uint32_t		timesigned;
-	uint16_t		keyid;
-	dns_name_t		signer;
-	uint16_t		siglen;
-	unsigned char *		signature;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_rdatatype_t covered;
+	dns_secalg_t algorithm;
+	uint8_t labels;
+	uint32_t originalttl;
+	uint32_t timeexpire;
+	uint32_t timesigned;
+	uint16_t keyid;
+	dns_name_t signer;
+	uint16_t siglen;
+	unsigned char *signature;
 } dns_rdata_sig_t;
-
 
 #endif /* GENERIC_SIG_24_H */
 /*
@@ -730,7 +698,7 @@ typedef struct dns_rdata_sig_t {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -739,20 +707,18 @@ typedef struct dns_rdata_sig_t {
 #ifndef GENERIC_KEY_25_H
 #define GENERIC_KEY_25_H 1
 
-
 /*!
  * \brief Per RFC2535 */
 
 typedef struct dns_rdata_key {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	uint16_t		flags;
-	dns_secproto_t		protocol;
-	dns_secalg_t		algorithm;
-	uint16_t		datalen;
-	unsigned char *		data;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t flags;
+	dns_secproto_t protocol;
+	dns_secalg_t algorithm;
+	uint16_t datalen;
+	unsigned char *data;
 } dns_rdata_key_t;
-
 
 #endif /* GENERIC_KEY_25_H */
 /*
@@ -760,7 +726,7 @@ typedef struct dns_rdata_key {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -769,16 +735,15 @@ typedef struct dns_rdata_key {
 #ifndef IN_1_PX_26_H
 #define IN_1_PX_26_H 1
 
-
 /*!
  *  \brief Per RFC2163 */
 
 typedef struct dns_rdata_in_px {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		preference;
-	dns_name_t		map822;
-	dns_name_t		mapx400;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t preference;
+	dns_name_t map822;
+	dns_name_t mapx400;
 } dns_rdata_in_px_t;
 
 #endif /* IN_1_PX_26_H */
@@ -787,7 +752,7 @@ typedef struct dns_rdata_in_px {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -796,19 +761,18 @@ typedef struct dns_rdata_in_px {
 #ifndef GENERIC_GPOS_27_H
 #define GENERIC_GPOS_27_H 1
 
-
 /*!
  *  \brief per RFC1712 */
 
 typedef struct dns_rdata_gpos {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	char			*longitude;
-	char			*latitude;
-	char			*altitude;
-	uint8_t		long_len;
-	uint8_t		lat_len;
-	uint8_t		alt_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	char *longitude;
+	char *latitude;
+	char *altitude;
+	uint8_t long_len;
+	uint8_t lat_len;
+	uint8_t alt_len;
 } dns_rdata_gpos_t;
 
 #endif /* GENERIC_GPOS_27_H */
@@ -817,7 +781,7 @@ typedef struct dns_rdata_gpos {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -826,13 +790,12 @@ typedef struct dns_rdata_gpos {
 #ifndef IN_1_AAAA_28_H
 #define IN_1_AAAA_28_H 1
 
-
 /*!
  *  \brief Per RFC1886 */
 
 typedef struct dns_rdata_in_aaaa {
-	dns_rdatacommon_t	common;
-	struct in6_addr		in6_addr;
+	dns_rdatacommon_t common;
+	struct in6_addr in6_addr;
 } dns_rdata_in_aaaa_t;
 
 #endif /* IN_1_AAAA_28_H */
@@ -841,7 +804,7 @@ typedef struct dns_rdata_in_aaaa {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -850,22 +813,21 @@ typedef struct dns_rdata_in_aaaa {
 #ifndef GENERIC_LOC_29_H
 #define GENERIC_LOC_29_H 1
 
-
 /*!
  * \brief Per RFC1876 */
 
 typedef struct dns_rdata_loc_0 {
-	uint8_t	version;	/* must be first and zero */
-	uint8_t	size;
-	uint8_t	horizontal;
-	uint8_t	vertical;
-	uint32_t	latitude;
-	uint32_t	longitude;
-	uint32_t	altitude;
+	uint8_t version; /* must be first and zero */
+	uint8_t size;
+	uint8_t horizontal;
+	uint8_t vertical;
+	uint32_t latitude;
+	uint32_t longitude;
+	uint32_t altitude;
 } dns_rdata_loc_0_t;
 
 typedef struct dns_rdata_loc {
-	dns_rdatacommon_t	common;
+	dns_rdatacommon_t common;
 	union {
 		dns_rdata_loc_0_t v0;
 	} v;
@@ -877,7 +839,7 @@ typedef struct dns_rdata_loc {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -886,16 +848,15 @@ typedef struct dns_rdata_loc {
 #ifndef GENERIC_NXT_30_H
 #define GENERIC_NXT_30_H 1
 
-
 /*!
  *  \brief RFC2535 */
 
 typedef struct dns_rdata_nxt {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		next;
-	unsigned char		*typebits;
-	uint16_t		len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t next;
+	unsigned char *typebits;
+	uint16_t len;
 } dns_rdata_nxt_t;
 
 #endif /* GENERIC_NXT_30_H */
@@ -904,7 +865,7 @@ typedef struct dns_rdata_nxt {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -913,16 +874,15 @@ typedef struct dns_rdata_nxt {
 #ifndef IN_1_EID_31_H
 #define IN_1_EID_31_H 1
 
-
 /*!
  *  \brief http://ana-3.lcs.mit.edu/~jnc/nimrod/dns.txt
  */
 
 typedef struct dns_rdata_in_eid {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	unsigned char		*eid;
-	uint16_t		eid_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *eid;
+	uint16_t eid_len;
 } dns_rdata_in_eid_t;
 
 #endif /* IN_1_EID_31_H */
@@ -931,7 +891,7 @@ typedef struct dns_rdata_in_eid {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -940,16 +900,15 @@ typedef struct dns_rdata_in_eid {
 #ifndef IN_1_NIMLOC_32_H
 #define IN_1_NIMLOC_32_H 1
 
-
 /*!
  *  \brief http://ana-3.lcs.mit.edu/~jnc/nimrod/dns.txt
  */
 
 typedef struct dns_rdata_in_nimloc {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	unsigned char		*nimloc;
-	uint16_t		nimloc_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *nimloc;
+	uint16_t nimloc_len;
 } dns_rdata_in_nimloc_t;
 
 #endif /* IN_1_NIMLOC_32_H */
@@ -958,7 +917,7 @@ typedef struct dns_rdata_in_nimloc {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -971,12 +930,12 @@ typedef struct dns_rdata_in_nimloc {
  *  \brief Per RFC2782 */
 
 typedef struct dns_rdata_in_srv {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		priority;
-	uint16_t		weight;
-	uint16_t		port;
-	dns_name_t		target;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t priority;
+	uint16_t weight;
+	uint16_t port;
+	dns_name_t target;
 } dns_rdata_in_srv_t;
 
 #endif /* IN_1_SRV_33_H */
@@ -985,7 +944,7 @@ typedef struct dns_rdata_in_srv {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -994,16 +953,15 @@ typedef struct dns_rdata_in_srv {
 #ifndef IN_1_ATMA_22_H
 #define IN_1_ATMA_22_H 1
 
-
 /*!
  *  \brief Per RFC1706 */
 
 typedef struct dns_rdata_in_atma {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	unsigned char		format;
-	unsigned char		*atma;
-	uint16_t		atma_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char format;
+	unsigned char *atma;
+	uint16_t atma_len;
 } dns_rdata_in_atma_t;
 
 #endif /* IN_1_ATMA_22_H */
@@ -1012,7 +970,7 @@ typedef struct dns_rdata_in_atma {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1021,22 +979,21 @@ typedef struct dns_rdata_in_atma {
 #ifndef GENERIC_NAPTR_35_H
 #define GENERIC_NAPTR_35_H 1
 
-
 /*!
  *  \brief Per RFC2915 */
 
 typedef struct dns_rdata_naptr {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		order;
-	uint16_t		preference;
-	char			*flags;
-	uint8_t		flags_len;
-	char			*service;
-	uint8_t		service_len;
-	char			*regexp;
-	uint8_t		regexp_len;
-	dns_name_t		replacement;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t order;
+	uint16_t preference;
+	char *flags;
+	uint8_t flags_len;
+	char *service;
+	uint8_t service_len;
+	char *regexp;
+	uint8_t regexp_len;
+	dns_name_t replacement;
 } dns_rdata_naptr_t;
 
 #endif /* GENERIC_NAPTR_35_H */
@@ -1045,7 +1002,7 @@ typedef struct dns_rdata_naptr {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1054,15 +1011,14 @@ typedef struct dns_rdata_naptr {
 #ifndef IN_1_KX_36_H
 #define IN_1_KX_36_H 1
 
-
 /*!
  *  \brief Per RFC2230 */
 
 typedef struct dns_rdata_in_kx {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		preference;
-	dns_name_t		exchange;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t preference;
+	dns_name_t exchange;
 } dns_rdata_in_kx_t;
 
 #endif /* IN_1_KX_36_H */
@@ -1071,25 +1027,24 @@ typedef struct dns_rdata_in_kx {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 #ifndef GENERIC_CERT_37_H
 #define GENERIC_CERT_37_H 1
 
 /*% RFC2538 */
 typedef struct dns_rdata_cert {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		type;
-	uint16_t		key_tag;
-	uint8_t		algorithm;
-	uint16_t		length;
-	unsigned char		*certificate;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t type;
+	uint16_t key_tag;
+	uint8_t algorithm;
+	uint16_t length;
+	unsigned char *certificate;
 } dns_rdata_cert_t;
 
 #endif /* GENERIC_CERT_37_H */
@@ -1098,7 +1053,7 @@ typedef struct dns_rdata_cert {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1107,16 +1062,15 @@ typedef struct dns_rdata_cert {
 #ifndef IN_1_A6_38_H
 #define IN_1_A6_38_H 1
 
-
 /*!
  *  \brief Per RFC2874 */
 
 typedef struct dns_rdata_in_a6 {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		prefix;
-	uint8_t		prefixlen;
-	struct in6_addr		in6_addr;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t prefix;
+	uint8_t prefixlen;
+	struct in6_addr in6_addr;
 } dns_rdata_in_a6_t;
 
 #endif /* IN_1_A6_38_H */
@@ -1125,7 +1079,7 @@ typedef struct dns_rdata_in_a6 {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1134,14 +1088,13 @@ typedef struct dns_rdata_in_a6 {
 #ifndef GENERIC_DNAME_39_H
 #define GENERIC_DNAME_39_H 1
 
-
 /*!
  *  \brief per RFC2672 */
 
 typedef struct dns_rdata_dname {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		dname;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t dname;
 } dns_rdata_dname_t;
 
 #endif /* GENERIC_DNAME_39_H */
@@ -1150,7 +1103,7 @@ typedef struct dns_rdata_dname {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1160,13 +1113,13 @@ typedef struct dns_rdata_dname {
 #define GENERIC_SINK_40_H 1
 
 typedef struct dns_rdata_sink_t {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	uint8_t		meaning;
-	uint8_t		coding;
-	uint8_t		subcoding;
-	uint16_t		datalen;
-	unsigned char *		data;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint8_t meaning;
+	uint8_t coding;
+	uint8_t subcoding;
+	uint16_t datalen;
+	unsigned char *data;
 } dns_rdata_sink_t;
 
 #endif /* GENERIC_SINK_40_H */
@@ -1175,7 +1128,7 @@ typedef struct dns_rdata_sink_t {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1184,23 +1137,22 @@ typedef struct dns_rdata_sink_t {
 #ifndef GENERIC_OPT_41_H
 #define GENERIC_OPT_41_H 1
 
-
 /*!
  *  \brief Per RFC2671 */
 
 typedef struct dns_rdata_opt_opcode {
-		uint16_t	opcode;
-		uint16_t	length;
-		unsigned char	*data;
+	uint16_t opcode;
+	uint16_t length;
+	unsigned char *data;
 } dns_rdata_opt_opcode_t;
 
 typedef struct dns_rdata_opt {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	unsigned char		*options;
-	uint16_t		length;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *options;
+	uint16_t length;
 	/* private */
-	uint16_t		offset;
+	uint16_t offset;
 } dns_rdata_opt_t;
 
 /*
@@ -1223,7 +1175,7 @@ dns_rdata_opt_current(dns_rdata_opt_t *, dns_rdata_opt_opcode_t *);
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1233,23 +1185,22 @@ dns_rdata_opt_current(dns_rdata_opt_t *, dns_rdata_opt_opcode_t *);
 #ifndef IN_1_APL_42_H
 #define IN_1_APL_42_H 1
 
-
 typedef struct dns_rdata_apl_ent {
-	bool	negative;
-	uint16_t	family;
-	uint8_t	prefix;
-	uint8_t	length;
-	unsigned char	*data;
+	bool negative;
+	uint16_t family;
+	uint8_t prefix;
+	uint8_t length;
+	unsigned char *data;
 } dns_rdata_apl_ent_t;
 
 typedef struct dns_rdata_in_apl {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
 	/* type & class specific elements */
-	unsigned char           *apl;
-	uint16_t            apl_len;
+	unsigned char *apl;
+	uint16_t apl_len;
 	/* private */
-	uint16_t            offset;
+	uint16_t offset;
 } dns_rdata_in_apl_t;
 
 /*
@@ -1275,12 +1226,11 @@ dns_rdata_apl_count(const dns_rdata_in_apl_t *apl);
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 #ifndef GENERIC_DS_43_H
 #define GENERIC_DS_43_H 1
@@ -1288,13 +1238,13 @@ dns_rdata_apl_count(const dns_rdata_in_apl_t *apl);
 /*!
  *  \brief per draft-ietf-dnsext-delegation-signer-05.txt */
 typedef struct dns_rdata_ds {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		key_tag;
-	dns_secalg_t		algorithm;
-	dns_dsdigest_t		digest_type;
-	uint16_t		length;
-	unsigned char		*digest;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t key_tag;
+	dns_secalg_t algorithm;
+	dns_dsdigest_t digest_type;
+	uint16_t length;
+	unsigned char *digest;
 } dns_rdata_ds_t;
 
 #endif /* GENERIC_DS_43_H */
@@ -1303,12 +1253,11 @@ typedef struct dns_rdata_ds {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 /*!
  *  \brief Per RFC 4255 */
@@ -1317,12 +1266,12 @@ typedef struct dns_rdata_ds {
 #define GENERIC_SSHFP_44_H 1
 
 typedef struct dns_rdata_sshfp {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint8_t		algorithm;
-	uint8_t		digest_type;
-	uint16_t		length;
-	unsigned char		*digest;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint8_t algorithm;
+	uint8_t digest_type;
+	uint16_t length;
+	unsigned char *digest;
 } dns_rdata_sshfp_t;
 
 #endif /* GENERIC_SSHFP_44_H */
@@ -1331,27 +1280,26 @@ typedef struct dns_rdata_sshfp {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
 #ifndef GENERIC_IPSECKEY_45_H
 #define GENERIC_IPSECKEY_45_H 1
 
 typedef struct dns_rdata_ipseckey {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint8_t		precedence;
-	uint8_t		gateway_type;
-	uint8_t		algorithm;
-	struct in_addr		in_addr;	/* gateway type 1 */
-	struct in6_addr		in6_addr;	/* gateway type 2 */
-	dns_name_t		gateway;	/* gateway type 3 */
-	unsigned char		*key;
-	uint16_t		keylength;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint8_t precedence;
+	uint8_t gateway_type;
+	uint8_t algorithm;
+	struct in_addr in_addr;	  /* gateway type 1 */
+	struct in6_addr in6_addr; /* gateway type 2 */
+	dns_name_t gateway;	  /* gateway type 3 */
+	unsigned char *key;
+	uint16_t keylength;
 } dns_rdata_ipseckey_t;
 
 #endif /* GENERIC_IPSECKEY_45_H */
@@ -1360,7 +1308,7 @@ typedef struct dns_rdata_ipseckey {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1369,24 +1317,22 @@ typedef struct dns_rdata_ipseckey {
 #ifndef GENERIC_DNSSIG_46_H
 #define GENERIC_DNSSIG_46_H 1
 
-
 /*!
  *  \brief Per RFC2535 */
 typedef struct dns_rdata_rrsig {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	dns_rdatatype_t		covered;
-	dns_secalg_t		algorithm;
-	uint8_t		labels;
-	uint32_t		originalttl;
-	uint32_t		timeexpire;
-	uint32_t		timesigned;
-	uint16_t		keyid;
-	dns_name_t		signer;
-	uint16_t		siglen;
-	unsigned char *		signature;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_rdatatype_t covered;
+	dns_secalg_t algorithm;
+	uint8_t labels;
+	uint32_t originalttl;
+	uint32_t timeexpire;
+	uint32_t timesigned;
+	uint16_t keyid;
+	dns_name_t signer;
+	uint16_t siglen;
+	unsigned char *signature;
 } dns_rdata_rrsig_t;
-
 
 #endif /* GENERIC_DNSSIG_46_H */
 /*
@@ -1394,7 +1340,7 @@ typedef struct dns_rdata_rrsig {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1403,16 +1349,15 @@ typedef struct dns_rdata_rrsig {
 #ifndef GENERIC_NSEC_47_H
 #define GENERIC_NSEC_47_H 1
 
-
 /*!
  * \brief Per RFC 3845 */
 
 typedef struct dns_rdata_nsec {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		next;
-	unsigned char		*typebits;
-	uint16_t		len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t next;
+	unsigned char *typebits;
+	uint16_t len;
 } dns_rdata_nsec_t;
 
 #endif /* GENERIC_NSEC_47_H */
@@ -1421,7 +1366,7 @@ typedef struct dns_rdata_nsec {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1442,7 +1387,7 @@ typedef struct dns_rdata_key dns_rdata_dnskey_t;
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1452,12 +1397,11 @@ typedef struct dns_rdata_key dns_rdata_dnskey_t;
 #ifndef IN_1_DHCID_49_H
 #define IN_1_DHCID_49_H 1
 
-
 typedef struct dns_rdata_in_dhcid {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	unsigned char		*dhcid;
-	unsigned int		length;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *dhcid;
+	unsigned int length;
 } dns_rdata_in_dhcid_t;
 
 #endif /* IN_1_DHCID_49_H */
@@ -1466,16 +1410,14 @@ typedef struct dns_rdata_in_dhcid {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
 #ifndef GENERIC_NSEC3_50_H
 #define GENERIC_NSEC3_50_H 1
-
 
 /*!
  * \brief Per RFC 5155 */
@@ -1483,17 +1425,17 @@ typedef struct dns_rdata_in_dhcid {
 #include <isc/iterated_hash.h>
 
 typedef struct dns_rdata_nsec3 {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_hash_t		hash;
-	unsigned char		flags;
-	dns_iterations_t	iterations;
-	unsigned char		salt_length;
-	unsigned char		next_length;
-	uint16_t		len;
-	unsigned char		*salt;
-	unsigned char		*next;
-	unsigned char		*typebits;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_hash_t hash;
+	unsigned char flags;
+	dns_iterations_t iterations;
+	unsigned char salt_length;
+	unsigned char next_length;
+	uint16_t len;
+	unsigned char *salt;
+	unsigned char *next;
+	unsigned char *typebits;
 } dns_rdata_nsec3_t;
 
 /*
@@ -1578,16 +1520,14 @@ typedef struct dns_rdata_nsec3 {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
 #ifndef GENERIC_NSEC3PARAM_51_H
 #define GENERIC_NSEC3PARAM_51_H 1
-
 
 /*!
  * \brief Per RFC 5155 */
@@ -1595,13 +1535,13 @@ typedef struct dns_rdata_nsec3 {
 #include <isc/iterated_hash.h>
 
 typedef struct dns_rdata_nsec3param {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_hash_t		hash;
-	unsigned char		flags;		/* DNS_NSEC3FLAG_* */
-	dns_iterations_t	iterations;
-	unsigned char		salt_length;
-	unsigned char		*salt;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_hash_t hash;
+	unsigned char flags; /* DNS_NSEC3FLAG_* */
+	dns_iterations_t iterations;
+	unsigned char salt_length;
+	unsigned char *salt;
 } dns_rdata_nsec3param_t;
 
 #endif /* GENERIC_NSEC3PARAM_51_H */
@@ -1610,12 +1550,11 @@ typedef struct dns_rdata_nsec3param {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 #ifndef GENERIC_TLSA_52_H
 #define GENERIC_TLSA_52_H 1
@@ -1624,13 +1563,13 @@ typedef struct dns_rdata_nsec3param {
  *  \brief per rfc6698.txt
  */
 typedef struct dns_rdata_tlsa {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint8_t		usage;
-	uint8_t		selector;
-	uint8_t		match;
-	uint16_t		length;
-	unsigned char		*data;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint8_t usage;
+	uint8_t selector;
+	uint8_t match;
+	uint16_t length;
+	unsigned char *data;
 } dns_rdata_tlsa_t;
 
 #endif /* GENERIC_TLSA_52_H */
@@ -1639,7 +1578,7 @@ typedef struct dns_rdata_tlsa {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1656,12 +1595,11 @@ typedef struct dns_rdata_tlsa dns_rdata_smimea_t;
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 #ifndef GENERIC_HIP_5_H
 #define GENERIC_HIP_5_H 1
@@ -1669,17 +1607,17 @@ typedef struct dns_rdata_tlsa dns_rdata_smimea_t;
 /* RFC 5205 */
 
 typedef struct dns_rdata_hip {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	unsigned char *		hit;
-	unsigned char *		key;
-	unsigned char *		servers;
-	uint8_t		algorithm;
-	uint8_t		hit_len;
-	uint16_t		key_len;
-	uint16_t		servers_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *hit;
+	unsigned char *key;
+	unsigned char *servers;
+	uint8_t algorithm;
+	uint8_t hit_len;
+	uint16_t key_len;
+	uint16_t servers_len;
 	/* Private */
-	uint16_t		offset;
+	uint16_t offset;
 } dns_rdata_hip_t;
 
 isc_result_t
@@ -1697,7 +1635,7 @@ dns_rdata_hip_current(dns_rdata_hip_t *, dns_name_t *);
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1731,7 +1669,7 @@ dns_rdata_ninfo_current(dns_rdata_ninfo_t *, dns_rdata_ninfo_string_t *);
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1748,22 +1686,24 @@ typedef struct dns_rdata_key dns_rdata_rkey_t;
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-/* http://www.iana.org/assignments/dns-parameters/TALINK/talink-completed-template */
+/*
+ * http://www.iana.org/assignments/dns-parameters/TALINK/talink-completed-template
+ */
 
 #ifndef GENERIC_TALINK_58_H
 #define GENERIC_TALINK_58_H 1
 
 typedef struct dns_rdata_talink {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	dns_name_t		prev;
-	dns_name_t		next;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t prev;
+	dns_name_t next;
 } dns_rdata_talink_t;
 
 #endif /* GENERIC_TALINK_58_H */
@@ -1772,7 +1712,7 @@ typedef struct dns_rdata_talink {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1790,7 +1730,7 @@ typedef struct dns_rdata_ds dns_rdata_cds_t;
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1808,7 +1748,7 @@ typedef struct dns_rdata_key dns_rdata_cdnskey_t;
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1818,10 +1758,10 @@ typedef struct dns_rdata_key dns_rdata_cdnskey_t;
 #define GENERIC_OPENPGPKEY_61_H 1
 
 typedef struct dns_rdata_openpgpkey {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	uint16_t		length;
-	unsigned char *		keyring;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t length;
+	unsigned char *keyring;
 } dns_rdata_openpgpkey_t;
 
 #endif /* GENERIC_OPENPGPKEY_61_H */
@@ -1830,7 +1770,7 @@ typedef struct dns_rdata_openpgpkey {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1844,12 +1784,12 @@ typedef struct dns_rdata_openpgpkey {
  */
 
 typedef struct dns_rdata_csync {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint32_t		serial;
-	uint16_t		flags;
-	unsigned char		*typebits;
-	uint16_t		len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint32_t serial;
+	uint16_t flags;
+	unsigned char *typebits;
+	uint16_t len;
 } dns_rdata_csync_t;
 
 #endif /* GENERIC_CSYNC_62_H */
@@ -1858,7 +1798,7 @@ typedef struct dns_rdata_csync {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1874,13 +1814,13 @@ typedef struct dns_rdata_csync {
  *  \brief per draft-wessels-zone-digest-05
  */
 typedef struct dns_rdata_zonemd {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint32_t		serial;
-	uint8_t			digest_type;
-	uint8_t			reserved;
-	unsigned char		*digest;
-	uint16_t		length;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint32_t serial;
+	uint8_t digest_type;
+	uint8_t reserved;
+	unsigned char *digest;
+	uint16_t length;
 } dns_rdata_zonemd_t;
 
 #endif /* GENERIC_ZONEMD_63_H */
@@ -1889,7 +1829,7 @@ typedef struct dns_rdata_zonemd {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1898,19 +1838,18 @@ typedef struct dns_rdata_zonemd {
 #ifndef GENERIC_SPF_99_H
 #define GENERIC_SPF_99_H 1
 
-
 typedef struct dns_rdata_spf_string {
-		uint8_t    length;
-		unsigned char   *data;
+	uint8_t length;
+	unsigned char *data;
 } dns_rdata_spf_string_t;
 
 typedef struct dns_rdata_spf {
-	dns_rdatacommon_t       common;
-	isc_mem_t               *mctx;
-	unsigned char           *txt;
-	uint16_t            txt_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *txt;
+	uint16_t txt_len;
 	/* private */
-	uint16_t            offset;
+	uint16_t offset;
 } dns_rdata_spf_t;
 
 /*
@@ -1923,7 +1862,7 @@ typedef struct dns_rdata_spf {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1934,9 +1873,9 @@ typedef struct dns_rdata_spf {
 #define GENERIC_NID_104_H 1
 
 typedef struct dns_rdata_nid {
-	dns_rdatacommon_t	common;
-	uint16_t		pref;
-	unsigned char		nid[8];
+	dns_rdatacommon_t common;
+	uint16_t pref;
+	unsigned char nid[8];
 } dns_rdata_nid_t;
 
 #endif /* GENERIC_NID_104_H */
@@ -1945,7 +1884,7 @@ typedef struct dns_rdata_nid {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1956,9 +1895,9 @@ typedef struct dns_rdata_nid {
 #define GENERIC_L32_105_H 1
 
 typedef struct dns_rdata_l32 {
-	dns_rdatacommon_t	common;
-	uint16_t		pref;
-	struct in_addr		l32;
+	dns_rdatacommon_t common;
+	uint16_t pref;
+	struct in_addr l32;
 } dns_rdata_l32_t;
 
 #endif /* GENERIC_L32_105_H */
@@ -1967,7 +1906,7 @@ typedef struct dns_rdata_l32 {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1978,9 +1917,9 @@ typedef struct dns_rdata_l32 {
 #define GENERIC_L64_106_H 1
 
 typedef struct dns_rdata_l64 {
-	dns_rdatacommon_t	common;
-	uint16_t		pref;
-	unsigned char		l64[8];
+	dns_rdatacommon_t common;
+	uint16_t pref;
+	unsigned char l64[8];
 } dns_rdata_l64_t;
 
 #endif /* GENERIC_L64_106_H */
@@ -1989,7 +1928,7 @@ typedef struct dns_rdata_l64 {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2000,10 +1939,10 @@ typedef struct dns_rdata_l64 {
 #define GENERIC_LP_107_H 1
 
 typedef struct dns_rdata_lp {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint16_t		pref;
-	dns_name_t		lp;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t pref;
+	dns_name_t lp;
 } dns_rdata_lp_t;
 
 #endif /* GENERIC_LP_107_H */
@@ -2012,7 +1951,7 @@ typedef struct dns_rdata_lp {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2023,8 +1962,8 @@ typedef struct dns_rdata_lp {
 #define GENERIC_EUI48_108_H 1
 
 typedef struct dns_rdata_eui48 {
-	dns_rdatacommon_t	common;
-	unsigned char		eui48[6];
+	dns_rdatacommon_t common;
+	unsigned char eui48[6];
 } dns_rdata_eui48_t;
 
 #endif /* GENERIC_EUI48_10k_H */
@@ -2033,7 +1972,7 @@ typedef struct dns_rdata_eui48 {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2044,8 +1983,8 @@ typedef struct dns_rdata_eui48 {
 #define GENERIC_EUI64_109_H 1
 
 typedef struct dns_rdata_eui64 {
-	dns_rdatacommon_t	common;
-	unsigned char		eui64[8];
+	dns_rdatacommon_t common;
+	unsigned char eui64[8];
 } dns_rdata_eui64_t;
 
 #endif /* GENERIC_EUI64_10k_H */
@@ -2054,7 +1993,7 @@ typedef struct dns_rdata_eui64 {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2063,24 +2002,22 @@ typedef struct dns_rdata_eui64 {
 #ifndef GENERIC_TKEY_249_H
 #define GENERIC_TKEY_249_H 1
 
-
 /*!
  *  \brief Per draft-ietf-dnsind-tkey-00.txt */
 
 typedef struct dns_rdata_tkey {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	dns_name_t		algorithm;
-	uint32_t		inception;
-	uint32_t		expire;
-	uint16_t		mode;
-	uint16_t		error;
-	uint16_t		keylen;
-	unsigned char *		key;
-	uint16_t		otherlen;
-	unsigned char *		other;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t algorithm;
+	uint32_t inception;
+	uint32_t expire;
+	uint16_t mode;
+	uint16_t error;
+	uint16_t keylen;
+	unsigned char *key;
+	uint16_t otherlen;
+	unsigned char *other;
 } dns_rdata_tkey_t;
-
 
 #endif /* GENERIC_TKEY_249_H */
 /*
@@ -2088,29 +2025,28 @@ typedef struct dns_rdata_tkey {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 #ifndef ANY_255_TSIG_250_H
 #define ANY_255_TSIG_250_H 1
 
 /*% RFC2845 */
 typedef struct dns_rdata_any_tsig {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	dns_name_t		algorithm;
-	uint64_t		timesigned;
-	uint16_t		fudge;
-	uint16_t		siglen;
-	unsigned char *		signature;
-	uint16_t		originalid;
-	uint16_t		error;
-	uint16_t		otherlen;
-	unsigned char *		other;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	dns_name_t algorithm;
+	uint64_t timesigned;
+	uint16_t fudge;
+	uint16_t siglen;
+	unsigned char *signature;
+	uint16_t originalid;
+	uint16_t error;
+	uint16_t otherlen;
+	unsigned char *other;
 } dns_rdata_any_tsig_t;
 
 #endif /* ANY_255_TSIG_250_H */
@@ -2119,7 +2055,7 @@ typedef struct dns_rdata_any_tsig {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2128,14 +2064,13 @@ typedef struct dns_rdata_any_tsig {
 #ifndef GENERIC_URI_256_H
 #define GENERIC_URI_256_H 1
 
-
 typedef struct dns_rdata_uri {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	uint16_t		priority;
-	uint16_t		weight;
-	unsigned char *		target;
-	uint16_t		tgt_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint16_t priority;
+	uint16_t weight;
+	unsigned char *target;
+	uint16_t tgt_len;
 } dns_rdata_uri_t;
 
 #endif /* GENERIC_URI_256_H */
@@ -2144,7 +2079,7 @@ typedef struct dns_rdata_uri {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2153,15 +2088,14 @@ typedef struct dns_rdata_uri {
 #ifndef GENERIC_CAA_257_H
 #define GENERIC_CAA_257_H 1
 
-
 typedef struct dns_rdata_caa {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	uint8_t		flags;
-	unsigned char *		tag;
-	uint8_t		tag_len;
-	unsigned char		*value;
-	uint16_t		value_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint8_t flags;
+	unsigned char *tag;
+	uint8_t tag_len;
+	unsigned char *value;
+	uint16_t value_len;
 } dns_rdata_caa_t;
 
 #endif /* GENERIC_CAA_257_H */
@@ -2170,7 +2104,7 @@ typedef struct dns_rdata_caa {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2182,12 +2116,12 @@ typedef struct dns_rdata_caa {
 typedef dns_rdata_txt_string_t dns_rdata_avc_string_t;
 
 typedef struct dns_rdata_avc {
-	dns_rdatacommon_t       common;
-	isc_mem_t               *mctx;
-	unsigned char           *data;
-	uint16_t            length;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *data;
+	uint16_t length;
 	/* private */
-	uint16_t            offset;
+	uint16_t offset;
 } dns_rdata_avc_t;
 
 /*
@@ -2200,7 +2134,7 @@ typedef struct dns_rdata_avc {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2210,15 +2144,15 @@ typedef struct dns_rdata_avc {
 #define GENERIC_DOA_259_H 1
 
 typedef struct dns_rdata_doa {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	unsigned char *		mediatype;
-	unsigned char *		data;
-	uint32_t		enterprise;
-	uint32_t		type;
-	uint16_t		data_len;
-	uint8_t		location;
-	uint8_t		mediatype_len;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	unsigned char *mediatype;
+	unsigned char *data;
+	uint32_t enterprise;
+	uint32_t type;
+	uint16_t data_len;
+	uint8_t location;
+	uint8_t mediatype_len;
 } dns_rdata_doa_t;
 
 #endif /* GENERIC_DOA_259_H */
@@ -2227,27 +2161,26 @@ typedef struct dns_rdata_doa {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-
 #ifndef GENERIC_AMTRELAY_260_H
 #define GENERIC_AMTRELAY_260_H 1
 
 typedef struct dns_rdata_amtrelay {
-	dns_rdatacommon_t	common;
-	isc_mem_t		*mctx;
-	uint8_t			precedence;
-	bool			discovery;
-	uint8_t			gateway_type;
-	struct in_addr		in_addr;	/* gateway type 1 */
-	struct in6_addr		in6_addr;	/* gateway type 2 */
-	dns_name_t		gateway;	/* gateway type 3 */
-	unsigned char		*data;		/* gateway type > 3 */
-	uint16_t		length;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint8_t precedence;
+	bool discovery;
+	uint8_t gateway_type;
+	struct in_addr in_addr;	  /* gateway type 1 */
+	struct in6_addr in6_addr; /* gateway type 2 */
+	dns_name_t gateway;	  /* gateway type 3 */
+	unsigned char *data;	  /* gateway type > 3 */
+	uint16_t length;
 } dns_rdata_amtrelay_t;
 
 #endif /* GENERIC_AMTRELAY_260_H */
@@ -2256,7 +2189,7 @@ typedef struct dns_rdata_amtrelay {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2276,12 +2209,11 @@ typedef struct dns_rdata_ds dns_rdata_ta_t;
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 /* draft-ietf-dnsext-delegation-signer-05.txt */
 #ifndef GENERIC_DLV_32769_H
@@ -2295,7 +2227,7 @@ typedef struct dns_rdata_ds dns_rdata_dlv_t;
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -2304,18 +2236,17 @@ typedef struct dns_rdata_ds dns_rdata_dlv_t;
 #ifndef GENERIC_KEYDATA_65533_H
 #define GENERIC_KEYDATA_65533_H 1
 
-
 typedef struct dns_rdata_keydata {
-	dns_rdatacommon_t	common;
-	isc_mem_t *		mctx;
-	uint32_t		refresh;      /* Timer for refreshing data */
-	uint32_t		addhd;	      /* Hold-down timer for adding */
-	uint32_t		removehd;     /* Hold-down timer for removing */
-	uint16_t		flags;	      /* Copy of DNSKEY_48 */
-	dns_secproto_t		protocol;
-	dns_secalg_t		algorithm;
-	uint16_t		datalen;
-	unsigned char *		data;
+	dns_rdatacommon_t common;
+	isc_mem_t *mctx;
+	uint32_t refresh;  /* Timer for refreshing data */
+	uint32_t addhd;	   /* Hold-down timer for adding */
+	uint32_t removehd; /* Hold-down timer for removing */
+	uint16_t flags;	   /* Copy of DNSKEY_48 */
+	dns_secproto_t protocol;
+	dns_secalg_t algorithm;
+	uint16_t datalen;
+	unsigned char *data;
 } dns_rdata_keydata_t;
 
 #endif /* GENERIC_KEYDATA_65533_H */
@@ -2324,12 +2255,11 @@ typedef struct dns_rdata_keydata {
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
 
 ISC_LANG_ENDDECLS
 

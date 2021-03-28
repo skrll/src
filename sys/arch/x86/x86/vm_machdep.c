@@ -1,4 +1,4 @@
-/*	$NetBSD: vm_machdep.c,v 1.39 2019/10/18 16:26:38 maxv Exp $	*/
+/*	$NetBSD: vm_machdep.c,v 1.44 2020/11/30 05:33:32 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986 The Regents of the University of California.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.39 2019/10/18 16:26:38 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.44 2020/11/30 05:33:32 msaitoh Exp $");
 
 #include "opt_mtrr.h"
 
@@ -194,12 +194,6 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	/* Child LWP might get aston() before returning to userspace. */
 	tf->tf_trapno = T_ASTFLT;
 
-#if 0 /* DIAGNOSTIC */
-	/* Set a red zone in the kernel stack after the uarea. */
-	pmap_kremove(uv, PAGE_SIZE);
-	pmap_update(pmap_kernel());
-#endif
-
 	/* If specified, set a different user stack for a child. */
 	if (stack != NULL) {
 #ifdef __x86_64__
@@ -237,11 +231,15 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 /*
  * cpu_lwp_free is called from exit() to let machine-dependent
  * code free machine-dependent resources.  Note that this routine
- * must not block.
+ * must not block.  NB: this may be called with l != curlwp in
+ * error paths.
  */
 void
 cpu_lwp_free(struct lwp *l, int proc)
 {
+
+	if (l != curlwp)
+		return;
 
 	/* Abandon the FPU state. */
 	fpu_lwp_abandon(l);
@@ -253,12 +251,6 @@ cpu_lwp_free(struct lwp *l, int proc)
 	if (proc && l->l_proc->p_md.md_flags & MDP_USEDMTRR)
 		mtrr_clean(l->l_proc);
 #endif
-	/*
-	 * Free deferred mappings if any.
-	 */
-	struct vm_page *empty_ptps = l->l_md.md_gc_ptp;
-	l->l_md.md_gc_ptp = NULL;
-	pmap_free_ptps(empty_ptps);
 }
 
 /*
@@ -269,9 +261,6 @@ void
 cpu_lwp_free2(struct lwp *l)
 {
 	struct pcb *pcb;
-
-	KASSERT(l->l_md.md_gc_ptp == NULL);
-	KASSERT(l->l_md.md_gc_pmap == NULL);
 
 	pcb = lwp_getpcb(l);
 	KASSERT((pcb->pcb_flags & PCB_DBREGS) == 0);
@@ -323,7 +312,7 @@ vmapbuf(struct buf *bp, vsize_t len)
 	 * the pmap_extract().
 	 *
 	 * no need to flush TLB since we expect nothing to be mapped
-	 * where we we just allocated (TLB will be flushed when our
+	 * where we just allocated (TLB will be flushed when our
 	 * mapping is removed).
 	 */
 	while (len) {
@@ -358,3 +347,58 @@ vunmapbuf(struct buf *bp, vsize_t len)
 	bp->b_data = bp->b_saveaddr;
 	bp->b_saveaddr = 0;
 }
+
+#ifdef __HAVE_CPU_UAREA_ROUTINES
+/*
+ * Layout of the uarea:
+ *    Page[0]        = PCB
+ *    Page[1]        = RedZone
+ *    Page[2]        = Stack
+ *    Page[...]      = Stack
+ *    Page[UPAGES-1] = Stack
+ *    Page[UPAGES]   = RedZone
+ * There is a redzone at the beginning of the stack, and another one at the
+ * end. The former is to protect against deep recursions that could corrupt
+ * the PCB, the latter to protect against severe stack overflows.
+ */
+void *
+cpu_uarea_alloc(bool system)
+{
+	vaddr_t base, va;
+	paddr_t pa;
+
+	base = uvm_km_alloc(kernel_map, USPACE + PAGE_SIZE, 0,
+	    UVM_KMF_WIRED|UVM_KMF_WAITVA);
+
+	/* Page[1] = RedZone */
+	va = base + PAGE_SIZE;
+	if (!pmap_extract(pmap_kernel(), va, &pa)) {
+		panic("%s: impossible, Page[1] unmapped", __func__);
+	}
+	pmap_kremove(va, PAGE_SIZE);
+	uvm_pagefree(PHYS_TO_VM_PAGE(pa));
+
+	/* Page[UPAGES] = RedZone */
+	va = base + USPACE;
+	if (!pmap_extract(pmap_kernel(), va, &pa)) {
+		panic("%s: impossible, Page[UPAGES] unmapped", __func__);
+	}
+	pmap_kremove(va, PAGE_SIZE);
+	uvm_pagefree(PHYS_TO_VM_PAGE(pa));
+
+	pmap_update(pmap_kernel());
+
+	return (void *)base;
+}
+
+bool
+cpu_uarea_free(void *addr)
+{
+	vaddr_t base = (vaddr_t)addr;
+
+	KASSERT(!pmap_extract(pmap_kernel(), base + PAGE_SIZE, NULL));
+	KASSERT(!pmap_extract(pmap_kernel(), base + USPACE, NULL));
+	uvm_km_free(kernel_map, base, USPACE + PAGE_SIZE, UVM_KMF_WIRED);
+	return true;
+}
+#endif /* __HAVE_CPU_UAREA_ROUTINES */

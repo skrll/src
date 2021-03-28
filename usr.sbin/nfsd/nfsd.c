@@ -1,4 +1,4 @@
-/*	$NetBSD: nfsd.c,v 1.68 2016/08/23 13:10:12 christos Exp $	*/
+/*	$NetBSD: nfsd.c,v 1.73 2020/09/17 12:48:12 christos Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993, 1994
@@ -42,7 +42,7 @@ __COPYRIGHT("@(#) Copyright (c) 1989, 1993, 1994\
 #if 0
 static char sccsid[] = "@(#)nfsd.c	8.9 (Berkeley) 3/29/95";
 #else
-__RCSID("$NetBSD: nfsd.c,v 1.68 2016/08/23 13:10:12 christos Exp $");
+__RCSID("$NetBSD: nfsd.c,v 1.73 2020/09/17 12:48:12 christos Exp $");
 #endif
 #endif /* not lint */
 
@@ -82,6 +82,7 @@ __RCSID("$NetBSD: nfsd.c,v 1.68 2016/08/23 13:10:12 christos Exp $");
 
 #ifdef NFSD_RUMP
 #include <rump/rump.h>
+#include <rump/rump_syscallshotgun.h>
 #include <rump/rump_syscalls.h>
 
 #define nfssvc(a, b) rump_sys_nfssvc((a), (b))
@@ -127,10 +128,10 @@ worker(void *dummy)
 	pthread_setname_np(pthread_self(), "slave", NULL);
 	nfssvc_flag = NFSSVC_NFSD;
 	memset(&nsd, 0, sizeof(nsd));
-	while (nfssvc(nfssvc_flag, &nsd) < 0) {
+	while (nfssvc(nfssvc_flag, &nsd) == -1) {
 		if (errno != ENEEDAUTH) {
 			logit(LOG_ERR, "nfssvc: %s", strerror(errno));
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 		nfssvc_flag = NFSSVC_NFSD | NFSSVC_AUTHINFAIL;
 	}
@@ -261,7 +262,7 @@ setupsock(struct conf *cfg, struct pollfd *set, int p)
 		nfsdargs.sock = sock;
 		nfsdargs.name = NULL;
 		nfsdargs.namelen = 0;
-		if (nfssvc(NFSSVC_ADDSOCK, &nfsdargs) < 0) {
+		if (nfssvc(NFSSVC_ADDSOCK, &nfsdargs) == -1) {
 			logit(LOG_ERR, "can't add %s socket: %s",
 			    cfg_netconf[p], strerror(errno));
 			goto out;
@@ -283,7 +284,7 @@ out:
  * is called to complete the daemonization and signal the parent
  * process to exit.
  *
- * These functions could potentially be moved to a library and 
+ * These functions could potentially be moved to a library and
  * shared by other daemons.
  *
  * The return value from daemon2_fork() is a file descriptor to
@@ -307,7 +308,7 @@ daemon2_fork(void)
 	  */
 	 for (i = 0; i < 3; i++) {
 		 r = pipe2(detach_msg_pipe, O_CLOEXEC|O_NOSIGPIPE);
-		 if (r < 0)
+		 if (r == -1)
 			 return -1;
 		 if (detach_msg_pipe[1] <= STDERR_FILENO &&
 		     (fd = open(_PATH_DEVNULL, O_RDWR, 0)) != -1) {
@@ -327,8 +328,7 @@ daemon2_fork(void)
 	 case 0:
 		/* child */
 		(void)close(detach_msg_pipe[0]);
-		(void)write(detach_msg_pipe[1], "", 1);
-		 return detach_msg_pipe[1];
+		return detach_msg_pipe[1];
 	 default:
 		break;
 	}
@@ -340,14 +340,14 @@ daemon2_fork(void)
 		ssize_t nread;
 		char dummy;
 		nread = read(detach_msg_pipe[0], &dummy, 1);
-		if (nread < 0) {
+		if (nread == -1) {
 			if (errno == EINTR)
 				continue;
-			_exit(1);
+			_exit(EXIT_FAILURE);
 		} else if (nread == 0) {
-			_exit(1);
+			_exit(EXIT_FAILURE);
 		} else { /* nread > 0 */
-			_exit(0);
+			_exit(EXIT_SUCCESS);
 		}
 	}
 }
@@ -373,7 +373,7 @@ daemon2_detach(int parentfd, int nochdir, int noclose)
 
 	while (1) {
 		ssize_t r = write(parentfd, "", 1);
-		if (r < 0) {
+		if (r == -1) {
 			if (errno == EINTR)
 				continue;
 			else if (errno == EPIPE)
@@ -440,7 +440,7 @@ main(int argc, char *argv[])
 			ip6flag = 1;
 			ip4flag = 0;
 			s = socket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
-			if (s < 0 && (errno == EPROTONOSUPPORT ||
+			if (s == -1 && (errno == EPROTONOSUPPORT ||
 			    errno == EPFNOSUPPORT || errno == EAFNOSUPPORT))
 				ip6flag = 0;
 			else
@@ -450,7 +450,7 @@ main(int argc, char *argv[])
 			ip6flag = 0;
 			ip4flag = 1;
 			s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-			if (s < 0 && (errno == EPROTONOSUPPORT ||
+			if (s == -1 && (errno == EPROTONOSUPPORT ||
 			    errno == EPFNOSUPPORT || errno == EAFNOSUPPORT))
 				ip4flag = 0;
 			else
@@ -521,7 +521,7 @@ main(int argc, char *argv[])
 	workers = calloc(nfsdcnt, sizeof(*workers));
 	if (workers == NULL) {
 		logit(LOG_ERR, "thread alloc %s", strerror(errno));
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	for (i = 0; i < nfsdcnt; i++) {
@@ -531,7 +531,7 @@ main(int argc, char *argv[])
 		if (error) {
 			errno = error;
 			logit(LOG_ERR, "pthread_create: %s", strerror(errno));
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -547,7 +547,6 @@ main(int argc, char *argv[])
 		setupsock(&cfg[i], &set[i], i);
 		if (set[i].fd != -1)
 			connect_type_cnt++;
-
 	}
 
 	pthread_setname_np(pthread_self(), "master", NULL);
@@ -563,7 +562,7 @@ main(int argc, char *argv[])
 	if (connect_type_cnt == 0) {
 		for (i = 0; i < nfsdcnt; i++)
 			    pthread_join(workers[i], NULL);
-		exit(0);
+		exit(EXIT_SUCCESS);
 	}
 
 	/*
@@ -573,7 +572,7 @@ main(int argc, char *argv[])
 	for (;;) {
 		if (poll(set, __arraycount(set), INFTIM) == -1) {
 			logit(LOG_ERR, "poll failed: %s", strerror(errno));
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 
 		for (i = 0; i < __arraycount(set); i++) {
@@ -593,7 +592,7 @@ main(int argc, char *argv[])
 				    strerror(errno));
 				if (serrno == EINTR || serrno == ECONNABORTED)
 					continue;
-				exit(1);
+				exit(EXIT_FAILURE);
 			}
 			if (setsockopt(msgsock, SOL_SOCKET, SO_KEEPALIVE, &on,
 			    sizeof(on)) == -1)
@@ -612,7 +611,7 @@ static void
 usage(void)
 {
 	(void)fprintf(stderr, "Usage: %s %s\n", getprogname(), USAGE);
-	exit(1);
+	exit(EXIT_FAILURE);
 }
 
 static void

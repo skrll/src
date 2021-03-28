@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -144,12 +144,32 @@ $DIG -p ${PORT} +tcp soa example. \
 	@10.53.0.2 -b 10.53.0.3 > dig.out.${t}
 grep "status: NOERROR" dig.out.${t} > /dev/null 2>&1 || { echo_i "test $t failed" ; status=1; }
 
+echo_i "testing blackhole ACL processing"
+t=`expr $t + 1`
+ret=0
+$DIG -p ${PORT} +tcp soa example. \
+	@10.53.0.2 -b 10.53.0.3 > dig.out.1.${t}
+grep "status: NOERROR" dig.out.1.${t} > /dev/null 2>&1 || ret=1
+$DIG -p ${PORT} +tcp soa example. \
+	@10.53.0.2 -b 10.53.0.8 > dig.out.2.${t}
+grep "status: NOERROR" dig.out.2.${t} > /dev/null 2>&1 && ret=1
+grep "communications error" dig.out.2.${t} > /dev/null 2>&1 || ret=1
+$DIG -p ${PORT} soa example. \
+	@10.53.0.2 -b 10.53.0.3 > dig.out.3.${t}
+grep "status: NOERROR" dig.out.3.${t} > /dev/null 2>&1 || ret=1
+$DIG -p ${PORT} soa example. \
+	@10.53.0.2 -b 10.53.0.8 > dig.out.4.${t}
+grep "status: NOERROR" dig.out.4.${t} > /dev/null 2>&1 && ret=1
+grep "connection timed out" dig.out.4.${t} > /dev/null 2>&1 || ret=1
+[ $ret -eq 0 ] || echo_i "failed"
+status=`expr $status + $ret`
+
 # AXFR tests against ns3
 
 echo_i "testing allow-transfer ACLs against ns3 (no existing zones)"
 
 echo_i "calling addzone example.com on ns3"
-$RNDCCMD 10.53.0.3 addzone 'example.com {type master; file "example.db"; }; '
+$RNDCCMD 10.53.0.3 addzone 'example.com {type primary; file "example.db"; }; '
 sleep 1
 
 t=`expr $t + 1`
@@ -178,7 +198,7 @@ status=`expr $status + $ret`
 echo_i "testing allow-transfer ACLs against ns4 (1 pre-existing zone)"
 
 echo_i "calling addzone example.com on ns4"
-$RNDCCMD 10.53.0.4 addzone 'example.com {type master; file "example.db"; }; '
+$RNDCCMD 10.53.0.4 addzone 'example.com {type primary; file "example.db"; }; '
 sleep 1
 
 t=`expr $t + 1`

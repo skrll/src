@@ -1,19 +1,17 @@
-/*	$NetBSD: dnstest.h,v 1.3 2019/01/09 16:55:13 christos Exp $	*/
+/*	$NetBSD: dnstest.h,v 1.5 2021/02/19 16:42:18 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
 /*! \file */
-
-#include <config.h>
 
 #include <inttypes.h>
 #include <stdbool.h>
@@ -31,12 +29,6 @@
 #include <dns/result.h>
 #include <dns/zone.h>
 
-#define CHECK(r) \
-	do { \
-		result = (r); \
-		if (result != ISC_R_SUCCESS) \
-			goto cleanup; \
-	} while (/*CONSTCOND*/0)
 
 typedef struct {
 	dns_diffop_t op;
@@ -46,9 +38,12 @@ typedef struct {
 	const char *rdata;
 } zonechange_t;
 
-#define ZONECHANGE_SENTINEL { 0, NULL, 0, NULL, NULL }
+#define ZONECHANGE_SENTINEL            \
+	{                              \
+		0, NULL, 0, NULL, NULL \
+	}
 
-extern isc_mem_t *mctx;
+extern isc_mem_t *dt_mctx;
 extern isc_log_t *lctx;
 extern isc_taskmgr_t *taskmgr;
 extern isc_task_t *maintask;
@@ -108,8 +103,8 @@ dns_test_loaddb(dns_db_t **db, dns_dbtype_t dbtype, const char *origin,
 		const char *testfile);
 
 isc_result_t
-dns_test_getdata(const char *file, unsigned char *buf,
-		 size_t bufsiz, size_t *sizep);
+dns_test_getdata(const char *file, unsigned char *buf, size_t bufsiz,
+		 size_t *sizep);
 
 char *
 dns_test_tohex(const unsigned char *data, size_t len, char *buf, size_t buflen);

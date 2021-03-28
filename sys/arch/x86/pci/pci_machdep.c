@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_machdep.c,v 1.86 2019/05/24 14:28:48 nonaka Exp $	*/
+/*	$NetBSD: pci_machdep.c,v 1.88 2021/01/28 01:57:31 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.86 2019/05/24 14:28:48 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.88 2021/01/28 01:57:31 jmcneill Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -554,6 +554,15 @@ pci_attach_hook(device_t parent, device_t self, struct pcibus_attach_args *pba)
 			pba->pba_flags &= ~PCI_FLAGS_MSIX_OKAY;
 		}
 	}
+
+#ifdef XENPV
+	/*
+	 * XXX MSI-X doesn't work for XenPV yet - setup seems to be correct,
+	 * XXX but no interrupts are actually delivered.
+	 */
+	pba->pba_flags &= ~PCI_FLAGS_MSIX_OKAY;
+#endif
+
 #endif /* __HAVE_PCI_MSI_MSIX */
 }
 
@@ -1009,8 +1018,6 @@ x86_genfb_setmode(struct genfb_softc *sc, int newmode)
 
 	switch (newmode) {
 	case WSDISPLAYIO_MODE_EMUL:
-		x86_genfb_mtrr_init(sc->sc_fboffset,
-		    sc->sc_height * sc->sc_stride);
 # if NACPICA > 0 && defined(VGA_POST)
 		if (curmode != newmode) {
 			if (vga_posth != NULL && acpi_md_vesa_modenum != 0) {

@@ -1,4 +1,4 @@
-#	$NetBSD: TODO,v 1.19 2015/02/19 11:20:43 mrg Exp $
+#	$NetBSD: TODO,v 1.21 2020/05/28 20:27:41 jmcneill Exp $
 
 THINGS TO BE DONE:
 
@@ -36,10 +36,6 @@ High Kernel:
 User programs:
     rwall nfs-mountees on shutdown
 
-i386 kernel support:
-    make use of sysenter/sysexit instructions on PIII/4 and Athlon for
-        reducing syscall overhead.
-
 This is a list of suggested smaller projects (in no particular order):
 
 + speed up sort(1) by using mmap(2) rather than temp files
@@ -49,7 +45,6 @@ This is a list of suggested smaller projects (in no particular order):
 + investigate zebra or quagga in gnusrc rather than routed
 + do a type-punned pointer sweep for -fstrict-aliases (and fix the
   problems, not the symptoms)
-+ write a BSD-licensed web browser
 + perhaps look at putting wonka into src/ (with uuencoded class lib?)
 + write an overview document for openssl and certificates
 + documentation project help

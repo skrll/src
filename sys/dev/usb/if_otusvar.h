@@ -1,4 +1,4 @@
-/*	$NetBSD: if_otusvar.h,v 1.10 2019/10/05 23:27:20 mrg Exp $	*/
+/*	$NetBSD: if_otusvar.h,v 1.12 2020/03/15 23:04:50 thorpej Exp $	*/
 /*	$OpenBSD: if_otusreg.h,v 1.6 2009/04/06 18:17:01 damien Exp $	*/
 
 /*-
@@ -199,10 +199,13 @@ struct otus_softc {
 	unsigned int			sc_write_idx;
 	uint32_t			sc_led_state;
 
+	kcondvar_t			sc_task_cv;
+	kcondvar_t			sc_cmd_cv;
 	kmutex_t			sc_cmd_mtx;
 	kmutex_t			sc_task_mtx;
 	kmutex_t			sc_write_mtx;
 	kmutex_t			sc_tx_mtx;
+	kmutex_t			sc_media_mtx;	/* XXX */
 
 	const uint32_t			*sc_phy_vals;
 

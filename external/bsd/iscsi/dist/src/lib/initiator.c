@@ -92,7 +92,6 @@ static iscsi_worker_t g_enqueue_worker;
 static iscsi_queue_t g_enqueue_q;
 static iscsi_queue_t g_session_q;
 static int      g_initiator_state;
-static char           *gfilename;
 
 /* Testing of initiator_abort */
 
@@ -794,6 +793,7 @@ discovery_phase(int target, strv_t *svp)
 		}
 	} else {
 		/* the user has asked for a specific target - find it */
+		ptr = NULL;
 		for (i = 0 ; i < svp->c ; i += 2) {
 			if (strcmp(g_target[target].iqnwanted,
 					svp->v[i]) == 0) {
@@ -803,7 +803,7 @@ discovery_phase(int target, strv_t *svp)
 				break;
 			}
 		}
-		if (i >= svp->c) {
+		if (ptr == NULL) {
 			iscsi_err(__FILE__, __LINE__,
 				"SendTargets failed - target `%s' not found\n",
 				g_target[target].iqnwanted);
@@ -904,8 +904,6 @@ iscsi_initiator_start(iscsi_initiator_t *ini)
 		set_debug(dbg);
 	}
 	iscsi_trace(TRACE_ISCSI_DEBUG, "initializing initiator\n");
-	iscsi_trace(TRACE_ISCSI_DEBUG,
-		"target config filename to read from:%s\n", gfilename);
 	port = atoi(iscsi_initiator_getvar(ini, "target port"));
 	if (get_target_config(iscsi_initiator_getvar(ini,
 				"target hostname"), port) != 0) {
@@ -3713,7 +3711,6 @@ ii_initiator_init(const char *hostname, int port, int address_family, const char
 
 	USE_ARG(address_family);
 	iscsi_trace(TRACE_ISCSI_DEBUG, "initializing initiator\n");
-	iscsi_trace(TRACE_ISCSI_DEBUG, "target config filename to read from:%s\n", gfilename);
 	if (get_target_config(hostname, port) != 0) {
 		iscsi_err(__FILE__, __LINE__, "Error getting target configuration from config file\n");
 		return -1;

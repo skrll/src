@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.87 2019/05/08 02:25:50 thorpej Exp $
+#	$NetBSD: Makefile,v 1.89 2021/02/25 13:41:58 christos Exp $
 
 HOSTLIB=	nbcompat
 
@@ -13,7 +13,8 @@ SRCS=		atoll.c basename.c cdbr.c cdbw.c dirname.c \
 		mi_vector_hash.c mkdtemp.c \
 		mkstemp.c pread.c putc_unlocked.c pwcache.c pwrite.c \
 		pw_scan.c \
-		raise_default_signal.c rb.c reallocarr.c rmd160.c rmd160hl.c \
+		raise_default_signal.c rb.c reallocarr.c reallocarray.c \
+		rmd160.c rmd160hl.c \
 		regcomp.c regerror.c regexec.c regfree.c \
 		setenv.c setgroupent.c \
 		setpassent.c setprogname.c sha1.c sha1hl.c sha2.c \
@@ -76,10 +77,15 @@ _CURDIR:=	${.CURDIR}
 
 SRCS:=		${SRCS:M*.c}
 
+CONFIGURE_ARGS=	--cache-file=config.cache
+.if ${MAKEVERBOSE} == 0
+CONFIGURE_ARGS+=--silent
+.endif
+
 config.cache: include/.stamp configure nbtool_config.h.in defs.mk.in
 	rm -f ${.TARGET}
 	CC=${HOST_CC:Q} CFLAGS=${HOST_CFLAGS:Q} LDFLAGS=${HOST_LDFLAGS:Q} \
-		${HOST_SH} ${.CURDIR}/configure --cache-file=config.cache
+		${HOST_SH} ${.CURDIR}/configure ${CONFIGURE_ARGS}
 
 defs.mk: config.cache
 	@touch ${.TARGET}

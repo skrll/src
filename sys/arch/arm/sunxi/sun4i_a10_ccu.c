@@ -1,4 +1,4 @@
-/* $NetBSD: sun4i_a10_ccu.c,v 1.11 2019/08/01 22:23:16 tnn Exp $ */
+/* $NetBSD: sun4i_a10_ccu.c,v 1.16 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: sun4i_a10_ccu.c,v 1.11 2019/08/01 22:23:16 tnn Exp $");
+__KERNEL_RCSID(1, "$NetBSD: sun4i_a10_ccu.c,v 1.16 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -82,6 +82,8 @@ __KERNEL_RCSID(1, "$NetBSD: sun4i_a10_ccu.c,v 1.11 2019/08/01 22:23:16 tnn Exp $
 #define	HDMI_CLOCK_CFG_REG	0x150
 #define	MALI_CLOCK_CFG_REG	0x154
 #define	IEP_SCLK_CFG_REG	0x160
+#define	CLK_OUTA_REG		0x1f0
+#define	CLK_OUTB_REG		0x1f4
 
 static int sun4i_a10_ccu_match(device_t, cfdata_t, void *);
 static void sun4i_a10_ccu_attach(device_t, device_t, void *);
@@ -91,10 +93,10 @@ enum sun4i_a10_ccu_type {
 	CCU_A20,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "allwinner,sun4i-a10-ccu",	CCU_A10 },
-	{ "allwinner,sun7i-a20-ccu",	CCU_A20 },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun4i-a10-ccu",	.value = CCU_A10 },
+	{ .compat = "allwinner,sun7i-a20-ccu",	.value = CCU_A20 },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(sunxi_a10_ccu, sizeof(struct sunxi_ccu_softc),
@@ -123,6 +125,7 @@ static const char *mod_parents[] = { "osc24m", "pll_periph", "pll_ddr_other" };
 static const char *sata_parents[] = { "pll6_periph_sata", "external" };
 static const char *de_parents[] = { "pll_video0", "pll_video1", "pll_ddr_other" };
 static const char *lcd_parents[] = { "pll_video0", "pll_video1", "pll_video0x2", "pll_video1x2" };
+static const char *out_parents[] = { "losc" /* really OSC24MHz/750 */, "losc", "osc24m" };
 
 static const struct sunxi_ccu_nkmp_tbl sun4i_a10_pll1_table[] = {
 	{ 1008000000, 21, 1, 0, 0 },
@@ -484,6 +487,23 @@ static struct sunxi_ccu_clk sun4i_a10_ccu_clks[] = {
 	    0				/* flags */
 	    ),
 
+	/* A20 specific */
+	SUNXI_CCU_NM(A20_CLK_OUT_A, "outa", out_parents,
+	    CLK_OUTA_REG,		/* reg */
+	    __BITS(21,20),		/* n */
+	    __BITS(12,8),		/* m */
+	    __BITS(25,24),		/* sel */
+	    __BIT(31),			/* enable */
+	    SUNXI_CCU_NM_POWER_OF_TWO),
+
+	SUNXI_CCU_NM(A20_CLK_OUT_B, "outb", out_parents,
+	    CLK_OUTB_REG,		/* reg */
+	    __BITS(21,20),		/* n */
+	    __BITS(12,8),		/* m */
+	    __BITS(25,24),		/* sel */
+	    __BIT(31),			/* enable */
+	    SUNXI_CCU_NM_POWER_OF_TWO),
+
 	/* AHB_GATING_REG0 */
 	SUNXI_CCU_GATE(A10_CLK_AHB_OTG, "ahb-otg", "ahb",
 	    AHB_GATING_REG0, 0),
@@ -827,7 +847,7 @@ sun4i_a10_ccu_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static struct sunxi_ccu_softc *sc0;
@@ -855,7 +875,7 @@ sun4i_a10_ccu_attach(device_t parent, device_t self, void *aux)
 
 	aprint_naive("\n");
 
-	type = of_search_compatible(faa->faa_phandle, compat_data)->data;
+	type = of_compatible_lookup(faa->faa_phandle, compat_data)->value;
 
 	switch (type) {
 	case CCU_A10:

@@ -412,7 +412,7 @@ dmu_tx_count_dnode(dmu_tx_hold_t *txh)
 	dnode_t *dn = txh->txh_dnode;
 	dnode_t *mdn = DMU_META_DNODE(txh->txh_tx->tx_objset);
 	uint64_t space = mdn->dn_datablksz +
-	    ((mdn->dn_nlevels-1) << mdn->dn_indblkshift);
+	    ((uint64_t)(mdn->dn_nlevels-1) << mdn->dn_indblkshift);
 
 	if (dn && dn->dn_dbuf->db_blkptr &&
 	    dsl_dataset_block_freeable(dn->dn_objset->os_dsl_dataset,
@@ -1152,6 +1152,9 @@ dmu_tx_delay(dmu_tx_t *tx, uint64_t dirty)
 #endif
 #ifdef __NetBSD__
 	int timo = (wakeup - now) * hz / 1000000000;
+
+	if (timo < 0)
+		return;
 
 	if (timo == 0)
 		timo = 1;

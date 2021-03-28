@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_intc.c,v 1.3 2017/10/24 15:07:09 jmcneill Exp $ */
+/* $NetBSD: sunxi_intc.c,v 1.7 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,13 +29,14 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_intc.c,v 1.3 2017/10/24 15:07:09 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_intc.c,v 1.7 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
-#include <sys/kernel.h>
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/intr.h>
+#include <sys/kernel.h>
+#include <sys/lwp.h>
 #include <sys/systm.h>
 
 #include <dev/fdt/fdtvar.h>
@@ -61,9 +62,9 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_intc.c,v 1.3 2017/10/24 15:07:09 jmcneill Exp 
 #define	INTC_FORCE_REG(n)	(0x70 + ((n) * 4))
 #define	INTC_SRC_PRIO_REG(n)	(0x80 + ((n) * 4))
 
-static const char * const compatible[] = {
-	"allwinner,sun4i-a10-ic",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun4i-a10-ic" },
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_intc_softc {
@@ -131,7 +132,7 @@ static const struct pic_ops sunxi_intc_picops = {
 
 static void *
 sunxi_intc_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
-    int (*func)(void *), void *arg)
+    int (*func)(void *), void *arg, const char *xname)
 {
 	/* 1st cell is the interrupt number */
 	const u_int irq = be32toh(specifier[0]);
@@ -145,7 +146,8 @@ sunxi_intc_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 
 	const u_int mpsafe = (flags & FDT_INTR_MPSAFE) ? IST_MPSAFE : 0;
 
-	return intr_establish(irq, ipl, IST_LEVEL | mpsafe, func, arg);
+	return intr_establish_xname(irq, ipl, IST_LEVEL | mpsafe, func, arg,
+	    xname);
 }
 
 static void
@@ -216,7 +218,7 @@ sunxi_intc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void

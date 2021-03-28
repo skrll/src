@@ -1,10 +1,10 @@
-#	$NetBSD: Makefile,v 1.171 2019/12/14 15:30:37 ad Exp $
+#	$NetBSD: Makefile,v 1.176 2020/08/14 00:53:16 riastradh Exp $
 
 .include <bsd.own.mk>
 
 INCSDIR= /usr/include/sys
 
-INCS=	acct.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h \
+INCS=	acct.h acl.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h \
 	audioio.h \
 	bitops.h bootblock.h bswap.h buf.h \
 	callback.h callout.h cdbr.h cdefs.h cdefs_aout.h \
@@ -20,8 +20,9 @@ INCS=	acct.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h \
 	dkbad.h dkio.h dkstat.h domain.h drvctlio.h dvdio.h \
 	endian.h envsys.h errno.h evcnt.h event.h exec.h exec_aout.h \
 	exec_coff.h exec_ecoff.h exec_elf.h exec_script.h extattr.h extent.h \
+	fault.h \
 	fcntl.h fd_set.h fdio.h featuretest.h file.h filedesc.h filio.h \
-	flashio.h float_ieee754.h fstypes.h gcq.h gmon.h gpio.h hash.h \
+	flashio.h float_ieee754.h fstypes.h futex.h gcq.h gmon.h gpio.h hash.h \
 	idtype.h ieee754.h intr.h intrio.h inttypes.h ioccom.h ioctl.h \
 	ioctl_compat.h iostat.h ipc.h ipmi.h \
 	joystick.h \
@@ -33,7 +34,7 @@ INCS=	acct.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h \
 	param.h pcu.h pipe.h pmf.h poll.h pool.h power.h proc.h \
 	protosw.h pset.h psref.h ptrace.h ptree.h \
 	queue.h quota.h quotactl.h \
-	radixtree.h ras.h rbtree.h reboot.h radioio.h resource.h \
+	radioio.h radixtree.h random.h ras.h rbtree.h reboot.h resource.h \
 	resourcevar.h rmd160.h rnd.h rndio.h rwlock.h \
 	scanio.h sched.h scsiio.h sdt.h select.h selinfo.h sem.h semaphore.h \
 	sha1.h sha2.h sha3.h shm.h siginfo.h signal.h signalvar.h sigtypes.h \
@@ -45,7 +46,7 @@ INCS=	acct.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h \
 	timex.h tls.h trace.h tree.h tty.h ttychars.h ttycom.h \
 	ttydefaults.h ttydev.h types.h \
 	ucontext.h ucred.h uio.h un.h unistd.h unpcb.h utsname.h uuid.h \
-	verified_exec.h videoio.h vmmeter.h vnode.h vnode_if.h \
+	verified_exec.h videoio.h vmmeter.h vnode.h vnode_if.h vnode_impl.h \
 	wait.h wapbl.h wapbl_replay.h wdog.h xattr.h
 
 INCSYMLINKS=\

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ixlvar.h,v 1.2 2019/12/20 02:12:31 yamaguchi Exp $	*/
+/*	$NetBSD: if_ixlvar.h,v 1.7 2020/09/08 10:05:47 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 2019 Internet Initiative Japan, Inc.
@@ -59,6 +59,32 @@ enum i40e_filter_pctype {
 	/* Note: Values 51-62 are reserved for future use */
 	I40E_FILTER_PCTYPE_L2_PAYLOAD                   = 63,
 };
+
+#define IXL_BIT_ULL(a)	(1ULL << (a))
+#define IXL_RSS_HENA_DEFAULT_BASE			\
+	(IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_UDP) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_TCP) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_SCTP) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_OTHER) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_FRAG_IPV4) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_UDP) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_TCP) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_SCTP) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_OTHER) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_FRAG_IPV6) |	\
+	 IXL_BIT_ULL(I40E_FILTER_PCTYPE_L2_PAYLOAD))
+#define IXL_RSS_HENA_DEFAULT_XL710	IXL_RSS_HENA_DEFAULT_BASE
+#define IXL_RSS_HENA_DEFAULT_X722	(IXL_RSS_HENA_DEFAULT_XL710 |	\
+	IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_UNICAST_IPV4_UDP) |		\
+	IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_MULTICAST_IPV4_UDP) |	\
+	IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_UNICAST_IPV6_UDP) |		\
+	IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_MULTICAST_IPV6_UDP) |	\
+	IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_TCP_SYN_NO_ACK) |	\
+	IXL_BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_TCP_SYN_NO_ACK))
+
+#define IXL_RSS_VSI_LUT_SIZE	64
+#define IXL_RSS_KEY_SIZE_REG	13
+#define IXL_RSS_KEY_SIZE	(IXL_RSS_KEY_SIZE_REG * sizeof(uint32_t))
 
 enum i40e_reset_type {
 	I40E_RESET_POR          = 0,
@@ -129,6 +155,7 @@ struct ixl_aq_desc {
 #define IXL_AQ_OP_PHY_SET_EVENT_MASK	0x0613
 #define IXL_AQ_OP_PHY_SET_REGISTER	0x0628
 #define IXL_AQ_OP_PHY_GET_REGISTER	0x0629
+#define IXL_AQ_OP_NVM_READ		0x0701
 #define IXL_AQ_OP_LLDP_GET_MIB		0x0a00
 #define IXL_AQ_OP_LLDP_MIB_CHG_EV	0x0a01
 #define IXL_AQ_OP_LLDP_ADD_TLV		0x0a02
@@ -138,6 +165,41 @@ struct ixl_aq_desc {
 #define IXL_AQ_OP_LLDP_START_AGENT	0x0a06
 #define IXL_AQ_OP_LLDP_GET_CEE_DCBX	0x0a07
 #define IXL_AQ_OP_LLDP_SPECIFIC_AGENT	0x0a09
+#define IXL_AQ_OP_RSS_SET_KEY		0x0b02
+#define IXL_AQ_OP_RSS_SET_LUT		0x0b03
+#define IXL_AQ_OP_RSS_GET_KEY		0x0b04
+#define IXL_AQ_OP_RSS_GET_LUT		0x0b05
+
+static inline void
+ixl_aq_dva(struct ixl_aq_desc *iaq, bus_addr_t addr)
+{
+	uint64_t val;
+
+	if (sizeof(addr) > 4) {
+		val = (intptr_t)addr;
+		iaq->iaq_param[2] = htole32(val >> 32);
+	} else {
+		iaq->iaq_param[2] = htole32(0);
+	}
+
+	iaq->iaq_param[3] = htole32(addr);
+}
+
+static inline bool
+ixl_aq_has_dva(struct ixl_aq_desc *iaq)
+{
+	uint64_t val;
+
+	if (sizeof(bus_addr_t) > 4) {
+		val = le32toh(iaq->iaq_param[2]);
+		val = val << 32;
+	} else {
+		val = 0;
+	}
+	val |= htole32(iaq->iaq_param[3]);
+
+	return !(val == 0);
+}
 
 struct ixl_aq_mac_addresses {
 	uint8_t		pf_lan[ETHER_ADDR_LEN];
@@ -264,6 +326,20 @@ struct ixl_aq_switch_config_element {
 #define IXL_PHY_TYPE_25GBASE_AOC	0x23
 #define IXL_PHY_TYPE_25GBASE_ACC	0x24
 
+#define IXL_PHY_LINK_SPEED_100MB	(1 << 1)
+#define IXL_PHY_LINK_SPEED_1000MB	(1 << 2)
+#define IXL_PHY_LINK_SPEED_10GB		(1 << 3)
+#define IXL_PHY_LINK_SPEED_40GB		(1 << 4)
+#define IXL_PHY_LINK_SPEED_20GB		(1 << 5)
+#define IXL_PHY_LINK_SPEED_25GB		(1 << 6)
+
+#define IXL_PHY_ABILITY_PAUSE_TX	(1 << 0)
+#define IXL_PHY_ABILITY_PAUSE_RX	(1 << 1)
+#define IXL_PHY_ABILITY_LOWPOW		(1 << 2)
+#define IXL_PHY_ABILITY_LINKUP		(1 << 3)
+#define IXL_PHY_ABILITY_AUTONEGO	(1 << 4)
+#define IXL_PHY_ABILITY_MODQUAL		(1 << 5)
+
 struct ixl_aq_module_desc {
 	uint8_t		oui[3];
 	uint8_t		_reserved1;
@@ -276,12 +352,6 @@ struct ixl_aq_phy_abilities {
 	uint32_t	phy_type;
 
 	uint8_t		link_speed;
-#define IXL_AQ_PHY_LINK_SPEED_100MB	(1 << 1)
-#define IXL_AQ_PHY_LINK_SPEED_1000MB	(1 << 2)
-#define IXL_AQ_PHY_LINK_SPEED_10GB	(1 << 3)
-#define IXL_AQ_PHY_LINK_SPEED_40GB	(1 << 4)
-#define IXL_AQ_PHY_LINK_SPEED_20GB	(1 << 5)
-#define IXL_AQ_PHY_LINK_SPEED_25GB	(1 << 6)
 	uint8_t		abilities;
 	uint16_t	eee_capability;
 
@@ -314,6 +384,19 @@ struct ixl_aq_phy_abilities {
 #define IXL_AQ_PHY_MAX_QMS		16
 	struct ixl_aq_module_desc
 			qualified_module[IXL_AQ_PHY_MAX_QMS];
+} __packed __aligned(4);
+
+struct ixl_aq_phy_param {
+	uint32_t	 phy_types;
+	uint8_t		 link_speed;
+	uint8_t		 abilities;
+#define IXL_AQ_PHY_ABILITY_AUTO_LINK	(1 << 5)
+	uint16_t	 eee_capability;
+	uint32_t	 eeer_val;
+	uint8_t		 d3_lpan;
+	uint8_t		 phy_type_ext;
+	uint8_t		 fec_cfg;
+	uint8_t		 config;
 } __packed __aligned(4);
 
 struct ixl_aq_link_param {
@@ -656,6 +739,71 @@ struct ixl_aq_link_status { /* this occupies the iaq_param space */
 #define IXL_AQ_PHY_EV_MODULE_QUAL_FAIL	(1 << 8)
 #define IXL_AQ_PHY_EV_PORT_TX_SUSPENDED	(1 << 9)
 
+struct ixl_aq_req_resource_param {
+	uint16_t	 resource_id;
+#define IXL_AQ_RESOURCE_ID_NVM		0x0001
+#define IXL_AQ_RESOURCE_ID_SDP		0x0002
+
+	uint16_t	 access_type;
+#define IXL_AQ_RESOURCE_ACCES_READ	0x01
+#define IXL_AQ_RESOURCE_ACCES_WRITE	0x02
+
+	uint16_t	 timeout;
+	uint32_t	 resource_num;
+	uint32_t	 reserved;
+} __packed __aligned(8);
+
+struct ixl_aq_rel_resource_param {
+	uint16_t	 resource_id;
+/* defined in ixl_aq_req_resource_param */
+	uint16_t	 _reserved1[3];
+	uint32_t	 resource_num;
+	uint32_t	 _reserved2;
+} __packed __aligned(8);
+
+struct ixl_aq_nvm_param {
+	uint8_t		 command_flags;
+#define IXL_AQ_NVM_LAST_CMD	(1 << 0)
+#define IXL_AQ_NVM_FLASH_ONLY	(1 << 7)
+	uint8_t		 module_pointer;
+	uint16_t	 length;
+	uint32_t	 offset;
+	uint32_t	 addr_hi;
+	uint32_t	 addr_lo;
+} __packed __aligned(4);
+
+struct ixl_aq_rss_key_param {
+	uint16_t	 vsi_id;
+#define IXL_AQ_RSSKEY_VSI_VALID		(0x01 << 15)
+#define IXL_AQ_RSSKEY_VSI_ID_SHIFT	0
+#define IXL_AQ_RSSKEY_VSI_ID_MASK	(0x3FF << IXL_RSSKEY_VSI_ID_SHIFT)
+
+	uint8_t		 reserved[6];
+	uint32_t	 addr_hi;
+	uint32_t	 addr_lo;
+} __packed __aligned(8);
+
+struct ixl_aq_rss_key_data {
+	uint8_t	 standard_rss_key[0x28];
+	uint8_t	 extended_hash_key[0xc];
+} __packed __aligned(8);
+
+struct ixl_aq_rss_lut_param {
+	uint16_t	 vsi_id;
+#define IXL_AQ_RSSLUT_VSI_VALID		(0x01 << 15)
+#define IXL_AQ_RSSLUT_VSI_ID_SHIFT	0
+#define IXL_AQ_RSSLUT_VSI_ID_MASK	(0x03FF << IXL_AQ_RSSLUT_VSI_ID_SHIFT)
+
+	uint16_t flags;
+#define IXL_AQ_RSSLUT_TABLE_TYPE_SHIFT	0
+#define IXL_AQ_RSSLUT_TABLE_TYPE_MASK	(0x01 << IXL_AQ_RSSLUT_TABLE_TYPE_SHIFT)
+#define IXL_AQ_RSSLUT_TABLE_TYPE_VSI	0
+#define IXL_AQ_RSSLUT_TABLE_TYPE_PF	1
+	uint8_t		 reserved[4];
+	uint32_t	 addr_hi;
+	uint32_t	 addr_lo;
+} __packed __aligned(8);
+
 /* aq response codes */
 #define IXL_AQ_RC_OK			0  /* success */
 #define IXL_AQ_RC_EPERM			1  /* Operation not permitted */
@@ -788,6 +936,22 @@ struct ixl_rx_wb_desc_16 {
 #define IXL_RX_DESC_HLEN_MASK		(0x7ffULL << IXL_RX_DESC_HLEN_SHIFT)
 } __packed __aligned(16);
 
+enum ixl_rx_desc_ptype {
+	IXL_RX_DESC_PTYPE_IPV4FRAG	= 22,
+	IXL_RX_DESC_PTYPE_IPV4		= 23,
+	IXL_RX_DESC_PTYPE_UDPV4		= 24,
+	IXL_RX_DESC_PTYPE_TCPV4		= 26,
+	IXL_RX_DESC_PTYPE_SCTPV4	= 27,
+	IXL_RX_DESC_PTYPE_ICMPV4	= 28,
+
+	IXL_RX_DESC_PTYPE_IPV6FRAG	= 88,
+	IXL_RX_DESC_PTYPE_IPV6		= 89,
+	IXL_RX_DESC_PTYPE_UDPV6		= 90,
+	IXL_RX_DESC_PTYPE_TCPV6		= 92,
+	IXL_RX_DESC_PTYPE_SCTPV6	= 93,
+	IXL_RX_DESC_PTYPE_ICMPV6	= 94,
+};
+
 struct ixl_rx_wb_desc_32 {
 	uint64_t		qword0;
 	uint64_t		qword1;
@@ -803,4 +967,106 @@ enum i40e_mac_type {
 	I40E_MAC_GENERIC
 };
 
+#define I40E_SR_NVM_DEV_STARTER_VERSION	0x18
+#define I40E_SR_BOOT_CONFIG_PTR		0x17
+#define I40E_NVM_OEM_VER_OFF		0x83
+#define I40E_SR_NVM_EETRACK_LO		0x2D
+#define I40E_SR_NVM_EETRACK_HI		0x2E
+
+#define IXL_NVM_VERSION_LO_SHIFT	0
+#define IXL_NVM_VERSION_LO_MASK		(0xffUL << IXL_NVM_VERSION_LO_SHIFT)
+#define IXL_NVM_VERSION_HI_SHIFT	12
+#define IXL_NVM_VERSION_HI_MASK		(0xfUL << IXL_NVM_VERSION_HI_SHIFT)
+#define IXL_NVM_OEMVERSION_SHIFT	24
+#define IXL_NVM_OEMVERSION_MASK		(0xffUL << IXL_NVM_OEMVERSION_SHIFT)
+#define IXL_NVM_OEMBUILD_SHIFT		8
+#define IXL_NVM_OEMBUILD_MASK		(0xffffUL << IXL_NVM_OEMBUILD_SHIFT)
+#define IXL_NVM_OEMPATCH_SHIFT		0
+#define IXL_NVM_OEMPATCH_MASK		(0xff << IXL_NVM_OEMPATCH_SHIFT)
+
+struct ixl_aq_buf {
+	SIMPLEQ_ENTRY(ixl_aq_buf)
+				 aqb_entry;
+	void			*aqb_data;
+	bus_dmamap_t		 aqb_map;
+	bus_dma_segment_t	 aqb_seg;
+	size_t			 aqb_size;
+	int			 aqb_nsegs;
+};
+SIMPLEQ_HEAD(ixl_aq_bufs, ixl_aq_buf);
+
+#define IXL_AQB_MAP(_aqb)	((_aqb)->aqb_map)
+#define IXL_AQB_DVA(_aqb)	((_aqb)->aqb_map->dm_segs[0].ds_addr)
+#define IXL_AQB_KVA(_aqb)	((void *)(_aqb)->aqb_data)
+#define IXL_AQB_LEN(_aqb)	((_aqb)->aqb_size)
+
+static inline unsigned int
+ixl_rxr_unrefreshed(unsigned int prod, unsigned int cons, unsigned int ndescs)
+{
+	unsigned int num;
+
+	if (prod  < cons)
+		num = cons - prod;
+	else
+		num  = (ndescs - prod) + cons;
+
+	if (__predict_true(num > 0)) {
+		/* device cannot receive packets if all descripter is filled */
+		num -= 1;
+	}
+
+	return num;
+}
+
+struct ixl_dmamem {
+	bus_dmamap_t		 ixm_map;
+	bus_dma_segment_t	 ixm_seg;
+	int			 ixm_nsegs;
+	size_t			 ixm_size;
+	void			*ixm_kva;
+};
+
+#define IXL_DMA_MAP(_ixm)	((_ixm)->ixm_map)
+#define IXL_DMA_DVA(_ixm)	((_ixm)->ixm_map->dm_segs[0].ds_addr)
+#define IXL_DMA_KVA(_ixm)	((void *)(_ixm)->ixm_kva)
+#define IXL_DMA_LEN(_ixm)	((_ixm)->ixm_size)
+
+static inline uint32_t
+ixl_dmamem_hi(struct ixl_dmamem *ixm)
+{
+	uint32_t retval;
+	uint64_t val;
+
+	if (sizeof(IXL_DMA_DVA(ixm)) > 4) {
+		val = (intptr_t)IXL_DMA_DVA(ixm);
+		retval = val >> 32;
+	} else {
+		retval = 0;
+	}
+
+	return retval;
+}
+
+static inline uint32_t
+ixl_dmamem_lo(struct ixl_dmamem *ixm)
+{
+
+	return (uint32_t)IXL_DMA_DVA(ixm);
+}
+
+struct i40e_eth_stats {
+	uint64_t	 rx_bytes;
+	uint64_t	 rx_unicast;
+	uint64_t	 rx_multicast;
+	uint64_t	 rx_broadcast;
+	uint64_t	 rx_discards;
+	uint64_t	 rx_unknown_protocol;
+
+	uint64_t	 tx_bytes;
+	uint64_t	 tx_unicast;
+	uint64_t	 tx_multicast;
+	uint64_t	 tx_broadcast;
+	uint64_t	 tx_discards;
+	uint64_t	 tx_errors;
+} __packed;
 #endif

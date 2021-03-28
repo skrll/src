@@ -1,4 +1,4 @@
-/*	$NetBSD: boot2.c,v 1.72 2019/09/02 06:10:24 manu Exp $	*/
+/*	$NetBSD: boot2.c,v 1.74 2020/07/15 12:36:30 kim Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -279,6 +279,12 @@ bootit(const char *filename, int howto)
 	if (howto & AB_VERBOSE)
 		printf("booting %s (howto 0x%x)\n", sprint_bootsel(filename),
 		    howto);
+#ifdef KERNEL_DIR
+	char path[512];
+	strcpy(path, filename);
+	strcat(path, "/kernel");
+	(void)exec_netbsd(path, 0, howto, boot_biosdev < 0x80, clearit);
+#endif
 
 	if (exec_netbsd(filename, 0, howto, boot_biosdev < 0x80, clearit) < 0)
 		printf("boot: %s: %s\n", sprint_bootsel(filename),
@@ -443,7 +449,7 @@ command_help(char *arg)
 	       "ls [dev:][path]\n"
 #endif
 	       "dev [dev:]\n"
-	       "consdev {pc|com[0123]|com[0123]kbd|auto}\n"
+	       "consdev {pc|{com[0123]|com[0123]kbd|auto}[,{speed}]}\n"
 	       "vesa {modenum|on|off|enabled|disabled|list}\n"
 #ifndef SMALL
 	       "menu (reenters boot menu, if defined in boot.cfg)\n"
@@ -575,14 +581,32 @@ void
 command_consdev(char *arg)
 {
 	const struct cons_devs *cdp;
+	char *sep;
+	int speed;
+
+	sep = strchr(arg, ',');
+	if (sep != NULL)
+		*sep++ = '\0';
 
 	for (cdp = cons_devs; cdp->name; cdp++) {
-		if (strcmp(arg, cdp->name) == 0) {
-			initio(cdp->tag);
-			print_banner();
-			return;
+		if (strcmp(arg, cdp->name) != 0)
+			continue;
+
+		if (sep != NULL) {
+			if (cdp->tag == CONSDEV_PC)
+				goto error;
+
+			speed = atoi(sep);
+			if (speed < 0)
+				goto error;
+			boot_params.bp_conspeed = speed;
 		}
+
+		initio(cdp->tag);
+		print_banner();
+		return;
 	}
+error:
 	printf("invalid console device.\n");
 }
 

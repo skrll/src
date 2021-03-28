@@ -4,14 +4,13 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 
-SYSTEMTESTTOP=.
-. $SYSTEMTESTTOP/conf.sh
+. "$SYSTEMTESTTOP/conf.sh"
 
-if [ ! -x ../../pkcs11/pkcs11-destroy ]; then exit 1; fi
+PK11DELBIN=$(echo "$PK11DEL" | awk '{ print $1 }')
 
-$PK11DEL -w0 > /dev/null 2>&1
+[ -x "$PK11DELBIN" ] && $PK11DEL -w0 > /dev/null 2>&1

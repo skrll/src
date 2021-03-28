@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -109,7 +109,7 @@ foreach my $name(@ans) {
 	stop_signal($name, "TERM", 1);
 }
 
-@ans = wait_for_servers(60, @ans);
+@ans = wait_for_servers(1200, @ans);
 
 # Pass 3: SIGABRT
 foreach my $name (@ns) {

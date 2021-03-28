@@ -1,3 +1,5 @@
+/*	$NetBSD: kobj_machdep.c,v 1.4 2020/11/04 07:09:46 skrll Exp $	*/
+
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -29,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__RCSID("$NetBSD: kobj_machdep.c,v 1.2 2017/11/03 09:59:08 maxv Exp $");
+__RCSID("$NetBSD: kobj_machdep.c,v 1.4 2020/11/04 07:09:46 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -133,7 +135,7 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data,
 		*wwhere = ((addend & 0xfff) << 20) | (*wwhere & 0xfffff);
 		break;
 	case R_RISCV_PCREL_LO12_S:
-		addend += 
+		addend +=
 		    __SHIFTIN(__SHIFTOUT(addend, __BITS(31,25)), __BITS(11,5))
 		    | __SHIFTIN(__SHIFTOUT(addend, __BITS(11,7)), __BITS(4,0));
 		/* FALLTHROUGH */

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC_601,v 1.25 2019/12/11 21:04:47 scole Exp $
+# $NetBSD: GENERIC_601,v 1.29 2021/01/21 06:51:55 nia Exp $
 #
 # GENERIC machine description file
 # 
@@ -28,7 +28,7 @@ include 	"arch/macppc/conf/std.macppc.601"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-ident 		"GENERIC-$Revision: 1.25 $"
+ident 		"GENERIC-$Revision: 1.29 $"
 
 maxusers	32
 
@@ -72,6 +72,7 @@ include 	"conf/compat_netbsd50.config"
 
 #options 	COMPAT_386BSD_MBRPART # recognize old partition ID
 #options 	COMPAT_LINUX	# Linux binary compatibility
+#options 	COMPAT_OSSAUDIO	# Linux binary compatibility
 
 # Wedge support
 options         DKWEDGE_AUTODISCOVER    # Automatically add dk(4) instances
@@ -97,7 +98,6 @@ file-system 	KERNFS		# /kern
 file-system 	PROCFS		# /proc
 #file-system 	UMAPFS		# NULLFS + uid and gid remapping
 #file-system 	UNION		# union file system
-#file-system	SMBFS		# CIFS; also needs nsmb (below)
 file-system	PTYFS		# /dev/pts/N support
 file-system	TMPFS		# Efficient memory file-system
 #file-system	UDF		# experimental - OSTA UDF CD/DVD file-system
@@ -342,7 +342,7 @@ pseudo-device	bpfilter		# packet filter
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	pty			# pseudo-terminals
 pseudo-device	openfirm		# /dev/openfirm
@@ -350,7 +350,6 @@ pseudo-device	wsmux			# mouse and keyboard multiplexer
 #pseudo-device	swwdog			# software watchdog driver - swwdog(4)
 pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	ksyms			# /dev/ksyms
-#pseudo-device	nsmb			# SMB requester
 #pseudo-device	putter			# for puffs and pud
 
 # userland interface to drivers, including autoconf and properties retrieval

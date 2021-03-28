@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.base,v 1.207 2019/12/18 14:44:16 kamil Exp $
+#	$NetBSD: NetBSD.dist.base,v 1.233 2021/01/17 19:32:53 rillig Exp $
 #	@(#)4.4BSD.dist	8.1 (Berkeley) 6/13/93
 
 # Do not customize this file as it may be overwritten on upgrades.
@@ -13,6 +13,7 @@
 ./dev
 ./dev/altq
 ./dev/fd
+./dev/pts
 ./etc
 ./etc/X11
 ./etc/X11/fs
@@ -92,6 +93,7 @@
 ./libexec/devpubd-hooks
 ./libexec/dhcpcd-hooks
 ./libexec/resolvconf
+./libexec/resolvconf/libc.d
 ./mnt
 ./rescue
 ./root
@@ -111,6 +113,7 @@
 ./usr/include/c++
 ./usr/include/c++/experimental
 ./usr/include/c++/ext
+./usr/include/cbor
 ./usr/include/clang-9.0
 ./usr/include/crypto
 ./usr/include/dev
@@ -147,6 +150,7 @@
 ./usr/include/dev/vme
 ./usr/include/dev/wscons
 ./usr/include/event2
+./usr/include/fido
 ./usr/include/filecorefs
 ./usr/include/fs
 ./usr/include/fs/autofs
@@ -155,7 +159,6 @@
 ./usr/include/fs/nilfs
 ./usr/include/fs/ptyfs
 ./usr/include/fs/puffs
-./usr/include/fs/smbfs
 ./usr/include/fs/sysvbfs
 ./usr/include/fs/tmpfs
 ./usr/include/fs/udf
@@ -194,13 +197,14 @@
 ./usr/include/g++/parallel
 ./usr/include/g++/profile
 ./usr/include/g++/profile/impl
+./usr/include/g++/pstl
 ./usr/include/g++/tr1
 ./usr/include/g++/tr1_impl
 ./usr/include/g++/tr2
-./usr/include/gcc-7
-./usr/include/gcc-7/sanitizer
 ./usr/include/gcc-8
 ./usr/include/gcc-8/sanitizer
+./usr/include/gcc-9
+./usr/include/gcc-9/sanitizer
 ./usr/include/gssapi
 ./usr/include/isofs
 ./usr/include/isofs/cd9660
@@ -231,7 +235,6 @@
 ./usr/include/netipsec
 ./usr/include/netmpls
 ./usr/include/netpgp
-./usr/include/netsmb
 ./usr/include/nfs
 ./usr/include/ntfs
 ./usr/include/objc
@@ -258,13 +261,13 @@
 ./usr/include/uvm
 ./usr/lib
 ./usr/lib/clang
-./usr/lib/clang/7.0.0
-./usr/lib/clang/7.0.0/include
-./usr/lib/clang/7.0.0/include/sanitizer
-./usr/lib/clang/7.0.0/include/xray
-./usr/lib/clang/7.0.0/lib
-./usr/lib/clang/7.0.0/lib/netbsd
-./usr/lib/clang/7.0.0/share
+./usr/lib/clang/9.0.0
+./usr/lib/clang/9.0.0/include
+./usr/lib/clang/9.0.0/include/sanitizer
+./usr/lib/clang/9.0.0/include/xray
+./usr/lib/clang/9.0.0/lib
+./usr/lib/clang/9.0.0/lib/netbsd
+./usr/lib/clang/9.0.0/share
 ./usr/lib/i18n
 ./usr/lib/lua
 ./usr/lib/lua/5.3
@@ -278,6 +281,7 @@
 ./usr/libdata/debug/lib/npf
 ./usr/libdata/debug/libexec
 ./usr/libdata/debug/sbin
+./usr/libdata/debug/stand
 ./usr/libdata/debug/usr
 ./usr/libdata/debug/usr/bin
 ./usr/libdata/debug/usr/games
@@ -293,6 +297,7 @@
 ./usr/libdata/firmware/bcm43xx
 ./usr/libdata/ldscripts
 ./usr/libdata/lint
+./usr/libdata/lint/strict-bool
 ./usr/libexec
 ./usr/libexec/ching
 ./usr/libexec/lpr
@@ -376,7 +381,7 @@
 ./usr/share/examples/asm
 ./usr/share/examples/asm/hello
 ./usr/share/examples/atf
-./usr/share/examples/blacklist
+./usr/share/examples/blocklist
 ./usr/share/examples/dhcp
 ./usr/share/examples/dhcpcd
 ./usr/share/examples/dhcpcd/hooks
@@ -408,9 +413,9 @@
 ./usr/share/examples/racoon/roadwarrior
 ./usr/share/examples/racoon/roadwarrior/client
 ./usr/share/examples/racoon/roadwarrior/server
+./usr/share/examples/rpcapd
 ./usr/share/examples/rtadvd
 ./usr/share/examples/slip
-./usr/share/examples/smbfs
 ./usr/share/examples/syslogd
 ./usr/share/examples/tmux
 ./usr/share/examples/wpa_supplicant
@@ -423,6 +428,9 @@
 ./usr/share/games/fortune
 ./usr/share/games/larn
 ./usr/share/games/quiz.db
+./usr/share/games/warp
+./usr/share/gdb
+./usr/share/gdb/syscalls
 ./usr/share/gnats
 ./usr/share/groff_font
 ./usr/share/groff_font/devX100
@@ -484,6 +492,7 @@
 ./usr/share/info
 ./usr/share/installboot
 ./usr/share/installboot/evbarm
+./usr/share/installboot/evbmips
 ./usr/share/keymaps
 ./usr/share/keymaps/amiga
 ./usr/share/keymaps/atari
@@ -1274,6 +1283,7 @@
 ./var/at/spool			mode=0700
 ./var/backups
 ./var/chroot
+./var/chroot/dhcpcd
 ./var/chroot/ftp-proxy		mode=0755
 ./var/chroot/named
 ./var/chroot/named/dev
@@ -1318,7 +1328,7 @@
 ./var/cron
 ./var/cron/tabs			mode=0700
 ./var/db
-./var/db/dhcpcd
+./var/db/dhcpcd			mode=0750
 ./var/db/ns
 ./var/db/obsolete
 ./var/db/postfix		uname=postfix gname=postfix mode=0755
@@ -1330,6 +1340,7 @@
 ./var/games/larn		uname=games gname=games mode=0775
 ./var/games/phantasia		uname=games gname=games mode=0775
 ./var/games/sail		uname=games gname=games mode=0775
+./var/games/warp		uname=games gname=games mode=0775
 ./var/heimdal
 ./var/log
 ./var/log/rdist

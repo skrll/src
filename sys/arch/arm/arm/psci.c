@@ -1,4 +1,4 @@
-/* $NetBSD: psci.c,v 1.3 2018/10/13 00:07:55 jmcneill Exp $ */
+/* $NetBSD: psci.c,v 1.5 2021/01/16 23:51:50 chs Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -26,10 +26,8 @@
  * SUCH DAMAGE.
  */
 
-#include "opt_diagnostic.h"
-
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: psci.c,v 1.3 2018/10/13 00:07:55 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: psci.c,v 1.5 2021/01/16 23:51:50 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -66,7 +64,7 @@ psci_call(register_t fid, register_t arg1, register_t arg2, register_t arg3)
 		return PSCI_NOT_SUPPORTED;
 
 	return psci_call_fn(fid, arg1, arg2, arg3);
-} 
+}
 
 uint32_t
 psci_version(void)

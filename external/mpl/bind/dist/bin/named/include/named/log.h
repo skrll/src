@@ -1,11 +1,11 @@
-/*	$NetBSD: log.h,v 1.3 2019/01/09 16:54:59 christos Exp $	*/
+/*	$NetBSD: log.h,v 1.5 2021/02/19 16:42:10 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -21,19 +21,19 @@
 
 #include <dns/log.h>
 
-#include <named/globals.h>	/* Required for named_g_(categories|modules). */
+#include <named/globals.h> /* Required for named_g_(categories|modules). */
 
 /* Unused slot 0. */
-#define NAMED_LOGCATEGORY_UNMATCHED	(&named_g_categories[1])
+#define NAMED_LOGCATEGORY_UNMATCHED (&named_g_categories[1])
 
 /*
  * Backwards compatibility.
  */
-#define NAMED_LOGCATEGORY_GENERAL	ISC_LOGCATEGORY_GENERAL
+#define NAMED_LOGCATEGORY_GENERAL ISC_LOGCATEGORY_GENERAL
 
-#define NAMED_LOGMODULE_MAIN		(&named_g_modules[0])
-#define NAMED_LOGMODULE_SERVER		(&named_g_modules[1])
-#define NAMED_LOGMODULE_CONTROL		(&named_g_modules[2])
+#define NAMED_LOGMODULE_MAIN	(&named_g_modules[0])
+#define NAMED_LOGMODULE_SERVER	(&named_g_modules[1])
+#define NAMED_LOGMODULE_CONTROL (&named_g_modules[2])
 
 isc_result_t
 named_log_init(bool safe);
@@ -47,7 +47,7 @@ named_log_init(bool safe);
  * as root.
  */
 
-isc_result_t
+void
 named_log_setdefaultchannels(isc_logconfig_t *lcfg);
 /*%
  * Set up logging channels according to the named defaults, which
@@ -55,7 +55,7 @@ named_log_setdefaultchannels(isc_logconfig_t *lcfg);
  * this just means setting up default_debug.
  */
 
-isc_result_t
+void
 named_log_setsafechannels(isc_logconfig_t *lcfg);
 /*%
  * Like named_log_setdefaultchannels(), but omits any logging to files.

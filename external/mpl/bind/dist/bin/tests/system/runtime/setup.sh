@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -19,6 +19,10 @@ copy_setports ns2/named1.conf.in ns2/named.conf
 copy_setports ns2/named-alt1.conf.in ns2/named-alt1.conf
 copy_setports ns2/named-alt2.conf.in ns2/named-alt2.conf
 copy_setports ns2/named-alt3.conf.in ns2/named-alt3.conf
+copy_setports ns2/named-alt4.conf.in ns2/named-alt4.conf
+copy_setports ns2/named-alt5.conf.in ns2/named-alt5.conf
+copy_setports ns2/named-alt6.conf.in ns2/named-alt6.conf
+copy_setports ns2/named-alt7.conf.in ns2/named-alt7.conf
 
 mkdir ns2/nope
 

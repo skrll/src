@@ -1,4 +1,4 @@
-#	$NetBSD: t_ndp.sh,v 1.36 2019/09/03 19:07:50 roy Exp $
+#	$NetBSD: t_ndp.sh,v 1.39 2020/09/17 11:56:35 roy Exp $
 #
 # Copyright (c) 2015 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -455,8 +455,8 @@ ndp_rtm_body()
 	$DEBUG && cat $file
 
 	hdr="RTM_ADD.+<UP,HOST,DONE,LLINFO,CLONED>"
-	what="<DST,GATEWAY>"
-	addr="$IP6DST $macaddr_dst"
+	what="<DST,GATEWAY,AUTHOR>"
+	addr="$IP6DST $macaddr_dst $IP6DST"
 	atf_check -s exit:0 -o match:"$hdr" -o match:"$what" -o match:"$addr" \
 		cat $file
 
@@ -464,15 +464,14 @@ ndp_rtm_body()
 	rump.route -n monitor -c 1 > $file &
 	pid=$!
 	sleep 1
-	# nd6_mmaxtries = 3, second between each try
 	atf_check -s exit:1 -o ignore -e ignore \
-		rump.ping6 -n -X 3 -c 3 $IP6DST_FAIL1
+		rump.ping6 -n -X 1 -c 1 $IP6DST_FAIL1
 	wait $pid
 	$DEBUG && cat $file
 
 	hdr="RTM_MISS.+<DONE>"
-	what="<DST,GATEWAY>"
-	addr="$IP6DST_FAIL1 link#2"
+	what="<DST,GATEWAY,AUTHOR>"
+	addr="$IP6DST_FAIL1 link#2 $IP6SRC"
 	atf_check -s exit:0 -o match:"$hdr" -o match:"$what" -o match:"$addr" \
 		cat $file
 

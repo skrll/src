@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -24,4 +24,4 @@ done
 
 $SIGNER -g -s 20000101000000 -e 20361231235959 -o $zone \
 	$infile Kexample.+005+51829 Kexample.+005+51829 \
-	> /dev/null 2> signer.err
+	> /dev/null 2> signer.err || true

@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_snapshot.c,v 1.149 2017/06/01 02:45:15 chs Exp $	*/
+/*	$NetBSD: ffs_snapshot.c,v 1.152 2020/04/18 19:18:34 christos Exp $	*/
 
 /*
  * Copyright 2000 Marshall Kirk McKusick. All Rights Reserved.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_snapshot.c,v 1.149 2017/06/01 02:45:15 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_snapshot.c,v 1.152 2020/04/18 19:18:34 christos Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -334,7 +334,7 @@ ffs_snapshot(struct mount *mp, struct vnode *vp, struct timespec *ctime)
 	 * Invalidate and free all pages on the snapshot vnode.
 	 * We will read and write through the buffercache.
 	 */
-	mutex_enter(vp->v_interlock);
+	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 	error = VOP_PUTPAGES(vp, 0, 0,
 		    PGO_ALLPAGES | PGO_CLEANIT | PGO_SYNCIO | PGO_FREE);
 	if (error)
@@ -443,16 +443,14 @@ snapshot_setup(struct mount *mp, struct vnode *vp)
 	if (error)
 		return EACCES;
 
-	if (vp->v_size != 0) {
-		/*
-		 * Must completely truncate the file here. Allocated
-		 * blocks on a snapshot mean that block has been copied
-		 * on write, see ffs_copyonwrite() testing "blkno != 0"
-		 */
-		error = ufs_truncate_retry(vp, 0, NOCRED);
-		if (error)
-			return error;
-	}
+	/*
+	 * Must completely truncate the file here. Allocated
+	 * blocks on a snapshot mean that block has been copied
+	 * on write, see ffs_copyonwrite() testing "blkno != 0"
+	 */
+	error = ufs_truncate_all(vp);
+	if (error)
+		return error;
 
 	/* Change inode to snapshot type file. */
 	error = UFS_WAPBL_BEGIN(mp);
@@ -677,8 +675,8 @@ snapshot_expunge(struct mount *mp, struct vnode *vp, struct fs *copy_fs,
 	 */
 	if ((fs->fs_flags & FS_DOWAPBL) &&
 	    fs->fs_journal_location == UFS_WAPBL_JOURNALLOC_IN_FILESYSTEM) {
-		error = VFS_VGET(mp,
-		    fs->fs_journallocs[UFS_WAPBL_INFS_INO], &logvp);
+		error = VFS_VGET(mp, fs->fs_journallocs[UFS_WAPBL_INFS_INO],
+		    LK_EXCLUSIVE, &logvp);
 		if (error)
 			goto out;
 	}
@@ -1766,7 +1764,7 @@ ffs_snapshot_mount(struct mount *mp)
 		if (fs->fs_snapinum[snaploc] == 0)
 			break;
 		if ((error = VFS_VGET(mp, fs->fs_snapinum[snaploc],
-		    &vp)) != 0) {
+		    LK_EXCLUSIVE, &vp)) != 0) {
 			printf("ffs_snapshot_mount: vget failed %d\n", error);
 			continue;
 		}

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.36 2019/04/26 09:03:46 maya Exp $
+#	$NetBSD: Makefile.inc,v 1.38 2020/05/31 11:43:37 rin Exp $
 
 SRCS+=	alloca.S fabs.S
 
@@ -41,7 +41,10 @@ SRCS+=	fpfake.c
 .endif
 
 .if ${MACHINE_ARCH} == "m68k"
-SRCS+=	divsi3.S modsi3.S mulsi3.S udivsi3.S umodsi3.S umulsi3.S
+SRCS+=	mulsi3.S umulsi3.S
+SRCS+=	muldi3.S
+.else
+muldi3.o muldi3.po muldi3.pico muldi3.d: muldi3.c
 .endif
 
 SRCS+=	setjmp.S longjmp.c

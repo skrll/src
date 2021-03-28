@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gem_pci.c,v 1.48 2018/12/09 11:14:02 jdolecek Exp $ */
+/*	$NetBSD: if_gem_pci.c,v 1.52 2020/07/02 09:02:04 msaitoh Exp $ */
 
 /*
  *
@@ -34,15 +34,15 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_gem_pci.c,v 1.48 2018/12/09 11:14:02 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_gem_pci.c,v 1.52 2020/07/02 09:02:04 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
 #include <sys/kernel.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
 #include <sys/device.h>
+#include <sys/kmem.h>
 
 #include <machine/endian.h>
 
@@ -105,7 +105,7 @@ gem_pci_match(device_t parent, cfdata_t cf, void *aux)
 	    (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_APPLE_GMAC ||
 	     PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_APPLE_GMAC2 ||
 	     PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_APPLE_GMAC3 ||
- 	     PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_APPLE_SHASTA_GMAC ||
+	     PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_APPLE_SHASTA_GMAC ||
 	     PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_APPLE_K2_GMAC ||
 	     PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_APPLE_SHASTA_GMAC ||
 	     PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_APPLE_INTREPID2_GMAC))
@@ -142,6 +142,8 @@ isserdes(u_int8_t* buf)
 	    buf[3] == 'd' && buf[4] == 'e' && buf[5] == 's';
 }
 
+#define	GEM_TMP_BUFSIZE		0x0800
+
 void
 gem_pci_attach(device_t parent, device_t self, void *aux)
 {
@@ -150,9 +152,8 @@ gem_pci_attach(device_t parent, device_t self, void *aux)
 	struct gem_softc *sc = &gsc->gsc_gem;
 	prop_data_t data;
 	uint8_t enaddr[ETHER_ADDR_LEN];
-	u_int8_t		*enp;
 	bus_space_handle_t	romh;
-	u_int8_t		buf[0x0800];
+	uint8_t			*buf;
 	int			dataoff, vpdoff, serdes;
 	int i, got_addr = 0;
 #ifdef GEM_DEBUG
@@ -184,7 +185,10 @@ gem_pci_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_variant = GEM_UNKNOWN;
 
-	sc->sc_dmatag = pa->pa_dmat;
+	if (pci_dma64_available(pa))
+		sc->sc_dmatag = pa->pa_dmat64;
+	else
+		sc->sc_dmatag = pa->pa_dmat;
 
 	sc->sc_flags |= GEM_PCI;
 
@@ -216,22 +220,26 @@ gem_pci_attach(device_t parent, device_t self, void *aux)
 	    PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_32BIT, 0,
 	    &sc->sc_bustag, &sc->sc_h1, NULL, &sc->sc_size) != 0)
 	{
-		aprint_error_dev(sc->sc_dev, "unable to map device registers\n");
+		aprint_error_dev(sc->sc_dev,
+		    "unable to map device registers\n");
 		return;
 	}
 	if (bus_space_subregion(sc->sc_bustag, sc->sc_h1,
 	    GEM_PCI_BANK2_OFFSET, GEM_PCI_BANK2_SIZE, &sc->sc_h2)) {
-		aprint_error_dev(sc->sc_dev, "unable to create bank 2 subregion\n");
+		aprint_error_dev(sc->sc_dev,
+		    "unable to create bank 2 subregion\n");
 		return;
 	}
 
+	buf = kmem_alloc(GEM_TMP_BUFSIZE, KM_SLEEP);
+
 	if ((data = prop_dictionary_get(device_properties(sc->sc_dev),
 	    "mac-address")) != NULL) {
-		memcpy(enaddr, prop_data_data_nocopy(data), ETHER_ADDR_LEN);
+		memcpy(enaddr, prop_data_value(data), ETHER_ADDR_LEN);
 		got_addr = 1;
 		if ((data = prop_dictionary_get(device_properties(sc->sc_dev),
-	    	    "shared-pins")) != NULL) {
-			memcpy(buf, prop_data_data_nocopy(data),
+		    "shared-pins")) != NULL) {
+			memcpy(buf, prop_data_value(data),
 			    prop_data_size(data));
 			if (isserdes(buf)) {
 				sc->sc_flags |= GEM_SERDES;
@@ -239,15 +247,15 @@ gem_pci_attach(device_t parent, device_t self, void *aux)
 		}
 	} else {
 		/*
-		 * Dig out VPD (vital product data) and acquire Ethernet address.
-		 * The VPD of gem resides in the PCI PROM (PCI FCode).
+		 * Dig out VPD (vital product data) and acquire Ethernet
+		 * address. The VPD of gem resides in the PCI PROM (PCI FCode).
 		 */
 		/*
-		 * ``Writing FCode 3.x Programs'' (newer ones, dated 1997 and later)
-		 * chapter 2 describes the data structure.
+		 * ``Writing FCode 3.x Programs'' (newer ones, dated 1997 and
+		 * later) chapter 2 describes the data structure.
 		 */
 
-		enp = NULL;
+		uint8_t *enp = NULL;
 
 		if (sc->sc_variant == GEM_SUN_GEM &&
 		    (bus_space_subregion(sc->sc_bustag, sc->sc_h1,
@@ -276,8 +284,8 @@ gem_pci_attach(device_t parent, device_t self, void *aux)
 			}
 #ifdef GEM_DEBUG
 			/* PROM dump */
-			printf("%s: PROM dump (0x0000 to %04zx)\n", device_xname(sc->sc_dev),
-			    (sizeof buf) - 1);
+			printf("%s: PROM dump (0x0000 to %04zx)\n",
+			    device_xname(sc->sc_dev), (sizeof buf) - 1);
 			i = 0;
 			j = 0;
 			printf("  %04x  ", i);
@@ -307,23 +315,24 @@ gem_pci_attach(device_t parent, device_t self, void *aux)
 				(buf[PROMHDR_PTR_DATA + 1] << 8))) >= 0x1c) {
 
 				/* read PCI Expansion PROM Data */
-				bus_space_read_region_1(sc->sc_bustag, romh, dataoff,
-				    buf, 64);
+				bus_space_read_region_1(sc->sc_bustag, romh,
+				    dataoff, buf, 64);
 				if (memcmp(buf, promdat, sizeof promdat) == 0 &&
 				    gempromvalid(buf + PROMDATA_DATA2) &&
 				    (vpdoff = (buf[PROMDATA_PTR_VPD] |
 					(buf[PROMDATA_PTR_VPD + 1] << 8))) >= 0x1c) {
 
 					/*
-					 * The VPD of gem is not in PCI 2.2 standard
-					 * format.  The length in the resource header
-					 * is in big endian, and resources are not
-					 * properly terminated (only one resource
-					 * and no end tag).
+					 * The VPD of gem is not in PCI 2.2
+					 * standard format.  The length in the
+					 * resource header is in big endian,
+					 * and resources are not properly
+					 * terminated (only one resource and no
+					 * end tag).
 					 */
 					/* read PCI VPD */
-					bus_space_read_region_1(sc->sc_bustag, romh,
-					    vpdoff, buf, 64);
+					bus_space_read_region_1(sc->sc_bustag,
+					    romh, vpdoff, buf, 64);
 					vpd = (void *)(buf + 3);
 					if (PCI_VPDRES_ISLARGE(buf[0]) &&
 					    PCI_VPDRES_LARGE_NAME(buf[0])
@@ -345,8 +354,12 @@ gem_pci_attach(device_t parent, device_t self, void *aux)
 			got_addr = 1;
 		}
 	}
+
+	kmem_free(buf, GEM_TMP_BUFSIZE);
+
 	if (!got_addr) {
-		printf("%s: no Ethernet address found\n", device_xname(sc->sc_dev));
+		printf("%s: no Ethernet address found\n",
+		    device_xname(sc->sc_dev));
 		/* should we bail here? */
 	}
 
@@ -388,7 +401,8 @@ gem_pci_estintr(struct gem_pci_softc *gsc)
 	const char *intrstr;
 	char intrbuf[PCI_INTRSTR_LEN];
 
-	intrstr = pci_intr_string(gsc->gsc_pc, gsc->gsc_handle, intrbuf, sizeof(intrbuf));
+	intrstr = pci_intr_string(gsc->gsc_pc, gsc->gsc_handle, intrbuf,
+	    sizeof(intrbuf));
 	gsc->gsc_ih = pci_intr_establish_xname(gsc->gsc_pc, gsc->gsc_handle,
 	    IPL_NET, gem_intr, sc, device_xname(sc->sc_dev));
 	if (gsc->gsc_ih == NULL) {

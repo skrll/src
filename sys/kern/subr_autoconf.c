@@ -1,4 +1,4 @@
-/* $NetBSD: subr_autoconf.c,v 1.265 2018/12/01 02:08:16 msaitoh Exp $ */
+/* $NetBSD: subr_autoconf.c,v 1.277 2021/01/27 04:54:08 thorpej Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.265 2018/12/01 02:08:16 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.277 2021/01/27 04:54:08 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -121,7 +121,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.265 2018/12/01 02:08:16 msaitoh 
 /*
  * Device autoconfiguration timings are mixed into the entropy pool.
  */
-extern krndsource_t rnd_autoconf_source;
+static krndsource_t rnd_autoconf_source;
 
 /*
  * ioconf.c exports exactly two names: cfdata and cfroots.  All system
@@ -224,7 +224,8 @@ static int alldevs_nread = 0;
 static int alldevs_nwrite = 0;
 static bool alldevs_garbage = false;
 
-static int config_pending;		/* semaphore for mountroot */
+static struct devicelist config_pending =
+    TAILQ_HEAD_INITIALIZER(config_pending);
 static kmutex_t config_misc_lock;
 static kcondvar_t config_misc_cv;
 
@@ -356,6 +357,9 @@ config_init(void)
 	initcftable.ct_cfdata = cfdata;
 	TAILQ_INSERT_TAIL(&allcftables, &initcftable, ct_list);
 
+	rnd_attach_source(&rnd_autoconf_source, "autoconf", RND_TYPE_UNKNOWN,
+	    RND_FLAG_COLLECT_TIME);
+
 	config_initialized = true;
 }
 
@@ -442,17 +446,26 @@ static void
 config_interrupts_thread(void *cookie)
 {
 	struct deferred_config *dc;
+	device_t dev;
 
+	mutex_enter(&config_misc_lock);
 	while ((dc = TAILQ_FIRST(&interrupt_config_queue)) != NULL) {
 		TAILQ_REMOVE(&interrupt_config_queue, dc, dc_queue);
-		(*dc->dc_func)(dc->dc_dev);
-		dc->dc_dev->dv_flags &= ~DVF_ATTACH_INPROGRESS;
-		if (!device_pmf_is_registered(dc->dc_dev))
-			aprint_debug_dev(dc->dc_dev,
+		mutex_exit(&config_misc_lock);
+
+		dev = dc->dc_dev;
+		(*dc->dc_func)(dev);
+		if (!device_pmf_is_registered(dev))
+			aprint_debug_dev(dev,
 			    "WARNING: power management not supported\n");
-		config_pending_decr(dc->dc_dev);
+		config_pending_decr(dev);
 		kmem_free(dc, sizeof(*dc));
+
+		mutex_enter(&config_misc_lock);
+		dev->dv_flags &= ~DVF_ATTACH_INPROGRESS;
 	}
+	mutex_exit(&config_misc_lock);
+
 	kthread_exit(0);
 }
 
@@ -462,7 +475,7 @@ config_create_interruptthreads(void)
 	int i;
 
 	for (i = 0; i < interrupt_config_threads; i++) {
-		(void)kthread_create(PRI_NONE, 0, NULL,
+		(void)kthread_create(PRI_NONE, 0/*XXXSMP */, NULL,
 		    config_interrupts_thread, NULL, NULL, "configintr");
 	}
 }
@@ -472,11 +485,18 @@ config_mountroot_thread(void *cookie)
 {
 	struct deferred_config *dc;
 
+	mutex_enter(&config_misc_lock);
 	while ((dc = TAILQ_FIRST(&mountroot_config_queue)) != NULL) {
 		TAILQ_REMOVE(&mountroot_config_queue, dc, dc_queue);
+		mutex_exit(&config_misc_lock);
+
 		(*dc->dc_func)(dc->dc_dev);
 		kmem_free(dc, sizeof(*dc));
+
+		mutex_enter(&config_misc_lock);
 	}
+	mutex_exit(&config_misc_lock);
+
 	kthread_exit(0);
 }
 
@@ -495,8 +515,8 @@ config_create_mountrootthreads(void)
 	KASSERT(mountroot_config_lwpids);
 	for (i = 0; i < mountroot_config_threads; i++) {
 		mountroot_config_lwpids[i] = 0;
-		(void)kthread_create(PRI_NONE, KTHREAD_MUSTJOIN, NULL,
-				     config_mountroot_thread, NULL,
+		(void)kthread_create(PRI_NONE, KTHREAD_MUSTJOIN/* XXXSMP */,
+				     NULL, config_mountroot_thread, NULL,
 				     &mountroot_config_lwpids[i],
 				     "configroot");
 	}
@@ -533,9 +553,10 @@ no_devmon_insert(const char *name, prop_dictionary_t p)
 static void
 devmon_report_device(device_t dev, bool isattach)
 {
-	prop_dictionary_t ev;
+	prop_dictionary_t ev, dict = device_properties(dev);
 	const char *parent;
 	const char *what;
+	const char *where;
 	device_t pdev = device_parent(dev);
 
 	/* If currently no drvctl device, just return */
@@ -548,8 +569,13 @@ devmon_report_device(device_t dev, bool isattach)
 
 	what = (isattach ? "device-attach" : "device-detach");
 	parent = (pdev == NULL ? "root" : device_xname(pdev));
-	if (!prop_dictionary_set_cstring(ev, "device", device_xname(dev)) ||
-	    !prop_dictionary_set_cstring(ev, "parent", parent)) {
+	if (prop_dictionary_get_string(dict, "location", &where)) {
+		prop_dictionary_set_string(ev, "location", where);
+		aprint_debug("ev: %s %s at %s in [%s]\n",
+		    what, device_xname(dev), parent, where); 
+	}
+	if (!prop_dictionary_set_string(ev, "device", device_xname(dev)) ||
+	    !prop_dictionary_set_string(ev, "parent", parent)) {
 		prop_object_release(ev);
 		return;
 	}
@@ -1188,7 +1214,7 @@ config_makeroom(int n, struct cfdriver *cd)
 		 * sleep.
 		 */
 		mutex_exit(&alldevs_lock);
-		nsp = kmem_alloc(sizeof(device_t[nndevs]), KM_SLEEP);
+		nsp = kmem_alloc(sizeof(device_t) * nndevs, KM_SLEEP);
 		mutex_enter(&alldevs_lock);
 
 		/*
@@ -1197,20 +1223,20 @@ config_makeroom(int n, struct cfdriver *cd)
 		 */
 		if (cd->cd_devs != osp) {
 			mutex_exit(&alldevs_lock);
-			kmem_free(nsp, sizeof(device_t[nndevs]));
+			kmem_free(nsp, sizeof(device_t) * nndevs);
 			mutex_enter(&alldevs_lock);
 			continue;
 		}
 
-		memset(nsp + ondevs, 0, sizeof(device_t[nndevs - ondevs]));
+		memset(nsp + ondevs, 0, sizeof(device_t) * (nndevs - ondevs));
 		if (ondevs != 0)
-			memcpy(nsp, cd->cd_devs, sizeof(device_t[ondevs]));
+			memcpy(nsp, cd->cd_devs, sizeof(device_t) * ondevs);
 
 		cd->cd_ndevs = nndevs;
 		cd->cd_devs = nsp;
 		if (ondevs != 0) {
 			mutex_exit(&alldevs_lock);
-			kmem_free(osp, sizeof(device_t[ondevs]));
+			kmem_free(osp, sizeof(device_t) * ondevs);
 			mutex_enter(&alldevs_lock);
 		}
 	}
@@ -1240,12 +1266,11 @@ config_devlink(device_t dev)
 static void
 config_devfree(device_t dev)
 {
-	int priv = (dev->dv_flags & DVF_PRIV_ALLOC);
+	KASSERT(dev->dv_flags & DVF_PRIV_ALLOC);
 
 	if (dev->dv_cfattach->ca_devsize > 0)
 		kmem_free(dev->dv_private, dev->dv_cfattach->ca_devsize);
-	if (priv)
-		kmem_free(dev, sizeof(*dev));
+	kmem_free(dev, sizeof(*dev));
 }
 
 /*
@@ -1290,7 +1315,7 @@ config_devdelete(device_t dev)
 	device_lock_t dvl = device_getlock(dev);
 
 	if (dg->dg_devs != NULL)
-		kmem_free(dg->dg_devs, sizeof(device_t[dg->dg_ndevs]));
+		kmem_free(dg->dg_devs, sizeof(device_t) * dg->dg_ndevs);
 
 	cv_destroy(&dvl->dvl_cv);
 	mutex_destroy(&dvl->dvl_mtx);
@@ -1376,26 +1401,14 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 		return NULL;
 
 	/* get memory for all device vars */
-	KASSERTMSG((ca->ca_flags & DVF_PRIV_ALLOC)
-	    || ca->ca_devsize >= sizeof(struct device),
-	    "%s: %s (%zu < %zu)", __func__, cf->cf_atname, ca->ca_devsize,
-	    sizeof(struct device));
+	KASSERT(ca->ca_flags & DVF_PRIV_ALLOC);
 	if (ca->ca_devsize > 0) {
 		dev_private = kmem_zalloc(ca->ca_devsize, KM_SLEEP);
 	} else {
-		KASSERT(ca->ca_flags & DVF_PRIV_ALLOC);
 		dev_private = NULL;
 	}
+	dev = kmem_zalloc(sizeof(*dev), KM_SLEEP);
 
-	if ((ca->ca_flags & DVF_PRIV_ALLOC) != 0) {
-		dev = kmem_zalloc(sizeof(*dev), KM_SLEEP);
-	} else {
-		dev = dev_private;
-#ifdef DIAGNOSTIC
-		printf("%s has not been converted to device_t\n", cd->cd_name);
-#endif
-		KASSERT(dev != NULL);
-	}
 	dev->dv_class = cd->cd_class;
 	dev->dv_cfdata = cf;
 	dev->dv_cfdriver = cd;
@@ -1435,19 +1448,19 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 		KASSERT(parent); /* no locators at root */
 		ia = cfiattr_lookup(cfdata_ifattr(cf), parent->dv_cfdriver);
 		dev->dv_locators =
-		    kmem_alloc(sizeof(int [ia->ci_loclen + 1]), KM_SLEEP);
-		*dev->dv_locators++ = sizeof(int [ia->ci_loclen + 1]);
-		memcpy(dev->dv_locators, locs, sizeof(int [ia->ci_loclen]));
+		    kmem_alloc(sizeof(int) * (ia->ci_loclen + 1), KM_SLEEP);
+		*dev->dv_locators++ = sizeof(int) * (ia->ci_loclen + 1);
+		memcpy(dev->dv_locators, locs, sizeof(int) * ia->ci_loclen);
 	}
 	dev->dv_properties = prop_dictionary_create();
 	KASSERT(dev->dv_properties != NULL);
 
-	prop_dictionary_set_cstring_nocopy(dev->dv_properties,
+	prop_dictionary_set_string_nocopy(dev->dv_properties,
 	    "device-driver", dev->dv_cfdriver->cd_name);
 	prop_dictionary_set_uint16(dev->dv_properties,
 	    "device-unit", dev->dv_unit);
 	if (parent != NULL) {
-		prop_dictionary_set_cstring(dev->dv_properties,
+		prop_dictionary_set_string(dev->dv_properties,
 		    "device-parent", device_xname(parent));
 	}
 
@@ -1501,7 +1514,7 @@ config_add_attrib_dict(device_t dev)
 			break;
 		if ((attr_dict = prop_dictionary_create()) == NULL)
 			break;
-		prop_dictionary_set_cstring_nocopy(attr_dict, "attribute-name",
+		prop_dictionary_set_string_nocopy(attr_dict, "attribute-name",
 		    ci->ci_name);
 
 		/* Create an array of the locator names and defaults */
@@ -1512,10 +1525,10 @@ config_add_attrib_dict(device_t dev)
 				loc_dict = prop_dictionary_create();
 				if (loc_dict == NULL)
 					continue;
-				prop_dictionary_set_cstring_nocopy(loc_dict,
+				prop_dictionary_set_string_nocopy(loc_dict,
 				    "loc-name", ci->ci_locdesc[j].cld_name);
 				if (ci->ci_locdesc[j].cld_defaultstr != NULL)
-					prop_dictionary_set_cstring_nocopy(
+					prop_dictionary_set_string_nocopy(
 					    loc_dict, "default",
 					    ci->ci_locdesc[j].cld_defaultstr);
 				prop_array_set(loc_array, j, loc_dict);
@@ -1958,18 +1971,22 @@ config_defer(device_t dev, void (*func)(device_t))
 	if (dev->dv_parent == NULL)
 		panic("config_defer: can't defer config of a root device");
 
+	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
+
+	config_pending_incr(dev);
+
+	mutex_enter(&config_misc_lock);
 #ifdef DIAGNOSTIC
-	TAILQ_FOREACH(dc, &deferred_config_queue, dc_queue) {
-		if (dc->dc_dev == dev)
+	struct deferred_config *odc;
+	TAILQ_FOREACH(odc, &deferred_config_queue, dc_queue) {
+		if (odc->dc_dev == dev)
 			panic("config_defer: deferred twice");
 	}
 #endif
-
-	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
 	dc->dc_dev = dev;
 	dc->dc_func = func;
 	TAILQ_INSERT_TAIL(&deferred_config_queue, dc, dc_queue);
-	config_pending_incr(dev);
+	mutex_exit(&config_misc_lock);
 }
 
 /*
@@ -1989,19 +2006,23 @@ config_interrupts(device_t dev, void (*func)(device_t))
 		return;
 	}
 
+	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
+
+	config_pending_incr(dev);
+
+	mutex_enter(&config_misc_lock);
 #ifdef DIAGNOSTIC
-	TAILQ_FOREACH(dc, &interrupt_config_queue, dc_queue) {
-		if (dc->dc_dev == dev)
+	struct deferred_config *odc;
+	TAILQ_FOREACH(odc, &interrupt_config_queue, dc_queue) {
+		if (odc->dc_dev == dev)
 			panic("config_interrupts: deferred twice");
 	}
 #endif
-
-	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
 	dc->dc_dev = dev;
 	dc->dc_func = func;
 	TAILQ_INSERT_TAIL(&interrupt_config_queue, dc, dc_queue);
-	config_pending_incr(dev);
 	dev->dv_flags |= DVF_ATTACH_INPROGRESS;
+	mutex_exit(&config_misc_lock);
 }
 
 /*
@@ -2021,17 +2042,21 @@ config_mountroot(device_t dev, void (*func)(device_t))
 		return;
 	}
 
+	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
+
+	mutex_enter(&config_misc_lock);
 #ifdef DIAGNOSTIC
-	TAILQ_FOREACH(dc, &mountroot_config_queue, dc_queue) {
-		if (dc->dc_dev == dev)
+	struct deferred_config *odc;
+	TAILQ_FOREACH(odc, &mountroot_config_queue, dc_queue) {
+		if (odc->dc_dev == dev)
 			panic("%s: deferred twice", __func__);
 	}
 #endif
 
-	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
 	dc->dc_dev = dev;
 	dc->dc_func = func;
 	TAILQ_INSERT_TAIL(&mountroot_config_queue, dc, dc_queue);
+	mutex_exit(&config_misc_lock);
 }
 
 /*
@@ -2040,17 +2065,27 @@ config_mountroot(device_t dev, void (*func)(device_t))
 static void
 config_process_deferred(struct deferred_config_head *queue, device_t parent)
 {
-	struct deferred_config *dc, *ndc;
+	struct deferred_config *dc;
 
-	for (dc = TAILQ_FIRST(queue); dc != NULL; dc = ndc) {
-		ndc = TAILQ_NEXT(dc, dc_queue);
+	mutex_enter(&config_misc_lock);
+	dc = TAILQ_FIRST(queue);
+	while (dc) {
 		if (parent == NULL || dc->dc_dev->dv_parent == parent) {
 			TAILQ_REMOVE(queue, dc, dc_queue);
+			mutex_exit(&config_misc_lock);
+
 			(*dc->dc_func)(dc->dc_dev);
 			config_pending_decr(dc->dc_dev);
 			kmem_free(dc, sizeof(*dc));
+
+			mutex_enter(&config_misc_lock);
+			/* Restart, queue might have changed */
+			dc = TAILQ_FIRST(queue);
+		} else {
+			dc = TAILQ_NEXT(dc, dc_queue);
 		}
 	}
+	mutex_exit(&config_misc_lock);
 }
 
 /*
@@ -2061,9 +2096,12 @@ config_pending_incr(device_t dev)
 {
 
 	mutex_enter(&config_misc_lock);
-	config_pending++;
+	KASSERTMSG(dev->dv_pending < INT_MAX,
+	    "%s: excess config_pending_incr", device_xname(dev));
+	if (dev->dv_pending++ == 0)
+		TAILQ_INSERT_TAIL(&config_pending, dev, dv_pending_list);
 #ifdef DEBUG_AUTOCONF
-	printf("%s: %s %d\n", __func__, device_xname(dev), config_pending);
+	printf("%s: %s %d\n", __func__, device_xname(dev), dev->dv_pending);
 #endif
 	mutex_exit(&config_misc_lock);
 }
@@ -2072,13 +2110,15 @@ void
 config_pending_decr(device_t dev)
 {
 
-	KASSERT(0 < config_pending);
 	mutex_enter(&config_misc_lock);
-	config_pending--;
+	KASSERTMSG(dev->dv_pending > 0,
+	    "%s: excess config_pending_decr", device_xname(dev));
+	if (--dev->dv_pending == 0)
+		TAILQ_REMOVE(&config_pending, dev, dv_pending_list);
 #ifdef DEBUG_AUTOCONF
-	printf("%s: %s %d\n", __func__, device_xname(dev), config_pending);
+	printf("%s: %s %d\n", __func__, device_xname(dev), dev->dv_pending);
 #endif
-	if (config_pending == 0)
+	if (TAILQ_EMPTY(&config_pending))
 		cv_broadcast(&config_misc_cv);
 	mutex_exit(&config_misc_lock);
 }
@@ -2131,8 +2171,12 @@ config_finalize(void)
 	 * them to finish any deferred autoconfiguration.
 	 */
 	mutex_enter(&config_misc_lock);
-	while (config_pending != 0)
+	while (!TAILQ_EMPTY(&config_pending)) {
+		device_t dev;
+		TAILQ_FOREACH(dev, &config_pending, dv_pending_list)
+			aprint_debug_dev(dev, "holding up boot\n");
 		cv_wait(&config_misc_cv, &config_misc_lock);
+	}
 	mutex_exit(&config_misc_lock);
 
 	KERNEL_LOCK(1, NULL);
@@ -2280,43 +2324,316 @@ device_find_by_driver_unit(const char *name, int unit)
 	return device_lookup(cd, unit);
 }
 
-/*
- * device_compatible_match:
- *
- *	Match a driver's "compatible" data against a device's
- *	"compatible" strings.  If a match is found, we return
- *	a weighted match result, and optionally the matching
- *	entry.
- */
-int
-device_compatible_match(const char **device_compats, int ndevice_compats,
-			const struct device_compatible_entry *driver_compats,
-			const struct device_compatible_entry **matching_entryp)
+static bool
+match_strcmp(const char * const s1, const char * const s2)
+{
+	return strcmp(s1, s2) == 0;
+}
+
+static bool
+match_pmatch(const char * const s1, const char * const s2)
+{
+	return pmatch(s1, s2, NULL) == 2;
+}
+
+static bool
+strarray_match_internal(const char ** const strings,
+    unsigned int const nstrings, const char * const str,
+    unsigned int * const indexp,
+    bool (*match_fn)(const char *, const char *))
+{
+	unsigned int i;
+
+	if (strings == NULL || nstrings == 0) {
+		return false;
+	}
+
+	for (i = 0; i < nstrings; i++) {
+		if ((*match_fn)(strings[i], str)) {
+			*indexp = i;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static int
+strarray_match(const char ** const strings, unsigned int const nstrings,
+    const char * const str)
+{
+	unsigned int idx;
+
+	if (strarray_match_internal(strings, nstrings, str, &idx,
+				    match_strcmp)) {
+		return (int)(nstrings - idx);
+	}
+	return 0;
+}
+
+static int
+strarray_pmatch(const char ** const strings, unsigned int const nstrings,
+    const char * const pattern)
+{
+	unsigned int idx;
+
+	if (strarray_match_internal(strings, nstrings, pattern, &idx,
+				    match_pmatch)) {
+		return (int)(nstrings - idx);
+	}
+	return 0;
+}
+
+static int
+device_compatible_match_strarray_internal(
+    const char **device_compats, int ndevice_compats,
+    const struct device_compatible_entry *driver_compats,
+    const struct device_compatible_entry **matching_entryp,
+    int (*match_fn)(const char **, unsigned int, const char *))
 {
 	const struct device_compatible_entry *dce = NULL;
-	int i, match_weight;
+	int rv;
 
 	if (ndevice_compats == 0 || device_compats == NULL ||
 	    driver_compats == NULL)
 		return 0;
-	
-	/*
-	 * We take the first match because we start with the most-specific
-	 * device compatible string.
-	 */
-	for (i = 0, match_weight = ndevice_compats - 1;
-	     i < ndevice_compats;
-	     i++, match_weight--) {
-		for (dce = driver_compats; dce->compat != NULL; dce++) {
-			if (strcmp(dce->compat, device_compats[i]) == 0) {
-				KASSERT(match_weight >= 0);
-				if (matching_entryp)
-					*matching_entryp = dce;
-				return 1 + match_weight;
+
+	for (dce = driver_compats; dce->compat != NULL; dce++) {
+		rv = (*match_fn)(device_compats, ndevice_compats, dce->compat);
+		if (rv != 0) {
+			if (matching_entryp != NULL) {
+				*matching_entryp = dce;
 			}
+			return rv;
 		}
 	}
 	return 0;
+}
+
+/*
+ * device_compatible_match:
+ *
+ *	Match a driver's "compatible" data against a device's
+ *	"compatible" strings.  Returns resulted weighted by
+ *	which device "compatible" string was matched.
+ */
+int
+device_compatible_match(const char **device_compats, int ndevice_compats,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, NULL, strarray_match);
+}
+
+/*
+ * device_compatible_pmatch:
+ *
+ *	Like device_compatible_match(), but uses pmatch(9) to compare
+ *	the device "compatible" strings against patterns in the
+ *	driver's "compatible" data.
+ */
+int
+device_compatible_pmatch(const char **device_compats, int ndevice_compats,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, NULL, strarray_pmatch);
+}
+
+static int
+device_compatible_match_strlist_internal(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats,
+    const struct device_compatible_entry **matching_entryp,
+    int (*match_fn)(const char *, size_t, const char *))
+{
+	const struct device_compatible_entry *dce = NULL;
+	int rv;
+
+	if (device_compats == NULL || device_compatsize == 0 ||
+	    driver_compats == NULL)
+		return 0;
+
+	for (dce = driver_compats; dce->compat != NULL; dce++) {
+		rv = (*match_fn)(device_compats, device_compatsize,
+		    dce->compat);
+		if (rv != 0) {
+			if (matching_entryp != NULL) {
+				*matching_entryp = dce;
+			}
+			return rv;
+		}
+	}
+	return 0;
+}
+
+/*
+ * device_compatible_match_strlist:
+ *
+ *	Like device_compatible_match(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+int
+device_compatible_match_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, NULL, strlist_match);
+}
+
+/*
+ * device_compatible_pmatch_strlist:
+ *
+ *	Like device_compatible_pmatch(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+int
+device_compatible_pmatch_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, NULL, strlist_pmatch);
+}
+
+static int
+device_compatible_match_id_internal(
+    uintptr_t const id, uintptr_t const mask, uintptr_t const sentinel_id,
+    const struct device_compatible_entry *driver_compats,
+    const struct device_compatible_entry **matching_entryp)
+{
+	const struct device_compatible_entry *dce = NULL;
+
+	if (mask == 0)
+		return 0;
+
+	for (dce = driver_compats; dce->id != sentinel_id; dce++) {
+		if ((id & mask) == dce->id) {
+			if (matching_entryp != NULL) {
+				*matching_entryp = dce;
+			}
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/*
+ * device_compatible_match_id:
+ *
+ *	Like device_compatible_match(), but takes a single
+ *	unsigned integer device ID.
+ */
+int
+device_compatible_match_id(
+    uintptr_t const id, uintptr_t const sentinel_id,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_id_internal(id, (uintptr_t)-1,
+	    sentinel_id, driver_compats, NULL);
+}
+
+/*
+ * device_compatible_lookup:
+ *
+ *	Look up and return the device_compatible_entry, using the
+ *	same matching criteria used by device_compatible_match().
+ */
+const struct device_compatible_entry *
+device_compatible_lookup(const char **device_compats, int ndevice_compats,
+			 const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, &dce, strarray_match)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_plookup:
+ *
+ *	Look up and return the device_compatible_entry, using the
+ *	same matching criteria used by device_compatible_pmatch().
+ */
+const struct device_compatible_entry *
+device_compatible_plookup(const char **device_compats, int ndevice_compats,
+			  const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, &dce, strarray_pmatch)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_lookup_strlist:
+ *
+ *	Like device_compatible_lookup(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+const struct device_compatible_entry *
+device_compatible_lookup_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, &dce, strlist_match)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_plookup_strlist:
+ *
+ *	Like device_compatible_plookup(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+const struct device_compatible_entry *
+device_compatible_plookup_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, &dce, strlist_pmatch)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_lookup_id:
+ *
+ *	Like device_compatible_lookup(), but takes a single
+ *	unsigned integer device ID.
+ */
+const struct device_compatible_entry *
+device_compatible_lookup_id(
+    uintptr_t const id, uintptr_t const sentinel_id,
+    const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_id_internal(id, (uintptr_t)-1,
+	    sentinel_id, driver_compats, &dce)) {
+		return dce;
+	}
+	return NULL;
 }
 
 /*
@@ -2676,7 +2993,7 @@ device_active_register(device_t dev, void (*handler)(device_t, devactive_t))
 	}
 
 	new_size = old_size + 4;
-	new_handlers = kmem_alloc(sizeof(void *[new_size]), KM_SLEEP);
+	new_handlers = kmem_alloc(sizeof(void *) * new_size, KM_SLEEP);
 
 	for (i = 0; i < old_size; ++i)
 		new_handlers[i] = old_handlers[i];
@@ -2690,7 +3007,7 @@ device_active_register(device_t dev, void (*handler)(device_t, devactive_t))
 	splx(s);
 
 	if (old_size > 0)
-		kmem_free(old_handlers, sizeof(void * [old_size]));
+		kmem_free(old_handlers, sizeof(void *) * old_size);
 
 	return true;
 }
@@ -2724,7 +3041,7 @@ device_active_deregister(device_t dev, void (*handler)(device_t, devactive_t))
 			dev->dv_activity_count = 0;
 			dev->dv_activity_handlers = NULL;
 			splx(s);
-			kmem_free(old_handlers, sizeof(void *[old_size]));
+			kmem_free(old_handlers, sizeof(void *) * old_size);
 		}
 		return;
 	}

@@ -1,4 +1,4 @@
-/*	$NetBSD: necpb.c,v 1.43 2019/11/10 21:16:23 chs Exp $	*/
+/*	$NetBSD: necpb.c,v 1.46 2020/11/18 02:14:13 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: necpb.c,v 1.43 2019/11/10 21:16:23 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: necpb.c,v 1.46 2020/11/18 02:14:13 thorpej Exp $");
 
 #include "opt_pci.h"
 
@@ -71,7 +71,7 @@ __KERNEL_RCSID(0, "$NetBSD: necpb.c,v 1.43 2019/11/10 21:16:23 chs Exp $");
 #include <sys/systm.h>
 #include <sys/errno.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/extent.h>
 
 #include <uvm/uvm_extern.h>
@@ -136,6 +136,14 @@ int necpbfound;
 struct necpb_context necpb_main_context;
 static long necpb_mem_ex_storage[EXTENT_FIXED_STORAGE_SIZE(10) / sizeof(long)];
 static long necpb_io_ex_storage[EXTENT_FIXED_STORAGE_SIZE(10) / sizeof(long)];
+
+#define	PCI_IO_START	0x00100000
+#define	PCI_IO_END	0x01ffffff
+#define	PCI_IO_SIZE	((PCI_IO_END - PCI_IO_START) + 1)
+
+#define	PCI_MEM_START	0x08000000
+#define	PCI_MEM_END	0x3fffffff
+#define	PCI_MEM_SIZE	((PCI_MEM_END - PCI_MEM_START) + 1)
 
 static int
 necpbmatch(device_t parent, cfdata_t cf, void *aux)
@@ -243,12 +251,13 @@ necpbattach(device_t parent, device_t self, void *aux)
 
 	pc = &sc->sc_ncp->nc_pc;
 #ifdef PCI_NETBSD_CONFIGURE
-	pc->pc_ioext = extent_create("necpbio", 0x00100000, 0x01ffffff,
-	    NULL, 0, EX_NOWAIT);
-	pc->pc_memext = extent_create("necpbmem", 0x08000000, 0x3fffffff,
-	    NULL, 0, EX_NOWAIT);
-	pci_configure_bus(pc, pc->pc_ioext, pc->pc_memext, NULL, 0,
-	    mips_cache_info.mci_dcache_align);
+	struct pciconf_resources *pcires = pciconf_resource_init();
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    PCI_IO_START, PCI_IO_SIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    PCI_MEM_START, PCI_MEM_SIZE);
+	pci_configure_bus(pc, pcires, 0, mips_cache_info.mci_dcache_align);
+	pciconf_resource_fini(pcires);
 #endif
 
 	out32(RD94_SYS_PCI_INTMASK, 0xf);
@@ -407,7 +416,7 @@ necpb_intr_establish(pci_chipset_tag_t pc, pci_intr_handle_t ih, int level,
 	if (ih >= 4)
 		panic("%s: bogus handle", __func__);
 
-	n = malloc(sizeof(struct necpb_intrhand), M_DEVBUF, M_WAITOK);
+	n = kmem_alloc(sizeof(*n), KM_SLEEP);
 	n->ih_func = func;
 	n->ih_arg = arg;
 	n->ih_next = NULL;
@@ -461,7 +470,7 @@ necpb_intr_disestablish(pci_chipset_tag_t pc, void *cookie)
 
 	evcnt_detach(&n->ih_evcnt);
 
-	free(n, M_DEVBUF);
+	kmem_free(n, sizeof(*n));
 }
 
 /*

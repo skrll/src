@@ -1,4 +1,4 @@
-/*	$NetBSD: audiodef.h,v 1.7 2019/07/06 12:58:58 isaki Exp $	*/
+/*	$NetBSD: audiodef.h,v 1.15 2020/09/13 04:14:48 isaki Exp $	*/
 
 /*
  * Copyright (C) 2017 Tetsuya Isaki. All rights reserved.
@@ -29,6 +29,10 @@
 #ifndef _SYS_DEV_AUDIO_AUDIODEF_H_
 #define _SYS_DEV_AUDIO_AUDIODEF_H_
 
+#ifdef _KERNEL_OPT
+#include "opt_audio.h"
+#endif
+
 /* Number of HW buffer's blocks. */
 #define NBLKHW (3)
 
@@ -37,17 +41,6 @@
 
 /* Minimum number of usrbuf's blocks. */
 #define AUMINNOBLK	(3)
-
-/*
- * Hardware blocksize in msec.
- * We use 40 msec as default.  (1 / 40ms) = 25 = 5^2.
- * In this case, the number of frames in a block can be an integer
- * even if the frequency is a multiple of 100 (44100, 48000, etc),
- * or even if 15625Hz (vs(4)).
- */
-#if !defined(AUDIO_BLK_MS)
-#define AUDIO_BLK_MS 40
-#endif
 
 /*
  * Whether the playback mixer use single buffer mode.
@@ -85,6 +78,8 @@
 #define AUDIO_SCALEDOWN(value, bits)	((value) / (1 << (bits)))
 #endif
 
+#if defined(_KERNEL)
+
 /* conversion stage */
 typedef struct {
 	audio_ring_t srcbuf;
@@ -99,7 +94,7 @@ typedef enum {
 	AUDIO_STATE_DRAINING,	/* now draining */
 } audio_state_t;
 
-typedef struct audio_track {
+struct audio_track {
 	/*
 	 * AUMODE_PLAY for playback track, or
 	 * AUMODE_RECORD for recoding track.
@@ -174,7 +169,10 @@ typedef struct audio_track {
 	volatile uint	lock;
 
 	int		id;		/* track id for debug */
-} audio_track_t;
+};
+#endif /* _KERNEL */
+
+typedef struct audio_track audio_track_t;
 
 struct audio_file {
 	struct audio_softc *sc;
@@ -198,8 +196,13 @@ struct audio_file {
 	/* process who wants audio SIGIO. */
 	pid_t		async_audio;
 
+	/* true when closing */
+	bool		dying;
+
 	SLIST_ENTRY(audio_file) entry;
 };
+
+#if defined(_KERNEL)
 
 struct audio_trackmixer {
 	struct audio_softc *sc;
@@ -292,8 +295,9 @@ static __inline int
 auring_round(const audio_ring_t *ring, int idx)
 {
 	DIAGNOSTIC_ring(ring);
-	KASSERT(idx >= 0);
-	KASSERT(idx < ring->capacity * 2);
+	KASSERTMSG(idx >= 0, "idx=%d", idx);
+	KASSERTMSG(idx < ring->capacity * 2,
+	    "idx=%d ring->capacity=%d", idx, ring->capacity);
 
 	if (idx < ring->capacity) {
 		return idx;
@@ -320,7 +324,9 @@ auring_tail(const audio_ring_t *ring)
 static __inline aint_t *
 auring_headptr_aint(const audio_ring_t *ring)
 {
-	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
+	KASSERTMSG(ring->fmt.stride == sizeof(aint_t) * NBBY,
+	    "ring->fmt.stride=%d sizeof(aint_t)*NBBY=%zd",
+	    ring->fmt.stride, sizeof(aint_t) * NBBY);
 
 	return (aint_t *)ring->mem + ring->head * ring->fmt.channels;
 }
@@ -333,7 +339,9 @@ auring_headptr_aint(const audio_ring_t *ring)
 static __inline aint_t *
 auring_tailptr_aint(const audio_ring_t *ring)
 {
-	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
+	KASSERTMSG(ring->fmt.stride == sizeof(aint_t) * NBBY,
+	    "ring->fmt.stride=%d sizeof(aint_t)*NBBY=%zd",
+	    ring->fmt.stride, sizeof(aint_t) * NBBY);
 
 	return (aint_t *)ring->mem + auring_tail(ring) * ring->fmt.channels;
 }
@@ -437,5 +445,7 @@ auring_get_contig_free(const audio_ring_t *ring)
 		return ring->capacity - ring->used;
 	}
 }
+
+#endif /* _KERNEL */
 
 #endif /* !_SYS_DEV_AUDIO_AUDIODEF_H_ */

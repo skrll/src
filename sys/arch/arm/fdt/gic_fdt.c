@@ -1,4 +1,4 @@
-/* $NetBSD: gic_fdt.c,v 1.18 2019/11/24 11:10:12 skrll Exp $ */
+/* $NetBSD: gic_fdt.c,v 1.21 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "pci.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gic_fdt.c,v 1.18 2019/11/24 11:10:12 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gic_fdt.c,v 1.21 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -66,7 +66,7 @@ static void	gic_fdt_attach_v2m(struct gic_fdt_softc *, bus_space_tag_t, int);
 static int	gic_fdt_intr(void *);
 
 static void *	gic_fdt_establish(device_t, u_int *, int, int,
-		    int (*)(void *), void *);
+		    int (*)(void *), void *, const char *);
 static void	gic_fdt_disestablish(device_t, void *);
 static bool	gic_fdt_intrstr(device_t, u_int *, char *, size_t);
 
@@ -109,19 +109,25 @@ struct gic_fdt_softc {
 CFATTACH_DECL_NEW(gic_fdt, sizeof(struct gic_fdt_softc),
 	gic_fdt_match, gic_fdt_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "arm,gic-400" },
+	{ .compat = "arm,cortex-a15-gic" },
+	{ .compat = "arm,cortex-a9-gic" },
+	{ .compat = "arm,cortex-a7-gic" },
+	DEVICE_COMPAT_EOL
+};
+
+static const struct device_compatible_entry v2m_compat_data[] = {
+	{ .compat = "arm,gic-v2m-frame" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 gic_fdt_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"arm,gic-400",
-		"arm,cortex-a15-gic",
-		"arm,cortex-a9-gic",
-		"arm,cortex-a7-gic",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -183,8 +189,7 @@ gic_fdt_attach(device_t parent, device_t self, void *aux)
 	for (int child = OF_child(phandle); child; child = OF_peer(child)) {
 		if (!fdtbus_status_okay(child))
 			continue;
-		const char * const v2m_compat[] = { "arm,gic-v2m-frame", NULL };
-		if (of_match_compatible(child, v2m_compat))
+		if (of_compatible_match(child, v2m_compat_data))
 			gic_fdt_attach_v2m(sc, faa->faa_bst, child);
 	}
 #endif
@@ -227,15 +232,15 @@ gic_fdt_attach_v2m(struct gic_fdt_softc *sc, bus_space_tag_t bst, int phandle)
 		aprint_error_dev(sc->sc_gicdev, "failed to initialize GICv2m\n");
 	} else {
 		aprint_normal_dev(sc->sc_gicdev, "GICv2m @ %#" PRIx64
-		    ", SPIs %u-%u\n", frame->frame_reg,
-		    frame->frame_base, frame->frame_base + frame->frame_count);
+		    ", SPIs %u-%u\n", frame->frame_reg, frame->frame_base,
+		    frame->frame_base + frame->frame_count - 1);
 	}
 }
 #endif
 
 static void *
 gic_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
-    int (*func)(void *), void *arg)
+    int (*func)(void *), void *arg, const char *xname)
 {
 	struct gic_fdt_softc * const sc = device_private(dev);
 	struct gic_fdt_irq *firq;
@@ -266,11 +271,11 @@ gic_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 		TAILQ_INIT(&firq->intr_handlers);
 		firq->intr_irq = irq;
 		if (arg == NULL) {
-			firq->intr_ih = intr_establish(irq, ipl, level | mpsafe,
-			    func, NULL);
+			firq->intr_ih = intr_establish_xname(irq, ipl,
+			    level | mpsafe, func, NULL, xname);
 		} else {
-			firq->intr_ih = intr_establish(irq, ipl, level | mpsafe,
-			    gic_fdt_intr, firq);
+			firq->intr_ih = intr_establish_xname(irq, ipl,
+			    level | mpsafe, gic_fdt_intr, firq, xname);
 		}
 		if (firq->intr_ih == NULL) {
 			kmem_free(firq, sizeof(*firq));

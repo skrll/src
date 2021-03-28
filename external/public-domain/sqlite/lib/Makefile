@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.10 2019/11/11 22:45:26 joerg Exp $
+# $NetBSD: Makefile,v 1.13 2020/11/12 17:53:43 nia Exp $
 
 LIB=		sqlite3
 INCS=		sqlite3.h sqlite3ext.h
@@ -7,6 +7,9 @@ INCSDIR=	/usr/include
 SRCS=		sqlite3.c
 
 CFLAGS+=	-DNDEBUG
+
+LDADD+=		-lm
+DPADD+=		${LIBM}
 
 FILES+=			sqlite3.pc
 FILESOWN_sqlite3.pc=	${BINOWN}

@@ -23,7 +23,6 @@ options {
 	listen-on-v6 { none; };
 	recursion no;
 	notify no;
-	dnssec-enable yes;
 	dnssec-validation yes;
 };
 
@@ -33,11 +32,11 @@ zone "." {
 };
 
 zone "mail.example" {
-	type master;
+	type primary;
 	file "mail.example.db";
 };
 
 zone "hostile" {
-	type master;
+	type primary;
 	file "hostile.db";
 };

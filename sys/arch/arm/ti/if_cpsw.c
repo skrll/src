@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cpsw.c,v 1.9 2019/11/24 09:37:05 skrll Exp $	*/
+/*	$NetBSD: if_cpsw.c,v 1.14 2021/01/27 03:10:20 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: if_cpsw.c,v 1.9 2019/11/24 09:37:05 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: if_cpsw.c,v 1.14 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -309,19 +309,18 @@ cpsw_rxdesc_paddr(struct cpsw_softc * const sc, u_int x)
 	return sc->sc_rxdescs_pa + sizeof(struct cpsw_cpdma_bd) * x;
 }
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "ti,am335x-cpsw" },
+	{ .compat = "ti,cpsw" },
+	DEVICE_COMPAT_EOL
+};
 
 static int
 cpsw_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	static const char * const compatible[] = {
-		"ti,am335x-cpsw",
-		"ti,cpsw",
-		NULL
-	};
-
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static bool
@@ -361,11 +360,11 @@ cpsw_detach(device_t self, int flags)
 	intr_disestablish(sc->sc_txih);
 	intr_disestablish(sc->sc_miscih);
 
-	/* Delete all media. */
-	ifmedia_delete_instance(&sc->sc_mii.mii_media, IFM_INST_ANY);
-
 	ether_ifdetach(ifp);
 	if_detach(ifp);
+
+	/* Delete all media. */
+	ifmedia_fini(&sc->sc_mii.mii_media);
 
 	/* Free the packet padding buffer */
 	kmem_free(sc->sc_txpad, ETHER_MIN_LEN);
@@ -398,6 +397,7 @@ cpsw_attach(device_t parent, device_t self, void *aux)
 	bus_addr_t addr;
 	bus_size_t size;
 	int error, slave, len;
+	char xname[16];
 	u_int i;
 
 	KERNHIST_INIT(cpswhist, 4096);
@@ -462,10 +462,21 @@ cpsw_attach(device_t parent, device_t self, void *aux)
 		memcpy(sc->sc_enaddr, macaddr, ETHER_ADDR_LEN);
 	}
 
-	sc->sc_rxthih = fdtbus_intr_establish(phandle, CPSW_INTROFF_RXTH, IPL_VM, FDT_INTR_FLAGS, cpsw_rxthintr, sc);
-	sc->sc_rxih = fdtbus_intr_establish(phandle, CPSW_INTROFF_RX, IPL_VM, FDT_INTR_FLAGS, cpsw_rxintr, sc);
-	sc->sc_txih = fdtbus_intr_establish(phandle, CPSW_INTROFF_TX, IPL_VM, FDT_INTR_FLAGS, cpsw_txintr, sc);
-	sc->sc_miscih = fdtbus_intr_establish(phandle, CPSW_INTROFF_MISC, IPL_VM, FDT_INTR_FLAGS, cpsw_miscintr, sc);
+	snprintf(xname, sizeof(xname), "%s rxth", device_xname(self));
+	sc->sc_rxthih = fdtbus_intr_establish_xname(phandle, CPSW_INTROFF_RXTH,
+	    IPL_VM, FDT_INTR_FLAGS, cpsw_rxthintr, sc, xname);
+
+	snprintf(xname, sizeof(xname), "%s rx", device_xname(self));
+	sc->sc_rxih = fdtbus_intr_establish_xname(phandle, CPSW_INTROFF_RX,
+	    IPL_VM, FDT_INTR_FLAGS, cpsw_rxintr, sc, xname);
+
+	snprintf(xname, sizeof(xname), "%s tx", device_xname(self));
+	sc->sc_txih = fdtbus_intr_establish_xname(phandle, CPSW_INTROFF_TX,
+	    IPL_VM, FDT_INTR_FLAGS, cpsw_txintr, sc, xname);
+
+	snprintf(xname, sizeof(xname), "%s misc", device_xname(self));
+	sc->sc_miscih = fdtbus_intr_establish_xname(phandle, CPSW_INTROFF_MISC,
+	    IPL_VM, FDT_INTR_FLAGS, cpsw_miscintr, sc, xname);
 
 	sc->sc_bst = faa->faa_bst;
 	sc->sc_bss = size;
@@ -629,7 +640,7 @@ cpsw_start(struct ifnet *ifp)
 			device_printf(sc->sc_dev, "won't fit\n");
 			IFQ_DEQUEUE(&ifp->if_snd, m);
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		} else if (error != 0) {
 			device_printf(sc->sc_dev, "error\n");
@@ -739,7 +750,7 @@ cpsw_watchdog(struct ifnet *ifp)
 
 	device_printf(sc->sc_dev, "device timeout\n");
 
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	cpsw_init(ifp);
 	cpsw_start(ifp);
 }
@@ -1169,7 +1180,7 @@ cpsw_rxintr(void *arg)
 
 		if (cpsw_new_rxbuf(sc, i) != 0) {
 			/* drop current packet, reuse buffer for new */
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next;
 		}
 
@@ -1273,7 +1284,7 @@ cpsw_txintr(void *arg)
 		m_freem(rdp->tx_mb[sc->sc_txhead]);
 		rdp->tx_mb[sc->sc_txhead] = NULL;
 
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 
 		handled = true;
 
@@ -1550,9 +1561,11 @@ cpsw_ale_update_addresses(struct cpsw_softc *sc, int purge)
 		cpsw_ale_remove_all_mc_entries(sc);
 
 	/* Set other multicast addrs desired. */
+	ETHER_LOCK(ec);
 	LIST_FOREACH(ifma, &ec->ec_multiaddrs, enm_list) {
 		cpsw_ale_mc_entry_set(sc, ALE_PORT_MASK_ALL, ifma->enm_addrlo);
 	}
+	ETHER_UNLOCK(ec);
 
 	return 0;
 }

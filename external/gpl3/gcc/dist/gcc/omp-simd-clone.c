@@ -1,6 +1,6 @@
 /* OMP constructs' SIMD clone supporting code.
 
-Copyright (C) 2005-2018 Free Software Foundation, Inc.
+Copyright (C) 2005-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -448,7 +448,8 @@ simd_clone_create (struct cgraph_node *old_node)
     {
       tree old_decl = old_node->decl;
       tree new_decl = copy_node (old_node->decl);
-      DECL_NAME (new_decl) = clone_function_name (old_decl, "simdclone");
+      DECL_NAME (new_decl) = clone_function_name_numbered (old_decl,
+							   "simdclone");
       SET_DECL_ASSEMBLER_NAME (new_decl, DECL_NAME (new_decl));
       SET_DECL_RTL (new_decl, NULL);
       DECL_STATIC_CONSTRUCTOR (new_decl) = 0;
@@ -497,7 +498,6 @@ simd_clone_adjust_return_type (struct cgraph_node *node)
   /* Adjust the function return type.  */
   if (orig_rettype == void_type_node)
     return NULL_TREE;
-  TREE_TYPE (fndecl) = build_distinct_type_copy (TREE_TYPE (fndecl));
   t = TREE_TYPE (TREE_TYPE (fndecl));
   if (INTEGRAL_TYPE_P (t) || POINTER_TYPE_P (t))
     veclen = node->simdclone->vecsize_int;
@@ -723,11 +723,7 @@ simd_clone_adjust_argument_types (struct cgraph_node *node)
 	  else
 	    new_reversed = void_list_node;
 	}
-
-      tree new_type = build_distinct_type_copy (TREE_TYPE (node->decl));
-      TYPE_ARG_TYPES (new_type) = new_reversed;
-      TREE_TYPE (node->decl) = new_type;
-
+      TYPE_ARG_TYPES (TREE_TYPE (node->decl)) = new_reversed;
       adjustments.release ();
     }
   args.release ();
@@ -837,11 +833,8 @@ ipa_simd_modify_stmt_ops (tree *tp, int *walk_subtrees, void *data)
   struct ipa_parm_adjustment *cand = NULL;
   if (TREE_CODE (*tp) == PARM_DECL)
     cand = ipa_get_adjustment_candidate (&tp, NULL, info->adjustments, true);
-  else
-    {
-      if (TYPE_P (*tp))
-	*walk_subtrees = 0;
-    }
+  else if (TYPE_P (*tp))
+    *walk_subtrees = 0;
 
   tree repl = NULL_TREE;
   if (cand)
@@ -868,6 +861,18 @@ ipa_simd_modify_stmt_ops (tree *tp, int *walk_subtrees, void *data)
 
   if (tp != orig_tp)
     {
+      if (gimple_code (info->stmt) == GIMPLE_PHI
+	  && cand
+	  && TREE_CODE (*orig_tp) == ADDR_EXPR
+	  && TREE_CODE (TREE_OPERAND (*orig_tp, 0)) == PARM_DECL
+	  && cand->alias_ptr_type)
+	{
+	  gcc_assert (TREE_CODE (cand->alias_ptr_type) == SSA_NAME);
+	  *orig_tp = cand->alias_ptr_type;
+	  info->modified = true;
+	  return NULL_TREE;
+	}
+
       repl = build_fold_addr_expr (repl);
       gimple *stmt;
       if (is_gimple_debug (info->stmt))
@@ -884,7 +889,18 @@ ipa_simd_modify_stmt_ops (tree *tp, int *walk_subtrees, void *data)
 	  stmt = gimple_build_assign (make_ssa_name (TREE_TYPE (repl)), repl);
 	  repl = gimple_assign_lhs (stmt);
 	}
-      gimple_stmt_iterator gsi = gsi_for_stmt (info->stmt);
+      gimple_stmt_iterator gsi;
+      if (gimple_code (info->stmt) == GIMPLE_PHI)
+	{
+	  gsi = gsi_after_labels (single_succ (ENTRY_BLOCK_PTR_FOR_FN (cfun)));
+	  /* Cache SSA_NAME for next time.  */
+	  if (cand
+	      && TREE_CODE (*orig_tp) == ADDR_EXPR
+	      && TREE_CODE (TREE_OPERAND (*orig_tp, 0)) == PARM_DECL)
+	    cand->alias_ptr_type = repl;
+	}
+      else
+	gsi = gsi_for_stmt (info->stmt);
       gsi_insert_before (&gsi, stmt, GSI_SAME_STMT);
       *orig_tp = repl;
     }
@@ -984,6 +1000,31 @@ ipa_simd_modify_function_body (struct cgraph_node *node,
   FOR_EACH_BB_FN (bb, DECL_STRUCT_FUNCTION (node->decl))
     {
       gimple_stmt_iterator gsi;
+
+      for (gsi = gsi_start_phis (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+	{
+	  gphi *phi = as_a <gphi *> (gsi_stmt (gsi));
+	  int i, n = gimple_phi_num_args (phi);
+	  info.stmt = phi;
+	  struct walk_stmt_info wi;
+	  memset (&wi, 0, sizeof (wi));
+	  info.modified = false;
+	  wi.info = &info;
+	  for (i = 0; i < n; ++i)
+	    {
+	      int walk_subtrees = 1;
+	      tree arg = gimple_phi_arg_def (phi, i);
+	      tree op = arg;
+	      ipa_simd_modify_stmt_ops (&op, &walk_subtrees, &wi);
+	      if (op != arg)
+		{
+		  SET_PHI_ARG_DEF (phi, i, op);
+		  gcc_assert (TREE_CODE (op) == SSA_NAME);
+		  if (gimple_phi_arg_edge (phi, i)->flags & EDGE_ABNORMAL)
+		    SSA_NAME_OCCURS_IN_ABNORMAL_PHI (op) = 1;
+		}
+	    }
+	}
 
       gsi = gsi_start_bb (bb);
       while (!gsi_end_p (gsi))
@@ -1118,6 +1159,7 @@ simd_clone_adjust (struct cgraph_node *node)
 {
   push_cfun (DECL_STRUCT_FUNCTION (node->decl));
 
+  TREE_TYPE (node->decl) = build_distinct_type_copy (TREE_TYPE (node->decl));
   targetm.simd_clone.adjust (node);
 
   tree retval = simd_clone_adjust_return_type (node);
@@ -1661,14 +1703,22 @@ expand_simd_clones (struct cgraph_node *node)
 	     already.  */
 	  tree id = simd_clone_mangle (node, clone);
 	  if (id == NULL_TREE)
-	    continue;
+	    {
+	      if (i == 0)
+		clone->nargs += clone->inbranch;
+	      continue;
+	    }
 
 	  /* Only when we are sure we want to create the clone actually
 	     clone the function (or definitions) or create another
 	     extern FUNCTION_DECL (for prototypes without definitions).  */
 	  struct cgraph_node *n = simd_clone_create (node);
 	  if (n == NULL)
-	    continue;
+	    {
+	      if (i == 0)
+		clone->nargs += clone->inbranch;
+	      continue;
+	    }
 
 	  n->simdclone = clone;
 	  clone->origin = node;
@@ -1691,6 +1741,9 @@ expand_simd_clones (struct cgraph_node *node)
 	    simd_clone_adjust (n);
 	  else
 	    {
+	      TREE_TYPE (n->decl)
+		= build_distinct_type_copy (TREE_TYPE (n->decl));
+	      targetm.simd_clone.adjust (n);
 	      simd_clone_adjust_return_type (n);
 	      simd_clone_adjust_argument_types (n);
 	    }

@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.39 2018/09/03 16:29:28 riastradh Exp $ */
+/*	$NetBSD: vmparam.h,v 1.42 2021/02/26 02:01:16 simonb Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -64,6 +64,17 @@
 #define        PAGER_MAP_DEFAULT_SIZE (512 * 1024 * 1024)
 
 /*
+ * Defaults for Unified Buffer Cache parameters.
+ */
+
+#ifndef UBC_WINSHIFT
+#define	UBC_WINSHIFT	16	/* 64kB */
+#endif
+#ifndef UBC_NWINS
+#define	UBC_NWINS	4096	/* 256MB */
+#endif
+
+/*
  * The kernel itself is mapped by the boot loader with 4Mb locked VM pages,
  * so let's keep 4Mb definitions here as well.
  */
@@ -101,7 +112,7 @@
 #define	DFLDSIZ		(128UL*1024*1024)	/* initial data size limit */
 #endif
 #ifndef MAXDSIZ
-#define	MAXDSIZ		(1UL<<39)		/* max data size */
+#define	MAXDSIZ		(1UL<<39)		/* 512GB max data size */
 /*
  * For processes not using topdown VA, we need to limit the data size -
  * they probably have not been compiled with the proper compiler memory
@@ -144,9 +155,6 @@
 /*
  * 32-bit emulation limits (same as sparc - we could go bigger)
  */
-#ifndef MAXTSIZ32
-#define	MAXTSIZ32	(64*1024*1024)		/* max text size */
-#endif
 #ifndef DFLDSIZ32
 #define	DFLDSIZ32	(64*1024*1024)		/* initial data size limit */
 #endif

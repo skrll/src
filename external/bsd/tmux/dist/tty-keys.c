@@ -46,11 +46,14 @@ static struct tty_key *tty_keys_find(struct tty *, const char *, size_t,
 static int	tty_keys_next1(struct tty *, const char *, size_t, key_code *,
 		    size_t *, int);
 static void	tty_keys_callback(int, short, void *);
-static int	tty_keys_mouse(struct tty *, const char *, size_t, size_t *);
+static int	tty_keys_mouse(struct tty *, const char *, size_t, size_t *,
+		    struct mouse_event *);
 static int	tty_keys_clipboard(struct tty *, const char *, size_t,
 		    size_t *);
 static int	tty_keys_device_attributes(struct tty *, const char *, size_t,
 		    size_t *);
+static int	tty_keys_device_status_report(struct tty *, const char *,
+		    size_t, size_t *);
 
 /* Default raw keys. */
 struct tty_default_key_raw {
@@ -399,9 +402,10 @@ tty_keys_build(struct tty *tty)
 	const struct tty_default_key_raw	*tdkr;
 	const struct tty_default_key_code	*tdkc;
 	u_int		 			 i;
-	const char				*s, *value;
+	const char				*s;
 	struct options_entry			*o;
 	struct options_array_item		*a;
+	union options_value			*ov;
 
 	if (tty->key_tree != NULL)
 		tty_keys_free(tty);
@@ -427,9 +431,9 @@ tty_keys_build(struct tty *tty)
 	if (o != NULL) {
 		a = options_array_first(o);
 		while (a != NULL) {
-			value = options_array_item_value(a);
-			if (value != NULL)
-				tty_keys_add(tty, value, KEYC_USER + i);
+			i = options_array_item_index(a);
+			ov = options_array_item_value(a);
+			tty_keys_add(tty, ov->string, KEYC_USER + i);
 			a = options_array_next(a);
 		}
 	}
@@ -560,25 +564,25 @@ tty_keys_next1(struct tty *tty, const char *buf, size_t len, key_code *key,
 	return (-1);
 }
 
-/*
- * Process at least one key in the buffer and invoke tty->key_callback. Return
- * 0 if there are no further keys, or 1 if there could be more in the buffer.
- */
-key_code
+/* Process at least one key in the buffer. Return 0 if no keys present. */
+int
 tty_keys_next(struct tty *tty)
 {
-	struct client	*c = tty->client;
-	struct timeval	 tv;
-	const char	*buf;
-	size_t		 len, size;
-	cc_t		 bspace;
-	int		 delay, expired = 0, n;
-	key_code	 key;
+	struct client		*c = tty->client;
+	struct timeval		 tv;
+	const char		*buf;
+	size_t			 len, size;
+	cc_t			 bspace;
+	int			 delay, expired = 0, n;
+	key_code		 key;
+	struct mouse_event	 m = { 0 };
+	struct key_event	*event;
+
+	gettimeofday(&tv, NULL);
 
 	/* Get key buffer. */
 	buf = (const char *)EVBUFFER_DATA(tty->in);
 	len = EVBUFFER_LENGTH(tty->in);
-
 	if (len == 0)
 		return (0);
 	log_debug("%s: keys are %zu (%.*s)", c->name, len, (int)len, buf);
@@ -605,8 +609,19 @@ tty_keys_next(struct tty *tty)
 		goto partial_key;
 	}
 
+	/* Is this a device status report response? */
+	switch (tty_keys_device_status_report(tty, buf, len, &size)) {
+	case 0:		/* yes */
+		key = KEYC_UNKNOWN;
+		goto complete_key;
+	case -1:	/* no, or not valid */
+		break;
+	case 1:		/* partial */
+		goto partial_key;
+	}
+
 	/* Is this a mouse key press? */
-	switch (tty_keys_mouse(tty, buf, len, &size)) {
+	switch (tty_keys_mouse(tty, buf, len, &size, &m)) {
 	case 0:		/* yes */
 		key = KEYC_MOUSE;
 		goto complete_key;
@@ -725,8 +740,13 @@ complete_key:
 	}
 
 	/* Fire the key. */
-	if (key != KEYC_UNKNOWN)
-		server_client_handle_key(tty->client, key);
+	if (key != KEYC_UNKNOWN) {
+		event = xmalloc(sizeof *event);
+		event->key = key;
+		memcpy(&event->m, &m, sizeof event->m);
+		if (!server_client_handle_key(c, event))
+			free(event);
+	}
 
 	return (1);
 
@@ -756,12 +776,12 @@ tty_keys_callback(__unused int fd, __unused short events, void *data)
  * (probably a mouse sequence but need more data).
  */
 static int
-tty_keys_mouse(struct tty *tty, const char *buf, size_t len, size_t *size)
+tty_keys_mouse(struct tty *tty, const char *buf, size_t len, size_t *size,
+    struct mouse_event *m)
 {
-	struct client		*c = tty->client;
-	struct mouse_event	*m = &tty->mouse;
-	u_int			 i, x, y, b, sgr_b;
-	u_char			 sgr_type, ch;
+	struct client	*c = tty->client;
+	u_int		 i, x, y, b, sgr_b;
+	u_char		 sgr_type, ch;
 
 	/*
 	 * Standard mouse sequences are \033[M followed by three characters
@@ -882,14 +902,19 @@ tty_keys_mouse(struct tty *tty, const char *buf, size_t len, size_t *size)
 		return (-1);
 
 	/* Fill mouse event. */
-	m->lx = m->x;
+	m->lx = tty->mouse_last_x;
 	m->x = x;
-	m->ly = m->y;
+	m->ly = tty->mouse_last_y;
 	m->y = y;
-	m->lb = m->b;
+	m->lb = tty->mouse_last_b;
 	m->b = b;
 	m->sgr_type = sgr_type;
 	m->sgr_b = sgr_b;
+
+	/* Update last mouse state. */
+	tty->mouse_last_x = x;
+	tty->mouse_last_y = y;
+	tty->mouse_last_b = b;
 
 	return (0);
 }
@@ -977,7 +1002,7 @@ tty_keys_clipboard(__unused struct tty *tty, const char *buf, size_t len,
 
 	/* Create a new paste buffer. */
 	log_debug("%s: %.*s", __func__, outlen, out);
-	paste_add(out, outlen);
+	paste_add(NULL, out, outlen);
 
 	return (0);
 }
@@ -990,13 +1015,14 @@ static int
 tty_keys_device_attributes(struct tty *tty, const char *buf, size_t len,
     size_t *size)
 {
-	struct client		*c = tty->client;
-	u_int			 i, a, b;
-	char			 tmp[64], *endptr;
-	static const char	*types[] = TTY_TYPES;
-	int			 type;
+	struct client	*c = tty->client;
+	u_int		 i, n = 0;
+	char		 tmp[64], *endptr, p[32] = { 0 }, *cp, *next;
+	int		 flags = 0;
 
 	*size = 0;
+	if (tty->flags & TTY_HAVEDA)
+		return (-1);
 
 	/* First three bytes are always \033[?. */
 	if (buf[0] != '\033')
@@ -1024,39 +1050,81 @@ tty_keys_device_attributes(struct tty *tty, const char *buf, size_t len,
 	*size = 4 + i;
 
 	/* Convert version numbers. */
-	a = strtoul(tmp, &endptr, 10);
-	if (*endptr == ';') {
-		b = strtoul(endptr + 1, &endptr, 10);
-		if (*endptr != '\0' && *endptr != ';')
-			b = 0;
-	} else
-		a = b = 0;
+	cp = tmp;
+	while ((next = strsep(&cp, ";")) != NULL) {
+		p[n] = strtoul(next, &endptr, 10);
+		if (*endptr != '\0')
+			p[n] = 0;
+		n++;
+	}
 
-	/* Store terminal type. */
-	type = TTY_UNKNOWN;
-	switch (a) {
-	case 1:
-		if (b == 2)
-			type = TTY_VT100;
-		else if (b == 0)
-			type = TTY_VT101;
-		break;
-	case 6:
-		type = TTY_VT102;
-		break;
-	case 62:
-		type = TTY_VT220;
-		break;
-	case 63:
-		type = TTY_VT320;
-		break;
-	case 64:
-		type = TTY_VT420;
+	/* Set terminal flags. */
+	switch (p[0]) {
+	case 64: /* VT420 */
+		flags |= (TERM_DECFRA|TERM_DECSLRM);
 		break;
 	}
-	tty_set_type(tty, type);
+	for (i = 1; i < n; i++)
+		log_debug("%s: DA feature: %d", c->name, p[i]);
+	log_debug("%s: received DA %.*s", c->name, (int)*size, buf);
 
-	log_debug("%s: received DA %.*s (%s)", c->name, (int)*size, buf,
-	    types[type]);
+	tty_set_flags(tty, flags);
+	tty->flags |= TTY_HAVEDA;
+
+	return (0);
+}
+
+/*
+ * Handle device status report input. Returns 0 for success, -1 for failure, 1
+ * for partial.
+ */
+static int
+tty_keys_device_status_report(struct tty *tty, const char *buf, size_t len,
+    size_t *size)
+{
+	struct client	*c = tty->client;
+	u_int		 i;
+	char		 tmp[64];
+	int		 flags = 0;
+
+	*size = 0;
+	if (tty->flags & TTY_HAVEDSR)
+		return (-1);
+
+	/* First three bytes are always \033[. */
+	if (buf[0] != '\033')
+		return (-1);
+	if (len == 1)
+		return (1);
+	if (buf[1] != '[')
+		return (-1);
+	if (len == 2)
+		return (1);
+	if (buf[2] != 'I' && buf[2] != 'T')
+		return (-1);
+	if (len == 3)
+		return (1);
+
+	/* Copy the rest up to a 'n'. */
+	for (i = 0; i < (sizeof tmp) - 1 && buf[2 + i] != 'n'; i++) {
+		if (2 + i == len)
+			return (1);
+		tmp[i] = buf[2 + i];
+	}
+	if (i == (sizeof tmp) - 1)
+		return (-1);
+	tmp[i] = '\0';
+	*size = 3 + i;
+
+	/* Set terminal flags. */
+	if (strncmp(tmp, "ITERM2 ", 7) == 0)
+		flags |= (TERM_DECSLRM|TERM_256COLOURS|TERM_RGBCOLOURS);
+	if (strncmp(tmp, "TMUX ", 5) == 0)
+		flags |= (TERM_256COLOURS|TERM_RGBCOLOURS);
+	log_debug("%s: received DSR %.*s", c->name, (int)*size, buf);
+
+	tty_set_flags(tty, flags);
+	tty->flags |= TTY_HAVEDSR;
+
 	return (0);
 }

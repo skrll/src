@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_core.c,v 1.29 2019/12/12 02:15:43 pgoyette Exp $	*/
+/*	$NetBSD: kern_core.c,v 1.34 2020/11/01 18:51:02 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1991, 1993
@@ -37,7 +37,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_core.c,v 1.29 2019/12/12 02:15:43 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_core.c,v 1.34 2020/11/01 18:51:02 pgoyette Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_execfmt.h"
+#include "opt_compat_netbsd32.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/vnode.h>
@@ -51,6 +56,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_core.c,v 1.29 2019/12/12 02:15:43 pgoyette Exp 
 #include <sys/kauth.h>
 #include <sys/module.h>
 #include <sys/compat_stub.h>
+#include <sys/exec_elf.h>
 
 MODULE(MODULE_CLASS_MISC, coredump, NULL);
 
@@ -77,6 +83,11 @@ coredump_modcmd(modcmd_t cmd, void *arg)
 		MODULE_HOOK_SET(coredump_write_hook, coredump_write);
 		MODULE_HOOK_SET(coredump_offset_hook, coredump_offset);
 		MODULE_HOOK_SET(coredump_netbsd_hook, real_coredump_netbsd);
+#if defined(EXEC_ELF64)
+		MODULE_HOOK_SET(coredump_elf64_hook, real_coredump_elf64);
+#elif defined(EXEC_ELF32)
+		MODULE_HOOK_SET(coredump_elf32_hook, real_coredump_elf32);
+#endif
 		MODULE_HOOK_SET(uvm_coredump_walkmap_hook,
 		    uvm_coredump_walkmap);
 		MODULE_HOOK_SET(uvm_coredump_count_segs_hook,
@@ -85,6 +96,11 @@ coredump_modcmd(modcmd_t cmd, void *arg)
 	case MODULE_CMD_FINI:
 		MODULE_HOOK_UNSET(uvm_coredump_count_segs_hook);
 		MODULE_HOOK_UNSET(uvm_coredump_walkmap_hook);
+#if defined(EXEC_ELF64)
+		MODULE_HOOK_UNSET(coredump_elf64_hook);
+#elif defined(EXEC_ELF32)
+		MODULE_HOOK_UNSET(coredump_elf32_hook);
+#endif
 		MODULE_HOOK_UNSET(coredump_netbsd_hook);
 		MODULE_HOOK_UNSET(coredump_offset_hook);
 		MODULE_HOOK_UNSET(coredump_write_hook);
@@ -119,7 +135,7 @@ coredump(struct lwp *l, const char *pattern)
 	p = l->l_proc;
 	vm = p->p_vmspace;
 
-	mutex_enter(proc_lock);		/* p_session */
+	mutex_enter(&proc_lock);		/* p_session */
 	mutex_enter(p->p_lock);
 
 	/*
@@ -131,7 +147,7 @@ coredump(struct lwp *l, const char *pattern)
 	    p->p_rlimit[RLIMIT_CORE].rlim_cur) {
 		error = EFBIG;		/* better error code? */
 		mutex_exit(p->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		goto done;
 	}
 
@@ -150,7 +166,7 @@ coredump(struct lwp *l, const char *pattern)
 		if (!security_setidcore_dump) {
 			error = EPERM;
 			mutex_exit(p->p_lock);
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			goto done;
 		}
 		pattern = security_setidcore_path;
@@ -167,7 +183,7 @@ coredump(struct lwp *l, const char *pattern)
 
 	if (error) {
 		mutex_exit(p->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		goto done;
 	}
 
@@ -184,7 +200,7 @@ coredump(struct lwp *l, const char *pattern)
 	}
 
 	mutex_exit(p->p_lock);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	if (error)
 		goto done;
 
@@ -282,7 +298,7 @@ coredump_buildname(struct proc *p, char *dst, const char *src, size_t len)
 	char		*d, *end;
 	int		i;
 
-	KASSERT(mutex_owned(proc_lock));
+	KASSERT(mutex_owned(&proc_lock));
 
 	for (s = src, d = dst, end = d + len; *s != '\0'; s++) {
 		if (*s == '%') {

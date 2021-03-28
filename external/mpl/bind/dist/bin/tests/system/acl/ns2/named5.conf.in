@@ -31,6 +31,7 @@ options {
 	ixfr-from-differences yes;
 	check-integrity no;
 	allow-query-on { 10.53.0.2; };
+	blackhole { 10.53.0.8; };
 };
 
 key one {
@@ -49,12 +50,12 @@ zone "." {
 };
 
 zone "example" {
-	type master;
+	type primary;
 	file "example.db";
 };
 
 zone "tsigzone" {
-	type master;
+	type primary;
 	file "tsigzone.db";
 	allow-transfer { !key one; any; };
 };

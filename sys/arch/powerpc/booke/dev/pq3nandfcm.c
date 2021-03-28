@@ -27,12 +27,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_flash.h"
 #define LBC_PRIVATE
 
 #include <sys/cdefs.h>
-
-__KERNEL_RCSID(0, "$NetBSD: pq3nandfcm.c,v 1.2 2011/07/17 23:08:56 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pq3nandfcm.c,v 1.4 2020/07/06 10:22:44 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

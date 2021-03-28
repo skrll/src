@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.kern.inc,v 1.268 2019/02/05 08:33:25 mrg Exp $
+#	$NetBSD: Makefile.kern.inc,v 1.277 2021/01/31 23:17:21 rillig Exp $
 #
 # This file contains common `MI' targets and definitions and it is included
 # at the bottom of each `MD' ${MACHINE}/conf/Makefile.${MACHINE}.
@@ -66,6 +66,9 @@ CPPFLAGS+=	${INCLUDES} ${IDENT} -D_KERNEL -D_KERNEL_OPT
 .if !defined(COVERITY_TOP_CONFIG)
 CPPFLAGS+=	-std=gnu99
 .endif
+.if ${KERNEL_DIR:Uno} == "yes"
+CPPFLAGS+=	-DKERNEL_DIR
+.endif
 DEFCOPTS?=	-O2
 COPTS?=		${DEFCOPTS}
 DBG=		# might contain unwanted -Ofoo
@@ -91,6 +94,7 @@ CWARNFLAGS+=	-Wno-sign-compare
 CWARNFLAGS.clang+=	-Wno-unknown-pragmas -Wno-conversion \
 			-Wno-self-assign -Wno-error=address-of-packed-member \
 			-Wno-error=constant-conversion
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 CWARNFLAGS.ah_regdomain.c= ${${ACTIVE_CC} == "clang":? \
     -Wno-shift-count-negative -Wno-shift-count-overflow:}
@@ -101,6 +105,14 @@ CFLAGS+=	-ffreestanding -fno-zero-initialized-in-bss
 CFLAGS+=	${${ACTIVE_CC} == "gcc":? -fno-delete-null-pointer-checks :}
 CFLAGS+=	${DEBUG} ${COPTS}
 AFLAGS+=	-D_LOCORE -Wa,--fatal-warnings
+
+# example usage to find largest stack users in kernel compile directory:
+#    find . -name \*.su | xargs awk '{ printf "%6d %s\n", $2, $1 }' | sort -n
+.if ${MACHINE} != "vax"
+# GCC/vax 8.4 does not support -fstack-usage.
+CFLAGS+=	${${ACTIVE_CC} == "gcc":? -fstack-usage -Wstack-usage=3584 :}
+.endif
+CWARNFLAGS+=	-Walloca
 
 # XXX
 .if defined(HAVE_GCC) || defined(HAVE_LLVM)
@@ -230,12 +242,12 @@ LINKFLAGS?=	${LINKFORMAT} ${LINKSCRIPT} ${LINKTEXT} ${LINKDATA} ${LINKENTRY} \
 LINKFLAGS_DEBUG?=	-X
 
 SYSTEM_LD_TAIL?=@${TOOL_SED} '/const char sccs/!d;s/.*@(.)//;s/" "//;s/\\.*//' vers.c && \
-		${SIZE} $@ && chmod 755 $@ && \
-		${SYSTEM_CTFMERGE}
+		${SIZE} $@ && ${SYSTEM_CTFMERGE} && chmod 755 $@
 SYSTEM_LD_TAIL_DEBUG?=&& \
 		echo mv -f $@ $@.gdb && mv -f $@ $@.gdb && \
 		echo ${STRIP} ${STRIPFLAGS} -o $@ $@.gdb && \
-		${STRIP} ${STRIPFLAGS} -o $@ $@.gdb
+		${STRIP} ${STRIPFLAGS} -o $@ $@.gdb && \
+		chmod 755 $@ $@.gdb
 LINKFLAGS_NORMAL?=	-S
 STRIPFLAGS?=	-g
 
@@ -270,7 +282,7 @@ SYSTEM_LD_TAIL_STAGE2+=	${SYSTEM_LD_TAIL_EXTRA}
 # Generate list of *.o files to pass to ${LD}, preserving order.
 #	x/y/z/a.[csS] -> a.[csS]
 #	a.[csS] -> a.o
-OBJS=	${ALLFILES:C|^.*/([^/]*\.[csS])$$|\1|:C|^(.*)\.[csS]$$|\1.o|}
+OBJS=	${ALLFILES:C|^.*/([^/]*\.[csS])$|\1|:C|^(.*)\.[csS]$|\1.o|}
 
 CFILES=	${ALLFILES:M*.c}
 SFILES=	${ALLFILES:M*.[sS]}
@@ -285,7 +297,7 @@ SSRCS=	${_MD_SFILES} ${_SFILES}
 SRCS=	${CSRCS} ${SSRCS}
 
 .else # ___USE_SUFFIX_RULES___
-OBJS=	${ALLFILES:C|\.[csS]$$|.o|}
+OBJS=	${ALLFILES:C|\.[csS]$|.o|}
 SRCS=	${ALLFILES:M*.[csS]}
 .endif # ___USE_SUFFIX_RULES___
 
@@ -335,8 +347,8 @@ ${_s:T:R}.o: ${_s}
 .if !target(__CLEANKERNEL)
 __CLEANKERNEL: .USE
 	${_MKMSG} "${.TARGET}ing the kernel objects"
-	rm -f ${KERNELS} *.map eddep tags *.[io] *.ko *.ln [a-z]*.s vers.c \
-	    [Ee]rrs linterrs makelinks assym.h.tmp assym.h \
+	rm -f ${KERNELS} *.map *.[io] *.ko *.ln [a-z]*.s *.su vers.c \
+	    eddep tags [Ee]rrs linterrs makelinks assym.h.tmp assym.h \
 	    ${EXTRA_KERNELS} ${EXTRA_CLEAN}
 .endif
 
@@ -413,10 +425,17 @@ install: install-kernel-${MACHINE_NAME}
 .if !target(install-kernel-${MACHINE_NAME})
 install-kernel-${MACHINE_NAME}:
 .for _K in ${KERNIMAGES}
+.if ${KERNEL_DIR:Uno} == "yes"
+	rm -fr ${DESTDIR}/o${_K}
+	mv ${DESTDIR}/${_K} ${DESTDIR}/o${_K}
+	mkdir -p ${DESTDIR}/${_K}
+	cp ${_K} ${DESTDIR}/${_K}/kernel
+.else
 	rm -f ${DESTDIR}/o${_K}
 	ln ${DESTDIR}/${_K} ${DESTDIR}/o${_K}
 	cp ${_K} ${DESTDIR}/n${_K}
 	mv ${DESTDIR}/n${_K} ${DESTDIR}/${_K}
+.endif
 .endfor
 .endif
 .endif

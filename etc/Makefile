@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.441 2019/10/02 11:16:00 maya Exp $
+#	$NetBSD: Makefile,v 1.449 2020/12/29 16:46:44 martin Exp $
 #	from: @(#)Makefile	8.7 (Berkeley) 5/25/95
 
 # Environment variables without default values:
@@ -119,7 +119,7 @@ BIN1+=	disktab
 .endif
 
 .if exists(etc.${MACHINE}/ld.so.conf) && \
-    empty(MACHINE_ARCH:M*arm*hf*) && ${MACHINE_ARCH} != "aarch64"
+    empty(MACHINE_ARCH:M*arm*hf*) && empty(MACHINE_ARCH:Maarch64*)
 BIN1+=	etc.${MACHINE}/ld.so.conf
 .endif
 
@@ -177,8 +177,6 @@ MOTD_SOURCE=	motd.current
 MOTD_SOURCE=	motd.beta
 .elif !empty(DISTRIBVER:M*RC*)
 MOTD_SOURCE=	motd.rc
-.elif !empty(DISTRIBVER:M*STABLE*)
-MOTD_SOURCE=	motd.stable
 .else
 MOTD_SOURCE=	motd.default
 .endif
@@ -374,6 +372,9 @@ OBSOLETE.files=		base comp etc games man misc rescue text
 .if ${MKDEBUG} != "no"
 OBSOLETE.files+=	debug
 .endif
+.if ${MKDTB} != "no"
+OBSOLETE.files+=	dtb
+.endif
 .if ${MKKMOD} != "no"
 OBSOLETE.files+=	modules
 .endif
@@ -382,6 +383,9 @@ OBSOLETE.files+=	tests
 .endif
 .if ${MKX11} != "no"
 OBSOLETE.files+=	xbase xcomp xetc xfont xserver
+.if ${MKDEBUG} != "no"
+OBSOLETE.files+=	xdebug
+.endif
 .endif
 
 # XXX make "makeobsolete" set wise; then generate files respectively
@@ -581,10 +585,6 @@ GETKERNELAWK=	${TOOL_AWK} '/^config/ {print $$2; found=1} \
 build_kernels: .PHONY
 #	Configure & compile kernels listed in ${ALL_KERNELS}
 #
-# The 'sync' is so that all writes during the build are pushed back
-# to the disk.  Not having it causes problems on some host systems
-# (e.g. Linux) when building on NFS.
-#
 .if !defined(KERNELS_DONE)						# {
 .for configfile in ${ALL_KERNELS:O:u}					# {
 build_kernels: kern-${configfile}
@@ -596,7 +596,6 @@ kern-${configfile}: .PHONY .MAKE
 .endif
 	${MAKE} -C ${KERNOBJDIR}/${configfile:C/.*\///} depend && \
 	${MAKE} -C ${KERNOBJDIR}/${configfile:C/.*\///} 
-	sync
 .endfor	# ALL_KERNELS							# }
 .endif	# KERNELS_DONE							# }
 
@@ -621,21 +620,39 @@ kernset-${configfile}: .PHONY build_kernels snap_pre
 				ks="$${kernel}$${s}"; \
 				[ -f $${ks} ] || continue; \
 				kernels="$${kernels} $${ks}"; \
-				[ -z "$${newest}" -o $${ks} -nt "$${newest}" ] && \
-					newest=$${ks}; \
+				[ -z "$${newest}" -o $${ks} \
+				    -nt "$${newest}" ] && newest=$${ks}; \
 			done; \
 		done; \
 		[ $${kern_tgz} -nt "$${newest}" ] || { \
 			echo "echo $${kernels} | $${pax_cmd}"; \
+			if [ ${KERNEL_DIR} = "yes" ]; then \
+				tmpdir=kernel$$; \
+				trap "rm -fr $${tmpdir}" 0 1 2 3 15; \
+				mkdir -p $${tmpdir}/netbsd; \
+				d=./netbsd; \
+				cd $${tmpdir}; \
+			else \
+				d=.; \
+			fi; \
 			( echo "/set uname=${BINOWN} gname=${BINGRP}"; \
 			echo ". type=dir optional"; \
-			dtblist=$$(${MAKE} -v DTB); \
-			for dtb in $${dtblist}; do \
-				echo "./$${dtb} type=file"; \
-			done; \
+			if [ ${KERNEL_DIR} = "yes" ]; then \
+				echo "./netbsd type=dir optional"; \
+			fi; \
 			for kernel in $${kernels}; do \
-				echo "./$${kernel} type=file"; \
+				if [ ${KERNEL_DIR} = "yes" ]; then \
+					newname=$$(echo $${kernel} | \
+					    ${TOOL_SED} -e s/netbsd/kernel/); \
+					ln ../$${kernel} ./netbsd/$${newname}; \
+				else \
+					newname=$${kernel}; \
+				fi; \
+				echo "$${d}/$${newname} type=file"; \
 			done ) | eval $${pax_cmd}; \
+			if [ ${KERNEL_DIR} = "yes" ]; then \
+				mv $${kern_tgz} ..; \
+			fi; \
 		} \
 	}
 .endif
@@ -656,15 +673,6 @@ releasekern-${configfile}: .PHONY build_kernels snap_pre
 	kernsuffixes="${KERNEL_SUFFIXES:S/^/./}"; \
 	dest="${RELEASEDIR}/${RELEASEMACHINEDIR}/binary/kernel"; \
 	cd $${kerndir} && {	\
-		dtblist=$$(${MAKE} -v DTB); \
-		for dtb in $${dtblist}; do \
-			[ ! -f $${dtb} ] && continue; \
-			dtb_gz="$${dest}/$${dtb}.gz"; \
-			[ $${dtb_gz} -nt $${dtb} ] && continue; \
-			rm -f $${dtb_gz}; \
-			echo "${TOOL_GZIP} ${GZIP_FLAGS} -c < $${kerndir}/$${dtb} > $${dtb_gz}"; \
-			${TOOL_GZIP} ${GZIP_FLAGS} -c < $${dtb} > $${dtb_gz}; \
-		done; \
 		for kernel in $${kernlist}; do \
 			for s in "" $${kernsuffixes}; do \
 				ks="$${kernel}$${s}"; \

@@ -1,4 +1,4 @@
-/*	$NetBSD: loongson_clock.c,v 1.1 2016/06/24 21:41:37 macallan Exp $	*/
+/*	$NetBSD: loongson_clock.c,v 1.3 2020/10/25 16:39:00 nia Exp $	*/
 
 /*
  * Copyright (c) 2011, 2016 Michael Lorenz
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: loongson_clock.c,v 1.1 2016/06/24 21:41:37 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: loongson_clock.c,v 1.3 2020/10/25 16:39:00 nia Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -74,14 +74,10 @@ void	    loongson_setstatclockrate(int);
 void        loongson_initclocks(void);
 
 static struct timecounter loongson_timecounter = {
-	get_loongson_timecount,	/* get_timecount */
-	0,			/* no poll_pps */
-	0xffffffff,		/* counter_mask */
-	0,			/* frequency */
-	"loongson",		/* name */
-	100,			/* quality */
-	NULL,			/* tc_priv */
-	NULL			/* tc_next */
+	.tc_get_timecount = get_loongson_timecount,
+	.tc_counter_mask = 0xffffffff,
+	.tc_name = "loongson",
+	.tc_quality = 100,
 };
 
 void
@@ -114,9 +110,9 @@ loongson_initclocks(void)
 	/* now setup sysctl */
 	if (sysctl_createv(NULL, 0, NULL, 
 	    &me, 
-	    CTLFLAG_READWRITE, CTLTYPE_NODE, "loongson", NULL, NULL,
+	    CTLFLAG_READWRITE, CTLTYPE_NODE, "cpu", NULL, NULL,
 	    0, NULL, 0, CTL_MACHDEP, CTL_CREATE, CTL_EOL) != 0)
-		aprint_error("couldn't create 'loongson' node\n");
+		aprint_error("couldn't create 'cpu' node\n");
 
 	if (sysctl_createv(NULL, 0, NULL, 
 	    &freq, 

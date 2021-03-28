@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.200 2017/09/09 18:18:28 kamil Exp $
+#	$NetBSD: Makefile.inc,v 1.209 2021/02/26 04:28:14 rin Exp $
 #	from: @(#)Makefile.inc	8.6 (Berkeley) 5/4/95
 
 # gen sources
@@ -56,7 +56,8 @@ COPTS.syslog.c = -Wno-format-nonliteral
 MAN+=	alarm.3 arc4random.3 basename.3 bsd_signal.3 bswap.3 \
 	clock.3 closefrom.3 confstr.3 \
 	cpuset.3 ctermid.3 ctype.3 daemon.3 devname.3 directory.3 dirname.3 \
-	endutxent.3 err.3 exec.3 extattr_copy_file.3 extattr_namespace_to_string.3 \
+	endutent.3 endutxent.3 err.3 exec.3 extattr_copy_file.3 \
+	extattr_namespace_to_string.3 \
 	fmtcheck.3 fmtmsg.3 fnmatch.3 fpclassify.3 fpgetmask.3 \
 	ftok.3 fts.3 ftw.3 \
 	getbsize.3 cgetcap.3 getcwd.3 getdevmajor.3 \
@@ -98,6 +99,8 @@ MLINKS+=directory.3 closedir.3 directory.3 dirfd.3 directory.3 opendir.3 \
 MLINKS+=endutxent.3 getutxent.3 endutxent.3 getutxid.3 \
 	endutxent.3 getutxline.3 endutxent.3 pututxline.3 \
 	endutxent.3 setutxent.3
+MLINKS+=endutent.3 getutent.3 endutent.3 getutline.3 endutent.3 pututline.3 \
+	endutent.3 setutent.3
 MLINKS+=err.3 verr.3 err.3 errx.3 err.3 verrx.3 err.3 warn.3 err.3 vwarn.3 \
         err.3 warnx.3 err.3 vwarnx.3 err.3 errc.3 err.3 verrc.3 err.3 warnc.3 \
 	err.3 vwarnc.3
@@ -203,3 +206,7 @@ errlist.c: errlist.awk ${NETBSDSRCDIR}/sys/sys/errno.h
 	${TOOL_AWK} -f ${.ALLSRC} > ${.TARGET}
 
 CLEANFILES+= errlist.c
+
+# Ownership of globals from crt0.o is shared with libc for historic reasons.
+# __progname is also necessary as global here for the nbcompat case.
+COPTS.getprogname.c+=	-fcommon

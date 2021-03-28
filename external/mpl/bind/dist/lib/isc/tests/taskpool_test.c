@@ -1,25 +1,22 @@
-/*	$NetBSD: taskpool_test.c,v 1.5 2019/09/05 19:32:59 christos Exp $	*/
+/*	$NetBSD: taskpool_test.c,v 1.7 2021/02/19 16:42:20 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
 
-#include <config.h>
-
 #if HAVE_CMOCKA
 
+#include <sched.h> /* IWYU pragma: keep */
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
-#include <setjmp.h>
-
-#include <sched.h> /* IWYU pragma: keep */
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -62,7 +59,7 @@ create_pool(void **state) {
 
 	UNUSED(state);
 
-	result = isc_taskpool_create(taskmgr, mctx, 8, 2, &pool);
+	result = isc_taskpool_create(taskmgr, test_mctx, 8, 2, &pool);
 	assert_int_equal(result, ISC_R_SUCCESS);
 	assert_int_equal(isc_taskpool_size(pool), 8);
 
@@ -78,7 +75,7 @@ expand_pool(void **state) {
 
 	UNUSED(state);
 
-	result = isc_taskpool_create(taskmgr, mctx, 10, 2, &pool1);
+	result = isc_taskpool_create(taskmgr, test_mctx, 10, 2, &pool1);
 	assert_int_equal(result, ISC_R_SUCCESS);
 	assert_int_equal(isc_taskpool_size(pool1), 10);
 
@@ -123,7 +120,7 @@ get_tasks(void **state) {
 
 	UNUSED(state);
 
-	result = isc_taskpool_create(taskmgr, mctx, 2, 2, &pool);
+	result = isc_taskpool_create(taskmgr, test_mctx, 2, 2, &pool);
 	assert_int_equal(result, ISC_R_SUCCESS);
 	assert_int_equal(isc_taskpool_size(pool), 2);
 
@@ -154,7 +151,7 @@ set_privilege(void **state) {
 
 	UNUSED(state);
 
-	result = isc_taskpool_create(taskmgr, mctx, 2, 2, &pool);
+	result = isc_taskpool_create(taskmgr, test_mctx, 2, 2, &pool);
 	assert_int_equal(result, ISC_R_SUCCESS);
 	assert_int_equal(isc_taskpool_size(pool), 2);
 
@@ -189,14 +186,11 @@ set_privilege(void **state) {
 int
 main(void) {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test_setup_teardown(create_pool,
-						_setup, _teardown),
-		cmocka_unit_test_setup_teardown(expand_pool,
-						_setup, _teardown),
-		cmocka_unit_test_setup_teardown(get_tasks,
-						_setup, _teardown),
-		cmocka_unit_test_setup_teardown(set_privilege,
-						_setup, _teardown),
+		cmocka_unit_test_setup_teardown(create_pool, _setup, _teardown),
+		cmocka_unit_test_setup_teardown(expand_pool, _setup, _teardown),
+		cmocka_unit_test_setup_teardown(get_tasks, _setup, _teardown),
+		cmocka_unit_test_setup_teardown(set_privilege, _setup,
+						_teardown),
 	};
 
 	return (cmocka_run_group_tests(tests, NULL, NULL));
@@ -212,4 +206,4 @@ main(void) {
 	return (0);
 }
 
-#endif
+#endif /* if HAVE_CMOCKA */

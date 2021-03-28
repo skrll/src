@@ -1,4 +1,4 @@
-/*	$NetBSD: aica.c,v 1.27 2019/05/08 13:40:14 isaki Exp $	*/
+/*	$NetBSD: aica.c,v 1.30 2021/02/09 12:39:28 isaki Exp $	*/
 
 /*
  * Copyright (c) 2003 SHIMIZU Ryo <ryo@misakimix.org>
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aica.c,v 1.27 2019/05/08 13:40:14 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aica.c,v 1.30 2021/02/09 12:39:28 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -63,7 +63,6 @@ struct aica_softc {
 	bus_space_handle_t	sc_aica_memh;
 
 	/* audio property */
-	int			sc_open;
 	int			sc_precision;
 	int			sc_channels;
 	int			sc_rate;
@@ -125,8 +124,6 @@ void aica_fillbuffer(struct aica_softc *);
 int aica_intr(void *);
 
 /* for audio */
-int aica_open(void *, int);
-void aica_close(void *);
 int aica_query_format(void *, audio_format_query_t *);
 int aica_set_format(void *, int,
     const audio_params_t *, const audio_params_t *,
@@ -135,10 +132,7 @@ int aica_round_blocksize(void *, int, int, const audio_params_t *);
 size_t aica_round_buffersize(void *, int, size_t);
 int aica_trigger_output(void *, void *, void *, int, void (*)(void *), void *,
     const audio_params_t *);
-int aica_trigger_input(void *, void *, void *, int, void (*)(void *), void *,
-    const audio_params_t *);
 int aica_halt_output(void *);
-int aica_halt_input(void *);
 int aica_getdev(void *, struct audio_device *);
 int aica_set_port(void *, mixer_ctrl_t *);
 int aica_get_port(void *, mixer_ctrl_t *);
@@ -148,13 +142,10 @@ int aica_get_props(void *);
 void aica_get_locks(void *, kmutex_t **, kmutex_t **);
 
 const struct audio_hw_if aica_hw_if = {
-	.open			= aica_open,
-	.close			= aica_close,
 	.query_format		= aica_query_format,
 	.set_format		= aica_set_format,
 	.round_blocksize	= aica_round_blocksize,
 	.halt_output		= aica_halt_output,
-	.halt_input		= aica_halt_input,
 	.getdev			= aica_getdev,
 	.set_port		= aica_set_port,
 	.get_port		= aica_get_port,
@@ -162,7 +153,6 @@ const struct audio_hw_if aica_hw_if = {
 	.round_buffersize	= aica_round_buffersize,
 	.get_props		= aica_get_props,
 	.trigger_output		= aica_trigger_output,
-	.trigger_input		= aica_trigger_input,
 	.get_locks		= aica_get_locks,
 };
 
@@ -394,31 +384,6 @@ aica_ch2p8write(struct aica_softc *sc, bus_size_t offset, uint8_t *src,
 }
 
 int
-aica_open(void *addr, int flags)
-{
-	struct aica_softc *sc;
-
-	sc = addr;
-	if (sc->sc_open)
-		return EBUSY;
-
-	sc->sc_intr = NULL;
-	sc->sc_open = 1;
-
-	return 0;
-}
-
-void
-aica_close(void *addr)
-{
-	struct aica_softc *sc;
-
-	sc = addr;
-	sc->sc_open = 0;
-	sc->sc_intr = NULL;
-}
-
-int
 aica_query_format(void *addr, audio_format_query_t *afp)
 {
 
@@ -565,8 +530,8 @@ aica_intr(void *arg)
 
 	aica_fillbuffer(sc);
 
-	/* call audio interrupt handler (audio_pint()) */
-	if (sc->sc_open && sc->sc_intr != NULL) {
+	/* call audio interrupt handler (audio_pintr()) */
+	if (sc->sc_intr != NULL) {
 		(*(sc->sc_intr))(sc->sc_intr_arg);
 	}
 
@@ -609,28 +574,14 @@ aica_trigger_output(void *addr, void *start, void *end, int blksize,
 }
 
 int
-aica_trigger_input(void *addr, void *start, void *end, int blksize,
-    void (*intr)(void *), void *arg, const audio_params_t *param)
-{
-
-	return ENODEV;
-}
-
-int
 aica_halt_output(void *addr)
 {
 	struct aica_softc *sc;
 
 	sc = addr;
 	aica_command(sc, AICA_COMMAND_STOP);
+	sc->sc_intr = NULL;
 	return 0;
-}
-
-int
-aica_halt_input(void *addr)
-{
-
-	return ENODEV;
 }
 
 int

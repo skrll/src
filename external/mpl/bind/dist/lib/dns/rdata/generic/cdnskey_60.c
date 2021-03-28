@@ -1,11 +1,11 @@
-/*	$NetBSD: cdnskey_60.c,v 1.3 2019/01/09 16:55:12 christos Exp $	*/
+/*	$NetBSD: cdnskey_60.c,v 1.5 2021/02/19 16:42:17 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -22,16 +22,14 @@
 
 static inline isc_result_t
 fromtext_cdnskey(ARGS_FROMTEXT) {
-
 	REQUIRE(type == dns_rdatatype_cdnskey);
 
-	return (generic_fromtext_key(rdclass, type, lexer, origin,
-				     options, target, callbacks));
+	return (generic_fromtext_key(rdclass, type, lexer, origin, options,
+				     target, callbacks));
 }
 
 static inline isc_result_t
 totext_cdnskey(ARGS_TOTEXT) {
-
 	REQUIRE(rdata != NULL);
 	REQUIRE(rdata->type == dns_rdatatype_cdnskey);
 
@@ -40,11 +38,10 @@ totext_cdnskey(ARGS_TOTEXT) {
 
 static inline isc_result_t
 fromwire_cdnskey(ARGS_FROMWIRE) {
-
 	REQUIRE(type == dns_rdatatype_cdnskey);
 
-	return (generic_fromwire_key(rdclass, type, source, dctx,
-				     options, target));
+	return (generic_fromwire_key(rdclass, type, source, dctx, options,
+				     target));
 }
 
 static inline isc_result_t
@@ -80,7 +77,6 @@ compare_cdnskey(ARGS_COMPARE) {
 
 static inline isc_result_t
 fromstruct_cdnskey(ARGS_FROMSTRUCT) {
-
 	REQUIRE(type == dns_rdatatype_cdnskey);
 
 	return (generic_fromstruct_key(rdclass, type, source, target));
@@ -103,7 +99,7 @@ tostruct_cdnskey(ARGS_TOSTRUCT) {
 
 static inline void
 freestruct_cdnskey(ARGS_FREESTRUCT) {
-	dns_rdata_cdnskey_t *dnskey = (dns_rdata_cdnskey_t *) source;
+	dns_rdata_cdnskey_t *dnskey = (dns_rdata_cdnskey_t *)source;
 
 	REQUIRE(dnskey != NULL);
 	REQUIRE(dnskey->common.rdtype == dns_rdatatype_cdnskey);
@@ -136,7 +132,6 @@ digest_cdnskey(ARGS_DIGEST) {
 
 static inline bool
 checkowner_cdnskey(ARGS_CHECKOWNER) {
-
 	REQUIRE(type == dns_rdatatype_cdnskey);
 
 	UNUSED(name);
@@ -149,7 +144,6 @@ checkowner_cdnskey(ARGS_CHECKOWNER) {
 
 static inline bool
 checknames_cdnskey(ARGS_CHECKNAMES) {
-
 	REQUIRE(rdata != NULL);
 	REQUIRE(rdata->type == dns_rdatatype_cdnskey);
 
@@ -162,11 +156,10 @@ checknames_cdnskey(ARGS_CHECKNAMES) {
 
 static inline int
 casecompare_cdnskey(ARGS_COMPARE) {
-
 	/*
-	 * Treat ALG 253 (private DNS) subtype name case sensistively.
+	 * Treat ALG 253 (private DNS) subtype name case sensitively.
 	 */
 	return (compare_cdnskey(rdata1, rdata2));
 }
 
-#endif	/* RDATA_GENERIC_CDNSKEY_60_C */
+#endif /* RDATA_GENERIC_CDNSKEY_60_C */

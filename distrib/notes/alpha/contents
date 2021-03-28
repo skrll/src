@@ -1,4 +1,4 @@
-.\"	$NetBSD: contents,v 1.20 2019/11/24 11:15:31 martin Exp $
+.\"	$NetBSD: contents,v 1.24 2020/09/22 02:53:52 snj Exp $
 .\"
 .\" Copyright (c) 1999-2005 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -61,12 +61,6 @@ conventions for indicating italic and bold display.
 A gzipped
 .Nx
 kernel containing code for everything supported in this release.
-.
-.			It Pa netbsd-GENERIC.MP.gz
-A gzipped
-.Nx
-kernel containing code for everything supported in this release.  This
-kernel supports SMP on systems with more than one CPU.
 .
 .		tag) \" binary/kernel/
 .
@@ -199,7 +193,7 @@ system call and library manual pages.
 This distribution set contains debug information for
 all base system utilities.
 It is useful when reporting issues with binaries or during
-developement.
+development.
 This set is huge, if the target disk is small, do not install it.
 .
 .It Sy etc
@@ -288,7 +282,7 @@ The extra libraries and include files needed to compile X source code.
 This distribution set contains debug information for
 all X11 binaries.
 It is useful when reporting issues with these binaries or during
-developement.
+development.
 This set is huge, if the target disk is small, do not install it.
 .
 .It Sy xfont
@@ -309,7 +303,9 @@ The X server.
 .\" XXX: should be in notes/common
 .
 .Pp
-The \*M binary distribution sets are distributed as gzipped tar files
+The \*M binary distribution sets are distributed as tar files
+compressed with
+.Sy \*[compressor]
 named with the extension
 .Sy .\*[setsuffix] ,
 e.g.

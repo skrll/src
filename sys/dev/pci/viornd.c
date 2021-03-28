@@ -1,4 +1,4 @@
-/* 	$NetBSD: viornd.c,v 1.12 2018/06/10 14:59:23 jakllsch Exp $ */
+/* 	$NetBSD: viornd.c,v 1.14 2021/01/20 19:46:48 reinoud Exp $ */
 /*	$OpenBSD: viornd.c,v 1.1 2014/01/21 21:14:58 sf Exp $	*/
 
 /*
@@ -118,7 +118,7 @@ viornd_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct virtio_attach_args *va = aux;
 
-	if (va->sc_childdevid == PCI_PRODUCT_VIRTIO_ENTROPY)
+	if (va->sc_childdevid == VIRTIO_DEVICE_ID_ENTROPY)
 		return 1;
 
 	return 0;
@@ -198,7 +198,6 @@ viornd_attach(device_t parent, device_t self, void *aux)
 	rnd_attach_source(&sc->sc_rndsource, device_xname(sc->sc_dev),
 			  RND_TYPE_RNG,
 			  RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
-	viornd_get(VIORND_BUFSIZE, sc);
 
 	return;
 

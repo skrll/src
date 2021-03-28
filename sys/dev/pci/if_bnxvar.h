@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bnxvar.h,v 1.11 2019/04/11 14:38:06 kamil Exp $	*/
+/*	$NetBSD: if_bnxvar.h,v 1.14 2020/07/14 15:37:40 jdolecek Exp $	*/
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -124,10 +124,12 @@ struct bnx_softc
 	bus_space_handle_t	bnx_bhandle;		/* Device bus handle */
 	bus_size_t		bnx_size;
 
+	pci_intr_handle_t	*bnx_ih;
 	void			*bnx_intrhand;		/* Interrupt handler */
 
 	/* packet allocation workqueue */
 	struct workqueue	*bnx_wq;
+	struct work		bnx_wk;
 
 	/* ASIC Chip ID. */
 	uint32_t		bnx_chipid;
@@ -289,6 +291,11 @@ struct bnx_softc
 	uint16_t		max_rx_bd;
 	uint16_t		used_tx_bd;
 	uint16_t		max_tx_bd;
+
+	/* For interfacing with if_stats */
+	uint64_t	if_stat_collisions;
+	uint64_t	if_stat_ierrors;
+	uint64_t	if_stat_oerrors;
 
 	/* Provides access to hardware statistics through sysctl. */
 	uint64_t 	stat_IfHCInOctets;

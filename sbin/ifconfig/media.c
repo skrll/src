@@ -1,6 +1,6 @@
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: media.c,v 1.8 2019/04/22 10:44:55 msaitoh Exp $");
+__RCSID("$NetBSD: media.c,v 1.13 2020/10/14 13:37:14 roy Exp $");
 #endif /* not lint */
 
 #include <assert.h>
@@ -16,6 +16,7 @@ __RCSID("$NetBSD: media.c,v 1.8 2019/04/22 10:44:55 msaitoh Exp $");
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_media.h>
+#include <net/if_types.h>
 
 #include <prop/proplib.h>
 
@@ -51,6 +52,9 @@ static const int ifm_status_valid_list[] = IFM_STATUS_VALID_LIST;
 
 static const struct ifmedia_status_description ifm_status_descriptions[] =
     IFM_STATUS_DESCRIPTIONS;
+
+const struct if_status_description if_status_descriptions[] =
+	LINK_STATE_DESCRIPTIONS;
 
 static struct pstr mediamode = PSTR_INITIALIZER1(&mediamode, "mediamode",
     setmediamode, "mediamode", false, &command_root.pb_parser);
@@ -188,7 +192,7 @@ setmedia(prop_dictionary_t env, prop_dictionary_t oenv)
 	type = IFM_TYPE(media_current);
 	inst = IFM_INST(media_current);
 
-	val = strndup(prop_data_data_nocopy(data), prop_data_size(data));
+	val = strndup(prop_data_value(data), prop_data_size(data));
 	if (val == NULL)
 		return -1;
 
@@ -219,7 +223,7 @@ setmediaopt(prop_dictionary_t env, prop_dictionary_t oenv)
 	/* Can only issue `mediaopt' once. */
 	/* Can't issue `mediaopt' if `instance' has already been issued. */
 
-	val = strndup(prop_data_data_nocopy(data), prop_data_size(data));
+	val = strndup(prop_data_value(data), prop_data_size(data));
 	if (val == NULL)
 		return -1;
 
@@ -246,7 +250,7 @@ unsetmediaopt(prop_dictionary_t env, prop_dictionary_t oenv)
 		return -1;
 	}
 
-	val = strndup(prop_data_data_nocopy(data), prop_data_size(data));
+	val = strndup(prop_data_value(data), prop_data_size(data));
 	if (val == NULL)
 		return -1;
 
@@ -306,7 +310,7 @@ setmediamode(prop_dictionary_t env, prop_dictionary_t oenv)
 	options = IFM_OPTIONS(media_current);
 	inst = IFM_INST(media_current);
 
-	val = strndup(prop_data_data_nocopy(data), prop_data_size(data));
+	val = strndup(prop_data_value(data), prop_data_size(data));
 	if (val == NULL)
 		return -1;
 
@@ -344,6 +348,52 @@ print_media_word(int ifmw, const char *opt_sep)
 		printf(" instance %d", IFM_INST(ifmw));
 }
 
+static void
+print_link_status(int media_type, int link_state)
+{
+	const struct if_status_description *p;
+
+	printf("\tstatus: ");
+	for (p = if_status_descriptions; p->ifs_string != NULL; p++) {
+		if (LINK_STATE_DESC_MATCH(p, media_type, link_state)) {
+			printf("%s\n", p->ifs_string);
+			return;
+		}
+	}
+	printf("[#%d]\n", link_state);
+}
+
+static void
+print_media_status(int media_type, int media_status)
+{
+	const struct ifmedia_status_description *ifms;
+	int bitno, found = 0;
+
+	printf("\tstatus: ");
+	for (bitno = 0; ifm_status_valid_list[bitno] != 0; bitno++) {
+		for (ifms = ifm_status_descriptions;
+		     ifms->ifms_valid != 0; ifms++) {
+			if (ifms->ifms_type != media_type ||
+			    ifms->ifms_valid != ifm_status_valid_list[bitno])
+				continue;
+			printf("%s%s", found ? ", " : "",
+			    IFM_STATUS_DESC(ifms, media_status));
+			found = 1;
+
+			/*
+			 * For each valid indicator bit, there's
+			 * only one entry for each media type, so
+			 * terminate the inner loop now.
+			 */
+			break;
+		}
+	}
+
+	if (found == 0)
+		printf("unknown");
+	printf("\n");
+}
+
 void
 media_status(prop_dictionary_t env, prop_dictionary_t oenv)
 {
@@ -365,64 +415,44 @@ media_status(prop_dictionary_t env, prop_dictionary_t oenv)
 	estrlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
 
 	if (prog_ioctl(s, SIOCGIFMEDIA, &ifmr) == -1) {
+		struct ifdatareq ifdr = { .ifdr_data.ifi_link_state = 0 };
+		struct if_data *ifi = &ifdr.ifdr_data;
+
 		/*
 		 * Interface doesn't support SIOC{G,S}IFMEDIA.
 		 */
+		if (direct_ioctl(env, SIOCGIFDATA, &ifdr) == -1)
+			err(EXIT_FAILURE, "%s: SIOCGIFDATA", __func__);
+
+		if (ifi->ifi_link_state != LINK_STATE_UNKNOWN)
+			print_link_status(ifi->ifi_type, ifi->ifi_link_state);
 		return;
 	}
 
-	/* Interface link status is queried through SIOCGIFMEDIA.
-	 * Not all interfaces have actual media. */
-	if (ifmr.ifm_count != 0) {
-		media_list = calloc(ifmr.ifm_count, sizeof(int));
-		if (media_list == NULL)
-			err(EXIT_FAILURE, "malloc");
-		ifmr.ifm_ulist = media_list;
-
-		if (prog_ioctl(s, SIOCGIFMEDIA, &ifmr) == -1)
-			err(EXIT_FAILURE, "SIOCGIFMEDIA");
-
-		printf("\tmedia: %s ", get_media_type_string(ifmr.ifm_current));
-		print_media_word(ifmr.ifm_current, " ");
-		if (ifmr.ifm_active != ifmr.ifm_current) {
-			printf(" (");
-			print_media_word(ifmr.ifm_active, " ");
-			printf(")");
-		}
-		printf("\n");
-	} else
-		media_list = NULL;
-
-	if (ifmr.ifm_status & IFM_STATUS_VALID) {
-		const struct ifmedia_status_description *ifms;
-		int bitno, found = 0;
-
-		printf("\tstatus: ");
-		for (bitno = 0; ifm_status_valid_list[bitno] != 0; bitno++) {
-			for (ifms = ifm_status_descriptions;
-			     ifms->ifms_valid != 0; ifms++) {
-				if (ifms->ifms_type !=
-				      IFM_TYPE(ifmr.ifm_current) ||
-				    ifms->ifms_valid !=
-				      ifm_status_valid_list[bitno])
-					continue;
-				printf("%s%s", found ? ", " : "",
-				    IFM_STATUS_DESC(ifms, ifmr.ifm_status));
-				found = 1;
-
-				/*
-				 * For each valid indicator bit, there's
-				 * only one entry for each media type, so
-				 * terminate the inner loop now.
-				 */
-				break;
-			}
-		}
-
-		if (found == 0)
-			printf("unknown");
-		printf("\n");
+	if (ifmr.ifm_count == 0) {
+		warnx("%s: no media types?", ifname);
+		return;
 	}
+
+	media_list = calloc(ifmr.ifm_count, sizeof(int));
+	if (media_list == NULL)
+		err(EXIT_FAILURE, "malloc");
+	ifmr.ifm_ulist = media_list;
+
+	if (prog_ioctl(s, SIOCGIFMEDIA, &ifmr) == -1)
+		err(EXIT_FAILURE, "SIOCGIFMEDIA");
+
+	printf("\tmedia: %s ", get_media_type_string(ifmr.ifm_current));
+	print_media_word(ifmr.ifm_current, " ");
+	if (ifmr.ifm_active != ifmr.ifm_current) {
+		printf(" (");
+		print_media_word(ifmr.ifm_active, " ");
+		printf(")");
+	}
+	printf("\n");
+
+	if (ifmr.ifm_status & IFM_STATUS_VALID)
+		print_media_status(IFM_TYPE(ifmr.ifm_current), ifmr.ifm_status);
 
 	if (get_flag('m')) {
 		int type, printed_type;

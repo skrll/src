@@ -1,4 +1,4 @@
-/*	$NetBSD: ralink_gpio.c,v 1.7 2019/06/03 06:04:20 msaitoh Exp $	*/
+/*	$NetBSD: ralink_gpio.c,v 1.9 2020/10/30 22:20:38 christos Exp $	*/
 /*-
  * Copyright (c) 2011 CradlePoint Technology, Inc.
  * All rights reserved.
@@ -29,7 +29,7 @@
 /* ra_gpio.c -- Ralink 3052 gpio driver */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ralink_gpio.c,v 1.7 2019/06/03 06:04:20 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ralink_gpio.c,v 1.9 2020/10/30 22:20:38 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -495,10 +495,10 @@ static int  gpio_event_app_user_event(struct knote *, long);
 static struct klist knotes;
 static int app_filter_id;
 static struct filterops app_fops = {
-	0,
-	gpio_event_app_user_attach,
-	gpio_event_app_user_detach,
-	gpio_event_app_user_event
+	.f_isfd = 0,
+	.f_attach = gpio_event_app_user_attach,
+	.f_detach = gpio_event_app_user_detach,
+	.f_event = gpio_event_app_user_event,
 };
 static struct callout led_tick_callout;
 static int gpio_driver_blink_leds = 1;
@@ -1580,7 +1580,7 @@ ra_gpio_toggle_LED(void *arg)
 	    (1 << (led_array1[led_index++] - SS_OFFSET)));
 #endif
 
-	if (led_index == (sizeof(led_array1))) {
+	if (led_index >= (sizeof(led_array1))) {
 		led_index = 0;
 		for (int i = 0; i < sizeof(led_array1); i++) {
 			ra_gpio_pin_write(sc, led_array1[i], 1);

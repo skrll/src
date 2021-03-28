@@ -1,5 +1,5 @@
 /*
- * Copyright 2009-2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2009-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -26,11 +26,15 @@
 # include <sys/types.h>
 # include <sys/sysctl.h>
 #endif
+#if defined(__NetBSD__)
+# include <sys/param.h>
+# include <sys/sysctl.h>
+#endif
 #include <openssl/crypto.h>
 #include <openssl/bn.h>
 #include <internal/cryptlib.h>
-#include <internal/chacha.h>
-#include "bn/bn_lcl.h"
+#include <crypto/chacha.h>
+#include "bn/bn_local.h"
 
 #include "ppc_arch.h"
 
@@ -218,6 +222,24 @@ size_t OPENSSL_instrument_bus2(unsigned int *out, size_t cnt, size_t max)
 # endif
 #endif
 
+#if defined(__FreeBSD__)
+# include <sys/param.h>
+# if __FreeBSD_version >= 1200000
+#  include <sys/auxv.h>
+#  define OSSL_IMPLEMENT_GETAUXVAL
+
+static unsigned long getauxval(unsigned long key)
+{
+  unsigned long val = 0ul;
+
+  if (elf_aux_info((int)key, &val, sizeof(val)) != 0)
+    return 0ul;
+
+  return val;
+}
+# endif
+#endif
+
 /* I wish <sys/auxv.h> was universally available */
 #define HWCAP                   16      /* AT_HWCAP */
 #define HWCAP_PPC64             (1U << 30)
@@ -365,6 +387,20 @@ void OPENSSL_cpuid_setup(void)
     sigaction(SIGILL, &ill_act, &ill_oact);
 
 #ifndef OSSL_IMPLEMENT_GETAUXVAL
+# ifdef __NetBSD__
+    int error, val;
+    size_t len = sizeof(val);
+
+    /*
+     * If machdep.fpu_present == 0, FPU is absent and emulated by
+     * software.  In that case, using FPU instructions hurts rather
+     * than helps performance, and the software is unlikely to run in
+     * constant time so it would expose us to timing side channel
+     * attacks.  So don't do it!
+     */
+    error = sysctlbyname("machdep.fpu_present", &val, &len, NULL, 0);
+    if (error != 0 || (error == 0 && val != 0))
+# endif
     if (sigsetjmp(ill_jmp,1) == 0) {
         OPENSSL_fpu_probe();
         OPENSSL_ppccap_P |= PPC_FPU;

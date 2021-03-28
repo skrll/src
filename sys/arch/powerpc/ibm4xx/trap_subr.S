@@ -1,4 +1,4 @@
-/*	$NetBSD: trap_subr.S,v 1.27 2018/07/15 05:16:43 maxv Exp $	*/
+/*	$NetBSD: trap_subr.S,v 1.29 2020/07/06 10:42:21 rin Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -72,6 +72,11 @@
  *
  *	#include <powerpc/ibm4xx/trap_subr.S>
  */
+
+#ifdef _KERNEL_OPT
+#include "opt_ddb.h"
+#include "opt_kgdb.h"
+#endif
 
 /*
  * XXX Interrupt and spill stacks need to be per-CPU.
@@ -334,6 +339,7 @@ intrleave_to_kernel:
 	mtpid	%r31
 	mfsprg3	%r31
 	mfsprg2	%r30
+	IBM405_ERRATA77_SYNC
 	rfi
 	ba	.		/* Protect against prefetch */
 
@@ -375,6 +381,7 @@ intrleave_to_user:
 	mtpid	%r31
 	mfsprg3	%r31
 	mfsprg2	%r30
+	IBM405_ERRATA77_SYNC
 	rfi
 	ba	.	/* Protect against prefetch */
 

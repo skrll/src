@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_threadpool.c,v 1.15 2019/01/17 10:18:52 hannken Exp $	*/
+/*	$NetBSD: kern_threadpool.c,v 1.23 2021/01/23 16:33:49 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2014, 2018 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
  * Thread pools.
  *
  * A thread pool is a collection of worker threads idle or running
- * jobs, together with an overseer thread that does not run jobs but
+ * jobs, together with a dispatcher thread that does not run jobs but
  * can be given jobs to assign to a worker thread.  Scheduling a job in
  * a thread pool does not allocate or even sleep at all, except perhaps
  * on an adaptive lock, unlike kthread_create.  Jobs reuse threads, so
@@ -56,32 +56,32 @@
  * CPU.  When you're done, call threadpool_percpu_put(pool_percpu,
  * pri).
  *
- * +--MACHINE-----------------------------------------------+
- * | +--CPU 0-------+ +--CPU 1-------+     +--CPU n-------+ |
- * | | <overseer 0> | | <overseer 1> | ... | <overseer n> | |
- * | | <idle 0a>    | | <running 1a> | ... | <idle na>    | |
- * | | <running 0b> | | <running 1b> | ... | <idle nb>    | |
- * | | .            | | .            | ... | .            | |
- * | | .            | | .            | ... | .            | |
- * | | .            | | .            | ... | .            | |
- * | +--------------+ +--------------+     +--------------+ |
- * |            +--unbound---------+                        |
- * |            | <overseer n+1>   |                        |
- * |            | <idle (n+1)a>    |                        |
- * |            | <running (n+1)b> |                        |
- * |            +------------------+                        |
- * +--------------------------------------------------------+
+ * +--MACHINE-----------------------------------------------------+
+ * | +--CPU 0---------+ +--CPU 1---------+     +--CPU n---------+ |
+ * | | <dispatcher 0> | | <dispatcher 1> | ... | <dispatcher n> | |
+ * | | <idle 0a>      | | <running 1a>   | ... | <idle na>      | |
+ * | | <running 0b>   | | <running 1b>   | ... | <idle nb>      | |
+ * | | .              | | .              | ... | .              | |
+ * | | .              | | .              | ... | .              | |
+ * | | .              | | .              | ... | .              | |
+ * | +----------------+ +----------------+     +----------------+ |
+ * |            +--unbound-----------+                            |
+ * |            | <dispatcher n+1>   |                            |
+ * |            | <idle (n+1)a>      |                            |
+ * |            | <running (n+1)b>   |                            |
+ * |            +--------------------+                            |
+ * +--------------------------------------------------------------+
  *
- * XXX Why one overseer per CPU?  I did that originally to avoid
+ * XXX Why one dispatcher per CPU?  I did that originally to avoid
  * touching remote CPUs' memory when scheduling a job, but that still
  * requires interprocessor synchronization.  Perhaps we could get by
- * with a single overseer thread, at the expense of another pointer in
- * struct threadpool_job to identify the CPU on which it must run
- * in order for the overseer to schedule it correctly.
+ * with a single dispatcher thread, at the expense of another pointer
+ * in struct threadpool_job to identify the CPU on which it must run in
+ * order for the dispatcher to schedule it correctly.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_threadpool.c,v 1.15 2019/01/17 10:18:52 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_threadpool.c,v 1.23 2021/01/23 16:33:49 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -97,9 +97,81 @@ __KERNEL_RCSID(0, "$NetBSD: kern_threadpool.c,v 1.15 2019/01/17 10:18:52 hannken
 #include <sys/pool.h>
 #include <sys/proc.h>
 #include <sys/queue.h>
-#include <sys/systm.h>
+#include <sys/sdt.h>
 #include <sys/sysctl.h>
+#include <sys/systm.h>
 #include <sys/threadpool.h>
+
+/* Probes */
+
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, get,
+    "pri_t"/*pri*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, get__create,
+    "pri_t"/*pri*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, get__race,
+    "pri_t"/*pri*/);
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, put,
+    "struct threadpool *"/*pool*/, "pri_t"/*pri*/);
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, put__destroy,
+    "struct threadpool *"/*pool*/, "pri_t"/*pri*/);
+
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, percpu__get,
+    "pri_t"/*pri*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, percpu__get__create,
+    "pri_t"/*pri*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, percpu__get__race,
+    "pri_t"/*pri*/);
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, percpu__put,
+    "struct threadpool *"/*pool*/, "pri_t"/*pri*/);
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, percpu__put__destroy,
+    "struct threadpool *"/*pool*/, "pri_t"/*pri*/);
+
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, create,
+    "struct cpu_info *"/*ci*/, "pri_t"/*pri*/);
+SDT_PROBE_DEFINE3(sdt, kernel, threadpool, create__success,
+    "struct cpu_info *"/*ci*/, "pri_t"/*pri*/, "struct threadpool *"/*pool*/);
+SDT_PROBE_DEFINE3(sdt, kernel, threadpool, create__failure,
+    "struct cpu_info *"/*ci*/, "pri_t"/*pri*/, "int"/*error*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, destroy,
+    "struct threadpool *"/*pool*/);
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, destroy__wait,
+    "struct threadpool *"/*pool*/, "uint64_t"/*refcnt*/);
+
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, schedule__job,
+    "struct threadpool *"/*pool*/, "struct threadpool_job *"/*job*/);
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, schedule__job__running,
+    "struct threadpool *"/*pool*/, "struct threadpool_job *"/*job*/);
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, schedule__job__dispatcher,
+    "struct threadpool *"/*pool*/, "struct threadpool_job *"/*job*/);
+SDT_PROBE_DEFINE3(sdt, kernel, threadpool, schedule__job__thread,
+    "struct threadpool *"/*pool*/,
+    "struct threadpool_job *"/*job*/,
+    "struct lwp *"/*thread*/);
+
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, dispatcher__start,
+    "struct threadpool *"/*pool*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, dispatcher__dying,
+    "struct threadpool *"/*pool*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, dispatcher__spawn,
+    "struct threadpool *"/*pool*/);
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, dispatcher__race,
+    "struct threadpool *"/*pool*/,
+    "struct threadpool_job *"/*job*/);
+SDT_PROBE_DEFINE3(sdt, kernel, threadpool, dispatcher__assign,
+    "struct threadpool *"/*pool*/,
+    "struct threadpool_job *"/*job*/,
+    "struct lwp *"/*thread*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, dispatcher__exit,
+    "struct threadpool *"/*pool*/);
+
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, thread__start,
+    "struct threadpool *"/*pool*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, thread__dying,
+    "struct threadpool *"/*pool*/);
+SDT_PROBE_DEFINE2(sdt, kernel, threadpool, thread__job,
+    "struct threadpool *"/*pool*/, "struct threadpool_job *"/*job*/);
+SDT_PROBE_DEFINE1(sdt, kernel, threadpool, thread__exit,
+    "struct threadpool *"/*pool*/);
 
 /* Data structures */
 
@@ -117,7 +189,7 @@ struct threadpool_thread {
 
 struct threadpool {
 	kmutex_t			tp_lock;
-	struct threadpool_thread	tp_overseer;
+	struct threadpool_thread	tp_dispatcher;
 	struct job_head			tp_jobs;
 	struct thread_head		tp_idle_threads;
 	uint64_t			tp_refcnt;
@@ -132,13 +204,16 @@ static void	threadpool_rele(struct threadpool *);
 
 static int	threadpool_percpu_create(struct threadpool_percpu **, pri_t);
 static void	threadpool_percpu_destroy(struct threadpool_percpu *);
+static void	threadpool_percpu_init(void *, void *, struct cpu_info *);
+static void	threadpool_percpu_ok(void *, void *, struct cpu_info *);
+static void	threadpool_percpu_fini(void *, void *, struct cpu_info *);
 
 static threadpool_job_fn_t threadpool_job_dead;
 
 static void	threadpool_job_hold(struct threadpool_job *);
 static void	threadpool_job_rele(struct threadpool_job *);
 
-static void	threadpool_overseer_thread(void *) __dead;
+static void	threadpool_dispatcher_thread(void *) __dead;
 static void	threadpool_thread(void *) __dead;
 
 static pool_cache_t	threadpool_thread_pc __read_mostly;
@@ -221,12 +296,6 @@ threadpool_remove_percpu(struct threadpool_percpu *tpp)
 	LIST_REMOVE(tpp, tpp_link);
 }
 
-#ifdef THREADPOOL_VERBOSE
-#define	TP_LOG(x)		printf x
-#else
-#define	TP_LOG(x)		/* nothing */
-#endif /* THREADPOOL_VERBOSE */
-
 static int
 sysctl_kern_threadpool_idle_ms(SYSCTLFN_ARGS)
 {
@@ -287,6 +356,18 @@ threadpools_init(void)
 	mutex_init(&threadpools_lock, MUTEX_DEFAULT, IPL_NONE);
 }
 
+static void
+threadnamesuffix(char *buf, size_t buflen, struct cpu_info *ci, int pri)
+{
+
+	buf[0] = '\0';
+	if (ci)
+		snprintf(buf + strlen(buf), buflen - strlen(buf), "/%d",
+		    cpu_index(ci));
+	if (pri != PRI_NONE)
+		snprintf(buf + strlen(buf), buflen - strlen(buf), "@%d", pri);
+}
+
 /* Thread pool creation */
 
 static bool
@@ -300,52 +381,57 @@ threadpool_create(struct threadpool *const pool, struct cpu_info *ci,
     pri_t pri)
 {
 	struct lwp *lwp;
+	char suffix[16];
 	int ktflags;
 	int error;
 
 	KASSERT(threadpool_pri_is_valid(pri));
 
+	SDT_PROBE2(sdt, kernel, threadpool, create,  ci, pri);
+
 	mutex_init(&pool->tp_lock, MUTEX_DEFAULT, IPL_VM);
-	/* XXX overseer */
+	/* XXX dispatcher */
 	TAILQ_INIT(&pool->tp_jobs);
 	TAILQ_INIT(&pool->tp_idle_threads);
-	pool->tp_refcnt = 1;		/* overseer's reference */
+	pool->tp_refcnt = 1;		/* dispatcher's reference */
 	pool->tp_flags = 0;
 	pool->tp_cpu = ci;
 	pool->tp_pri = pri;
 
-	pool->tp_overseer.tpt_lwp = NULL;
-	pool->tp_overseer.tpt_pool = pool;
-	pool->tp_overseer.tpt_job = NULL;
-	cv_init(&pool->tp_overseer.tpt_cv, "poolover");
+	pool->tp_dispatcher.tpt_lwp = NULL;
+	pool->tp_dispatcher.tpt_pool = pool;
+	pool->tp_dispatcher.tpt_job = NULL;
+	cv_init(&pool->tp_dispatcher.tpt_cv, "pooldisp");
 
 	ktflags = 0;
 	ktflags |= KTHREAD_MPSAFE;
 	if (pri < PRI_KERNEL)
 		ktflags |= KTHREAD_TS;
-	error = kthread_create(pri, ktflags, ci, &threadpool_overseer_thread,
-	    &pool->tp_overseer, &lwp,
-	    "pooloverseer/%d@%d", (ci ? cpu_index(ci) : -1), (int)pri);
+	threadnamesuffix(suffix, sizeof(suffix), ci, pri);
+	error = kthread_create(pri, ktflags, ci, &threadpool_dispatcher_thread,
+	    &pool->tp_dispatcher, &lwp, "pooldisp%s", suffix);
 	if (error)
 		goto fail0;
 
 	mutex_spin_enter(&pool->tp_lock);
-	pool->tp_overseer.tpt_lwp = lwp;
-	cv_broadcast(&pool->tp_overseer.tpt_cv);
+	pool->tp_dispatcher.tpt_lwp = lwp;
+	cv_broadcast(&pool->tp_dispatcher.tpt_cv);
 	mutex_spin_exit(&pool->tp_lock);
 
+	SDT_PROBE3(sdt, kernel, threadpool, create__success,  ci, pri, pool);
 	return 0;
 
 fail0:	KASSERT(error);
-	KASSERT(pool->tp_overseer.tpt_job == NULL);
-	KASSERT(pool->tp_overseer.tpt_pool == pool);
+	KASSERT(pool->tp_dispatcher.tpt_job == NULL);
+	KASSERT(pool->tp_dispatcher.tpt_pool == pool);
 	KASSERT(pool->tp_flags == 0);
 	KASSERT(pool->tp_refcnt == 0);
 	KASSERT(TAILQ_EMPTY(&pool->tp_idle_threads));
 	KASSERT(TAILQ_EMPTY(&pool->tp_jobs));
-	KASSERT(!cv_has_waiters(&pool->tp_overseer.tpt_cv));
-	cv_destroy(&pool->tp_overseer.tpt_cv);
+	KASSERT(!cv_has_waiters(&pool->tp_dispatcher.tpt_cv));
+	cv_destroy(&pool->tp_dispatcher.tpt_cv);
 	mutex_destroy(&pool->tp_lock);
+	SDT_PROBE3(sdt, kernel, threadpool, create__failure,  ci, pri, error);
 	return error;
 }
 
@@ -356,28 +442,30 @@ threadpool_destroy(struct threadpool *pool)
 {
 	struct threadpool_thread *thread;
 
+	SDT_PROBE1(sdt, kernel, threadpool, destroy,  pool);
+
 	/* Mark the pool dying and wait for threads to commit suicide.  */
 	mutex_spin_enter(&pool->tp_lock);
 	KASSERT(TAILQ_EMPTY(&pool->tp_jobs));
 	pool->tp_flags |= THREADPOOL_DYING;
-	cv_broadcast(&pool->tp_overseer.tpt_cv);
+	cv_broadcast(&pool->tp_dispatcher.tpt_cv);
 	TAILQ_FOREACH(thread, &pool->tp_idle_threads, tpt_entry)
 		cv_broadcast(&thread->tpt_cv);
 	while (0 < pool->tp_refcnt) {
-		TP_LOG(("%s: draining %" PRIu64 " references...\n", __func__,
-		    pool->tp_refcnt));
-		cv_wait(&pool->tp_overseer.tpt_cv, &pool->tp_lock);
+		SDT_PROBE2(sdt, kernel, threadpool, destroy__wait,
+		    pool, pool->tp_refcnt);
+		cv_wait(&pool->tp_dispatcher.tpt_cv, &pool->tp_lock);
 	}
 	mutex_spin_exit(&pool->tp_lock);
 
-	KASSERT(pool->tp_overseer.tpt_job == NULL);
-	KASSERT(pool->tp_overseer.tpt_pool == pool);
+	KASSERT(pool->tp_dispatcher.tpt_job == NULL);
+	KASSERT(pool->tp_dispatcher.tpt_pool == pool);
 	KASSERT(pool->tp_flags == THREADPOOL_DYING);
 	KASSERT(pool->tp_refcnt == 0);
 	KASSERT(TAILQ_EMPTY(&pool->tp_idle_threads));
 	KASSERT(TAILQ_EMPTY(&pool->tp_jobs));
-	KASSERT(!cv_has_waiters(&pool->tp_overseer.tpt_cv));
-	cv_destroy(&pool->tp_overseer.tpt_cv);
+	KASSERT(!cv_has_waiters(&pool->tp_dispatcher.tpt_cv));
+	cv_destroy(&pool->tp_dispatcher.tpt_cv);
 	mutex_destroy(&pool->tp_lock);
 }
 
@@ -397,7 +485,7 @@ threadpool_rele(struct threadpool *pool)
 	KASSERT(mutex_owned(&pool->tp_lock));
 	KASSERT(0 < pool->tp_refcnt);
 	if (--pool->tp_refcnt == 0)
-		cv_broadcast(&pool->tp_overseer.tpt_cv);
+		cv_broadcast(&pool->tp_dispatcher.tpt_cv);
 }
 
 /* Unbound thread pools */
@@ -410,6 +498,8 @@ threadpool_get(struct threadpool **poolp, pri_t pri)
 
 	ASSERT_SLEEPABLE();
 
+	SDT_PROBE1(sdt, kernel, threadpool, get,  pri);
+
 	if (! threadpool_pri_is_valid(pri))
 		return EINVAL;
 
@@ -417,8 +507,7 @@ threadpool_get(struct threadpool **poolp, pri_t pri)
 	tpu = threadpool_lookup_unbound(pri);
 	if (tpu == NULL) {
 		mutex_exit(&threadpools_lock);
-		TP_LOG(("%s: No pool for pri=%d, creating one.\n",
-		    __func__, (int)pri));
+		SDT_PROBE1(sdt, kernel, threadpool, get__create,  pri);
 		tmp = kmem_zalloc(sizeof(*tmp), KM_SLEEP);
 		error = threadpool_create(&tmp->tpu_pool, NULL, pri);
 		if (error) {
@@ -428,11 +517,11 @@ threadpool_get(struct threadpool **poolp, pri_t pri)
 		mutex_enter(&threadpools_lock);
 		tpu = threadpool_lookup_unbound(pri);
 		if (tpu == NULL) {
-			TP_LOG(("%s: Won the creation race for pri=%d.\n",
-			    __func__, (int)pri));
 			tpu = tmp;
 			tmp = NULL;
 			threadpool_insert_unbound(tpu);
+		} else {
+			SDT_PROBE1(sdt, kernel, threadpool, get__race,  pri);
 		}
 	}
 	KASSERT(tpu != NULL);
@@ -456,15 +545,15 @@ threadpool_put(struct threadpool *pool, pri_t pri)
 	    container_of(pool, struct threadpool_unbound, tpu_pool);
 
 	ASSERT_SLEEPABLE();
-
 	KASSERT(threadpool_pri_is_valid(pri));
+
+	SDT_PROBE2(sdt, kernel, threadpool, put,  pool, pri);
 
 	mutex_enter(&threadpools_lock);
 	KASSERT(tpu == threadpool_lookup_unbound(pri));
 	KASSERT(0 < tpu->tpu_refcnt);
 	if (--tpu->tpu_refcnt == 0) {
-		TP_LOG(("%s: Last reference for pri=%d, destroying pool.\n",
-		    __func__, (int)pri));
+		SDT_PROBE2(sdt, kernel, threadpool, put__destroy,  pool, pri);
 		threadpool_remove_unbound(tpu);
 	} else {
 		tpu = NULL;
@@ -487,6 +576,8 @@ threadpool_percpu_get(struct threadpool_percpu **pool_percpup, pri_t pri)
 
 	ASSERT_SLEEPABLE();
 
+	SDT_PROBE1(sdt, kernel, threadpool, percpu__get,  pri);
+
 	if (! threadpool_pri_is_valid(pri))
 		return EINVAL;
 
@@ -494,8 +585,7 @@ threadpool_percpu_get(struct threadpool_percpu **pool_percpup, pri_t pri)
 	pool_percpu = threadpool_lookup_percpu(pri);
 	if (pool_percpu == NULL) {
 		mutex_exit(&threadpools_lock);
-		TP_LOG(("%s: No pool for pri=%d, creating one.\n",
-		    __func__, (int)pri));
+		SDT_PROBE1(sdt, kernel, threadpool, percpu__get__create,  pri);
 		error = threadpool_percpu_create(&tmp, pri);
 		if (error)
 			return error;
@@ -503,11 +593,12 @@ threadpool_percpu_get(struct threadpool_percpu **pool_percpup, pri_t pri)
 		mutex_enter(&threadpools_lock);
 		pool_percpu = threadpool_lookup_percpu(pri);
 		if (pool_percpu == NULL) {
-			TP_LOG(("%s: Won the creation race for pri=%d.\n",
-			    __func__, (int)pri));
 			pool_percpu = tmp;
 			tmp = NULL;
 			threadpool_insert_percpu(pool_percpu);
+		} else {
+			SDT_PROBE1(sdt, kernel, threadpool, percpu__get__race,
+			    pri);
 		}
 	}
 	KASSERT(pool_percpu != NULL);
@@ -530,12 +621,14 @@ threadpool_percpu_put(struct threadpool_percpu *pool_percpu, pri_t pri)
 
 	KASSERT(threadpool_pri_is_valid(pri));
 
+	SDT_PROBE2(sdt, kernel, threadpool, percpu__put,  pool_percpu, pri);
+
 	mutex_enter(&threadpools_lock);
 	KASSERT(pool_percpu == threadpool_lookup_percpu(pri));
 	KASSERT(0 < pool_percpu->tpp_refcnt);
 	if (--pool_percpu->tpp_refcnt == 0) {
-		TP_LOG(("%s: Last reference for pri=%d, destroying pool.\n",
-		    __func__, (int)pri));
+		SDT_PROBE2(sdt, kernel, threadpool, percpu__put__destroy,
+		    pool_percpu, pri);
 		threadpool_remove_percpu(pool_percpu);
 	} else {
 		pool_percpu = NULL;
@@ -564,10 +657,16 @@ threadpool_percpu_ref_remote(struct threadpool_percpu *pool_percpu,
 {
 	struct threadpool **poolp, *pool;
 
-	percpu_traverse_enter();
+	/*
+	 * As long as xcalls are blocked -- e.g., by kpreempt_disable
+	 * -- the percpu object will not be swapped and destroyed.  We
+	 * can't write to it, because the data may have already been
+	 * moved to a new buffer, but we can safely read from it.
+	 */
+	kpreempt_disable();
 	poolp = percpu_getptr_remote(pool_percpu->tpp_percpu, ci);
 	pool = *poolp;
-	percpu_traverse_exit();
+	kpreempt_enable();
 
 	return pool;
 }
@@ -576,78 +675,75 @@ static int
 threadpool_percpu_create(struct threadpool_percpu **pool_percpup, pri_t pri)
 {
 	struct threadpool_percpu *pool_percpu;
-	struct cpu_info *ci;
-	CPU_INFO_ITERATOR cii;
-	unsigned int i, j;
-	int error;
+	bool ok = true;
 
 	pool_percpu = kmem_zalloc(sizeof(*pool_percpu), KM_SLEEP);
-	if (pool_percpu == NULL) {
-		error = ENOMEM;
-		goto fail0;
-	}
 	pool_percpu->tpp_pri = pri;
+	pool_percpu->tpp_percpu = percpu_create(sizeof(struct threadpool *),
+	    threadpool_percpu_init, threadpool_percpu_fini,
+	    (void *)(intptr_t)pri);
 
-	pool_percpu->tpp_percpu = percpu_alloc(sizeof(struct threadpool *));
-	if (pool_percpu->tpp_percpu == NULL) {
-		error = ENOMEM;
-		goto fail1;
-	}
-
-	for (i = 0, CPU_INFO_FOREACH(cii, ci), i++) {
-		struct threadpool *pool;
-
-		pool = kmem_zalloc(sizeof(*pool), KM_SLEEP);
-		error = threadpool_create(pool, ci, pri);
-		if (error) {
-			kmem_free(pool, sizeof(*pool));
-			goto fail2;
-		}
-		percpu_traverse_enter();
-		struct threadpool **const poolp =
-		    percpu_getptr_remote(pool_percpu->tpp_percpu, ci);
-		*poolp = pool;
-		percpu_traverse_exit();
-	}
+	/*
+	 * Verify that all of the CPUs were initialized.
+	 *
+	 * XXX What to do if we add CPU hotplug?
+	 */
+	percpu_foreach(pool_percpu->tpp_percpu, &threadpool_percpu_ok, &ok);
+	if (!ok)
+		goto fail;
 
 	/* Success!  */
 	*pool_percpup = (struct threadpool_percpu *)pool_percpu;
 	return 0;
 
-fail2:	for (j = 0, CPU_INFO_FOREACH(cii, ci), j++) {
-		if (i <= j)
-			break;
-		percpu_traverse_enter();
-		struct threadpool **const poolp =
-		    percpu_getptr_remote(pool_percpu->tpp_percpu, ci);
-		struct threadpool *const pool = *poolp;
-		percpu_traverse_exit();
-		threadpool_destroy(pool);
-		kmem_free(pool, sizeof(*pool));
-	}
-	percpu_free(pool_percpu->tpp_percpu, sizeof(struct taskthread_pool *));
-fail1:	kmem_free(pool_percpu, sizeof(*pool_percpu));
-fail0:	return error;
+fail:	percpu_free(pool_percpu->tpp_percpu, sizeof(struct threadpool *));
+	kmem_free(pool_percpu, sizeof(*pool_percpu));
+	return ENOMEM;
 }
 
 static void
 threadpool_percpu_destroy(struct threadpool_percpu *pool_percpu)
 {
-	struct cpu_info *ci;
-	CPU_INFO_ITERATOR cii;
-
-	for (CPU_INFO_FOREACH(cii, ci)) {
-		percpu_traverse_enter();
-		struct threadpool **const poolp =
-		    percpu_getptr_remote(pool_percpu->tpp_percpu, ci);
-		struct threadpool *const pool = *poolp;
-		percpu_traverse_exit();
-		threadpool_destroy(pool);
-		kmem_free(pool, sizeof(*pool));
-	}
 
 	percpu_free(pool_percpu->tpp_percpu, sizeof(struct threadpool *));
 	kmem_free(pool_percpu, sizeof(*pool_percpu));
+}
+
+static void
+threadpool_percpu_init(void *vpoolp, void *vpri, struct cpu_info *ci)
+{
+	struct threadpool **const poolp = vpoolp;
+	pri_t pri = (intptr_t)(void *)vpri;
+	int error;
+
+	*poolp = kmem_zalloc(sizeof(**poolp), KM_SLEEP);
+	error = threadpool_create(*poolp, ci, pri);
+	if (error) {
+		KASSERT(error == ENOMEM);
+		kmem_free(*poolp, sizeof(**poolp));
+		*poolp = NULL;
+	}
+}
+
+static void
+threadpool_percpu_ok(void *vpoolp, void *vokp, struct cpu_info *ci)
+{
+	struct threadpool **const poolp = vpoolp;
+	bool *okp = vokp;
+
+	if (*poolp == NULL)
+		atomic_store_relaxed(okp, false);
+}
+
+static void
+threadpool_percpu_fini(void *vpoolp, void *vprip, struct cpu_info *ci)
+{
+	struct threadpool **const poolp = vpoolp;
+
+	if (*poolp == NULL)	/* initialization failed */
+		return;
+	threadpool_destroy(*poolp);
+	kmem_free(*poolp, sizeof(**poolp));
 }
 
 /* Thread pool jobs */
@@ -685,7 +781,7 @@ threadpool_job_destroy(struct threadpool_job *job)
 	KASSERTMSG((job->job_thread == NULL), "job %p still running", job);
 
 	mutex_enter(job->job_lock);
-	while (0 < job->job_refcnt)
+	while (0 < atomic_load_relaxed(&job->job_refcnt))
 		cv_wait(&job->job_cv, job->job_lock);
 	mutex_exit(job->job_lock);
 
@@ -701,13 +797,10 @@ threadpool_job_destroy(struct threadpool_job *job)
 static void
 threadpool_job_hold(struct threadpool_job *job)
 {
-	unsigned int refcnt;
+	unsigned int refcnt __diagused;
 
-	do {
-		refcnt = job->job_refcnt;
-		KASSERT(refcnt != UINT_MAX);
-	} while (atomic_cas_uint(&job->job_refcnt, refcnt, (refcnt + 1))
-	    != refcnt);
+	refcnt = atomic_inc_uint_nv(&job->job_refcnt);
+	KASSERT(refcnt != 0);
 }
 
 static void
@@ -717,18 +810,10 @@ threadpool_job_rele(struct threadpool_job *job)
 
 	KASSERT(mutex_owned(job->job_lock));
 
-	do {
-		refcnt = job->job_refcnt;
-		KASSERT(0 < refcnt);
-		if (refcnt == 1) {
-			refcnt = atomic_dec_uint_nv(&job->job_refcnt);
-			KASSERT(refcnt != UINT_MAX);
-			if (refcnt == 0)
-				cv_broadcast(&job->job_cv);
-			return;
-		}
-	} while (atomic_cas_uint(&job->job_refcnt, refcnt, (refcnt - 1))
-	    != refcnt);
+	refcnt = atomic_dec_uint_nv(&job->job_refcnt);
+	KASSERT(refcnt != UINT_MAX);
+	if (refcnt == 0)
+		cv_broadcast(&job->job_cv);
 }
 
 void
@@ -755,7 +840,7 @@ threadpool_job_done(struct threadpool_job *job)
 	 * threadpool_schedule_job()), and we always do the cv_broadcast()
 	 * anyway.
 	 */
-	KASSERT(0 < job->job_refcnt);
+	KASSERT(0 < atomic_load_relaxed(&job->job_refcnt));
 	unsigned int refcnt __diagused = atomic_dec_uint_nv(&job->job_refcnt);
 	KASSERT(refcnt != UINT_MAX);
 	cv_broadcast(&job->job_cv);
@@ -768,6 +853,8 @@ threadpool_schedule_job(struct threadpool *pool, struct threadpool_job *job)
 
 	KASSERT(mutex_owned(job->job_lock));
 
+	SDT_PROBE2(sdt, kernel, threadpool, schedule__job,  pool, job);
+
 	/*
 	 * If the job's already running, let it keep running.  The job
 	 * is guaranteed by the interlock not to end early -- if it had
@@ -775,8 +862,8 @@ threadpool_schedule_job(struct threadpool *pool, struct threadpool_job *job)
 	 * to NULL under the interlock.
 	 */
 	if (__predict_true(job->job_thread != NULL)) {
-		TP_LOG(("%s: job '%s' already runnining.\n",
-		    __func__, job->job_name));
+		SDT_PROBE2(sdt, kernel, threadpool, schedule__job__running,
+		    pool, job);
 		return;
 	}
 
@@ -785,22 +872,22 @@ threadpool_schedule_job(struct threadpool *pool, struct threadpool_job *job)
 	/* Otherwise, try to assign a thread to the job.  */
 	mutex_spin_enter(&pool->tp_lock);
 	if (__predict_false(TAILQ_EMPTY(&pool->tp_idle_threads))) {
-		/* Nobody's idle.  Give it to the overseer.  */
-		TP_LOG(("%s: giving job '%s' to overseer.\n",
-		    __func__, job->job_name));
-		job->job_thread = &pool->tp_overseer;
+		/* Nobody's idle.  Give it to the dispatcher.  */
+		SDT_PROBE2(sdt, kernel, threadpool, schedule__job__dispatcher,
+		    pool, job);
+		job->job_thread = &pool->tp_dispatcher;
 		TAILQ_INSERT_TAIL(&pool->tp_jobs, job, job_entry);
 	} else {
 		/* Assign it to the first idle thread.  */
 		job->job_thread = TAILQ_FIRST(&pool->tp_idle_threads);
-		TP_LOG(("%s: giving job '%s' to idle thread %p.\n",
-		    __func__, job->job_name, job->job_thread));
+		SDT_PROBE3(sdt, kernel, threadpool, schedule__job__thread,
+		    pool, job, job->job_thread->tpt_lwp);
 		TAILQ_REMOVE(&pool->tp_idle_threads, job->job_thread,
 		    tpt_entry);
 		job->job_thread->tpt_job = job;
 	}
 
-	/* Notify whomever we gave it to, overseer or idle thread.  */
+	/* Notify whomever we gave it to, dispatcher or idle thread.  */
 	KASSERT(job->job_thread != NULL);
 	cv_broadcast(&job->job_thread->tpt_cv);
 	mutex_spin_exit(&pool->tp_lock);
@@ -824,19 +911,19 @@ threadpool_cancel_job_async(struct threadpool *pool, struct threadpool_job *job)
 	 *	   "luck of the draw").
 	 *
 	 *	=> "job" is not yet running, but is assigned to the
-	 *	   overseer.
+	 *	   dispatcher.
 	 *
 	 * When this happens, this code makes the determination that
 	 * the job is already running.  The failure mode is that the
 	 * caller is told the job is running, and thus has to wait.
-	 * The overseer will eventually get to it and the job will
+	 * The dispatcher will eventually get to it and the job will
 	 * proceed as if it had been already running.
 	 */
 
 	if (job->job_thread == NULL) {
 		/* Nothing to do.  Guaranteed not running.  */
 		return true;
-	} else if (job->job_thread == &pool->tp_overseer) {
+	} else if (job->job_thread == &pool->tp_dispatcher) {
 		/* Take it off the list to guarantee it won't run.  */
 		job->job_thread = NULL;
 		mutex_spin_enter(&pool->tp_lock);
@@ -854,7 +941,12 @@ void
 threadpool_cancel_job(struct threadpool *pool, struct threadpool_job *job)
 {
 
-	ASSERT_SLEEPABLE();
+	/*
+	 * We may sleep here, but we can't ASSERT_SLEEPABLE() because
+	 * the job lock (used to interlock the cv_wait()) may in fact
+	 * legitimately be a spin lock, so the assertion would fire
+	 * as a false-positive.
+	 */
 
 	KASSERT(mutex_owned(job->job_lock));
 
@@ -866,43 +958,45 @@ threadpool_cancel_job(struct threadpool *pool, struct threadpool_job *job)
 		cv_wait(&job->job_cv, job->job_lock);
 }
 
-/* Thread pool overseer thread */
+/* Thread pool dispatcher thread */
 
 static void __dead
-threadpool_overseer_thread(void *arg)
+threadpool_dispatcher_thread(void *arg)
 {
-	struct threadpool_thread *const overseer = arg;
-	struct threadpool *const pool = overseer->tpt_pool;
+	struct threadpool_thread *const dispatcher = arg;
+	struct threadpool *const pool = dispatcher->tpt_pool;
 	struct lwp *lwp = NULL;
 	int ktflags;
+	char suffix[16];
 	int error;
 
 	KASSERT((pool->tp_cpu == NULL) || (pool->tp_cpu == curcpu()));
+	KASSERT((pool->tp_cpu == NULL) || (curlwp->l_pflag & LP_BOUND));
 
 	/* Wait until we're initialized.  */
 	mutex_spin_enter(&pool->tp_lock);
-	while (overseer->tpt_lwp == NULL)
-		cv_wait(&overseer->tpt_cv, &pool->tp_lock);
+	while (dispatcher->tpt_lwp == NULL)
+		cv_wait(&dispatcher->tpt_cv, &pool->tp_lock);
 
-	TP_LOG(("%s: starting.\n", __func__));
+	SDT_PROBE1(sdt, kernel, threadpool, dispatcher__start,  pool);
 
 	for (;;) {
 		/* Wait until there's a job.  */
 		while (TAILQ_EMPTY(&pool->tp_jobs)) {
 			if (ISSET(pool->tp_flags, THREADPOOL_DYING)) {
-				TP_LOG(("%s: THREADPOOL_DYING\n",
-				    __func__));
+				SDT_PROBE1(sdt, kernel, threadpool,
+				    dispatcher__dying,  pool);
 				break;
 			}
-			cv_wait(&overseer->tpt_cv, &pool->tp_lock);
+			cv_wait(&dispatcher->tpt_cv, &pool->tp_lock);
 		}
 		if (__predict_false(TAILQ_EMPTY(&pool->tp_jobs)))
 			break;
 
 		/* If there are no threads, we'll have to try to start one.  */
 		if (TAILQ_EMPTY(&pool->tp_idle_threads)) {
-			TP_LOG(("%s: Got a job, need to create a thread.\n",
-			    __func__));
+			SDT_PROBE1(sdt, kernel, threadpool, dispatcher__spawn,
+			    pool);
 			threadpool_hold(pool);
 			mutex_spin_exit(&pool->tp_lock);
 
@@ -911,17 +1005,17 @@ threadpool_overseer_thread(void *arg)
 			thread->tpt_lwp = NULL;
 			thread->tpt_pool = pool;
 			thread->tpt_job = NULL;
-			cv_init(&thread->tpt_cv, "poolthrd");
+			cv_init(&thread->tpt_cv, "pooljob");
 
 			ktflags = 0;
 			ktflags |= KTHREAD_MPSAFE;
 			if (pool->tp_pri < PRI_KERNEL)
 				ktflags |= KTHREAD_TS;
+			threadnamesuffix(suffix, sizeof(suffix), pool->tp_cpu,
+			    pool->tp_pri);
 			error = kthread_create(pool->tp_pri, ktflags,
 			    pool->tp_cpu, &threadpool_thread, thread, &lwp,
-			    "poolthread/%d@%d",
-			    (pool->tp_cpu ? cpu_index(pool->tp_cpu) : -1),
-			    (int)pool->tp_pri);
+			    "poolthread%s", suffix);
 
 			mutex_spin_enter(&pool->tp_lock);
 			if (error) {
@@ -947,7 +1041,7 @@ threadpool_overseer_thread(void *arg)
 
 		/* There are idle threads, so try giving one a job.  */
 		struct threadpool_job *const job = TAILQ_FIRST(&pool->tp_jobs);
-		TAILQ_REMOVE(&pool->tp_jobs, job, job_entry);
+
 		/*
 		 * Take an extra reference on the job temporarily so that
 		 * it won't disappear on us while we have both locks dropped.
@@ -957,16 +1051,17 @@ threadpool_overseer_thread(void *arg)
 
 		mutex_enter(job->job_lock);
 		/* If the job was cancelled, we'll no longer be its thread.  */
-		if (__predict_true(job->job_thread == overseer)) {
+		if (__predict_true(job->job_thread == dispatcher)) {
 			mutex_spin_enter(&pool->tp_lock);
+			TAILQ_REMOVE(&pool->tp_jobs, job, job_entry);
 			if (__predict_false(
 				    TAILQ_EMPTY(&pool->tp_idle_threads))) {
 				/*
 				 * Someone else snagged the thread
 				 * first.  We'll have to try again.
 				 */
-				TP_LOG(("%s: '%s' lost race to use idle thread.\n",
-				    __func__, job->job_name));
+				SDT_PROBE2(sdt, kernel, threadpool,
+				    dispatcher__race,  pool, job);
 				TAILQ_INSERT_HEAD(&pool->tp_jobs, job,
 				    job_entry);
 			} else {
@@ -977,8 +1072,8 @@ threadpool_overseer_thread(void *arg)
 				struct threadpool_thread *const thread =
 				    TAILQ_FIRST(&pool->tp_idle_threads);
 
-				TP_LOG(("%s: '%s' gets thread %p\n",
-				    __func__, job->job_name, thread));
+				SDT_PROBE2(sdt, kernel, threadpool,
+				    dispatcher__assign,  job, thread->tpt_lwp);
 				KASSERT(thread->tpt_job == NULL);
 				TAILQ_REMOVE(&pool->tp_idle_threads, thread,
 				    tpt_entry);
@@ -996,7 +1091,7 @@ threadpool_overseer_thread(void *arg)
 	threadpool_rele(pool);
 	mutex_spin_exit(&pool->tp_lock);
 
-	TP_LOG(("%s: exiting.\n", __func__));
+	SDT_PROBE1(sdt, kernel, threadpool, dispatcher__exit,  pool);
 
 	kthread_exit(0);
 }
@@ -1010,21 +1105,22 @@ threadpool_thread(void *arg)
 	struct threadpool *const pool = thread->tpt_pool;
 
 	KASSERT((pool->tp_cpu == NULL) || (pool->tp_cpu == curcpu()));
+	KASSERT((pool->tp_cpu == NULL) || (curlwp->l_pflag & LP_BOUND));
 
 	/* Wait until we're initialized and on the queue.  */
 	mutex_spin_enter(&pool->tp_lock);
 	while (thread->tpt_lwp == NULL)
 		cv_wait(&thread->tpt_cv, &pool->tp_lock);
 
-	TP_LOG(("%s: starting.\n", __func__));
+	SDT_PROBE1(sdt, kernel, threadpool, thread__start,  pool);
 
 	KASSERT(thread->tpt_lwp == curlwp);
 	for (;;) {
 		/* Wait until we are assigned a job.  */
 		while (thread->tpt_job == NULL) {
 			if (ISSET(pool->tp_flags, THREADPOOL_DYING)) {
-				TP_LOG(("%s: THREADPOOL_DYING\n",
-				    __func__));
+				SDT_PROBE1(sdt, kernel, threadpool,
+				    thread__dying,  pool);
 				break;
 			}
 			if (cv_timedwait(&thread->tpt_cv, &pool->tp_lock,
@@ -1049,8 +1145,7 @@ threadpool_thread(void *arg)
 
 		mutex_spin_exit(&pool->tp_lock);
 
-		TP_LOG(("%s: running job '%s' on thread %p.\n",
-		    __func__, job->job_name, thread));
+		SDT_PROBE2(sdt, kernel, threadpool, thread__job,  pool, job);
 
 		/* Run the job.  */
 		(*job->job_fn)(job);
@@ -1073,7 +1168,7 @@ threadpool_thread(void *arg)
 	threadpool_rele(pool);
 	mutex_spin_exit(&pool->tp_lock);
 
-	TP_LOG(("%s: thread %p exiting.\n", __func__, thread));
+	SDT_PROBE1(sdt, kernel, threadpool, thread__exit,  pool);
 
 	KASSERT(!cv_has_waiters(&thread->tpt_cv));
 	cv_destroy(&thread->tpt_cv);

@@ -1,4 +1,4 @@
-/*	$NetBSD: membar_ops.S,v 1.8 2015/06/23 20:56:17 matt Exp $	*/
+/*	$NetBSD: membar_ops.S,v 1.10 2020/08/10 14:37:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007 The NetBSD Foundation, Inc.
@@ -15,7 +15,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- *      
+ *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
  * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,19 +31,12 @@
 
 #include "atomic_op_asm.h"
 
-// If we are on building for MIPS III or later, put in SYNCs
-#if __mips >= 3 || !defined(__mips_o32)
-# define SYNC		sync
-#else
-# define SYNC		nop
-#endif
-
 	.text
 	.set noreorder
 
 LEAF(_membar_sync)
 	j	ra
-	 SYNC
+	 BDSYNC
 END(_membar_sync)
 
 #ifdef __OCTEON__

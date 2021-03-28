@@ -1,7 +1,7 @@
-/*	$NetBSD: pmap.h,v 1.11 2019/09/13 13:56:04 christos Exp $ */
+/*	$NetBSD: pmap.h,v 1.13 2020/11/04 01:37:55 chs Exp $ */
 
 /*
- * Copyright (c) 2002, 2003 The NetBSD Foundation, Inc.
+ * Copyright (c) 2002, 2003, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -46,6 +46,7 @@
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/vnode.h>
+#include <sys/vnode_impl.h>
 #define __EXPOSE_MOUNT
 #include <sys/mount.h>
 #include <sys/uio.h>
@@ -97,8 +98,7 @@
 	((size_t)kvm_read((kd), (addr), (dst), (sz)) == (size_t)(sz))
 #define _KDEREF(kd, addr, dst, sz) do { \
 	if (!_KDEREFOK((kd), (addr), (dst), (sz))) \
-		errx(1, "trying to read %lu (%s) bytes from %lx: %s", \
-		    (unsigned long)(sz), #sz, (addr), kvm_geterr(kd)); \
+		errx(1, "reading from kmem failed: %s", kvm_geterr(kd)); \
 } while (0/*CONSTCOND*/)
 
 /* suck the data using the structure */

@@ -1,4 +1,4 @@
-/*	$NetBSD: fss.c,v 1.108 2019/08/07 10:36:19 maxv Exp $	*/
+/*	$NetBSD: fss.c,v 1.110 2020/12/26 14:50:50 nia Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fss.c,v 1.108 2019/08/07 10:36:19 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fss.c,v 1.110 2020/12/26 14:50:50 nia Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -240,6 +240,9 @@ fss_close(dev_t dev, int flags, int mode, struct lwp *l)
 	cfdata_t cf;
 	struct fss_softc *sc = device_lookup_private(&fss_cd, minor(dev));
 
+	if (sc == NULL)
+		return ENXIO;
+
 	mflag = (mode == S_IFCHR ? FSS_CDEV_OPEN : FSS_BDEV_OPEN);
 	error = 0;
 
@@ -283,6 +286,11 @@ fss_strategy(struct buf *bp)
 	const bool write = ((bp->b_flags & B_READ) != B_READ);
 	struct fss_softc *sc = device_lookup_private(&fss_cd, minor(bp->b_dev));
 
+	if (sc == NULL) {
+		bp->b_error = ENXIO;
+		goto done;
+	}
+
 	mutex_enter(&sc->sc_slock);
 
 	if (write || sc->sc_state != FSS_ACTIVE) {
@@ -303,7 +311,8 @@ fss_strategy(struct buf *bp)
 	return;
 
 done:
-	mutex_exit(&sc->sc_slock);
+	if (sc != NULL)
+		mutex_exit(&sc->sc_slock);
 	bp->b_resid = bp->b_bcount;
 	biodone(bp);
 }
@@ -332,6 +341,9 @@ fss_ioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 #ifndef _LP64
 	struct fss_get50 *fsg50 = (struct fss_get50 *)data;
 #endif
+
+	if (sc == NULL)
+		return ENXIO;
 
 	switch (cmd) {
 	case FSSIOCSET50:
@@ -1090,7 +1102,7 @@ fss_bs_io(struct fss_softc *sc, fss_io_type rw,
 	    IO_ADV_ENCODE(POSIX_FADV_NOREUSE) | IO_NODELOCKED,
 	    sc->sc_bs_lwp->l_cred, resid, NULL);
 	if (error == 0) {
-		mutex_enter(sc->sc_bs_vp->v_interlock);
+		rw_enter(sc->sc_bs_vp->v_uobj.vmobjlock, RW_WRITER);
 		error = VOP_PUTPAGES(sc->sc_bs_vp, trunc_page(off),
 		    round_page(off+len), PGO_CLEANIT | PGO_FREE | PGO_SYNCIO);
 	}

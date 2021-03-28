@@ -1,4 +1,4 @@
-.\" $NetBSD: modload.8,v 1.47 2017/07/18 19:50:54 wiz Exp $
+.\" $NetBSD: modload.8,v 1.49 2021/01/17 00:17:40 mrg Exp $
 .\"
 .\" Copyright (c) 1993 Christopher G. Demetriou
 .\" All rights reserved.
@@ -32,7 +32,7 @@
 .\"
 .\" <<Id: LICENSE,v 1.2 2000/06/14 15:57:33 cgd Exp>>
 .\"
-.Dd July 18, 2017
+.Dd November 13, 2020
 .Dt MODLOAD 8
 .Os
 .Sh NAME
@@ -85,6 +85,7 @@ from the
 .Ar plist
 specified.
 .It Fl f
+Force the module to be loaded.
 When a module is loaded, the kernel checks if the module is compatible
 with the running kernel and will refuse to load modules that are
 potentially incompatible.
@@ -144,13 +145,15 @@ command was designed to be similar in functionality
 to the corresponding command in
 .Tn "SunOS 4.1.3" .
 .Nm
-was switched to the module framework for
-.Nx 5.0 .
+was switched to the kernel object linker module framework for
+.Nx 5.0 ,
+derived from the same framework in
+.Fx .
 .Sh AUTHORS
 .An -nosplit
 The original
 .Nx
 implementation was written by
 .An Terrence R. Lambert Aq Mt terry@cs.weber.edu .
-The switch to the module framework was by
+The switch to the kernel object linker module framework was by
 .An Andrew Doran Aq Mt ad@NetBSD.org .

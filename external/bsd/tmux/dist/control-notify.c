@@ -28,18 +28,16 @@
 
 void
 control_notify_input(struct client *c, struct window_pane *wp,
-    struct evbuffer *input)
+    const u_char *buf, size_t len)
 {
-	u_char		*buf;
-	size_t		 len;
 	struct evbuffer *message;
 	u_int		 i;
 
 	if (c->session == NULL)
 	    return;
 
-	buf = EVBUFFER_DATA(input);
-	len = EVBUFFER_LENGTH(input);
+	if (c->flags & CLIENT_CONTROL_NOOUTPUT)
+		return;
 
 	/*
 	 * Only write input if the window pane is linked to a window belonging
@@ -56,7 +54,8 @@ control_notify_input(struct client *c, struct window_pane *wp,
 			else
 			    evbuffer_add_printf(message, "%c", buf[i]);
 		}
-		control_write_buffer(c, message);
+		evbuffer_add(message, "", 1);
+		control_write(c, "%s", EVBUFFER_DATA(message));
 		evbuffer_free(message);
 	}
 }

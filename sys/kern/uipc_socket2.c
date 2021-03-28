@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket2.c,v 1.134 2019/07/11 17:30:44 maxv Exp $	*/
+/*	$NetBSD: uipc_socket2.c,v 1.138 2020/08/26 22:54:30 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket2.c,v 1.134 2019/07/11 17:30:44 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket2.c,v 1.138 2020/08/26 22:54:30 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -317,6 +317,7 @@ sonewconn(struct socket *head, bool soready)
 	so->so_send = head->so_send;
 	so->so_receive = head->so_receive;
 	so->so_uidinfo = head->so_uidinfo;
+	so->so_egid = head->so_egid;
 	so->so_cpid = head->so_cpid;
 
 	/*
@@ -1590,7 +1591,7 @@ sofindproc(struct socket *so, int all, void (*pr)(const char *, ...))
 	if (so == NULL)
 		return 0;
 
-	t = db_mutex_enter(proc_lock);
+	t = db_mutex_enter(&proc_lock);
 	if (!t) {
 		pr("could not acquire proc_lock mutex\n");
 		return 0;
@@ -1604,13 +1605,13 @@ sofindproc(struct socket *so, int all, void (*pr)(const char *, ...))
 			pr("could not acquire fd_lock mutex\n");
 			continue;
 		}
-		dt = fdp->fd_dt;
+		dt = atomic_load_consume(&fdp->fd_dt);
 		for (i = 0; i < dt->dt_nfiles; i++) {
 			ff = dt->dt_ff[i];
 			if (ff == NULL)
 				continue;
 
-			fp = ff->ff_file;
+			fp = atomic_load_consume(&ff->ff_file);
 			if (fp == NULL)
 				continue;
 
@@ -1635,7 +1636,7 @@ sofindproc(struct socket *so, int all, void (*pr)(const char *, ...))
 		if (all == 0 && found != 0)
 			break;
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return found;
 }

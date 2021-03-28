@@ -1,4 +1,4 @@
-#       $NetBSD: Makefile,v 1.444 2019/11/29 22:38:28 riastradh Exp $
+#       $NetBSD: Makefile,v 1.455 2021/01/24 17:29:11 thorpej Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
@@ -16,7 +16,8 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	cpu_startup.9 cpu_switchto.9 cpufreq.9 \
 	csf.9 ctod.9 \
 	curproc.9 \
-	delay.9 devsw_attach.9 disk.9 ddc.9 disklabel.9 dksubr.9 dofileread.9 \
+	ddb.9 ddc.9 \
+	delay.9 devsw_attach.9 disk.9 disklabel.9 dksubr.9 dofileread.9 \
 	dopowerhooks.9 do_setresuid.9 doshutdownhooks.9 driver.9 \
 	edid.9 errno.9 ethersubr.9 evcnt.9 extattr.9 extent.9 \
 	file.9 fileassoc.9 filedesc.9 firmload.9 flash.9 \
@@ -44,7 +45,7 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	percpu.9 pfil.9 physio.9 pmap.9 pmatch.9 pmf.9 pool.9 \
 	pool_cache.9 powerhook_establish.9 ppsratecheck.9 preempt.9 \
 	proc_find.9 pserialize.9 pslist.9 psref.9 putter.9 \
-	radio.9 ras.9 rasops.9 ratecheck.9 resettodr.9 rnd.9 rndsink.9 \
+	radio.9 ras.9 rasops.9 ratecheck.9 resettodr.9 rnd.9 \
 	roundup.9 rssadapt.9 rt_timer.9 rwlock.9 RUN_ONCE.9 STACK.9 \
 	scanc.9 \
 	sched_4bsd.9 sched_m2.9 scsipi.9 \
@@ -53,6 +54,7 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	SET.9 setbit.9 setjmp.9 shutdownhook_establish.9 \
 	signal.9 skpc.9 sockopt.9 softintr.9 spl.9 specificdata.9 \
 	spi.9 splraiseipl.9 \
+	strlist.9 \
 	suspendsched.9 \
 	sysctl.9 sysmon_envsys.9 sysmon_pswitch.9 sysmon_taskq.9 tc.9 \
 	tcp_congctl.9 thmap.9 threadpool.9 timecounter.9 time_second.9 todr.9 \
@@ -319,9 +321,7 @@ MLINKS+=dofileread.9 dofilewrite.9 \
 MLINKS+=do_setresuid.9 do_setresgid.9
 MLINKS+=ethersubr.9 ether_ifattach.9 ethersubr.9 ether_addmulti.9 \
 	ethersubr.9 ether_delmulti.9 ethersubr.9 ETHER_IS_MULTICAST.9 \
-	ethersubr.9 ETHER_FIRST_MULTI.9 ethersubr.9 ETHER_NEXT_MULTI.9 \
-	ethersubr.9 fddi_ifattach.9 \
-	ethersubr.9 fddi_addmulti.9 ethersubr.9 fddi_delmulti.9
+	ethersubr.9 ETHER_FIRST_MULTI.9 ethersubr.9 ETHER_NEXT_MULTI.9
 MLINKS+=evcnt.9 evcnt_attach_dynamic.9 evcnt.9 evcnt_attach_static.9 \
 	evcnt.9 evcnt_detach.9
 MLINKS+=extent.9 extent_create.9 extent.9 extent_destroy.9 \
@@ -456,7 +456,9 @@ MLINKS+=kmem.9 kmem_alloc.9 \
 	kmem.9 kmem_intr_zalloc.9 \
 	kmem.9 kmem_asprintf.9 \
 	kmem.9 kmem_strdupsize.9 \
-	kmem.9 kmem_strfree.9
+	kmem.9 kmem_strfree.9 \
+	kmem.9 kmem_tmpbuf_alloc.9 \
+	kmem.9 kmem_tmpbuf_free.9
 MAN+=	kpreempt.9
 MLINKS+=kpreempt.9 kpreempt_disable.9 \
 	kpreempt.9 kpreempt_disabled.9 \
@@ -501,6 +503,7 @@ MLINKS+=mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
 	mbuf.9 m_makewritable.9 \
 	mbuf.9 m_pulldown.9 mbuf.9 m_pullup.9 mbuf.9 m_copyup.9 \
 	mbuf.9 m_split.9 mbuf.9 m_adj.9 mbuf.9 m_free.9 \
+	mbuf.9 m_apply.9 \
 	mbuf.9 m_freem.9 mbuf.9 mtod.9 mbuf.9 mtocl.9 mbuf.9 cltom.9 \
 	mbuf.9 MGET.9 mbuf.9 MGETHDR.9 mbuf.9 MEXTMALLOC.9 \
 	mbuf.9 MEXTADD.9 mbuf.9 MCLGET.9 \
@@ -632,7 +635,10 @@ MLINKS+=pci_msi.9 pci_msix.9 \
 	pci_msi.9 pci_msix_establish.9 \
 	pci_msi.9 pci_msix_disestablish.9
 MLINKS+=pci_configure_bus.9 pci_conf_hook.9 \
-	pci_configure_bus.9 pci_conf_interrupt.9
+	pci_configure_bus.9 pci_conf_interrupt.9 \
+	pci_configure_bus.9 pciconf_resource_add.9 \
+	pci_configure_bus.9 pciconf_resource_fini.9 \
+	pci_configure_bus.9 pciconf_resource_init.9
 MLINKS+=pckbport.9 pckbport_attach.9 \
 	pckbport.9 pckbport_attach_slot.9 \
 	pckbport.9 pckbport_cnattach.9 \
@@ -665,10 +671,12 @@ MLINKS+=pcmcia.9 pcmcia_function_init.9 \
 	pcmcia.9 pcmcia_cis_read_n.9 \
 	pcmcia.9 pcmcia_scan_cis.9
 MLINKS+=percpu.9 percpu_alloc.9 \
+	percpu.9 percpu_create.9 \
 	percpu.9 percpu_free.9 \
 	percpu.9 percpu_getref.9 \
 	percpu.9 percpu_putref.9 \
-	percpu.9 percpu_foreach.9
+	percpu.9 percpu_foreach.9 \
+	percpu.9 percpu_foreach_xcall.9
 MLINKS+=pfil.9 pfil_hook_get.9 \
 	pfil.9 pfil_add_hook.9 \
 	pfil.9 pfil_remove_hook.9 \
@@ -808,7 +816,8 @@ MLINKS+=rwlock.9 rw.9 rwlock.9 rw_init.9 rwlock.9 rw_destroy.9 \
 	rwlock.9 rw_enter.9 rwlock.9 rw_exit.9 \
 	rwlock.9 rw_tryenter.9 rwlock.9 rw_tryupgrade.9 \
 	rwlock.9 rw_downgrade.9 rwlock.9 rw_read_held.9 \
-	rwlock.9 rw_write_held.9 rwlock.9 rw_lock_held.9
+	rwlock.9 rw_write_held.9 rwlock.9 rw_lock_held.9 \
+	rwlock.9 rw_lock_op.9
 MLINKS+=STACK.9 STACK_ALLOC.9 \
 	STACK.9 STACK_MAX.9 \
 	STACK.9 STACK_ALIGN.9 \
@@ -879,6 +888,13 @@ MLINKS+=spl.9 spl0.9 spl.9 splbio.9 spl.9 splclock.9 spl.9 splhigh.9 \
 	spl.9 splsoftclock.9 spl.9 splsoftnet.9 spl.9 splsoftserial.9 \
 	spl.9 splstatclock.9 spl.9 spltty.9 spl.9 splvm.9 spl.9 splx.9 \
 	spl.9 splsoftbio.9
+MLINKS+=strlist.9 strlist_append.9 \
+	strlist.9 strlist_count.9 \
+	strlist.9 strlist_index.9 \
+	strlist.9 strlist_match.9 \
+	strlist.9 strlist_next.9 \
+	strlist.9 strlist_pmatch.9 \
+	strlist.9 strlist_string.9
 MLINKS+=sysctl.9 old_sysctl.9 \
 	sysctl.9 sysctl_create.9 \
 	sysctl.9 sysctl_createv.9 \
@@ -1028,7 +1044,8 @@ MLINKS+=vmem.9 vmem_alloc.9 \
 	vmem.9 vmem_destroy.9 \
 	vmem.9 vmem_free.9 \
 	vmem.9 vmem_xalloc.9 \
-	vmem.9 vmem_xfree.9
+	vmem.9 vmem_xfree.9 \
+	vmem.9 vmem_xfreeall.9
 MLINKS+=vnode.9 vref.9 \
 	vnode.9 vrele.9 \
 	vnode.9 vrele_async.9 \

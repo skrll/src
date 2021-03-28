@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_bio.c,v 1.101 2019/12/13 20:10:22 ad Exp $	*/
+/*	$NetBSD: uvm_bio.c,v 1.124 2020/11/10 04:27:22 chs Exp $	*/
 
 /*
  * Copyright (c) 1998 Chuck Silvers.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.101 2019/12/13 20:10:22 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.124 2020/11/10 04:27:22 chs Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_ubc.h"
@@ -45,8 +45,10 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.101 2019/12/13 20:10:22 ad Exp $");
 #include <sys/kernel.h>
 #include <sys/proc.h>
 #include <sys/vnode.h>
+#include <sys/bitops.h>		/* for ilog2() */
 
 #include <uvm/uvm.h>
+#include <uvm/uvm_pdpolicy.h>
 
 #ifdef PMAP_DIRECT
 #  define UBC_USE_PMAP_DIRECT
@@ -64,7 +66,8 @@ static int __noinline ubc_uiomove_direct(struct uvm_object *, struct uio *, vsiz
 			  int, int);
 static void __noinline ubc_zerorange_direct(struct uvm_object *, off_t, size_t, int);
 
-bool ubc_direct = false; /* XXX */
+/* XXX disabled by default until the kinks are worked out. */
+bool ubc_direct = false;
 #endif
 
 /*
@@ -118,9 +121,13 @@ const struct uvm_pagerops ubc_pager = {
 	/* ... rest are NULL */
 };
 
+/* Use value at least as big as maximum page size supported by architecture */
+#define UBC_MAX_WINSHIFT	\
+    ((1 << UBC_WINSHIFT) > MAX_PAGE_SIZE ? UBC_WINSHIFT : ilog2(MAX_PAGE_SIZE))
+
 int ubc_nwins = UBC_NWINS;
-int ubc_winshift __read_mostly = UBC_WINSHIFT;
-int ubc_winsize __read_mostly;
+const int ubc_winshift = UBC_MAX_WINSHIFT;
+const int ubc_winsize = 1 << UBC_MAX_WINSHIFT;
 #if defined(PMAP_PREFER)
 int ubc_nqueues;
 #define UBC_NQUEUES ubc_nqueues
@@ -159,9 +166,7 @@ ubc_init(void)
 	/*
 	 * Make sure ubc_winshift is sane.
 	 */
-	if (ubc_winshift < PAGE_SHIFT)
-		ubc_winshift = PAGE_SHIFT;
-	ubc_winsize = 1 << ubc_winshift;
+	KASSERT(ubc_winshift >= PAGE_SHIFT);
 
 	/*
 	 * init ubc_object.
@@ -230,17 +235,12 @@ static inline int
 ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
     struct vm_page *pg, vm_prot_t prot, vm_prot_t access_type, vaddr_t va)
 {
-	struct uvm_object *uobj;
 	vm_prot_t mask;
 	int error;
 	bool rdonly;
 
-	uobj = pg->uobject;
-	KASSERT(mutex_owned(uobj->vmobjlock));
+	KASSERT(rw_write_held(pg->uobject->vmobjlock));
 
-	if (pg->flags & PG_WANTED) {
-		wakeup(pg);
-	}
 	KASSERT((pg->flags & PG_FAKE) == 0);
 	if (pg->flags & PG_RELEASED) {
 		uvm_pagefree(pg);
@@ -270,6 +270,9 @@ ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
 	/*
 	 * Note that a page whose backing store is partially allocated
 	 * is marked as PG_RDONLY.
+	 *
+	 * it's a responsibility of ubc_alloc's caller to allocate backing
+	 * blocks before writing to the window.
 	 */
 
 	KASSERT((pg->flags & PG_RDONLY) == 0 ||
@@ -277,16 +280,17 @@ ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
 	    pg->offset < umap->writeoff ||
 	    pg->offset + PAGE_SIZE > umap->writeoff + umap->writelen);
 
-	rdonly = ((access_type & VM_PROT_WRITE) == 0 &&
-	    (pg->flags & PG_RDONLY) != 0) ||
-	    UVM_OBJ_NEEDS_WRITEFAULT(uobj);
+	rdonly = uvm_pagereadonly_p(pg);
 	mask = rdonly ? ~VM_PROT_WRITE : VM_PROT_ALL;
 
 	error = pmap_enter(ufi->orig_map->pmap, va, VM_PAGE_TO_PHYS(pg),
 	    prot & mask, PMAP_CANFAIL | (access_type & mask));
 
+	uvm_pagelock(pg);
 	uvm_pageactivate(pg);
-	pg->flags &= ~(PG_BUSY|PG_WANTED);
+	uvm_pagewakeup(pg);
+	uvm_pageunlock(pg);
+	pg->flags &= ~PG_BUSY;
 	UVM_PAGE_OWN(pg, NULL);
 
 	return error;
@@ -303,11 +307,11 @@ ubc_fault(struct uvm_faultinfo *ufi, vaddr_t ign1, struct vm_page **ign2,
 	struct uvm_object *uobj;
 	struct ubc_map *umap;
 	vaddr_t va, eva, ubc_offset, slot_offset;
-	struct vm_page *pgs[ubc_winsize >> PAGE_SHIFT];
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
 	int i, error, npages;
 	vm_prot_t prot;
 
-	UVMHIST_FUNC("ubc_fault"); UVMHIST_CALLED(ubchist);
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(ubchist);
 
 	/*
 	 * no need to try with PGO_LOCKED...
@@ -368,7 +372,7 @@ ubc_fault(struct uvm_faultinfo *ufi, vaddr_t ign1, struct vm_page **ign2,
 
 again:
 	memset(pgs, 0, sizeof (pgs));
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 
 	UVMHIST_LOG(ubchist, "slot_offset 0x%jx writeoff 0x%jx writelen 0x%jx ",
 	    slot_offset, umap->writeoff, umap->writelen, 0);
@@ -413,7 +417,7 @@ again:
 	 * which belong to underlying UVM object.  In such case, lock is
 	 * shared amongst the objects.
 	 */
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	for (i = 0; va < eva; i++, va += PAGE_SIZE) {
 		struct vm_page *pg;
 
@@ -432,14 +436,14 @@ again:
 			 * and perform uvm_wait().  Note: page will re-fault.
 			 */
 			pmap_update(ufi->orig_map->pmap);
-			mutex_exit(uobj->vmobjlock);
+			rw_exit(uobj->vmobjlock);
 			uvm_wait("ubc_fault");
-			mutex_enter(uobj->vmobjlock);
+			rw_enter(uobj->vmobjlock, RW_WRITER);
 		}
 	}
 	/* Must make VA visible before the unlock. */
 	pmap_update(ufi->orig_map->pmap);
-	mutex_exit(uobj->vmobjlock);
+	rw_exit(uobj->vmobjlock);
 
 	return 0;
 }
@@ -472,23 +476,23 @@ ubc_find_mapping(struct uvm_object *uobj, voff_t offset)
 
 static void * __noinline
 ubc_alloc(struct uvm_object *uobj, voff_t offset, vsize_t *lenp, int advice,
-    int flags)
+    int flags, struct vm_page **pgs, int *npagesp)
 {
 	vaddr_t slot_offset, va;
 	struct ubc_map *umap;
 	voff_t umap_offset;
 	int error;
-	UVMHIST_FUNC("ubc_alloc"); UVMHIST_CALLED(ubchist);
-
-	UVMHIST_LOG(ubchist, "uobj %#jx offset 0x%jx len 0x%jx",
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(ubchist, "uobj %#jx offset 0x%jx len 0x%jx",
 	    (uintptr_t)uobj, offset, *lenp, 0);
 
 	KASSERT(*lenp > 0);
 	umap_offset = (offset & ~((voff_t)ubc_winsize - 1));
 	slot_offset = (vaddr_t)(offset & ((voff_t)ubc_winsize - 1));
 	*lenp = MIN(*lenp, ubc_winsize - slot_offset);
+	KASSERT(*lenp > 0);
 
-	mutex_enter(ubc_object.uobj.vmobjlock);
+	rw_enter(ubc_object.uobj.vmobjlock, RW_WRITER);
 again:
 	/*
 	 * The UVM object is already referenced.
@@ -501,8 +505,9 @@ again:
 		UBC_EVCNT_INCR(wincachemiss);
 		umap = TAILQ_FIRST(UBC_QUEUE(offset));
 		if (umap == NULL) {
-			kpause("ubc_alloc", false, hz >> 2,
-			    ubc_object.uobj.vmobjlock);
+			rw_exit(ubc_object.uobj.vmobjlock);
+			kpause("ubc_alloc", false, hz >> 2, NULL);
+			rw_enter(ubc_object.uobj.vmobjlock, RW_WRITER);
 			goto again;
 		}
 
@@ -520,11 +525,11 @@ again:
 			 */
 			if (umap->flags & UMAP_MAPPING_CACHED) {
 				umap->flags &= ~UMAP_MAPPING_CACHED;
-				mutex_enter(oobj->vmobjlock);
+				rw_enter(oobj->vmobjlock, RW_WRITER);
 				pmap_remove(pmap_kernel(), va,
 				    va + ubc_winsize);
 				pmap_update(pmap_kernel());
-				mutex_exit(oobj->vmobjlock);
+				rw_exit(oobj->vmobjlock);
 			}
 			LIST_REMOVE(umap, hash);
 			LIST_REMOVE(umap, list);
@@ -554,29 +559,29 @@ again:
 
 	umap->refcount++;
 	umap->advice = advice;
-	mutex_exit(ubc_object.uobj.vmobjlock);
+	rw_exit(ubc_object.uobj.vmobjlock);
 	UVMHIST_LOG(ubchist, "umap %#jx refs %jd va %#jx flags 0x%jx",
 	    (uintptr_t)umap, umap->refcount, (uintptr_t)va, flags);
 
 	if (flags & UBC_FAULTBUSY) {
-		// XXX add offset from slot_offset?
-		int npages = (*lenp + PAGE_SIZE - 1) >> PAGE_SHIFT;
-		struct vm_page *pgs[npages];
+		int npages = (*lenp + (offset & (PAGE_SIZE - 1)) +
+		    PAGE_SIZE - 1) >> PAGE_SHIFT;
 		int gpflags =
 		    PGO_SYNCIO|PGO_OVERWRITE|PGO_PASTEOF|PGO_NOBLOCKALLOC|
 		    PGO_NOTIMESTAMP;
 		int i;
 		KDASSERT(flags & UBC_WRITE);
+		KASSERT(npages <= *npagesp);
 		KASSERT(umap->refcount == 1);
 
 		UBC_EVCNT_INCR(faultbusy);
 again_faultbusy:
-		mutex_enter(uobj->vmobjlock);
+		rw_enter(uobj->vmobjlock, RW_WRITER);
 		if (umap->flags & UMAP_MAPPING_CACHED) {
 			umap->flags &= ~UMAP_MAPPING_CACHED;
 			pmap_remove(pmap_kernel(), va, va + ubc_winsize);
 		}
-		memset(pgs, 0, sizeof(pgs));
+		memset(pgs, 0, *npagesp * sizeof(pgs[0]));
 
 		error = (*uobj->pgops->pgo_get)(uobj, trunc_page(offset), pgs,
 		    &npages, 0, VM_PROT_READ | VM_PROT_WRITE, advice, gpflags);
@@ -593,7 +598,7 @@ again_faultbusy:
 
 			KASSERT(pg->uobject == uobj);
 			if (pg->loan_count != 0) {
-				mutex_enter(uobj->vmobjlock);
+				rw_enter(uobj->vmobjlock, RW_WRITER);
 				if (pg->loan_count != 0) {
 					pg = uvm_loanbreak(pg);
 				}
@@ -601,19 +606,21 @@ again_faultbusy:
 					pmap_kremove(va, ubc_winsize);
 					pmap_update(pmap_kernel());
 					uvm_page_unbusy(pgs, npages);
-					mutex_exit(uobj->vmobjlock);
+					rw_exit(uobj->vmobjlock);
 					uvm_wait("ubc_alloc");
 					goto again_faultbusy;
 				}
-				mutex_exit(uobj->vmobjlock);
+				rw_exit(uobj->vmobjlock);
 				pgs[i] = pg;
 			}
-			pmap_kenter_pa(va + slot_offset + (i << PAGE_SHIFT),
+			pmap_kenter_pa(
+			    va + trunc_page(slot_offset) + (i << PAGE_SHIFT),
 			    VM_PAGE_TO_PHYS(pg),
 			    VM_PROT_READ | VM_PROT_WRITE, 0);
 		}
 		pmap_update(pmap_kernel());
 		umap->flags |= UMAP_PAGES_LOCKED;
+		*npagesp = npages;
 	} else {
 		KASSERT((umap->flags & UMAP_PAGES_LOCKED) == 0);
 	}
@@ -627,56 +634,63 @@ out:
  */
 
 static void __noinline
-ubc_release(void *va, int flags)
+ubc_release(void *va, int flags, struct vm_page **pgs, int npages)
 {
 	struct ubc_map *umap;
 	struct uvm_object *uobj;
 	vaddr_t umapva;
 	bool unmapped;
-	UVMHIST_FUNC("ubc_release"); UVMHIST_CALLED(ubchist);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(ubchist, "va %#jx", (uintptr_t)va, 0, 0, 0);
 
-	UVMHIST_LOG(ubchist, "va %#jx", (uintptr_t)va, 0, 0, 0);
 	umap = &ubc_object.umap[((char *)va - ubc_object.kva) >> ubc_winshift];
 	umapva = UBC_UMAP_ADDR(umap);
 	uobj = umap->uobj;
 	KASSERT(uobj != NULL);
 
 	if (umap->flags & UMAP_PAGES_LOCKED) {
-		const voff_t slot_offset = umap->writeoff;
 		const voff_t endoff = umap->writeoff + umap->writelen;
 		const voff_t zerolen = round_page(endoff) - endoff;
-		const u_int npages = (round_page(endoff) -
-		    trunc_page(slot_offset)) >> PAGE_SHIFT;
-		struct vm_page *pgs[npages];
 
+		KASSERT(npages == (round_page(endoff) -
+		    trunc_page(umap->writeoff)) >> PAGE_SHIFT);
 		KASSERT((umap->flags & UMAP_MAPPING_CACHED) == 0);
 		if (zerolen) {
 			memset((char *)umapva + endoff, 0, zerolen);
 		}
 		umap->flags &= ~UMAP_PAGES_LOCKED;
-		mutex_enter(uobj->vmobjlock);
+		rw_enter(uobj->vmobjlock, RW_WRITER);
 		for (u_int i = 0; i < npages; i++) {
+			struct vm_page *pg = pgs[i];
+#ifdef DIAGNOSTIC
 			paddr_t pa;
-			bool rv __diagused;
-
-			rv = pmap_extract(pmap_kernel(),
-			    umapva + slot_offset + (i << PAGE_SHIFT), &pa);
+			bool rv;
+			rv = pmap_extract(pmap_kernel(), umapva +
+			    umap->writeoff + (i << PAGE_SHIFT), &pa);
 			KASSERT(rv);
-			pgs[i] = PHYS_TO_VM_PAGE(pa);
-			pgs[i]->flags &= ~(PG_FAKE|PG_CLEAN);
-			KASSERT(pgs[i]->loan_count == 0);
-			uvm_pageactivate(pgs[i]);
+			KASSERT(PHYS_TO_VM_PAGE(pa) == pg);
+#endif
+			pg->flags &= ~PG_FAKE;
+			KASSERTMSG(uvm_pagegetdirty(pg) ==
+			    UVM_PAGE_STATUS_DIRTY,
+			    "page %p not dirty", pg);
+			KASSERT(pg->loan_count == 0);
+			if (uvmpdpol_pageactivate_p(pg)) {
+				uvm_pagelock(pg);
+				uvm_pageactivate(pg);
+				uvm_pageunlock(pg);
+			}
 		}
 		pmap_kremove(umapva, ubc_winsize);
 		pmap_update(pmap_kernel());
 		uvm_page_unbusy(pgs, npages);
-		mutex_exit(uobj->vmobjlock);
+		rw_exit(uobj->vmobjlock);
 		unmapped = true;
 	} else {
 		unmapped = false;
 	}
 
-	mutex_enter(ubc_object.uobj.vmobjlock);
+	rw_enter(ubc_object.uobj.vmobjlock, RW_WRITER);
 	umap->writeoff = 0;
 	umap->writelen = 0;
 	umap->refcount--;
@@ -687,11 +701,11 @@ ubc_release(void *va, int flags)
 			 * This is typically used to avoid leaving
 			 * incompatible cache aliases around indefinitely.
 			 */
-			mutex_enter(uobj->vmobjlock);
+			rw_enter(uobj->vmobjlock, RW_WRITER);
 			pmap_remove(pmap_kernel(), umapva,
 				    umapva + ubc_winsize);
 			pmap_update(pmap_kernel());
-			mutex_exit(uobj->vmobjlock);
+			rw_exit(uobj->vmobjlock);
 
 			umap->flags &= ~UMAP_MAPPING_CACHED;
 			LIST_REMOVE(umap, hash);
@@ -709,7 +723,7 @@ ubc_release(void *va, int flags)
 	}
 	UVMHIST_LOG(ubchist, "umap %#jx refs %jd", (uintptr_t)umap,
 	    umap->refcount, 0, 0);
-	mutex_exit(ubc_object.uobj.vmobjlock);
+	rw_exit(ubc_object.uobj.vmobjlock);
 }
 
 /*
@@ -721,15 +735,29 @@ ubc_uiomove(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int advice,
     int flags)
 {
 	const bool overwrite = (flags & UBC_FAULTBUSY) != 0;
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
 	voff_t off;
-	int error;
+	int error, npages;
 
 	KASSERT(todo <= uio->uio_resid);
 	KASSERT(((flags & UBC_WRITE) != 0 && uio->uio_rw == UIO_WRITE) ||
 	    ((flags & UBC_READ) != 0 && uio->uio_rw == UIO_READ));
 
 #ifdef UBC_USE_PMAP_DIRECT
-	if (ubc_direct) {
+	/*
+	 * during direct access pages need to be held busy to prevent them
+	 * changing identity, and therefore if we read or write an object
+	 * into a mapped view of same we could deadlock while faulting.
+	 *
+	 * avoid the problem by disallowing direct access if the object
+	 * might be visible somewhere via mmap().
+	 *
+	 * XXX concurrent reads cause thundering herd issues with PG_BUSY.
+	 * In the future enable by default for writes or if ncpu<=2, and
+	 * make the toggle override that.
+	 */
+	if ((ubc_direct && (flags & UBC_ISMAPPED) == 0) ||
+	    (flags & UBC_FAULTBUSY) != 0) {
 		return ubc_uiomove_direct(uobj, uio, todo, advice, flags);
 	}
 #endif
@@ -740,7 +768,9 @@ ubc_uiomove(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int advice,
 		vsize_t bytelen = todo;
 		void *win;
 
-		win = ubc_alloc(uobj, off, &bytelen, advice, flags);
+		npages = __arraycount(pgs);
+		win = ubc_alloc(uobj, off, &bytelen, advice, flags, pgs,
+		    &npages);
 		if (error == 0) {
 			error = uiomove(win, bytelen, uio);
 		}
@@ -750,10 +780,9 @@ ubc_uiomove(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int advice,
 			 * do it now.  it's safe to use memset here
 			 * because we just mapped the pages above.
 			 */
-			printf("%s: error=%d\n", __func__, error);
 			memset(win, 0, bytelen);
 		}
-		ubc_release(win, flags);
+		ubc_release(win, flags, pgs, npages);
 		off += bytelen;
 		todo -= bytelen;
 		if (error != 0 && (flags & UBC_PARTIALOK) != 0) {
@@ -771,9 +800,11 @@ ubc_uiomove(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int advice,
 void
 ubc_zerorange(struct uvm_object *uobj, off_t off, size_t len, int flags)
 {
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
+	int npages;
 
 #ifdef UBC_USE_PMAP_DIRECT
-	if (ubc_direct) {
+	if (ubc_direct || (flags & UBC_FAULTBUSY) != 0) {
 		ubc_zerorange_direct(uobj, off, len, flags);
 		return;
 	}
@@ -787,9 +818,11 @@ ubc_zerorange(struct uvm_object *uobj, off_t off, size_t len, int flags)
 		void *win;
 		vsize_t bytelen = len;
 
-		win = ubc_alloc(uobj, off, &bytelen, UVM_ADV_NORMAL, UBC_WRITE);
+		npages = __arraycount(pgs);
+		win = ubc_alloc(uobj, off, &bytelen, UVM_ADV_NORMAL, UBC_WRITE,
+		    pgs, &npages);
 		memset(win, 0, bytelen);
-		ubc_release(win, flags);
+		ubc_release(win, flags, pgs, npages);
 
 		off += bytelen;
 		len -= bytelen;
@@ -808,13 +841,13 @@ ubc_alloc_direct(struct uvm_object *uobj, voff_t offset, vsize_t *lenp,
 {
 	voff_t pgoff;
 	int error;
-	int gpflags = flags | PGO_NOTIMESTAMP | PGO_SYNCIO | PGO_ALLPAGES;
+	int gpflags = flags | PGO_NOTIMESTAMP | PGO_SYNCIO;
 	int access_type = VM_PROT_READ;
-	UVMHIST_FUNC("ubc_alloc_direct"); UVMHIST_CALLED(ubchist);
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(ubchist);
 
 	if (flags & UBC_WRITE) {
 		if (flags & UBC_FAULTBUSY)
-			gpflags |= PGO_OVERWRITE;
+			gpflags |= PGO_OVERWRITE | PGO_NOBLOCKALLOC;
 #if 0
 		KASSERT(!UVM_OBJ_NEEDS_WRITEFAULT(uobj));
 #endif
@@ -839,7 +872,7 @@ again:
 	KASSERT(*lenp + pgoff <= ubc_winsize);
 	memset(pgs, 0, *npages * sizeof(pgs[0]));
 
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	error = (*uobj->pgops->pgo_get)(uobj, trunc_page(offset), pgs,
 	    npages, 0, access_type, advice, gpflags);
 	UVMHIST_LOG(ubchist, "alloc_direct getpages %jd", error, 0, 0, 0);
@@ -851,7 +884,7 @@ again:
 		return error;
 	}
 
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	for (int i = 0; i < *npages; i++) {
 		struct vm_page *pg = pgs[i];
 
@@ -865,7 +898,7 @@ again:
 			pg = uvm_loanbreak(pg);
 			if (pg == NULL) {
 				uvm_page_unbusy(pgs, *npages);
-				mutex_exit(uobj->vmobjlock);
+				rw_exit(uobj->vmobjlock);
 				uvm_wait("ubc_alloc_directl");
 				goto again;
 			}
@@ -874,8 +907,16 @@ again:
 
 		/* Page must be writable by now */
 		KASSERT((pg->flags & PG_RDONLY) == 0 || (flags & UBC_WRITE) == 0);
+
+		/*
+		 * XXX For aobj pages.  No managed mapping - mark the page
+		 * dirty.
+		 */
+		if ((flags & UBC_WRITE) != 0) {
+			uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_DIRTY);
+		}
 	}
-	mutex_exit(uobj->vmobjlock);
+	rw_exit(uobj->vmobjlock);
 
 	return 0;
 }
@@ -884,18 +925,34 @@ static void __noinline
 ubc_direct_release(struct uvm_object *uobj,
 	int flags, struct vm_page **pgs, int npages)
 {
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	for (int i = 0; i < npages; i++) {
 		struct vm_page *pg = pgs[i];
 
-		uvm_pageactivate(pg);
+		pg->flags &= ~PG_BUSY;
+		UVM_PAGE_OWN(pg, NULL);
+		if (pg->flags & PG_RELEASED) {
+			pg->flags &= ~PG_RELEASED;
+			uvm_pagefree(pg);
+			continue;
+		}
 
-		/* Page was changed, no longer fake and neither clean */
-		if (flags & UBC_WRITE)
-			pg->flags &= ~(PG_FAKE|PG_CLEAN);
+		if (uvm_pagewanted_p(pg) || uvmpdpol_pageactivate_p(pg)) {
+			uvm_pagelock(pg);
+			uvm_pageactivate(pg);
+			uvm_pagewakeup(pg);
+			uvm_pageunlock(pg);
+		}
+
+		/* Page was changed, no longer fake and neither clean. */
+		if (flags & UBC_WRITE) {
+			KASSERTMSG(uvm_pagegetdirty(pg) ==
+			    UVM_PAGE_STATUS_DIRTY,
+			    "page %p not dirty", pg);
+			pg->flags &= ~PG_FAKE;
+		}
 	}
-	uvm_page_unbusy(pgs, npages);
-	mutex_exit(uobj->vmobjlock);
+	rw_exit(uobj->vmobjlock);
 }
 
 static int
@@ -920,7 +977,7 @@ ubc_uiomove_direct(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int a
 	const bool overwrite = (flags & UBC_FAULTBUSY) != 0;
 	voff_t off;
 	int error, npages;
-	struct vm_page *pgs[ubc_winsize >> PAGE_SHIFT];
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
 
 	KASSERT(todo <= uio->uio_resid);
 	KASSERT(((flags & UBC_WRITE) != 0 && uio->uio_rw == UIO_WRITE) ||
@@ -942,21 +999,38 @@ ubc_uiomove_direct(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int a
 			error = uvm_direct_process(pgs, npages, off, bytelen,
 			    ubc_uiomove_process, uio);
 		}
-		if (error != 0 && overwrite) {
+
+		if (overwrite) {
+			voff_t endoff;
+
 			/*
-			 * if we haven't initialized the pages yet,
-			 * do it now.  it's safe to use memset here
-			 * because we just mapped the pages above.
+			 * if we haven't initialized the pages yet due to an
+			 * error above, do it now.
 			 */
-			printf("%s: error=%d\n", __func__, error);
-			(void) uvm_direct_process(pgs, npages, off, bytelen,
-			    ubc_zerorange_process, NULL);
+			if (error != 0) {
+				(void) uvm_direct_process(pgs, npages, off,
+				    bytelen, ubc_zerorange_process, NULL);
+			}
+
+			off += bytelen;
+			todo -= bytelen;
+			endoff = off & (PAGE_SIZE - 1);
+
+			/*
+			 * zero out the remaining portion of the final page
+			 * (if any).
+			 */
+			if (todo == 0 && endoff != 0) {
+				vsize_t zlen = PAGE_SIZE - endoff;
+				(void) uvm_direct_process(pgs + npages - 1, 1,
+				    off, zlen, ubc_zerorange_process, NULL);
+			}
+		} else {
+			off += bytelen;
+			todo -= bytelen;
 		}
 
 		ubc_direct_release(uobj, flags, pgs, npages);
-
-		off += bytelen;
-		todo -= bytelen;
 
 		if (error != 0 && ISSET(flags, UBC_PARTIALOK)) {
 			break;
@@ -970,7 +1044,7 @@ static void __noinline
 ubc_zerorange_direct(struct uvm_object *uobj, off_t off, size_t todo, int flags)
 {
 	int error, npages;
-	struct vm_page *pgs[ubc_winsize >> PAGE_SHIFT];
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
 
 	flags |= UBC_WRITE;
 
@@ -1016,7 +1090,7 @@ ubc_purge(struct uvm_object *uobj)
 	if (__predict_true(LIST_EMPTY(&uobj->uo_ubc))) {
 		return;
 	}
-	mutex_enter(ubc_object.uobj.vmobjlock);
+	rw_enter(ubc_object.uobj.vmobjlock, RW_WRITER);
 	while ((umap = LIST_FIRST(&uobj->uo_ubc)) != NULL) {
 		KASSERT(umap->refcount == 0);
 		for (va = 0; va < ubc_winsize; va += PAGE_SIZE) {
@@ -1028,5 +1102,5 @@ ubc_purge(struct uvm_object *uobj)
 		umap->flags &= ~UMAP_MAPPING_CACHED;
 		umap->uobj = NULL;
 	}
-	mutex_exit(ubc_object.uobj.vmobjlock);
+	rw_exit(ubc_object.uobj.vmobjlock);
 }

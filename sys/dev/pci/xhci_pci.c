@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci_pci.c,v 1.24 2019/12/02 03:06:51 msaitoh Exp $	*/
+/*	$NetBSD: xhci_pci.c,v 1.28 2021/02/07 11:25:56 ryoon Exp $	*/
 /*	OpenBSD: xhci_pci.c,v 1.4 2014/07/12 17:38:51 yuo Exp	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci_pci.c,v 1.24 2019/12/02 03:06:51 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci_pci.c,v 1.28 2021/02/07 11:25:56 ryoon Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_xhci_pci.h"
@@ -126,6 +126,7 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 	char const *intrstr;
 	pcireg_t csr, memtype, usbrev;
 	uint32_t hccparams;
+	int counts[PCI_INTR_TYPE_SIZE];
 	char intrbuf[PCI_INTRSTR_LEN];
 	bus_addr_t memaddr;
 	int flags, msixoff;
@@ -193,17 +194,36 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 
 	hccparams = bus_space_read_4(sc->sc_iot, sc->sc_ioh, XHCI_HCCPARAMS);
 
-	if (pci_dma64_available(pa) && (XHCI_HCC_AC64(hccparams) != 0))
-		sc->sc_bus.ub_dmatag = pa->pa_dmat64;
-	else
+	if (XHCI_HCC_AC64(hccparams) != 0) {
+		aprint_verbose_dev(self, "64-bit DMA");
+		if (pci_dma64_available(pa)) {
+			sc->sc_bus.ub_dmatag = pa->pa_dmat64;
+			aprint_verbose("\n");
+		} else {
+			aprint_verbose(" - limited\n");
+			sc->sc_bus.ub_dmatag = pa->pa_dmat;
+		}
+	} else {
+		aprint_verbose_dev(self, "32-bit DMA\n");
 		sc->sc_bus.ub_dmatag = pa->pa_dmat;
+	}
 
 	/* Enable the device. */
 	pci_conf_write(pc, tag, PCI_COMMAND_STATUS_REG,
 		       csr | PCI_COMMAND_MASTER_ENABLE);
 
+	for (int i = 0; i < PCI_INTR_TYPE_SIZE; i++) {
+		counts[i] = 1;
+	}
+#ifdef XHCI_DISABLE_MSI
+	counts[PCI_INTR_TYPE_MSI] = 0;
+#endif
+#ifdef XHCI_DISABLE_MSIX
+	counts[PCI_INTR_TYPE_MSIX] = 0;
+#endif
+
 	/* Allocate and establish the interrupt. */
-	if (pci_intr_alloc(pa, &psc->sc_pihp, NULL, 0)) {
+	if (pci_intr_alloc(pa, &psc->sc_pihp, counts, PCI_INTR_TYPE_MSIX)) {
 		aprint_error_dev(self, "can't allocate handler\n");
 		goto fail;
 	}
@@ -213,7 +233,7 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 	    xhci_intr, sc, device_xname(sc->sc_dev));
 	if (psc->sc_ih == NULL) {
 		pci_intr_release(pc, psc->sc_pihp, 1);
-		psc->sc_ih = NULL;
+		psc->sc_pihp = NULL;
 		aprint_error_dev(self, "couldn't establish interrupt");
 		if (intrstr != NULL)
 			aprint_error(" at %s", intrstr);

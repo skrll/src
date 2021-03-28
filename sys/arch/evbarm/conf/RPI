@@ -1,25 +1,11 @@
 #
-#	$NetBSD: RPI,v 1.87 2019/06/22 07:58:55 skrll Exp $
+#	$NetBSD: RPI,v 1.94 2020/11/23 06:24:35 rin Exp $
 #
 #	RPi -- Raspberry Pi
 #
 
 include	"arch/evbarm/conf/std.rpi"
 include "arch/evbarm/conf/GENERIC.common"
-
-makeoptions DTSGNUARCH="arm arm64"
-makeoptions DTSSUBDIR="broadcom"
-
-makeoptions	DTS="
-	bcm2835-rpi-a.dts
-	bcm2835-rpi-a-plus.dts
-	bcm2835-rpi-b.dts
-	bcm2835-rpi-b-plus.dts
-	bcm2835-rpi-b-rev2.dts
-	bcm2835-rpi-cm1-io1.dts
-	bcm2835-rpi-zero.dts
-	bcm2835-rpi-zero-w.dts
-"
 
 options 	CPU_ARM1176
 options 	SOC_BCM2835
@@ -33,7 +19,8 @@ makeoptions 	CPUFLAGS="-march=armv6z -mtune=arm1176jzf-s -mfpu=vfp"
 # Development and Debugging options
 #options 	KGDB,KGDB_PLCOMUNIT=0,KGDB_DEVRATE=115200,KGDB_CONMODE=0xB00
 #options 	VERBOSE_INIT_ARM
-#options 	EARLYCONS=bcm2835,CONSADDR=0x20201000
+#options 	EARLYCONS=bcm2835,CONSADDR=0x20201000		# RPI1, RPI0
+#options 	EARLYCONS=bcm2835_aux,CONSADDR=0x20215040	# RPI0W
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
 options 	PLCONSOLE
@@ -49,7 +36,6 @@ options 	PLCONSOLE
 #  single		Boot to single user only
 #  kdb			Give control to kernel debugger
 #  ask			Ask for file name to reboot from
-#  pmapdebug=<n>	If PMAP_DEBUG, set pmap_debug_level to <n>
 #  memorydisk=<n>	Set memorydisk size to <n> KB
 #  quiet		Show aprint_naive output
 #  verbose		Show aprint_normal and aprint_verbose output
@@ -134,6 +120,7 @@ bcmsdhost* 	at fdt?
 sdmmc* 		at bcmsdhost?
 
 ld*     at sdmmc?
+bwfm*   at      sdmmc?
 
 # On-board USB
 dwctwo* 	at fdt?
@@ -164,6 +151,7 @@ qsphy*		at mii? phy ?		# Quality Semiconductor QS6612 PHYs
 rdcphy*		at mii? phy ?		# RDC R6040 10/100 PHY
 rgephy*		at mii? phy ?		# Realtek 8169S/8110S internal PHYs
 rlphy*		at mii? phy ?		# Realtek 8139/8201L PHYs
+smscphy*	at mii? phy ?		# SMSC LAN87xx PHYs
 sqphy*		at mii? phy ?		# Seeq 80220/80221/80223 PHYs
 tlphy*		at mii? phy ?		# ThunderLAN PHYs
 tqphy*		at mii? phy ?		# TDK Semiconductor PHYs
@@ -211,6 +199,9 @@ options 	WSDISPLAY_COMPAT_USL		# wsconscfg VT handling
 options 	WSDISPLAY_COMPAT_RAWKBD		# can get raw scancodes
 options 	WSDISPLAY_DEFAULTSCREENS=4
 
+options 	FONT_BOLD8x16
+options 	FONT_BOLD16x32
+
 #options 	FONT_QVSS8x15
 #options 	FONT_GALLANT12x22	# the console font
 
@@ -221,7 +212,6 @@ options 	WSDISPLAY_DEFAULTSCREENS=4
 #pseudo-device	npf			# NPF packet filter
 #pseudo-device	kttcp			# network loopback
 #pseudo-device	sl			# Serial Line IP
-#pseudo-device	strip			# Starmode Radio IP (Metricom)
 #pseudo-device	irframetty		# IrDA frame line discipline
 #pseudo-device	faith			# IPv[46] TCP relay translation i/f
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
@@ -239,7 +229,6 @@ pseudo-device	wsfont
 # local configuration
 cinclude "arch/evbarm/conf/RPI.local"
 
-# Bluetooth serial UART devices
-pseudo-device btuart
-pseudo-device bcsp
-pseudo-device bthfive
+# Bluetooth devices
+include "dev/bluetooth/bluetoothdevices.config"
+

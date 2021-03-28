@@ -1,4 +1,4 @@
-/* $NetBSD: bcm2835_vcaudio.c,v 1.14 2019/05/08 13:40:14 isaki Exp $ */
+/* $NetBSD: bcm2835_vcaudio.c,v 1.17 2021/01/27 12:06:10 nia Exp $ */
 
 /*-
  * Copyright (c) 2013 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_vcaudio.c,v 1.14 2019/05/08 13:40:14 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_vcaudio.c,v 1.17 2021/01/27 12:06:10 nia Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -159,7 +159,6 @@ static int	vcaudio_set_format(void *, int,
     const audio_params_t *, const audio_params_t *,
     audio_filter_reg_t *, audio_filter_reg_t *);
 static int	vcaudio_halt_output(void *);
-static int	vcaudio_halt_input(void *);
 static int	vcaudio_set_port(void *, mixer_ctrl_t *);
 static int	vcaudio_get_port(void *, mixer_ctrl_t *);
 static int	vcaudio_query_devinfo(void *, mixer_devinfo_t *);
@@ -171,8 +170,6 @@ static int	vcaudio_round_blocksize(void *, int, int,
 
 static int	vcaudio_trigger_output(void *, void *, void *, int,
     void (*)(void *), void *, const audio_params_t *);
-static int	vcaudio_trigger_input(void *, void *, void *, int,
-    void (*)(void *), void *, const audio_params_t *);
 
 static void	vcaudio_get_locks(void *, kmutex_t **, kmutex_t **);
 
@@ -182,7 +179,6 @@ static const struct audio_hw_if vcaudio_hw_if = {
 	.query_format = vcaudio_query_format,
 	.set_format = vcaudio_set_format,
 	.halt_output = vcaudio_halt_output,
-	.halt_input = vcaudio_halt_input,
 	.getdev = vcaudio_getdev,
 	.set_port = vcaudio_set_port,
 	.get_port = vcaudio_get_port,
@@ -190,7 +186,6 @@ static const struct audio_hw_if vcaudio_hw_if = {
 	.get_props = vcaudio_get_props,
 	.round_blocksize = vcaudio_round_blocksize,
 	.trigger_output = vcaudio_trigger_output,
-	.trigger_input = vcaudio_trigger_input,
 	.get_locks = vcaudio_get_locks,
 };
 
@@ -275,7 +270,7 @@ vcaudio_init(struct vcaudio_softc *sc)
 	sc->sc_hwvol[VCAUDIO_DEST_HDMI] = 255;
 	sc->sc_dest = VCAUDIO_DEST_AUTO;
 
-	sc->sc_format.mode = AUMODE_PLAY|AUMODE_RECORD;
+	sc->sc_format.mode = AUMODE_PLAY;
 	sc->sc_format.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	sc->sc_format.validbits = 16;
 	sc->sc_format.precision = 16;
@@ -371,8 +366,6 @@ vcaudio_service_callback(void *priv, const VCHI_CALLBACK_REASON_T reason,
 	VC_AUDIO_MSG_T msg;
 	int32_t msglen = 0;
 	int error;
-	void (*intr)(void *) = NULL;
-	void *intrarg = NULL;
 
 	if (sc == NULL || reason != VCHI_CALLBACK_MSG_AVAILABLE)
 		return;
@@ -396,9 +389,8 @@ vcaudio_service_callback(void *priv, const VCHI_CALLBACK_REASON_T reason,
 		break;
 
 	case VC_AUDIO_MSG_TYPE_COMPLETE:
-		intr = msg.u.complete.callback;
-		intrarg = msg.u.complete.cookie;
-		if (intr && intrarg) {
+		if (msg.u.complete.cookie1 == VC_AUDIO_WRITE_COOKIE1 &&
+		    msg.u.complete.cookie2 == VC_AUDIO_WRITE_COOKIE2) {
 			int count = msg.u.complete.count & 0xffff;
 			int perr = (msg.u.complete.count & __BIT(30)) != 0;
 			bool sched = false;
@@ -420,7 +412,7 @@ vcaudio_service_callback(void *priv, const VCHI_CALLBACK_REASON_T reason,
 			}
 
 			if (sched && sc->sc_pint) {
-				intr(intrarg);
+				sc->sc_pint(sc->sc_pintarg);
 				sc->sc_abytes += sc->sc_pblksize;
 				cv_signal(&sc->sc_datacv);
 			}
@@ -465,8 +457,8 @@ vcaudio_worker(void *priv)
 		msg.type = VC_AUDIO_MSG_TYPE_WRITE;
 		msg.u.write.max_packet = VCAUDIO_MSGSIZE;
 		msg.u.write.count = count;
-		msg.u.write.callback = intr;
-		msg.u.write.cookie = intrarg;
+		msg.u.write.cookie1 = VC_AUDIO_WRITE_COOKIE1;
+		msg.u.write.cookie2 = VC_AUDIO_WRITE_COOKIE2;
 		msg.u.write.silence = 0;
 
 		block = (uint8_t *)sc->sc_pstart + sc->sc_ppos;
@@ -612,12 +604,6 @@ vcaudio_halt_output(void *priv)
 #endif
 
 	return error;
-}
-
-static int
-vcaudio_halt_input(void *priv)
-{
-	return EINVAL;
 }
 
 static int
@@ -805,7 +791,7 @@ vcaudio_getdev(void *priv, struct audio_device *audiodev)
 static int
 vcaudio_get_props(void *priv)
 {
-	return AUDIO_PROP_PLAYBACK|AUDIO_PROP_CAPTURE|AUDIO_PROP_INDEPENDENT;
+	return AUDIO_PROP_PLAYBACK;
 }
 
 static int
@@ -838,13 +824,6 @@ vcaudio_trigger_output(void *priv, void *start, void *end, int blksize,
 	cv_signal(&sc->sc_datacv);
 
 	return 0;
-}
-
-static int
-vcaudio_trigger_input(void *priv, void *start, void *end, int blksize,
-    void (*intr)(void *), void *intrarg, const audio_params_t *params)
-{
-	return EINVAL;
 }
 
 static void

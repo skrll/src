@@ -1,11 +1,11 @@
-/*	$NetBSD: ccmsg.h,v 1.3 2019/01/09 16:55:18 christos Exp $	*/
+/*	$NetBSD: ccmsg.h,v 1.5 2021/02/19 16:42:21 christos Exp $	*/
 
 /*
  * Portions Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -25,7 +25,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-
 #ifndef ISCCC_CCMSG_H
 #define ISCCC_CCMSG_H 1
 
@@ -40,19 +39,19 @@
 /*% ISCCC Message Structure */
 typedef struct isccc_ccmsg {
 	/* private (don't touch!) */
-	unsigned int		magic;
-	uint32_t		size;
-	isc_buffer_t		buffer;
-	unsigned int		maxsize;
-	isc_mem_t	       *mctx;
-	isc_socket_t	       *sock;
-	isc_task_t	       *task;
-	isc_taskaction_t	action;
-	void		       *arg;
-	isc_event_t		event;
+	unsigned int	 magic;
+	uint32_t	 size;
+	isc_buffer_t	 buffer;
+	unsigned int	 maxsize;
+	isc_mem_t *	 mctx;
+	isc_socket_t *	 sock;
+	isc_task_t *	 task;
+	isc_taskaction_t action;
+	void *		 arg;
+	isc_event_t	 event;
 	/* public (read-only) */
-	isc_result_t		result;
-	isc_sockaddr_t		address;
+	isc_result_t   result;
+	isc_sockaddr_t address;
 } isccc_ccmsg_t;
 
 ISC_LANG_BEGINDECLS
@@ -89,8 +88,8 @@ isccc_ccmsg_setmaxsize(isccc_ccmsg_t *ccmsg, unsigned int maxsize);
  */
 
 isc_result_t
-isccc_ccmsg_readmessage(isccc_ccmsg_t *ccmsg,
-		       isc_task_t *task, isc_taskaction_t action, void *arg);
+isccc_ccmsg_readmessage(isccc_ccmsg_t *ccmsg, isc_task_t *task,
+			isc_taskaction_t action, void *arg);
 /*%
  * Schedule an event to be delivered when a command channel message is
  * readable, or when an error occurs on the socket.

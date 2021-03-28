@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_cpu.c,v 1.51 2017/06/01 02:45:09 chs Exp $ */
+/* $NetBSD: acpi_cpu.c,v 1.53 2020/12/07 10:57:41 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2010, 2011 Jukka Ruohonen <jruohonen@iki.fi>
@@ -27,7 +27,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_cpu.c,v 1.51 2017/06/01 02:45:09 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_cpu.c,v 1.53 2020/12/07 10:57:41 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -44,7 +44,10 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_cpu.c,v 1.51 2017/06/01 02:45:09 chs Exp $");
 #include <dev/acpi/acpi_cpu.h>
 
 #include <machine/acpi_machdep.h>
+
+#if defined(__i386__) || defined(__x86_64__)
 #include <machine/cpuvar.h>
+#endif
 
 #define _COMPONENT	  ACPI_BUS_COMPONENT
 ACPI_MODULE_NAME	  ("acpi_cpu")
@@ -55,7 +58,6 @@ static int		  acpicpu_detach(device_t, int);
 static int		  acpicpu_once_attach(void);
 static int		  acpicpu_once_detach(void);
 static void		  acpicpu_start(device_t);
-static void		  acpicpu_sysctl(device_t);
 
 static ACPI_STATUS	  acpicpu_object(ACPI_HANDLE, struct acpicpu_object *);
 static uint32_t		  acpicpu_cap(struct acpicpu_softc *);
@@ -73,7 +75,6 @@ static const char	 *acpicpu_debug_print_dep(uint32_t);
 
 static uint32_t		  acpicpu_count = 0;
 struct acpicpu_softc	**acpicpu_sc = NULL;
-static struct sysctllog	 *acpicpu_log = NULL;
 static bool		  acpicpu_dynamic = true;
 static bool		  acpicpu_passive = true;
 
@@ -173,7 +174,7 @@ acpicpu_attach(device_t parent, device_t self, void *aux)
 
 	rv = acpicpu_object(sc->sc_node->ad_handle, &sc->sc_object);
 
-	if (ACPI_FAILURE(rv))
+	if (ACPI_FAILURE(rv) && rv != AE_TYPE)
 		aprint_verbose_dev(self, "failed to obtain CPU object\n");
 
 	acpicpu_count++;
@@ -189,7 +190,9 @@ acpicpu_attach(device_t parent, device_t self, void *aux)
 	sc->sc_node->ad_device = self;
 	mutex_init(&sc->sc_mtx, MUTEX_DEFAULT, IPL_NONE);
 
+#if defined(__i386__) || defined(__x86_64__)
 	acpicpu_cstate_attach(self);
+#endif
 	acpicpu_pstate_attach(self);
 	acpicpu_tstate_attach(self);
 
@@ -234,7 +237,6 @@ acpicpu_once_attach(void)
 		return 0;
 
 	KASSERT(acpicpu_sc == NULL);
-	KASSERT(acpicpu_log == NULL);
 
 	acpicpu_sc = kmem_zalloc(maxcpus * sizeof(*sc), KM_SLEEP);
 
@@ -253,9 +255,6 @@ acpicpu_once_detach(void)
 		return EDEADLK;
 
 	cpufreq_deregister();
-
-	if (acpicpu_log != NULL)
-		sysctl_teardown(&acpicpu_log);
 
 	if (acpicpu_sc != NULL)
 		kmem_free(acpicpu_sc, maxcpus * sizeof(*sc));
@@ -296,7 +295,6 @@ acpicpu_start(device_t self)
 	if ((sc->sc_flags & ACPICPU_FLAG_T) != 0)
 		acpicpu_tstate_start(self);
 
-	acpicpu_sysctl(self);
 	aprint_debug_dev(self, "ACPI CPUs started\n");
 
 	/*
@@ -328,29 +326,26 @@ acpicpu_start(device_t self)
 	}
 }
 
-static void
-acpicpu_sysctl(device_t self)
+SYSCTL_SETUP(acpicpu_sysctl, "acpi_cpu sysctls")
 {
 	const struct sysctlnode *node;
 	int err;
 
-	KASSERT(acpicpu_log == NULL);
-
-	err = sysctl_createv(&acpicpu_log, 0, NULL, &node,
+	err = sysctl_createv(clog, 0, NULL, &node,
 	    CTLFLAG_PERMANENT, CTLTYPE_NODE, "acpi", NULL,
 	    NULL, 0, NULL, 0, CTL_HW, CTL_CREATE, CTL_EOL);
 
 	if (err != 0)
 		goto fail;
 
-	err = sysctl_createv(&acpicpu_log, 0, &node, &node,
+	err = sysctl_createv(clog, 0, &node, &node,
 	    0, CTLTYPE_NODE, "cpu", SYSCTL_DESCR("ACPI CPU"),
 	    NULL, 0, NULL, 0, CTL_CREATE, CTL_EOL);
 
 	if (err != 0)
 		goto fail;
 
-	err = sysctl_createv(&acpicpu_log, 0, &node, NULL,
+	err = sysctl_createv(clog, 0, &node, NULL,
 	    CTLFLAG_READWRITE, CTLTYPE_BOOL, "dynamic",
 	    SYSCTL_DESCR("Dynamic states"), NULL, 0,
 	    &acpicpu_dynamic, 0, CTL_CREATE, CTL_EOL);
@@ -358,7 +353,7 @@ acpicpu_sysctl(device_t self)
 	if (err != 0)
 		goto fail;
 
-	err = sysctl_createv(&acpicpu_log, 0, &node, NULL,
+	err = sysctl_createv(clog, 0, &node, NULL,
 	    CTLFLAG_READWRITE, CTLTYPE_BOOL, "passive",
 	    SYSCTL_DESCR("Passive cooling"), NULL, 0,
 	    &acpicpu_passive, 0, CTL_CREATE, CTL_EOL);
@@ -369,15 +364,21 @@ acpicpu_sysctl(device_t self)
 	return;
 
 fail:
-	aprint_error_dev(self, "failed to initialize sysctl (err %d)\n", err);
+	aprint_error("%s: failed to init sysctl (err %d)\n", __func__, err);
 }
 
 static ACPI_STATUS
 acpicpu_object(ACPI_HANDLE hdl, struct acpicpu_object *ao)
 {
+	ACPI_OBJECT_TYPE typ;
 	ACPI_OBJECT *obj;
 	ACPI_BUFFER buf;
 	ACPI_STATUS rv;
+
+	rv = AcpiGetType(hdl, &typ);
+	if (typ != ACPI_TYPE_PROCESSOR) {
+		return AE_TYPE;
+	}
 
 	rv = acpi_eval_struct(hdl, NULL, &buf);
 
@@ -842,6 +843,8 @@ acpicpu_debug_print_method_c(uint8_t val)
 static const char *
 acpicpu_debug_print_method_pt(uint8_t val)
 {
+	if (val == ACPI_ADR_SPACE_SYSTEM_MEMORY)
+		return "MMIO";
 
 	if (val == ACPI_ADR_SPACE_SYSTEM_IO)
 		return "I/O";

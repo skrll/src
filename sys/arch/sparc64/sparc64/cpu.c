@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.136 2019/10/01 18:00:08 chs Exp $ */
+/*	$NetBSD: cpu.c,v 1.138 2020/08/07 14:20:08 fcambus Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -52,7 +52,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.136 2019/10/01 18:00:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.138 2020/08/07 14:20:08 fcambus Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -503,7 +503,7 @@ cpu_attach(device_t parent, device_t dev, void *aux)
 	 * For other cpus, we need to call mi_cpu_attach()
 	 * and complete setting up cpcb.
 	 */
-	if (ci->ci_flags & CPUF_PRIMARY) {
+	if (CPU_IS_PRIMARY(ci)) {
 		fpstate_cache = pool_cache_init(sizeof(struct fpstate64),
 					SPARC64_BLOCK_SIZE, 0, 0, "fpstate",
 					NULL, IPL_NONE, NULL, NULL, NULL);
@@ -556,7 +556,15 @@ cpu_attach(device_t parent, device_t dev, void *aux)
 		    (u_int)GETVER_CPU_IMPL(),
 		    (u_int)GETVER_CPU_MASK());
 	}
-
+#ifdef NUMA
+	if (CPU_IS_USIIIi()) {
+		uint64_t start = ci->ci_cpuid;
+		start <<= 36;
+		ci->ci_numa_id = ci->ci_cpuid;
+		printf("NUMA bucket %d %016lx\n", ci->ci_cpuid, start);
+		uvm_page_numa_load(start, 0x1000000000, ci->ci_cpuid);
+	}
+#endif
 	if (ci->ci_system_clockrate[0] != 0) {
 		aprint_normal_dev(dev, "system tick frequency %s MHz\n",
 		    clockfreq(ci->ci_system_clockrate[0]));

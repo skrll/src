@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.119 2021/02/19 02:15:24 christos Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.119 2021/02/19 02:15:24 christos Exp $");
 
 #include "opt_xen.h"
 
@@ -38,6 +38,14 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $");
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
+
+#include <crypto/aes/aes_impl.h>
+#include <crypto/aes/arch/x86/aes_ni.h>
+#include <crypto/aes/arch/x86/aes_sse2.h>
+#include <crypto/aes/arch/x86/aes_ssse3.h>
+#include <crypto/aes/arch/x86/aes_via.h>
+#include <crypto/chacha/chacha_impl.h>
+#include <crypto/chacha/arch/x86/chacha_sse2.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -50,10 +58,10 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $");
 #include <x86/cpuvar.h>
 #include <x86/fpu.h>
 
-#include <x86/x86/vmtreg.h>	/* for vmt_hvcall() */
-#include <x86/x86/vmtvar.h>	/* for vmt_hvcall() */
+#include <dev/vmt/vmtreg.h>	/* for vmt_hvcall() */
+#include <dev/vmt/vmtvar.h>	/* for vmt_hvcall() */
 
-#ifndef XEN
+#ifndef XENPV
 #include "hyperv.h"
 #if NHYPERV > 0
 #include <x86/x86/hypervvar.h>
@@ -62,7 +70,7 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $");
 
 static const struct x86_cache_info intel_cpuid_cache_info[] = INTEL_CACHE_INFO;
 
-static const struct x86_cache_info amd_cpuid_l2l3cache_assoc_info[] = 
+static const struct x86_cache_info amd_cpuid_l2l3cache_assoc_info[] =
 	AMD_L2L3CACHE_INFO;
 
 int cpu_vendor;
@@ -82,7 +90,7 @@ const int i386_nocpuid_cpus[] = {
 	CPUVENDOR_INTEL, CPUCLASS_386,	/* CPU_386SX */
 	CPUVENDOR_INTEL, CPUCLASS_386,	/* CPU_386   */
 	CPUVENDOR_INTEL, CPUCLASS_486,	/* CPU_486SX */
-	CPUVENDOR_INTEL, CPUCLASS_486, 	/* CPU_486   */
+	CPUVENDOR_INTEL, CPUCLASS_486,	/* CPU_486   */
 	CPUVENDOR_CYRIX, CPUCLASS_486,	/* CPU_486DLC */
 	CPUVENDOR_CYRIX, CPUCLASS_486,	/* CPU_6x86 */
 	CPUVENDOR_NEXGEN, CPUCLASS_386,	/* CPU_NX586 */
@@ -174,7 +182,7 @@ cpu_probe_intel_cache(struct cpu_info *ci)
 	int iterations, i, j;
 	uint8_t desc;
 
-	if (cpuid_level >= 2) { 
+	if (cpuid_level >= 2) {
 		/* Parse the cache info from `cpuid leaf 2', if we have it. */
 		x86_cpuid(2, descs);
 		iterations = descs[0] & 0xff;
@@ -362,19 +370,17 @@ cpu_probe_amd_cache(struct cpu_info *ci)
 }
 
 static void
-cpu_probe_amd(struct cpu_info *ci)
+cpu_probe_amd_errata(struct cpu_info *ci)
 {
+	u_int model;
 	uint64_t val;
 	int flag;
 
-	if (cpu_vendor != CPUVENDOR_AMD)
-		return;
-	if (CPUID_TO_FAMILY(ci->ci_signature) < 5)
-		return;
+	model = CPUID_TO_MODEL(ci->ci_signature);
 
 	switch (CPUID_TO_FAMILY(ci->ci_signature)) {
 	case 0x05: /* K5 */
-		if (CPUID_TO_MODEL(ci->ci_signature) == 0) {
+		if (model == 0) {
 			/*
 			 * According to the AMD Processor Recognition App Note,
 			 * the AMD-K5 Model 0 uses the wrong bit to indicate
@@ -402,9 +408,34 @@ cpu_probe_amd(struct cpu_info *ci)
 			wrmsr(MSR_BU_CFG2, val);
 		}
 		break;
+
+	case 0x17:
+		/*
+		 * "Revision Guide for AMD Family 17h Models 00h-0Fh
+		 * Processors" revision 1.12:
+		 *
+		 * 1057 MWAIT or MWAITX Instructions May Fail to Correctly
+		 * Exit From the Monitor Event Pending State
+		 *
+		 * 1109 MWAIT Instruction May Hang a Thread
+		 */
+		if (model == 0x01) {
+			cpu_feature[1] &= ~CPUID2_MONITOR;
+			ci->ci_feat_val[1] &= ~CPUID2_MONITOR;
+		}
+		break;
 	}
+}
+
+static void
+cpu_probe_amd(struct cpu_info *ci)
+{
+
+	if (cpu_vendor != CPUVENDOR_AMD)
+		return;
 
 	cpu_probe_amd_cache(ci);
+	cpu_probe_amd_errata(ci);
 }
 
 static inline uint8_t
@@ -438,7 +469,7 @@ cpu_probe_cyrix_cmn(struct cpu_info *ci)
 	 * even be in here, it should be in there. XXX
 	 */
 	uint8_t c3;
-#ifndef XEN
+#ifndef XENPV
 	extern int clock_broken_latch;
 
 	switch (ci->ci_signature) {
@@ -465,7 +496,7 @@ cpu_probe_cyrix_cmn(struct cpu_info *ci)
 	 */
 	cyrix_write_reg(0xc2, cyrix_read_reg(0xc2) | 0x08);
 
-	/* 
+	/*
 	 * Do not disable the TSC on the Geode GX, it's reported to
 	 * work fine.
 	 */
@@ -502,7 +533,7 @@ cpu_probe_winchip(struct cpu_info *ci)
 
 	if (cpu_vendor != CPUVENDOR_IDT ||
 	    CPUID_TO_FAMILY(ci->ci_signature) != 5)
-	    	return;
+		return;
 
 	/* WinChip C6 */
 	if (CPUID_TO_MODEL(ci->ci_signature) == 4)
@@ -533,7 +564,7 @@ cpu_probe_c3(struct cpu_info *ci)
 		 *
 		 * Quoting from page 3-4 of: "VIA Eden ESP Processor Datasheet"
 		 * http://www.via.com.tw/download/mainboards/6/14/Eden20v115.pdf
-		 * 
+		 *
 		 * 1. The CMPXCHG8B instruction is provided and always enabled,
 		 *    however, it appears disabled in the corresponding CPUID
 		 *    function bit 0 to avoid a bug in an early version of
@@ -623,7 +654,7 @@ cpu_probe_c3(struct cpu_info *ci)
 	if (ci->ci_feat_val[4] & CPUID_VIA_DO_ACE) {
 		msr = rdmsr(MSR_VIA_ACE);
 		wrmsr(MSR_VIA_ACE, msr & ~VIA_ACE_ALTINST);
-	} 
+	}
 
 	/*
 	 * Determine L1 cache/TLB info.
@@ -691,7 +722,7 @@ cpu_probe_geode(struct cpu_info *ci)
 
 	if (memcmp("Geode by NSC", ci->ci_vendor, 12) != 0 ||
 	    CPUID_TO_FAMILY(ci->ci_signature) != 5)
-	    	return;
+		return;
 
 	cpu_probe_cyrix_cmn(ci);
 	cpu_probe_amd_cache(ci);
@@ -704,7 +735,7 @@ cpu_probe_vortex86(struct cpu_info *ci)
 #define PCI_MODE1_DATA_REG	0x0cfc
 #define PCI_MODE1_ENABLE	0x80000000UL
 
-	uint32_t reg;
+	uint32_t reg, idx;
 
 	if (cpu_vendor != CPUVENDOR_VORTEX86)
 		return;
@@ -718,17 +749,18 @@ cpu_probe_vortex86(struct cpu_info *ci)
 	outl(PCI_MODE1_ADDRESS_REG, PCI_MODE1_ENABLE | 0x90);
 	reg = inl(PCI_MODE1_DATA_REG);
 
-	if ((reg & 0xf8ffffff) != 0x30504d44) {
-		reg = 0;
+	if ((reg & 0xf0ffffff) != 0x30504d44) {
+		idx = 0;
 	} else {
-		reg = (reg >> 24) & 7;
+		idx = (reg >> 24) & 0xf;
 	}
 
 	static const char *cpu_vortex86_flavor[] = {
-	    "??", "SX", "DX", "MX", "DX2", "MX+", "DX3", "EX",
+	    "??", "SX", "DX", "MX", "DX2", "MX+", "DX3", "EX", "EX2",
 	};
+	idx = idx < __arraycount(cpu_vortex86_flavor) ? idx : 0;
 	snprintf(cpu_brand_string, sizeof(cpu_brand_string), "Vortex86%s",
-	    cpu_vortex86_flavor[reg]);
+	    cpu_vortex86_flavor[idx]);
 
 #undef PCI_MODE1_ENABLE
 #undef PCI_MODE1_ADDRESS_REG
@@ -892,7 +924,7 @@ cpu_probe(struct cpu_info *ci)
 		}
 
 		/* CLFLUSH line size is next 8 bits */
-		if (ci->ci_feat_val[0] & CPUID_CFLUSH)
+		if (ci->ci_feat_val[0] & CPUID_CLFSH)
 			ci->ci_cflush_lsize
 			    = __SHIFTOUT(miscbytes, CPUID_CLFLUSH_SIZE) << 3;
 		ci->ci_initapicid = __SHIFTOUT(miscbytes, CPUID_LOCAL_APIC_ID);
@@ -950,7 +982,9 @@ cpu_probe(struct cpu_info *ci)
 		cpu_probe_fpu(ci);
 	}
 
+#ifndef XENPV
 	x86_cpu_topology(ci);
+#endif
 
 	if (cpu_vendor != CPUVENDOR_AMD && (ci->ci_feat_val[0] & CPUID_TM) &&
 	    (rdmsr(MSR_MISC_ENABLE) & (1 << 3)) == 0) {
@@ -965,10 +999,29 @@ cpu_probe(struct cpu_info *ci)
 			cpu_feature[i] = ci->ci_feat_val[i];
 		}
 		identify_hypervisor();
-#ifndef XEN
+#ifndef XENPV
 		/* Early patch of text segment. */
 		x86_patch(true);
 #endif
+
+		/* AES */
+#ifdef __x86_64__	/* not yet implemented on i386 */
+		if (cpu_feature[1] & CPUID2_AESNI)
+			aes_md_init(&aes_ni_impl);
+		else
+#endif
+		if (cpu_feature[4] & CPUID_VIA_HAS_ACE)
+			aes_md_init(&aes_via_impl);
+		else if (i386_has_sse && i386_has_sse2 &&
+		    (cpu_feature[1] & CPUID2_SSE3) &&
+		    (cpu_feature[1] & CPUID2_SSSE3))
+			aes_md_init(&aes_ssse3_impl);
+		else if (i386_has_sse && i386_has_sse2)
+			aes_md_init(&aes_sse2_impl);
+
+		/* ChaCha */
+		if (i386_has_sse && i386_has_sse2)
+			chacha_md_init(&chacha_sse2_impl);
 	} else {
 		/*
 		 * If not first. Warn about cpu_feature mismatch for
@@ -1051,21 +1104,27 @@ cpu_identify(struct cpu_info *ci)
  */
 vm_guest_t vm_guest = VM_GUEST_NO;
 
-static const char * const vm_bios_vendors[] = {
-	"QEMU",				/* QEMU */
-	"Plex86",			/* Plex86 */
-	"Bochs",			/* Bochs */
-	"Xen",				/* Xen */
-	"BHYVE",			/* bhyve */
-	"Seabios",			/* KVM */
+struct vm_name_guest {
+	const char *name;
+	vm_guest_t guest;
 };
 
-static const char * const vm_system_products[] = {
-	"VMware Virtual Platform",	/* VMWare VM */
-	"Virtual Machine",		/* Microsoft VirtualPC */
-	"VirtualBox",			/* Sun xVM VirtualBox */
-	"Parallels Virtual Platform",	/* Parallels VM */
-	"KVM",				/* KVM */
+static const struct vm_name_guest vm_bios_vendors[] = {
+	{ "QEMU", VM_GUEST_VM },			/* QEMU */
+	{ "Plex86", VM_GUEST_VM },			/* Plex86 */
+	{ "Bochs", VM_GUEST_VM },			/* Bochs */
+	{ "Xen", VM_GUEST_VM },				/* Xen */
+	{ "BHYVE", VM_GUEST_VM },			/* bhyve */
+	{ "Seabios", VM_GUEST_VM },			/* KVM */
+	{ "innotek GmbH", VM_GUEST_VIRTUALBOX },	/* Oracle VirtualBox */
+};
+
+static const struct vm_name_guest vm_system_products[] = {
+	{ "VMware Virtual Platform", VM_GUEST_VM },	/* VMWare VM */
+	{ "Virtual Machine", VM_GUEST_VM },		/* Microsoft VirtualPC */
+	{ "VirtualBox", VM_GUEST_VIRTUALBOX },		/* Sun xVM VirtualBox */
+	{ "Parallels Virtual Platform", VM_GUEST_VM },	/* Parallels VM */
+	{ "KVM", VM_GUEST_VM },				/* KVM */
 };
 
 void
@@ -1076,8 +1135,18 @@ identify_hypervisor(void)
 	const char *p;
 	int i;
 
+#if 0	
+	/* 
+	 * This is called from cpu_probe() and cpu_configure()
+	 * During cpu_probe() we have not called platform_init()
+	 * yet, so the bios tables have not been loaded.
+	 * We allow this to be called twice in order to override
+	 * the cpuid setting because some hypervisors don't return
+	 * specific enough info with cpuid it.
+	 */
 	if (vm_guest != VM_GUEST_NO)
 		return;
+#endif
 
 	/*
 	 * [RFC] CPUID usage for interaction between Hypervisors and Linux.
@@ -1104,12 +1173,14 @@ identify_hypervisor(void)
 			} else if (memcmp(hv_vendor, "KVMKVMKVM\0\0\0", 12) == 0)
 				vm_guest = VM_GUEST_KVM;
 			else if (memcmp(hv_vendor, "XenVMMXenVMM", 12) == 0)
-				vm_guest = VM_GUEST_XEN;
+				vm_guest = VM_GUEST_XENHVM;
 			/* FreeBSD bhyve: "bhyve bhyve " */
 			/* OpenBSD vmm:   "OpenBSDVMM58" */
 			/* NetBSD nvmm:   "___ NVMM ___" */
 		}
-		return;
+		// VirtualBox returns KVM, so keep going.
+		if (vm_guest != VM_GUEST_KVM)
+			return;
 	}
 
 	/*
@@ -1128,8 +1199,8 @@ identify_hypervisor(void)
 	p = pmf_get_platform("bios-vendor");
 	if (p != NULL) {
 		for (i = 0; i < __arraycount(vm_bios_vendors); i++) {
-			if (strcmp(p, vm_bios_vendors[i]) == 0) {
-				vm_guest = VM_GUEST_VM;
+			if (strcmp(p, vm_bios_vendors[i].name) == 0) {
+				vm_guest = vm_bios_vendors[i].guest;
 				return;
 			}
 		}
@@ -1137,8 +1208,8 @@ identify_hypervisor(void)
 	p = pmf_get_platform("system-product");
 	if (p != NULL) {
 		for (i = 0; i < __arraycount(vm_system_products); i++) {
-			if (strcmp(p, vm_system_products[i]) == 0) {
-				vm_guest = VM_GUEST_VM;
+			if (strcmp(p, vm_system_products[i].name) == 0) {
+				vm_guest = vm_system_products[i].guest;
 				return;
 			}
 		}

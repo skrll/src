@@ -1,4 +1,4 @@
-/*	$NetBSD: gemini_pci.c,v 1.20 2019/11/10 21:16:23 chs Exp $	*/
+/*	$NetBSD: gemini_pci.c,v 1.23 2020/11/20 18:10:07 thorpej Exp $	*/
 
 /* adapted from:
  *	NetBSD: i80312_pci.c,v 1.9 2005/12/11 12:16:51 christos Exp
@@ -44,7 +44,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gemini_pci.c,v 1.20 2019/11/10 21:16:23 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gemini_pci.c,v 1.23 2020/11/20 18:10:07 thorpej Exp $");
 
 #include "opt_gemini.h"
 #include "opt_pci.h"
@@ -53,8 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: gemini_pci.c,v 1.20 2019/11/10 21:16:23 chs Exp $");
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/extent.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/bus.h>
 #include <sys/intr.h>
 
@@ -117,7 +116,7 @@ gemini_pci_intrq_insert(void *ih, int (*func)(void *), void *arg)
 {
 	struct gemini_pci_intrq *iqp;
 
-        iqp = malloc(sizeof(*iqp), M_DEVBUF, M_WAITOK|M_ZERO);
+        iqp = kmem_zalloc(sizeof(*iqp), KM_SLEEP);
         iqp->iq_func = func;
         iqp->iq_arg = arg;
         iqp->iq_ih = ih;
@@ -135,7 +134,7 @@ gemini_pci_intrq_remove(void *cookie)
 		if ((void *)iqp == cookie) {
 			SIMPLEQ_REMOVE(&gemini_pci_intrq,
 				iqp, gemini_pci_intrq, iq_q);
-			free(iqp, M_DEVBUF);
+			kmem_free(iqp, sizeof(*iqp));
 			return;
 		}
 	}
@@ -156,10 +155,7 @@ gemini_pci_intrq_dispatch(void)
 void
 gemini_pci_init(pci_chipset_tag_t pc, void *cookie)
 {
-#if NPCI > 0 && defined(PCI_NETBSD_CONFIGURE)
 	struct obio_softc *sc = cookie;
-	struct extent *ioext, *memext;
-#endif
 
 	pc->pc_conf_v = cookie;
 	pc->pc_attach_hook = gemini_pci_attach_hook;
@@ -199,30 +195,27 @@ gemini_pci_init(pci_chipset_tag_t pc, void *cookie)
 	aprint_normal("%s: configuring Secondary PCI bus\n",
 		device_xname(sc->sc_dev));
 
+	struct pciconf_resources *pcires = pciconf_resource_init();
+
 	/*
 	 * XXX PCI IO addr should be inherited ?
 	 */
-	ioext  = extent_create("pciio",
-		GEMINI_PCIIO_BASE,
-		GEMINI_PCIIO_BASE + GEMINI_PCIIO_SIZE - 1,
-		NULL, 0, EX_NOWAIT);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    GEMINI_PCIIO_BASE, GEMINI_PCIIO_SIZE);
 
 	/*
 	 * XXX PCI mem addr should be inherited ?
 	 */
-	memext = extent_create("pcimem",
-		GEMINI_PCIMEM_BASE,
-		GEMINI_PCIMEM_BASE + GEMINI_PCIMEM_SIZE - 1,
-		NULL, 0, EX_NOWAIT);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    GEMINI_PCIMEM_BASE, GEMINI_PCIMEM_SIZE);
 
-	pci_configure_bus(pc, ioext, memext, NULL, 0, arm_dcache_align);
+	pci_configure_bus(pc, pcires, 0, arm_dcache_align);
 
 	gemini_pci_conf_write(sc, 0, GEMINI_PCI_CFG_REG_MEM1,
 		PCI_CFG_REG_MEM_BASE((GEMINI_DRAM_BASE + (GEMINI_BUSBASE * 1024 * 1024)))
 		| gemini_pci_cfg_reg_mem_size(MEMSIZE * 1024 * 1024));
 
-	extent_destroy(ioext);
-	extent_destroy(memext);
+	pciconf_resource_fini(pcires);
 #endif
 }
 

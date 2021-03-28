@@ -1,4 +1,4 @@
-/*	$NetBSD: octeonvar.h,v 1.6 2018/04/19 21:50:06 christos Exp $	*/
+/*	$NetBSD: octeonvar.h,v 1.17 2020/07/28 00:35:38 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -38,6 +38,9 @@
 #include <mips/locore.h>
 #include <dev/pci/pcivar.h>
 
+#include <mips/cavium/octeonreg.h>
+#include <mips/cache_octeon.h>
+
 /* XXX elsewhere */
 #define	_ASM_PROLOGUE \
 		"	.set push			\n" \
@@ -50,18 +53,14 @@
 		"	.set arch=octeon		\n"
 #define	_ASM_EPILOGUE \
 		"	.set pop			\n"
-/*
- * subbits = __BITS64_GET(XXX, bits);
- * bits = __BITS64_SET(XXX, subbits);
- */
-#ifndef	__BITS64_GET
-#define	__BITS64_GET(name, bits)	\
-	    (((uint64_t)(bits) & name) >> name##_SHIFT)
-#endif
-#ifndef	__BITS64_SET
-#define	__BITS64_SET(name, subbits)	\
-	    (((uint64_t)(subbits) << name##_SHIFT) & name)
-#endif
+
+#ifdef _KERNEL
+extern int	octeon_core_ver;
+#endif /* _KERNEL */
+#define	OCTEON_1		1
+#define	OCTEON_PLUS		10	/* arbitary, keep sequence for others */
+#define	OCTEON_2		2
+#define	OCTEON_3		3
 
 struct octeon_config {
 	struct mips_bus_space mc_iobus_bust;
@@ -79,30 +78,27 @@ struct octeon_config {
 	int	mc_mallocsafe;
 };
 
-#define NIRQS	64
+#define NIRQS	128
+#define NBANKS	2
 
 struct cpu_softc {
 	struct cpu_info *cpu_ci;
 
-	uint64_t cpu_int0_sum0;
-	uint64_t cpu_int1_sum0;
-	uint64_t cpu_int2_sum0;
+	uint64_t cpu_ip2_sum0;
+	uint64_t cpu_ip3_sum0;
+	uint64_t cpu_ip4_sum0;
 
-	uint64_t cpu_int0_en0;
-	uint64_t cpu_int1_en0;
-	uint64_t cpu_int2_en0;
+	uint64_t cpu_int_sum1;
 
-	uint64_t cpu_int0_en1;
-	uint64_t cpu_int1_en1;
-	uint64_t cpu_int2_en1;
+	uint64_t cpu_ip2_en[NBANKS];
+	uint64_t cpu_ip3_en[NBANKS];
+	uint64_t cpu_ip4_en[NBANKS];
 
-	uint64_t cpu_int32_en;
+	uint64_t cpu_ip2_enable[NBANKS];
+	uint64_t cpu_ip3_enable[NBANKS];
+	uint64_t cpu_ip4_enable[NBANKS];
 
 	struct evcnt cpu_intr_evs[NIRQS];
-
-	uint64_t cpu_int0_enable0;
-	uint64_t cpu_int1_enable0;
-	uint64_t cpu_int2_enable0;
 
 	void *cpu_wdog_sih;		// wdog softint handler
 	uint64_t cpu_wdog;
@@ -112,7 +108,7 @@ struct cpu_softc {
 	uint64_t cpu_mbox_set;
 	uint64_t cpu_mbox_clr;
 #endif
-};
+} __aligned(OCTEON_CACHELINE_SIZE);
 
 /*
  * FPA map
@@ -148,23 +144,18 @@ struct cpu_softc {
 /*
  * CVMSEG (``scratch'') memory map
  */
+
+#define CVMSEG_LM_RNM_SIZE	16	/* limited by CN70XX hardware (why?) */
+#define CVMSEG_LM_ETHER_COUNT	4	/* limits number of cnmac devices */
+
 struct octeon_cvmseg_map {
-	/* 0-3 */
-	uint64_t		csm_xxx_0;
-	uint64_t		csm_xxx_1;
-	uint64_t		csm_xxx_2;
 	uint64_t		csm_pow_intr;
 
-	/* 4-19 */
 	struct octeon_cvmseg_ether_map {
-		uint64_t	csm_ether_fau_req;
 		uint64_t	csm_ether_fau_done;
-		uint64_t	csm_ether_fau_cmdptr;
-		uint64_t	csm_ether_xxx_3;
-	} csm_ether[4/* XXX */];
+	} csm_ether[CVMSEG_LM_ETHER_COUNT];
 
-	/* 20-32 */
-	uint64_t	xxx_20_32[32 - 20];
+	uint64_t	csm_rnm[CVMSEG_LM_RNM_SIZE];
 } __packed;
 #define	OCTEON_CVMSEG_OFFSET(entry) \
 	offsetof(struct octeon_cvmseg_map, entry)
@@ -180,7 +171,7 @@ struct octeon_cvmseg_map {
  * => devices (PKO) can access these registers
  * => CPU can read those values after loading them into CVMSEG
  */
-struct octeon_fau_map {
+struct octfau_map {
 	struct {
 		/* PKO command index */
 		uint64_t	_fau_map_port_pkocmdidx;
@@ -206,44 +197,29 @@ struct octeon_fau_map {
 #define	OCTEON_POW_QOS_XXX_6		6
 #define	OCTEON_POW_QOS_XXX_7		7
 
-#define	OCTEON_POW_GROUP_PIP		0
-#define	OCTEON_POW_GROUP_XXX_1		1
-#define	OCTEON_POW_GROUP_XXX_2		2
-#define	OCTEON_POW_GROUP_XXX_3		3
-#define	OCTEON_POW_GROUP_XXX_4		4
-#define	OCTEON_POW_GROUP_XXX_5		5
-#define	OCTEON_POW_GROUP_XXX_6		6
-#define	OCTEON_POW_GROUP_CORE1_SEND	7
-#define	OCTEON_POW_GROUP_CORE1_TASK_0	8
-#define	OCTEON_POW_GROUP_CORE1_TASK_1	9
-#define	OCTEON_POW_GROUP_CORE1_TASK_2	10
-#define	OCTEON_POW_GROUP_CORE1_TASK_3	11
-#define	OCTEON_POW_GROUP_CORE1_TASK_4	12
-#define	OCTEON_POW_GROUP_CORE1_TASK_5	13
-#define	OCTEON_POW_GROUP_CORE1_TASK_6	14
-#define	OCTEON_POW_GROUP_CORE1_TASK_7	15
+#define	OCTEON_POW_GROUP_MAX		16
 
 #ifdef _KERNEL
 extern struct octeon_config	octeon_configuration;
-#ifdef MULTIPROCESSOR
-extern kcpuset_t *cpus_booted;
-extern struct cpu_softc		octeon_cpu1_softc;
-#endif
 
-void	octeon_bus_io_init(bus_space_tag_t, void *);
-void	octeon_bus_mem_init(bus_space_tag_t, void *);
-void	octeon_cal_timer(int);
-void	octeon_dma_init(struct octeon_config *);
-void	octeon_intr_init(struct cpu_info *);
-void	octeon_iointr(int, vaddr_t, uint32_t);
-void	octeon_pci_init(pci_chipset_tag_t, struct octeon_config *);
-void	*octeon_intr_establish(int, int, int (*)(void *), void *);
-void	octeon_intr_disestablish(void *cookie);
+const char	*octeon_cpu_model(mips_prid_t);
 
-void	octeon_reset_vector(void);
-uint64_t mips_cp0_cvmctl_read(void);
-void	 mips_cp0_cvmctl_write(uint64_t);
+void		octeon_bus_io_init(bus_space_tag_t, void *);
+void		octeon_bus_mem_init(bus_space_tag_t, void *);
+void		octeon_cal_timer(int);
+void		octeon_dma_init(struct octeon_config *);
+void		octeon_intr_init(struct cpu_info *);
+void		octeon_iointr(int, vaddr_t, uint32_t);
+void		octpci_init(pci_chipset_tag_t, struct octeon_config *);
+void		*octeon_intr_establish(int, int, int (*)(void *), void *);
+void		octeon_intr_disestablish(void *cookie);
 
+int		octeon_ioclock_speed(void);
+void		octeon_soft_reset(void);
+
+void		octeon_reset_vector(void);
+uint64_t	mips_cp0_cvmctl_read(void);
+void		mips_cp0_cvmctl_write(uint64_t);
 #endif /* _KERNEL */
 
 #if defined(__mips_n32)
@@ -296,14 +272,6 @@ void	 mips_cp0_cvmctl_write(uint64_t);
 #define OCTEON_SYNC		OCTEON_SYNCCOMMON(sync)
 #define OCTEON_SYNCWS		OCTEON_SYNCCOMMON(syncws)
 #define OCTEON_SYNCS		OCTEON_SYNCCOMMON(syncs)
-/* XXX backward compatibility */
-#if 1
-#define	OCT_SYNCIOBDMA		OCTEON_SYNCIOBDMA
-#define	OCT_SYNCW		OCTEON_SYNCW
-#define	OCT_SYNC		OCTEON_SYNC
-#define	OCT_SYNCWS		OCTEON_SYNCWS
-#define	OCT_SYNCS		OCTEON_SYNCS
-#endif
 
 /* octeon core does not use cca to determine cacheability */
 #define OCTEON_CCA_NONE UINT64_C(0)
@@ -320,134 +288,25 @@ octeon_xkphys_write_8(paddr_t address, uint64_t value)
 	mips3_sd(MIPS_PHYS_TO_XKPHYS(OCTEON_CCA_NONE, address), value);
 }
 
-/* XXX backward compatibility */
-#if 1
-#define octeon_read_csr(address) \
-	octeon_xkphys_read_8(address)
-#define octeon_write_csr(address, value) \
-	octeon_xkphys_write_8(address, value)
-#endif
-
 static __inline void
 octeon_iobdma_write_8(uint64_t value)
 {
-	uint64_t addr = UINT64_C(0xffffffffffffa200);
 
-	octeon_xkphys_write_8(addr, value);
+	octeon_xkphys_write_8(OCTEON_IOBDMA_ADDR, value);
 }
 
 static __inline uint64_t
 octeon_cvmseg_read_8(size_t offset)
 {
-	return octeon_xkphys_read_8(UINT64_C(0xffffffffffff8000) + offset);
+
+	return octeon_xkphys_read_8(OCTEON_CVMSEG_LM + offset);
 }
 
 static __inline void
 octeon_cvmseg_write_8(size_t offset, uint64_t value)
 {
-	octeon_xkphys_write_8(UINT64_C(0xffffffffffff8000) + offset, value);
+
+	octeon_xkphys_write_8(OCTEON_CVMSEG_LM + offset, value);
 }
-
-/* XXX */
-static __inline uint32_t
-octeon_disable_interrupt(uint32_t *new)
-{
-	uint32_t s, tmp;
-        
-	__asm __volatile (
-		_ASM_PROLOGUE
-		"	mfc0	%[s], $12		\n"
-		"	and	%[tmp], %[s], ~1	\n"
-		"	mtc0	%[tmp], $12		\n"
-		_ASM_EPILOGUE
-		: [s]"=&r"(s), [tmp]"=&r"(tmp));
-	if (new)
-		*new = tmp;
-	return s;
-}
-
-/* XXX */
-static __inline void
-octeon_restore_status(uint32_t s)
-{
-	__asm __volatile (
-		_ASM_PROLOGUE
-		"	mtc0	%[s], $12		\n"
-		_ASM_EPILOGUE
-		:: [s]"r"(s));
-}
-
-static __inline uint64_t
-octeon_get_cycles(void)
-{ 
-#if defined(__mips_o32)
-	uint32_t s, lo, hi;
-  
-	s = octeon_disable_interrupt((void *)0);
-	__asm __volatile (
-		_ASM_PROLOGUE_MIPS64
-		"	dmfc0	%[lo], $9, 6		\n"
-		"	add	%[hi], %[lo], $0	\n"
-		"	srl	%[hi], 32		\n"
-		"	sll	%[lo], 32		\n"
-		"	srl	%[lo], 32		\n"
-		_ASM_EPILOGUE
-		: [lo]"=&r"(lo), [hi]"=&r"(hi));
-	octeon_restore_status(s);
-	return ((uint64_t)hi << 32) + (uint64_t)lo;
-#else
-	uint64_t tmp;
-
-	__asm __volatile (
-		_ASM_PROLOGUE_MIPS64
-		"	dmfc0	%[tmp], $9, 6		\n"
-		_ASM_EPILOGUE
-		: [tmp]"=&r"(tmp));
-	return tmp;
-#endif
-}
-
-/* -------------------------------------------------------------------------- */
-
-/* ---- event counter */
-
-#if defined(OCTEON_ETH_DEBUG)
-#define	OCTEON_EVCNT_INC(sc, name) \
-	do { (sc)->sc_ev_##name.ev_count++; } while (0)
-#define	OCTEON_EVCNT_ADD(sc, name, n) \
-	do { (sc)->sc_ev_##name.ev_count += (n); } while (0)
-#define	OCTEON_EVCNT_ATTACH_EVCNTS(sc, entries, devname) \
-do {								\
-	int i;							\
-	const struct octeon_evcnt_entry *ee;			\
-								\
-	for (i = 0; i < (int)__arraycount(entries); i++) {	\
-		ee = &(entries)[i];				\
-		evcnt_attach_dynamic(				\
-		    (struct evcnt *)((uintptr_t)(sc) + ee->ee_offset), \
-		    ee->ee_type, ee->ee_parent, devname,	\
-		    ee->ee_name);				\
-	}							\
-} while (0)
-#else
-#define	OCTEON_EVCNT_INC(sc, name)
-#define	OCTEON_EVCNT_ADD(sc, name, n)
-#define	OCTEON_EVCNT_ATTACH_EVCNTS(sc, entries, devname)
-#endif
-
-struct octeon_evcnt_entry {
-	size_t		ee_offset;
-	int		ee_type;
-	struct evcnt	*ee_parent;
-	const char	*ee_name;
-};
-
-#define	OCTEON_EVCNT_ENTRY(_sc_type, _var, _ev_type, _parent, _name) \
-	{							\
-		.ee_offset = offsetof(_sc_type, sc_ev_##_var),	\
-		.ee_type = EVCNT_TYPE_##_ev_type,		\
-		.ee_parent = _parent,				\
-		.ee_name = _name				\
-	}
 
 #endif	/* _MIPS_OCTEON_OCTEONVAR_H_ */

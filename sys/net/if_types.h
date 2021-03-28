@@ -1,4 +1,4 @@
-/*	$NetBSD: if_types.h,v 1.29 2018/07/31 16:44:30 khorben Exp $	*/
+/*	$NetBSD: if_types.h,v 1.31 2020/08/26 16:03:41 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993, 1994

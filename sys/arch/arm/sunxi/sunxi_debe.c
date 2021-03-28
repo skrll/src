@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_debe.c,v 1.9 2018/06/01 17:18:44 bouyer Exp $ */
+/* $NetBSD: sunxi_debe.c,v 1.12 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Manuel Bouyer <bouyer@antioche.eu.org>
@@ -38,7 +38,7 @@
 #define SUNXI_DEBE_CURMAX	64
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_debe.c,v 1.9 2018/06/01 17:18:44 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_debe.c,v 1.12 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -101,10 +101,10 @@ struct sunxi_debe_softc {
 #define DEBE_WRITE(sc, reg, val) \
     bus_space_write_4((sc)->sc_bst, (sc)->sc_bsh, (reg), (val))
 
-static const struct of_compat_data compat_data[] = {
-	{"allwinner,sun4i-a10-display-backend", DEBE_A10},
-	{"allwinner,sun7i-a20-display-backend", DEBE_A10},
-	{NULL}
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun4i-a10-display-backend", .value = DEBE_A10 },
+	{ .compat = "allwinner,sun7i-a20-display-backend", .value = DEBE_A10 },
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxifb_attach_args {
@@ -143,7 +143,7 @@ sunxi_debe_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -188,7 +188,8 @@ sunxi_debe_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_type = of_search_compatible(faa->faa_phandle, compat_data)->data;
+	sc->sc_type =
+	    of_compatible_lookup(faa->faa_phandle, compat_data)->value;
 
 	aprint_naive("\n");
 	aprint_normal(": Display Engine Backend (%s)\n",
@@ -560,6 +561,10 @@ sunxi_debe_ep_enable(device_t dev, struct fdt_endpoint *ep, bool enable)
 	return 0;
 }
 
+/*
+ * FIXME 2020/10/19
+ * This function is not called actually at the moment.
+ */
 void
 sunxi_debe_set_videomode(device_t dev, const struct videomode *mode)
 {
@@ -613,7 +618,12 @@ sunxi_debe_set_videomode(device_t dev, const struct videomode *mode)
 				 SUNXI_DEBE_ATTCTL1_LAY_FBFMT);
 		val &= ~SUNXI_DEBE_ATTCTL1_LAY_BRSWAPEN;
 		val &= ~SUNXI_DEBE_ATTCTL1_LAY_FBPS;
-#if __ARMEB__
+#if 0 /* __ARMEB__ */
+		/*
+		 * For big endian, we dynamically override FDT to let
+		 * genfb(4) know that framebuffer is byte-swapped.
+		 * See fdt_update_fb_format() in fdt_machdep.c.
+		 */
 		val |= __SHIFTIN(SUNXI_DEBE_ATTCTL1_LAY_FBPS_32BPP_BGRA,
 				 SUNXI_DEBE_ATTCTL1_LAY_FBPS);
 #else
@@ -909,15 +919,15 @@ sunxi_debe_pipeline(int phandle, bool active)
  * But we want to record the /chose/framebuffer phandle if there is one
  */
 
-static const char * const simplefb_compatible[] = {
-	"allwinner,simple-framebuffer",
-	NULL
+static const struct device_compatible_entry simplefb_compat_data[] = {
+	{ .compat = "allwinner,simple-framebuffer" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
 sunxidebe_console_match(int phandle)
 {
-	if (of_match_compatible(phandle, simplefb_compatible)) {
+	if (of_compatible_match(phandle, simplefb_compat_data)) {
 		sunxi_simplefb_phandle = phandle;
 	}
 	return 0;

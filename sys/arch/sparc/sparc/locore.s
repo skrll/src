@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.274 2019/06/07 00:18:26 mrg Exp $	*/
+/*	$NetBSD: locore.s,v 1.279 2021/01/24 07:36:54 mrg Exp $	*/
 
 /*
  * Copyright (c) 1996 Paul Kranenburg
@@ -1954,10 +1954,11 @@ memfault_sun4c:
 #if defined(SUN4M)
 _ENTRY(memfault_sun4m)
 memfault_sun4m:
-	sethi	%hi(CPUINFO_VA), %l4
+	sethi	%hi(CPUINFO_VA+CPUINFO_GETSYNCFLT), %l4
 	ld	[%l4 + %lo(CPUINFO_VA+CPUINFO_GETSYNCFLT)], %l5
+	sethi	%hi(CPUINFO_VA+CPUINFO_SYNCFLTDUMP), %l4
 	jmpl	%l5, %l7
-	 or	%l4, %lo(CPUINFO_SYNCFLTDUMP), %l4
+	 or	%l4, %lo(CPUINFO_VA+CPUINFO_SYNCFLTDUMP), %l4
 	TRAP_SETUP(-CCFSZ-80)
 	! tally fault (curcpu()->cpu_data.cpu_nfault++) (clobbers %o0,%o1,%o2)
 	INCR64(CPUINFO_VA + CPUINFO_NFAULT)
@@ -2519,10 +2520,10 @@ softintr_common:
 	set	_C_LABEL(sintrhand), %l4! %l4 = sintrhand[intlev];
 	ld	[%l4 + %l5], %l4
 
-	sethi	%hi(CPUINFO_VA), %o2
-	ld	[ %o2 + CPUINFO_IDEPTH ], %o3
+	sethi	%hi(CPUINFO_VA+CPUINFO_IDEPTH), %o2
+	ld	[ %o2 + %lo(CPUINFO_VA+CPUINFO_IDEPTH) ], %o3
 	inc	%o3
-	st	%o3, [ %o2 + CPUINFO_IDEPTH ]
+	st	%o3, [ %o2 + %lo(CPUINFO_VA+CPUINFO_IDEPTH) ]
 
 	b	3f
 	 st	%fp, [%sp + CCFSZ + 16]
@@ -2543,10 +2544,10 @@ softintr_common:
 	bnz	1b
 	 nop
 
-	sethi	%hi(CPUINFO_VA), %o2
-	ld	[ %o2 + CPUINFO_IDEPTH ], %o3
+	sethi	%hi(CPUINFO_VA+CPUINFO_IDEPTH), %o2
+	ld	[ %o2 + %lo(CPUINFO_VA+CPUINFO_IDEPTH) ], %o3
 	dec	%o3
-	st	%o3, [ %o2 + CPUINFO_IDEPTH ]
+	st	%o3, [ %o2 + %lo(CPUINFO_VA+CPUINFO_IDEPTH) ]
 
 	mov	%l7, %g1
 	wr	%l6, 0, %y
@@ -2563,8 +2564,8 @@ softintr_common:
 #if defined(SUN4M)
 _ENTRY(_C_LABEL(sparc_interrupt4m))
 #if !defined(MSIIEP)	/* "normal" sun4m */
-	sethi	%hi(CPUINFO_VA), %l6
-	ld	[%l6 + CPUINFO_INTREG], %l7
+	sethi	%hi(CPUINFO_VA+CPUINFO_INTREG), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_INTREG)], %l7
 	mov	1, %l4
 	ld	[%l7 + ICR_PI_PEND_OFFSET], %l5	! get pending interrupts
 	sll	%l4, %l3, %l4	! hw intr bits are in the lower halfword
@@ -2704,10 +2705,10 @@ sparc_interrupt_common:
 	set	_C_LABEL(intrhand), %l4	! %l4 = intrhand[intlev];
 	ld	[%l4 + %l5], %l4
 
-	sethi	%hi(CPUINFO_VA), %o2
-	ld	[ %o2 + CPUINFO_IDEPTH ], %o3
+	sethi	%hi(CPUINFO_VA+CPUINFO_IDEPTH), %o2
+	ld	[ %o2 + %lo(CPUINFO_VA+CPUINFO_IDEPTH) ], %o3
 	inc	%o3
-	st	%o3, [ %o2 + CPUINFO_IDEPTH ]
+	st	%o3, [ %o2 + %lo(CPUINFO_VA+CPUINFO_IDEPTH) ]
 
 	b	3f
 	 st	%fp, [%sp + CCFSZ + 16]
@@ -2742,10 +2743,10 @@ sparc_interrupt_common:
 	 add	%sp, CCFSZ, %o0
 	/* all done: restore registers and go return */
 4:
-	sethi	%hi(CPUINFO_VA), %o2
-	ld	[ %o2 + CPUINFO_IDEPTH ], %o3
+	sethi	%hi(CPUINFO_VA+CPUINFO_IDEPTH), %o2
+	ld	[ %o2 + %lo(CPUINFO_VA+CPUINFO_IDEPTH) ], %o3
 	dec	%o3
-	st	%o3, [ %o2 + CPUINFO_IDEPTH ]
+	st	%o3, [ %o2 + %lo(CPUINFO_VA+CPUINFO_IDEPTH) ]
 
 	mov	%l7, %g1
 	wr	%l6, 0, %y
@@ -2763,20 +2764,22 @@ sparc_interrupt_common:
  * %l6 = &cpuinfo
  */
 lev14_softint:
-	sethi	%hi(CPUINFO_VA), %l7
-	ldd	[%l7 + CPUINFO_LEV14], %l4
+	sethi	%hi(CPUINFO_VA+CPUINFO_LEV14), %l7
+	ldd	[%l7 + %lo(CPUINFO_VA+CPUINFO_LEV14)], %l4
 	inccc	%l5
 	addx	%l4, %g0, %l4
 	std	%l4, [%l7 + CPUINFO_LEV14]
 
-	ld	[%l6 + CPUINFO_XMSG_TRAP], %l7
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_TRAP), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_TRAP)], %l7
 #ifdef DIAGNOSTIC
 	tst	%l7
 	bz	sparc_interrupt4m_bogus
 	 nop
 #endif
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG0), %l6
 	jmp	%l7
-	 ld	[%l6 + CPUINFO_XMSG_ARG0], %l3	! prefetch 1st arg
+	 ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG0)], %l3	! prefetch 1st arg
 
 /*
  * Fast flush handlers. xcalled from other CPUs throught soft interrupt 14
@@ -2788,9 +2791,11 @@ lev14_softint:
  */
 _ENTRY(_C_LABEL(ft_tlb_flush))
 	!	<%l3 already fetched for us>	! va
-	ld	[%l6 + CPUINFO_XMSG_ARG2], %l5	! level
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG2), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG2)], %l5	! level
 	andn	%l3, 0xfff, %l3			! %l3 = (va&~0xfff | lvl);
-	ld	[%l6 + CPUINFO_XMSG_ARG1], %l4	! context
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG1), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG1)], %l4	! context
 	or	%l3, %l5, %l3
 
 	mov	SRMMU_CXR, %l7			!
@@ -2804,7 +2809,8 @@ ft_rett:
 	! enter here with %l5 = ctx to restore, %l6 = CPUINFO_VA, %l7 = ctx reg
 	mov	1, %l4				!
 	sta	%l5, [%l7]ASI_SRMMU		! restore context
-	st	%l4, [%l6 + CPUINFO_XMSG_CMPLT]	! completed = 1
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_CMPLT), %l6
+	st	%l4, [%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_CMPLT)]	! completed = 1
 
 	mov	%l0, %psr			! return from trap
 	 nop
@@ -2812,21 +2818,24 @@ ft_rett:
 
 _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_page))
 	!	<%l3 already fetched for us>	! va
-	ld	[%l6 + CPUINFO_XMSG_ARG1], %l4	! context
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG1), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG1)], %l4	! context
 
 	mov	SRMMU_CXR, %l7			!
 	lda	[%l7]ASI_SRMMU, %l5		! %l5 = old context
 	sta	%l4, [%l7]ASI_SRMMU		! set new context
 
 	set	4096, %l4			! N = page size
-	ld	[%l6 + CPUINFO_CACHE_LINESZ], %l7
+	sethi	%hi(CPUINFO_VA+CPUINFO_CACHE_LINESZ), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_CACHE_LINESZ)], %l7
 1:
 	sta	%g0, [%l3]ASI_IDCACHELFP	!  flush cache line
 	subcc	%l4, %l7, %l4			!  p += linesz;
 	bgu	1b				! while ((N -= linesz) > 0)
 	 add	%l3, %l7, %l3
 
-	ld	[%l6 + CPUINFO_XMSG_ARG0], %l3	! reload va
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG0), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG0)], %l3	! reload va
 	!or	%l3, ASI_SRMMUFP_L3(=0), %l3	! va |= ASI_SRMMUFP_L3
 	sta	%g0, [%l3]ASI_SRMMUFP		! flush TLB
 
@@ -2835,8 +2844,10 @@ _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_page))
 
 _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_segment))
 	!	<%l3 already fetched for us>	! vr
-	ld	[%l6 + CPUINFO_XMSG_ARG1], %l5	! vs
-	ld	[%l6 + CPUINFO_XMSG_ARG2], %l4	! context
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG1), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG1)], %l5	! vs
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG2), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG2)], %l4	! context
 
 	sll	%l3, 24, %l3			! va = VSTOVA(vr,vs)
 	sll	%l5, 18, %l5
@@ -2846,8 +2857,10 @@ _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_segment))
 	lda	[%l7]ASI_SRMMU, %l5		! %l5 = old context
 	sta	%l4, [%l7]ASI_SRMMU		! set new context
 
-	ld	[%l6 + CPUINFO_CACHE_NLINES], %l4
-	ld	[%l6 + CPUINFO_CACHE_LINESZ], %l7
+	sethi	%hi(CPUINFO_VA+CPUINFO_CACHE_NLINES), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_CACHE_NLINES)], %l4
+	sethi	%hi(CPUINFO_VA+CPUINFO_CACHE_LINESZ), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_CACHE_LINESZ)], %l7
 1:
 	sta	%g0, [%l3]ASI_IDCACHELFS	!  flush cache line
 	deccc	%l4				!  p += linesz;
@@ -2859,7 +2872,8 @@ _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_segment))
 
 _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_region))
 	!	<%l3 already fetched for us>	! vr
-	ld	[%l6 + CPUINFO_XMSG_ARG1], %l4	! context
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG1), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG1)], %l4	! context
 
 	sll	%l3, 24, %l3			! va = VRTOVA(vr)
 
@@ -2867,8 +2881,10 @@ _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_region))
 	lda	[%l7]ASI_SRMMU, %l5		! %l5 = old context
 	sta	%l4, [%l7]ASI_SRMMU		! set new context
 
-	ld	[%l6 + CPUINFO_CACHE_NLINES], %l4
-	ld	[%l6 + CPUINFO_CACHE_LINESZ], %l7
+	sethi	%hi(CPUINFO_VA+CPUINFO_CACHE_NLINES), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_CACHE_NLINES)], %l4
+	sethi	%hi(CPUINFO_VA+CPUINFO_CACHE_LINESZ), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_CACHE_LINESZ)], %l7
 1:
 	sta	%g0, [%l3]ASI_IDCACHELFR	!  flush cache line
 	deccc	%l4				!  p += linesz;
@@ -2885,8 +2901,10 @@ _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_context))
 	lda	[%l7]ASI_SRMMU, %l5		! %l5 = old context
 	sta	%l3, [%l7]ASI_SRMMU		! set new context
 
-	ld	[%l6 + CPUINFO_CACHE_NLINES], %l4
-	ld	[%l6 + CPUINFO_CACHE_LINESZ], %l7
+	sethi	%hi(CPUINFO_VA+CPUINFO_CACHE_NLINES), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_CACHE_NLINES)], %l4
+	sethi	%hi(CPUINFO_VA+CPUINFO_CACHE_LINESZ), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_CACHE_LINESZ)], %l7
 	mov	%g0, %l3			! va = 0
 1:
 	sta	%g0, [%l3]ASI_IDCACHELFC	!  flush cache line
@@ -2899,18 +2917,21 @@ _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_context))
 
 _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_range))
 	!	<%l3 already fetched for us>	! va
-	ld	[%l6 + CPUINFO_XMSG_ARG2], %l4	! context
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG2), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG2)], %l4	! context
 
 	mov	SRMMU_CXR, %l7			!
 	lda	[%l7]ASI_SRMMU, %l5		! %l5 = old context
 	sta	%l4, [%l7]ASI_SRMMU		! set new context
 
-	ld	[%l6 + CPUINFO_XMSG_ARG1], %l4	! size
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG1), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG1)], %l4	! size
 	and	%l3, 7, %l7			! double-word alignment
 	andn	%l3, 7, %l3			!  off = va & 7; va &= ~7
 	add	%l4, %l7, %l4			!  sz += off
 
-	ld	[%l6 + CPUINFO_CACHE_LINESZ], %l7
+	sethi	%hi(CPUINFO_VA+CPUINFO_CACHE_LINESZ), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_CACHE_LINESZ)], %l7
 1:
 	sta	%g0, [%l3]ASI_IDCACHELFP	!  flush cache line
 	subcc	%l4, %l7, %l4			!  p += linesz;
@@ -2918,8 +2939,10 @@ _ENTRY(_C_LABEL(ft_srmmu_vcache_flush_range))
 	 add	%l3, %l7, %l3
 
 	/* Flush TLB on all pages we visited */
-	ld	[%l6 + CPUINFO_XMSG_ARG0], %l3	! reload va
-	ld	[%l6 + CPUINFO_XMSG_ARG1], %l4	! reload sz
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG0), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG0)], %l3	! reload va
+	sethi	%hi(CPUINFO_VA+CPUINFO_XMSG_ARG1), %l6
+	ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG1)], %l4	! reload sz
 	add	%l3, %l4, %l4			! %l4 = round_page(va + sz)
 	add	%l4, 0xfff, %l4
 	andn	%l4, 0xfff, %l4
@@ -4714,41 +4737,6 @@ Lcsdone:				! done:
 	 st	%g0, [%o4 + PCB_ONFAULT]! return (error);
 
 /*
- * copystr(fromaddr, toaddr, maxlength, &lencopied)
- *
- * Copy a null terminated string from one point to another in
- * the kernel address space.  (This is a leaf procedure, but
- * it does not seem that way to the C compiler.)
- */
-ENTRY(copystr)
-	mov	%o1, %o5		!	to0 = to;
-	tst	%o2			! if (maxlength == 0)
-	beq,a	2f			!
-	 mov	ENAMETOOLONG, %o0	!	ret = ENAMETOOLONG; goto done;
-
-0:					! loop:
-	ldsb	[%o0], %o4		!	c = *from;
-	tst	%o4
-	stb	%o4, [%o1]		!	*to++ = c;
-	be	1f			!	if (c == 0)
-	 inc	%o1			!		goto ok;
-	deccc	%o2			!	if (--len > 0) {
-	bgu,a	0b			!		from++;
-	 inc	%o0			!		goto loop;
-	b	2f			!	}
-	 mov	ENAMETOOLONG, %o0	!	ret = ENAMETOOLONG; goto done;
-1:					! ok:
-	clr	%o0			!	ret = 0;
-2:
-	sub	%o1, %o5, %o1		!	len = to - to0;
-	tst	%o3			!	if (lencopied)
-	bnz,a	3f
-	 st	%o1, [%o3]		!		*lencopied = len;
-3:
-	retl
-	 nop
-
-/*
  * Copyin(src, dst, len)
  *
  * Copy specified amount of data from user space into the kernel.
@@ -4862,9 +4850,7 @@ ENTRY(cpu_switchto)
 
 	sethi	%hi(cpcb), %l6
 
-	tst	%i0				! if (oldlwp == NULL)
-	bz	Lnosaveoldlwp
-	 rd	%psr, %l1			! psr = %psr;
+	rd	%psr, %l1			! psr = %psr;
 
 	ld	[%l6 + %lo(cpcb)], %o0
 
@@ -4880,7 +4866,6 @@ ENTRY(cpu_switchto)
 Lwb1:	SAVE; SAVE; SAVE; SAVE; SAVE; SAVE;	/* 6 of each: */
 	restore; restore; restore; restore; restore; restore
 
-Lnosaveoldlwp:
 	andn	%l1, PSR_PIL, %l1		! oldpsr &= ~PSR_PIL;
 
 	/*
@@ -4961,13 +4946,13 @@ Lsw_noras:
  * Call the idlespin() function if it exists, otherwise just return.
  */
 ENTRY(cpu_idle)
-	sethi	%hi(CPUINFO_VA), %o0
-	ld	[%o0 + CPUINFO_IDLESPIN], %o1
+	sethi	%hi(CPUINFO_VA+CPUINFO_IDLESPIN), %o0
+	ld	[%o0 + %lo(CPUINFO_VA+CPUINFO_IDLESPIN)], %o1
 	tst	%o1
 	bz	1f
 	 nop
 	jmp	%o1
-	 nop	! CPUINFO_VA is already in %o0
+	 nop
 1:
 	retl
 	 nop
@@ -5113,8 +5098,8 @@ Lufetchstore_fault:
 
 /* probeget and probeset are meant to be used during autoconfiguration */
 
-	.globl	_C_LABEL(Lfsbail)
-_C_LABEL(Lfsbail):
+	.globl	_C_LABEL(sparc_fsbail)
+_C_LABEL(sparc_fsbail):
 	st	%g0, [%o2 + PCB_ONFAULT]! error in r/w, clear pcb_onfault
 	retl				! and return error indicator
 	 mov	-1, %o0
@@ -5131,8 +5116,8 @@ _C_LABEL(Lfsbail):
 ENTRY(probeget)
 	! %o0 = addr, %o1 = (1,2,4)
 	sethi	%hi(cpcb), %o2
-	ld	[%o2 + %lo(cpcb)], %o2	! cpcb->pcb_onfault = Lfsbail;
-	set	Lfsbail, %o5
+	ld	[%o2 + %lo(cpcb)], %o2	! cpcb->pcb_onfault = sparc_fsbail;
+	set	sparc_fsbail, %o5
 	st	%o5, [%o2 + PCB_ONFAULT]
 	btst	1, %o1
 	bnz,a	0f			! if (len & 1)
@@ -5154,8 +5139,8 @@ ENTRY(probeget)
 ENTRY(probeset)
 	! %o0 = addr, %o1 = (1,2,4), %o2 = val
 	sethi	%hi(cpcb), %o3
-	ld	[%o3 + %lo(cpcb)], %o3	! cpcb->pcb_onfault = Lfsbail;
-	set	Lfsbail, %o5
+	ld	[%o3 + %lo(cpcb)], %o3	! cpcb->pcb_onfault = sparc_fsbail;
+	set	sparc_fsbail, %o5
 	st	%o5, [%o3 + PCB_ONFAULT]
 	btst	1, %o1
 	bnz,a	0f			! if (len & 1)
@@ -5178,9 +5163,9 @@ ENTRY(probeset)
  */
 ENTRY(xldcontrolb)
 	!sethi	%hi(cpcb), %o2
-	!ld	[%o2 + %lo(cpcb)], %o2	! cpcb->pcb_onfault = Lfsbail;
+	!ld	[%o2 + %lo(cpcb)], %o2	! cpcb->pcb_onfault = sparc_fsbail;
 	or	%o1, %g0, %o2		! %o2 = %o1
-	set	_C_LABEL(Lfsbail), %o5
+	set	_C_LABEL(sparc_fsbail), %o5
 	st	%o5, [%o2 + PCB_ONFAULT]
 	lduba	[%o0] ASI_CONTROL, %o0	! read
 0:	retl
@@ -5196,7 +5181,7 @@ ENTRY(xldcontrolb)
  */
 ENTRY(fkbyte)
 	or	%o1, %g0, %o2		! %o2 = %o1
-	set	_C_LABEL(Lfsbail), %o5
+	set	_C_LABEL(sparc_fsbail), %o5
 	st	%o5, [%o2 + PCB_ONFAULT]
 	ldub	[%o0], %o0		! fetch the byte
 	retl				! made it
@@ -5641,8 +5626,8 @@ Lpanic_savefpstate:
 	_ALIGN
 
 ENTRY(ipi_savefpstate)
-	sethi	%hi(CPUINFO_VA), %o5
-	ldd	[%o5 + CPUINFO_SAVEFPSTATE], %o2
+	sethi	%hi(CPUINFO_VA+CPUINFO_SAVEFPSTATE), %o5
+	ldd	[%o5 + %lo(CPUINFO_VA+CPUINFO_SAVEFPSTATE)], %o2
 	inccc   %o3
 	addx    %o2, 0, %o2
 	std	%o2, [%o5 + CPUINFO_SAVEFPSTATE]
@@ -5855,16 +5840,19 @@ _ENTRY(_C_LABEL(cypress_get_syncflt))
 _ENTRY(_C_LABEL(smp_get_syncflt))
 	save    %sp, -CCFSZ, %sp
 
-	sethi	%hi(CPUINFO_VA), %o4
+	sethi	%hi(CPUINFO_VA+CPUINFO_GETSYNCFLT), %o4
 	ld	[%l4 + %lo(CPUINFO_VA+CPUINFO_GETSYNCFLT)], %o5
 	clr	%l1
 	clr	%l3
+	sethi	%hi(CPUINFO_VA+CPUINFO_SYNCFLTDUMP), %o4
 	jmpl	%o5, %l7
-	 or	%o4, %lo(CPUINFO_SYNCFLTDUMP), %l4
+	 or	%o4, %lo(CPUINFO_VA+CPUINFO_SYNCFLTDUMP), %l4
 
 	! load values out of the dump
+	sethi	%hi(CPUINFO_VA+CPUINFO_SYNCFLTDUMP), %o4
 	ld	[%o4 + %lo(CPUINFO_VA+CPUINFO_SYNCFLTDUMP)], %o5
 	st	%o5, [%i0]
+	sethi	%hi(CPUINFO_VA+CPUINFO_SYNCFLTDUMP+4), %o4
 	ld	[%o4 + %lo(CPUINFO_VA+CPUINFO_SYNCFLTDUMP+4)], %o5
 	st	%o5, [%i1]
 	ret

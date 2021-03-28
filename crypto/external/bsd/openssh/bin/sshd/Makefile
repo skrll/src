@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.19 2019/10/13 07:28:05 mrg Exp $
+#	$NetBSD: Makefile,v 1.22 2020/06/15 01:57:29 christos Exp $
 
 .include <bsd.own.mk>
 
@@ -67,8 +67,8 @@ DPADD+=	${LIBWRAP}
 .ifdef CRUNCHEDPROG
 CPPFLAGS+=-DSMALL
 .else
-LDADD+=	-lblacklist
-DPADD+=	${LIBBLACKLIST}
+LDADD+=	-lblocklist
+DPADD+=	${LIBBLOCKLIST}
 .endif
 
 COPTS.sshlogin.c+=	${GCC_NO_STRINGOP_TRUNCATION}

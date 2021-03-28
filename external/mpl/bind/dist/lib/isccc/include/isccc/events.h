@@ -1,11 +1,11 @@
-/*	$NetBSD: events.h,v 1.2 2018/08/12 13:02:40 christos Exp $	*/
+/*	$NetBSD: events.h,v 1.4 2021/02/19 16:42:21 christos Exp $	*/
 
 /*
  * Portions Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -25,7 +25,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-
 #ifndef ISCCC_EVENTS_H
 #define ISCCC_EVENTS_H 1
 
@@ -37,9 +36,9 @@
  * Registry of ISCCC event numbers.
  */
 
-#define ISCCC_EVENT_CCMSG			(ISC_EVENTCLASS_ISCCC + 0)
+#define ISCCC_EVENT_CCMSG (ISC_EVENTCLASS_ISCCC + 0)
 
-#define ISCCC_EVENT_FIRSTEVENT			(ISC_EVENTCLASS_ISCCC + 0)
-#define ISCCC_EVENT_LASTEVENT			(ISC_EVENTCLASS_ISCCC + 65535)
+#define ISCCC_EVENT_FIRSTEVENT (ISC_EVENTCLASS_ISCCC + 0)
+#define ISCCC_EVENT_LASTEVENT  (ISC_EVENTCLASS_ISCCC + 65535)
 
 #endif /* ISCCC_EVENTS_H */

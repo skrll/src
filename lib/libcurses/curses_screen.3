@@ -1,4 +1,4 @@
-.\"	$NetBSD: curses_screen.3,v 1.25 2018/10/02 17:35:44 roy Exp $
+.\"	$NetBSD: curses_screen.3,v 1.28 2021/02/07 23:00:57 rillig Exp $
 .\"
 .\" Copyright (c) 2002
 .\"	Brett Lymn (blymn@NetBSD.org, brett_lymn@yahoo.com.au)
@@ -30,7 +30,7 @@
 .\" SUCH DAMAGE.
 .\"
 .\"
-.Dd October 2, 2018
+.Dd March 12, 2020
 .Dt CURSES_SCREEN 3
 .Os
 .Sh NAME
@@ -204,7 +204,7 @@ A subsequent call to
 .Fn initscr
 or
 .Fn newterm
-performs the following additonal actions:
+performs the following additional actions:
 .Bl -bullet -compact
 .It
 Disable use of clear, cud, cud1, cup, cuu, cuu1 and vpa.
@@ -267,7 +267,10 @@ of the current screen to
 .Sh RETURN VALUES
 Functions returning pointers will return
 .Dv NULL
-if an error is detected.
+if an error is detected with the exception of
+.Fn initscr
+which will log a diagnostic to standard error output and then call
+.Xr exit 3 .
 The functions that return an int will return one of the following
 values:
 .Pp
@@ -292,7 +295,7 @@ The Curses package appeared in
 .Bx 4.0 .
 The
 .Fn resizeterm
-function is a
+function is an
 .Em ncurses
 extension to the Curses library and was added in
 .Nx 1.6 .
@@ -303,7 +306,7 @@ and
 .Fn set_tabsize
 functions are
 .Em ncurses
-extension to the Curses library and was added in
+extensions to the Curses library and were added in
 .Nx 8.0 .
 .Sh BUGS
 There is currently an issue with cursor movement in a 1 line sized window

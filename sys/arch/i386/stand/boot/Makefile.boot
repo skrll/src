@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.boot,v 1.73 2019/09/13 02:19:45 manu Exp $
+# $NetBSD: Makefile.boot,v 1.75 2020/09/06 07:20:28 mrg Exp $
 
 S=	${.CURDIR}/../../../../..
 
@@ -52,6 +52,10 @@ COPTS+=    -ffreestanding
 CFLAGS+= -Wall -Wmissing-prototypes -Wstrict-prototypes
 CPPFLAGS+= -nostdinc -D_STANDALONE
 CPPFLAGS+= -I$S
+
+.if ${KERNEL_DIR:Uno} == "yes"
+CPPFLAGS+= -DKERNEL_DIR
+.endif
 
 CPPFLAGS+= -DSUPPORT_PS2
 CPPFLAGS+= -DDIRECT_SERIAL
@@ -149,6 +153,8 @@ ${PROG}: ${OBJS} ${LIBLIST} ${LDSCRIPT} ${.CURDIR}/../Makefile.boot
 	${CC} -o ${PROG}.sym ${LDFLAGS} -Wl,-Ttext,0 -T ${LDSCRIPT} \
 		-Wl,-Map,${PROG}.map -Wl,-cref ${OBJS} $$bb ${LIBLIST}
 	${OBJCOPY} -O binary ${PROG}.sym ${PROG}
+
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 .include <bsd.prog.mk>
 KLINK_MACHINE=	i386

@@ -1,4 +1,4 @@
-#	$NetBSD: GENERIC,v 1.89 2019/11/13 17:59:56 tsutsui Exp $
+#	$NetBSD: GENERIC,v 1.91 2021/01/20 13:22:07 nia Exp $
 #
 # GENERIC machine description file
 #
@@ -90,7 +90,6 @@ options 	INET6		# IPv6
 # Compatibility options
 include 	"conf/compat_netbsd13.config"
 options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
-options 	COMPAT_OSSAUDIO	# OSS (Voxware) audio driver compatibility
 
 # Wedge support
 options 	DKWEDGE_AUTODISCOVER	# Automatically add dk(4) instances
@@ -390,9 +389,6 @@ pseudo-device	putter			# for puffs and pud
 
 # a pseudo device needed for Coda	# also needs CODA (above)
 #pseudo-device	vcoda			# coda minicache <-> venus comm.
-
-# a pseudo device needed for SMBFS
-#pseudo-device	nsmb			# experimental - SMB requester
 
 # wscons pseudo-devices
 pseudo-device	wsmux			# mouse & keyboard multiplexor

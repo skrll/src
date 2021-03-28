@@ -1,4 +1,4 @@
-/* $NetBSD: rk_i2s.c,v 1.1 2019/11/16 13:24:03 jmcneill Exp $ */
+/* $NetBSD: rk_i2s.c,v 1.10 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rk_i2s.c,v 1.1 2019/11/16 13:24:03 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk_i2s.c,v 1.10 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -117,9 +117,12 @@ static const struct rk_i2s_config rk3399_i2s_config = {
 	.oe_val = 0x7,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "rockchip,rk3399-i2s",	(uintptr_t)&rk3399_i2s_config },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "rockchip,rk3066-i2s", },
+	{ .compat = "rockchip,rk3188-i2s", },
+	{ .compat = "rockchip,rk3288-i2s", },
+	{ .compat = "rockchip,rk3399-i2s",	.data = &rk3399_i2s_config },
+	DEVICE_COMPAT_EOL
 };
 
 struct rk_i2s_softc;
@@ -182,7 +185,6 @@ rk_i2s_set_format(void *priv, int setmode,
 	ckr = RD4(sc, I2S_CKR);
 	if ((ckr & CKR_MSS) == 0) {
 		const u_int mclk_rate = clk_get_rate(sc->sc_clk);
-		device_printf(sc->sc_dev, "%s: sysclk rate %u Hz\n", __func__, mclk_rate);
 		const u_int bclk_rate = 2 * 32 * RK_I2S_SAMPLE_RATE;
 		const u_int bclk_div = mclk_rate / bclk_rate;
 		const u_int lrck_div = bclk_rate / RK_I2S_SAMPLE_RATE;
@@ -230,16 +232,6 @@ rk_i2s_get_props(void *priv)
 
 	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
 	    AUDIO_PROP_FULLDUPLEX;
-}
-
-static int
-rk_i2s_round_blocksize(void *priv, int bs, int mode,
-    const audio_params_t *params)
-{
-	bs &= ~3;
-	if (bs == 0)
-		bs = 4;
-	return bs;
 }
 
 static void *
@@ -361,7 +353,6 @@ static const struct audio_hw_if rk_i2s_hw_if = {
 	.query_format = rk_i2s_query_format,
 	.set_format = rk_i2s_set_format,
 	.get_props = rk_i2s_get_props,
-	.round_blocksize = rk_i2s_round_blocksize,
 	.allocm = rk_i2s_allocm,
 	.freem = rk_i2s_freem,
 	.trigger_output = rk_i2s_trigger_output,
@@ -430,7 +421,6 @@ rk_i2s_dai_set_sysclk(audio_dai_tag_t dai, u_int rate, int dir)
 	struct rk_i2s_softc * const sc = audio_dai_private(dai);
 	int error;
 
-	device_printf(sc->sc_dev, "set sysclk %u Hz\n", rate);
 	error = clk_set_rate(sc->sc_clk, rate);
 	if (error != 0) {
 		device_printf(sc->sc_dev, "failed to set sysclk to %u Hz: %d\n",
@@ -549,7 +539,8 @@ rk_i2s_clock_init(struct rk_i2s_softc *sc)
 	}
 
 	/* Enable bus clock */
-	if (fdtbus_clock_enable(phandle, "i2s_hclk", true) != 0) {
+	error = fdtbus_clock_enable(phandle, "i2s_hclk", true);
+	if (error != 0) {
 		aprint_error(": couldn't enable i2s_hclk clock: %d\n", error);
 		return error;
 	}
@@ -562,7 +553,7 @@ rk_i2s_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -595,9 +586,13 @@ rk_i2s_attach(device_t parent, device_t self, void *aux)
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 
-	sc->sc_conf = (void *)of_search_compatible(phandle, compat_data)->data;
-	sc->sc_grf = fdtbus_syscon_acquire(phandle, "rockchip,grf");
-	if (sc->sc_grf != NULL && sc->sc_conf->oe_mask != 0) {
+	sc->sc_conf = of_compatible_lookup(phandle, compat_data)->data;
+	if (sc->sc_conf != NULL && sc->sc_conf->oe_mask != 0) {
+		sc->sc_grf = fdtbus_syscon_acquire(phandle, "rockchip,grf");
+		if (sc->sc_grf == NULL) {
+			aprint_error(": couldn't find grf\n");
+			return;
+		}
 		syscon_lock(sc->sc_grf);
 		val = __SHIFTIN(sc->sc_conf->oe_val, sc->sc_conf->oe_mask);
 		val |= (sc->sc_conf->oe_mask << 16);
@@ -611,7 +606,8 @@ rk_i2s_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal(": I2S/PCM controller\n");
 
-	if (fdtbus_intr_establish(phandle, 0, IPL_AUDIO, FDT_INTR_MPSAFE, rk_i2s_intr, sc) == NULL) {
+	if (fdtbus_intr_establish_xname(phandle, 0, IPL_AUDIO, FDT_INTR_MPSAFE,
+	    rk_i2s_intr, sc, device_xname(self)) == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt on %s\n", intrstr);
 		return;
 	}

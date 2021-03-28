@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_mixer.c,v 1.10 2019/11/23 23:47:57 jmcneill Exp $ */
+/* $NetBSD: sunxi_mixer.c,v 1.16 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_mixer.c,v 1.10 2019/11/23 23:47:57 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_mixer.c,v 1.16 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -99,8 +99,13 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_mixer.c,v 1.10 2019/11/23 23:47:57 jmcneill Ex
 #define	  OVL_V_ATTCTL_LAY_FBFMT_YUV422		0x06
 #define	  OVL_V_ATTCTL_LAY_FBFMT_YUV420		0x0a
 #define	  OVL_V_ATTCTL_LAY_FBFMT_YUV411		0x0e
+#if BYTE_ORDER == BIG_ENDIAN
+#define	  OVL_V_ATTCTL_LAY_FBFMT_ARGB_8888	0x03
+#define	  OVL_V_ATTCTL_LAY_FBFMT_XRGB_8888	0x07
+#else
 #define	  OVL_V_ATTCTL_LAY_FBFMT_ARGB_8888	0x00
 #define	  OVL_V_ATTCTL_LAY_FBFMT_XRGB_8888	0x04
+#endif
 #define	 OVL_V_ATTCTL_LAY0_EN			__BIT(0)
 #define	OVL_V_MBSIZE(n)		(0x004 + (n) * 0x30)
 #define	OVL_V_COOR(n)		(0x008 + (n) * 0x30)
@@ -124,8 +129,13 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_mixer.c,v 1.10 2019/11/23 23:47:57 jmcneill Ex
 /* OVL_UI registers */
 #define	OVL_UI_ATTR_CTL(n)	(0x000 + (n) * 0x20)
 #define	 OVL_UI_ATTR_CTL_LAY_FBFMT		__BITS(12,8)
+#if BYTE_ORDER == BIG_ENDIAN
+#define	  OVL_UI_ATTR_CTL_LAY_FBFMT_ARGB_8888	0x03
+#define	  OVL_UI_ATTR_CTL_LAY_FBFMT_XRGB_8888	0x07
+#else
 #define	  OVL_UI_ATTR_CTL_LAY_FBFMT_ARGB_8888	0x00
 #define	  OVL_UI_ATTR_CTL_LAY_FBFMT_XRGB_8888	0x04
+#endif
 #define	 OVL_UI_ATTR_CTL_LAY_EN			__BIT(0)
 #define	OVL_UI_MBSIZE(n)	(0x004 + (n) * 0x20)
 #define	OVL_UI_COOR(n)		(0x008 + (n) * 0x20)
@@ -173,11 +183,30 @@ enum {
 	MIXER_PORT_OUTPUT = 1,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "allwinner,sun8i-h3-de2-mixer-0",	3 },
-	{ "allwinner,sun50i-a64-de2-mixer-0",	3 },
-	{ "allwinner,sun50i-a64-de2-mixer-1",	1 },
-	{ NULL }
+struct sunxi_mixer_compat_data {
+	uint8_t ovl_ui_count;
+	uint8_t mixer_index;
+};
+
+struct sunxi_mixer_compat_data mixer0_data = {
+	.ovl_ui_count = 3,
+	.mixer_index = 0,
+};
+
+struct sunxi_mixer_compat_data mixer1_data = {
+	.ovl_ui_count = 1,
+	.mixer_index = 1,
+};
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun8i-h3-de2-mixer-0",
+	  .data = &mixer0_data },
+	{ .compat = "allwinner,sun50i-a64-de2-mixer-0",
+	  .data = &mixer0_data },
+	{ .compat = "allwinner,sun50i-a64-de2-mixer-1",
+	  .data = &mixer1_data },
+
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_mixer_softc;
@@ -1220,7 +1249,7 @@ sunxi_mixer_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -1230,6 +1259,8 @@ sunxi_mixer_attach(device_t parent, device_t self, void *aux)
 	struct fdt_attach_args * const faa = aux;
 	struct fdt_endpoint *out_ep;
 	const int phandle = faa->faa_phandle;
+	const struct sunxi_mixer_compat_data * const cd =
+	    of_compatible_lookup(phandle, compat_data)->data;
 	struct clk *clk_bus, *clk_mod;
 	struct fdtbus_reset *rst;
 	bus_addr_t addr;
@@ -1267,7 +1298,7 @@ sunxi_mixer_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	sc->sc_phandle = faa->faa_phandle;
-	sc->sc_ovl_ui_count = of_search_compatible(phandle, compat_data)->data;
+	sc->sc_ovl_ui_count = cd->ovl_ui_count;
 
 	aprint_naive("\n");
 	aprint_normal(": Display Engine Mixer\n");
@@ -1276,7 +1307,14 @@ sunxi_mixer_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ports.dp_ep_get_data = sunxi_mixer_ep_get_data;
 	fdt_ports_register(&sc->sc_ports, self, phandle, EP_DRM_CRTC);
 
-	out_ep = fdt_endpoint_get_from_index(&sc->sc_ports, MIXER_PORT_OUTPUT, 0);
+	out_ep = fdt_endpoint_get_from_index(&sc->sc_ports,
+	    MIXER_PORT_OUTPUT, cd->mixer_index);
+	if (out_ep == NULL) {
+		/* Couldn't find new-style DE2 endpoint, try old style. */
+		out_ep = fdt_endpoint_get_from_index(&sc->sc_ports,
+		    MIXER_PORT_OUTPUT, 0);
+	}
+
 	if (out_ep != NULL)
 		sunxi_drm_register_endpoint(phandle, out_ep);
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: rk_platform.c,v 1.8 2018/10/30 16:41:52 skrll Exp $ */
+/* $NetBSD: rk_platform.c,v 1.11 2021/02/04 22:36:53 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_console.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rk_platform.c,v 1.8 2018/10/30 16:41:52 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk_platform.c,v 1.11 2021/02/04 22:36:53 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -59,19 +59,18 @@ __KERNEL_RCSID(0, "$NetBSD: rk_platform.c,v 1.8 2018/10/30 16:41:52 skrll Exp $"
 
 extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 extern struct bus_space arm_generic_bs_tag;
-extern struct bus_space arm_generic_a4x_bs_tag;
 
 static void
 rk_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &arm_generic_bs_tag;
-	faa->faa_a4x_bst = &arm_generic_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
 static void
 rk_platform_device_register(device_t self, void *aux)
 {
+	fdtbus_device_register(self, aux);
 }
 
 static void
@@ -121,7 +120,7 @@ rk3328_platform_devmap(void)
 
 void rk3328_platform_early_putchar(char);
 
-void
+void __noasan
 rk3328_platform_early_putchar(char c)
 {
 #ifdef CONSADDR

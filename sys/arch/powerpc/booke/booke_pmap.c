@@ -1,4 +1,4 @@
-/*	$NetBSD: booke_pmap.c,v 1.26 2018/09/03 16:29:26 riastradh Exp $	*/
+/*	$NetBSD: booke_pmap.c,v 1.31 2021/01/06 07:56:19 rin Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -37,8 +37,12 @@
 #define __PMAP_PRIVATE
 
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: booke_pmap.c,v 1.31 2021/01/06 07:56:19 rin Exp $");
 
-__KERNEL_RCSID(0, "$NetBSD: booke_pmap.c,v 1.26 2018/09/03 16:29:26 riastradh Exp $");
+#ifdef _KERNEL_OPT
+#include "opt_multiprocessor.h"
+#include "opt_pmap.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/kcore.h>
@@ -49,10 +53,6 @@ __KERNEL_RCSID(0, "$NetBSD: booke_pmap.c,v 1.26 2018/09/03 16:29:26 riastradh Ex
 
 #include <machine/pmap.h>
 
-#if defined(MULTIPROCESSOR)
-kmutex_t pmap_tlb_miss_lock;
-#endif
-
 PMAP_COUNTER(zeroed_pages, "pages zeroed");
 PMAP_COUNTER(copied_pages, "pages copied");
 
@@ -62,7 +62,7 @@ void
 pmap_procwr(struct proc *p, vaddr_t va, size_t len)
 {
 	struct pmap * const pmap = p->p_vmspace->vm_map.pmap;
-	vsize_t off = va & PAGE_SIZE;
+	vsize_t off = va & PAGE_MASK;
 
 	kpreempt_disable();
 	for (const vaddr_t eva = va + len; va < eva; off = 0) {
@@ -78,8 +78,8 @@ pmap_procwr(struct proc *p, vaddr_t va, size_t len)
 			continue;
 		}
 		kpreempt_enable();
-		dcache_wb(pte_to_paddr(pt_entry), segeva - va);
-		icache_inv(pte_to_paddr(pt_entry), segeva - va);
+		dcache_wb(pte_to_paddr(pt_entry) + off, segeva - va);
+		icache_inv(pte_to_paddr(pt_entry) + off, segeva - va);
 		kpreempt_disable();
 		va = segeva;
 	}
@@ -87,8 +87,12 @@ pmap_procwr(struct proc *p, vaddr_t va, size_t len)
 }
 
 void
-pmap_md_page_syncicache(struct vm_page *pg, const kcpuset_t *onproc)
+pmap_md_page_syncicache(struct vm_page_md *mdpg, const kcpuset_t *onproc)
 {
+	KASSERT(VM_PAGEMD_VMPAGE_P(mdpg));
+
+	struct vm_page * const pg = VM_MD_TO_PAGE(mdpg);
+
 	/*
 	 * If onproc is empty, we could do a
 	 * pmap_page_protect(pg, VM_PROT_NONE) and remove all
@@ -154,12 +158,11 @@ pmap_bootstrap(vaddr_t startkernel, vaddr_t endkernel,
 
 	KASSERT(endkernel == trunc_page(endkernel));
 
+	/* common initialization */
+	pmap_bootstrap_common();
+
 	/* init the lock */
 	pmap_tlb_info_init(&pmap_tlb0_info);
-
-#if defined(MULTIPROCESSOR)
-	mutex_init(&pmap_tlb_miss_lock, MUTEX_SPIN, IPL_HIGH);
-#endif
 
 	/*
 	 * Compute the number of pages kmem_arena will have.
@@ -421,19 +424,5 @@ void
 pmap_md_tlb_info_attach(struct pmap_tlb_info *ti, struct cpu_info *ci)
 {
 	/* nothing */
-}
-
-void
-pmap_md_tlb_miss_lock_enter(void)
-{
-
-	mutex_spin_enter(&pmap_tlb_miss_lock);
-}
-
-void
-pmap_md_tlb_miss_lock_exit(void)
-{
-
-	mutex_spin_exit(&pmap_tlb_miss_lock);
 }
 #endif /* MULTIPROCESSOR */

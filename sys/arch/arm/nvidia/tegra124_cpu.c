@@ -1,4 +1,4 @@
-/* $NetBSD: tegra124_cpu.c,v 1.4 2017/06/02 00:09:56 jmcneill Exp $ */
+/* $NetBSD: tegra124_cpu.c,v 1.6 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra124_cpu.c,v 1.4 2017/06/02 00:09:56 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra124_cpu.c,v 1.6 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -119,16 +119,20 @@ static struct tegra124_speedo {
 static struct clk *tegra124_clk_pllx = NULL;
 static struct fdtbus_regulator *tegra124_reg_vddcpu = NULL;
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "nvidia,tegra124" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 tegra124_cpu_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = { "nvidia,tegra124", NULL };
 	struct fdt_attach_args *faa = aux;
 
 	if (OF_finddevice("/cpus/cpu@0") != faa->faa_phandle)
 		return 0;
 
-	return of_match_compatible(OF_finddevice("/"), compatible);
+	return of_compatible_match(OF_finddevice("/"), compat_data);
 }
 
 static void
@@ -140,9 +144,14 @@ tegra124_cpu_attach(device_t parent, device_t self, void *aux)
 	config_finalize_register(self, tegra124_cpu_init_cpufreq);
 }
 
+static bool tegra124_cpu_init_done = false;
+
 static int
 tegra124_cpu_init_cpufreq(device_t dev)
 {
+	if (tegra124_cpu_init_done)
+		return 0;
+
 	tegra124_speedo_init();
 
 	int cpu_node = OF_finddevice("/cpus/cpu@0");
@@ -161,6 +170,8 @@ tegra124_cpu_init_cpufreq(device_t dev)
 	}
 
 	tegra_cpufreq_register(&tegra124_cpufreq_func);
+
+	tegra124_cpu_init_done = true;
 
 	return 0;
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: xenbus_comms.h,v 1.6 2011/09/20 00:12:25 jym Exp $ */
+/* $NetBSD: xenbus_comms.h,v 1.8 2020/05/13 13:19:38 jdolecek Exp $ */
 /*
  * Private include for xenbus communications.
  * 
@@ -30,10 +30,12 @@
 #define _XENBUS_COMMS_H
 
 void xenbus_kernfs_init(void);
-int xs_init(device_t dev);
-int xb_init_comms(device_t dev);
-void xb_suspend_comms(device_t dev);
-void xb_resume_comms(device_t dev);
+int xs_init(device_t);
+int xb_init_comms(device_t);
+void xb_suspend_comms(device_t);
+int xb_resume_comms(device_t);
+
+void xb_xenstored_make_ready(void);
 
 /* Low level routines. */
 int xb_write(const void *data, unsigned len);
@@ -41,6 +43,8 @@ int xb_read(void *data, unsigned len);
 int xs_input_avail(void);
 
 extern struct xenstore_domain_interface *xenstore_interface;
+
+extern int xenstored_ready;
 
 #endif /* _XENBUS_COMMS_H */
 

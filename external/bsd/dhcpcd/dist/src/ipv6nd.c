@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - IPv6 ND handling
- * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2020 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -41,9 +41,10 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <unistd.h>
 
-#define ELOOP_QUEUE 3
+#define ELOOP_QUEUE	ELOOP_IPV6ND
 #include "common.h"
 #include "dhcpcd.h"
 #include "dhcp-common.h"
@@ -53,11 +54,22 @@
 #include "ipv6.h"
 #include "ipv6nd.h"
 #include "logerr.h"
+#include "privsep.h"
 #include "route.h"
 #include "script.h"
 
 /* Debugging Router Solicitations is a lot of spam, so disable it */
 //#define DEBUG_RS
+
+#ifndef ND_RA_FLAG_HOME_AGENT
+#define	ND_RA_FLAG_HOME_AGENT	0x20	/* Home Agent flag in RA */
+#endif
+#ifndef ND_RA_FLAG_PROXY
+#define	ND_RA_FLAG_PROXY	0x04	/* Proxy */
+#endif
+#ifndef ND_OPT_PI_FLAG_ROUTER
+#define	ND_OPT_PI_FLAG_ROUTER	0x20	/* Router flag in PI */
+#endif
 
 #ifndef ND_OPT_RDNSS
 #define ND_OPT_RDNSS			25
@@ -98,13 +110,6 @@ __CTASSERT(sizeof(struct nd_opt_rdnss) == 8);
 #define ND_RA_FLAG_RTPREF_LOW		0x18
 #define ND_RA_FLAG_RTPREF_RSV		0x10
 #endif
-
-/* RTPREF_MEDIUM has to be 0! */
-#define RTPREF_HIGH	1
-#define RTPREF_MEDIUM	0
-#define RTPREF_LOW	(-1)
-#define RTPREF_RESERVED	(-2)
-#define RTPREF_INVALID	(-3)	/* internal */
 
 #define	EXPIRED_MAX	5	/* Remember 5 expired routers to avoid
 				   logspam. */
@@ -193,17 +198,17 @@ ipv6nd_printoptions(const struct dhcpcd_ctx *ctx,
 	}
 }
 
-static int
-ipv6nd_open0(void)
+int
+ipv6nd_open(bool recv)
 {
 	int fd, on;
 	struct icmp6_filter filt;
 
-#define SOCK_FLAGS	SOCK_CLOEXEC | SOCK_NONBLOCK
-	fd = xsocket(PF_INET6, SOCK_RAW | SOCK_FLAGS, IPPROTO_ICMPV6);
-#undef SOCK_FLAGS
+	fd = xsocket(PF_INET6, SOCK_RAW | SOCK_CXNB, IPPROTO_ICMPV6);
 	if (fd == -1)
 		return -1;
+
+	ICMP6_FILTER_SETBLOCKALL(&filt);
 
 	/* RFC4861 4.1 */
 	on = 255;
@@ -211,18 +216,27 @@ ipv6nd_open0(void)
 	    &on, sizeof(on)) == -1)
 		goto eexit;
 
-	on = 1;
-	if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVPKTINFO,
-	    &on, sizeof(on)) == -1)
-		goto eexit;
+	if (recv) {
+		on = 1;
+		if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVPKTINFO,
+		    &on, sizeof(on)) == -1)
+			goto eexit;
 
-	on = 1;
-	if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVHOPLIMIT,
-	    &on, sizeof(on)) == -1)
-		goto eexit;
+		on = 1;
+		if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVHOPLIMIT,
+		    &on, sizeof(on)) == -1)
+			goto eexit;
 
-	ICMP6_FILTER_SETBLOCKALL(&filt);
-	ICMP6_FILTER_SETPASS(ND_ROUTER_ADVERT, &filt);
+		ICMP6_FILTER_SETPASS(ND_ROUTER_ADVERT, &filt);
+
+#ifdef SO_RERROR
+		on = 1;
+		if (setsockopt(fd, SOL_SOCKET, SO_RERROR,
+		    &on, sizeof(on)) == -1)
+			goto eexit;
+#endif
+	}
+
 	if (setsockopt(fd, IPPROTO_ICMPV6, ICMP6_FILTER,
 	    &filt, sizeof(filt)) == -1)
 		goto eexit;
@@ -235,8 +249,8 @@ eexit:
 }
 
 #ifdef __sun
-static int
-ipv6nd_open(struct interface *ifp)
+int
+ipv6nd_openif(struct interface *ifp)
 {
 	int fd;
 	struct ipv6_mreq mreq = {
@@ -249,7 +263,7 @@ ipv6nd_open(struct interface *ifp)
 	if (state->nd_fd != -1)
 		return state->nd_fd;
 
-	fd = ipv6nd_open0();
+	fd = ipv6nd_open(true);
 	if (fd == -1)
 		return -1;
 
@@ -269,23 +283,6 @@ ipv6nd_open(struct interface *ifp)
 
 	state->nd_fd = fd;
 	eloop_event_add(ifp->ctx->eloop, fd, ipv6nd_handledata, ifp);
-	return fd;
-}
-#else
-static int
-ipv6nd_open(struct dhcpcd_ctx *ctx)
-{
-	int fd;
-
-	if (ctx->nd_fd != -1)
-		return ctx->nd_fd;
-
-	fd = ipv6nd_open0();
-	if (fd == -1)
-		return -1;
-
-	ctx->nd_fd = fd;
-	eloop_event_add(ctx->eloop, fd, ipv6nd_handledata, ctx);
 	return fd;
 }
 #endif
@@ -332,15 +329,21 @@ ipv6nd_sendrsprobe(void *arg)
 		.sin6_scope_id = ifp->index,
 	};
 	struct iovec iov = { .iov_base = state->rs, .iov_len = state->rslen };
-	unsigned char ctl[CMSG_SPACE(sizeof(struct in6_pktinfo))] = { 0 };
+	union {
+		struct cmsghdr hdr;
+		uint8_t buf[CMSG_SPACE(sizeof(struct in6_pktinfo))];
+	} cmsgbuf = { .buf = { 0 } };
 	struct msghdr msg = {
 	    .msg_name = &dst, .msg_namelen = sizeof(dst),
 	    .msg_iov = &iov, .msg_iovlen = 1,
-	    .msg_control = ctl, .msg_controllen = sizeof(ctl),
+	    .msg_control = cmsgbuf.buf, .msg_controllen = sizeof(cmsgbuf.buf),
 	};
 	struct cmsghdr *cm;
 	struct in6_pktinfo pi = { .ipi6_ifindex = ifp->index };
 	int s;
+#ifndef __sun
+	struct dhcpcd_ctx *ctx = ifp->ctx;
+#endif
 
 	if (ipv6_linklocal(ifp) == NULL) {
 		logdebugx("%s: delaying Router Solicitation for LL address",
@@ -363,9 +366,30 @@ ipv6nd_sendrsprobe(void *arg)
 	memcpy(CMSG_DATA(cm), &pi, sizeof(pi));
 
 	logdebugx("%s: sending Router Solicitation", ifp->name);
+#ifdef PRIVSEP
+	if (IN_PRIVSEP(ifp->ctx)) {
+		if (ps_inet_sendnd(ifp, &msg) == -1)
+			logerr(__func__);
+		goto sent;
+	}
+#endif
 #ifdef __sun
+	if (state->nd_fd == -1) {
+		if (ipv6nd_openif(ifp) == -1) {
+			logerr(__func__);
+			return;
+		}
+	}
 	s = state->nd_fd;
 #else
+	if (ctx->nd_fd == -1) {
+		ctx->nd_fd = ipv6nd_open(true);
+		if (ctx->nd_fd == -1) {
+			logerr(__func__);
+			return;
+		}
+		eloop_event_add(ctx->eloop, ctx->nd_fd, ipv6nd_handledata, ctx);
+	}
 	s = ifp->ctx->nd_fd;
 #endif
 	if (sendmsg(s, &msg, 0) == -1) {
@@ -376,13 +400,14 @@ ipv6nd_sendrsprobe(void *arg)
 		 * associate with an access point. */
 	}
 
+#ifdef PRIVSEP
+sent:
+#endif
 	if (state->rsprobes++ < MAX_RTR_SOLICITATIONS)
 		eloop_timeout_add_sec(ifp->ctx->eloop,
 		    RTR_SOLICITATION_INTERVAL, ipv6nd_sendrsprobe, ifp);
-	else {
+	else
 		logwarnx("%s: no IPv6 Routers available", ifp->name);
-		ipv6nd_drop(ifp);
-	}
 }
 
 #ifdef ND6_ADVERTISE
@@ -398,18 +423,21 @@ ipv6nd_sendadvertisement(void *arg)
 	    .sin6_scope_id = ifp->index,
 	};
 	struct iovec iov = { .iov_base = ia->na, .iov_len = ia->na_len };
-	unsigned char ctl[CMSG_SPACE(sizeof(struct in6_pktinfo))] = { 0 };
+	union {
+		struct cmsghdr hdr;
+		uint8_t buf[CMSG_SPACE(sizeof(struct in6_pktinfo))];
+	} cmsgbuf = { .buf = { 0 } };
 	struct msghdr msg = {
 	    .msg_name = &dst, .msg_namelen = sizeof(dst),
 	    .msg_iov = &iov, .msg_iovlen = 1,
-	    .msg_control = ctl, .msg_controllen = sizeof(ctl),
+	    .msg_control = cmsgbuf.buf, .msg_controllen = sizeof(cmsgbuf.buf),
 	};
 	struct cmsghdr *cm;
 	struct in6_pktinfo pi = { .ipi6_ifindex = ifp->index };
 	const struct rs_state *state = RS_CSTATE(ifp);
 	int s;
 
-	if (state == NULL || ifp->carrier <= LINK_DOWN)
+	if (state == NULL || !if_is_link_up(ifp))
 		goto freeit;
 
 #ifdef SIN6_LEN
@@ -424,6 +452,14 @@ ipv6nd_sendadvertisement(void *arg)
 	cm->cmsg_len = CMSG_LEN(sizeof(pi));
 	memcpy(CMSG_DATA(cm), &pi, sizeof(pi));
 	logdebugx("%s: sending NA for %s", ifp->name, ia->saddr);
+
+#ifdef PRIVSEP
+	if (IN_PRIVSEP(ifp->ctx)) {
+		if (ps_inet_sendnd(ifp, &msg) == -1)
+			logerr(__func__);
+		goto sent;
+	}
+#endif
 #ifdef __sun
 	s = state->nd_fd;
 #else
@@ -432,6 +468,9 @@ ipv6nd_sendadvertisement(void *arg)
 	if (sendmsg(s, &msg, 0) == -1)
 		logerr(__func__);
 
+#ifdef PRIVSEP
+sent:
+#endif
 	if (++ia->na_count < MAX_NEIGHBOR_ADVERTISEMENT) {
 		eloop_timeout_add_sec(ctx->eloop,
 		    state->retrans / 1000, ipv6nd_sendadvertisement, ia);
@@ -466,7 +505,7 @@ ipv6nd_advertise(struct ipv6_addr *ia)
 	iaf = NULL;
 	TAILQ_FOREACH(ifp, ctx->ifaces, next) {
 		state = IPV6_STATE(ifp);
-		if (state == NULL || ifp->carrier <= LINK_DOWN)
+		if (state == NULL || !if_is_link_up(ifp))
 			continue;
 
 		TAILQ_FOREACH(iap, &state->addrs, next) {
@@ -503,7 +542,13 @@ ipv6nd_advertise(struct ipv6_addr *ia)
 
 	na->nd_na_type = ND_NEIGHBOR_ADVERT;
 	na->nd_na_flags_reserved = ND_NA_FLAG_OVERRIDE;
-	if (ip6_forwarding(ifp->name) == 1)
+#if defined(PRIVSEP) && (defined(__linux__) || defined(HAVE_PLEDGE))
+	if (IN_PRIVSEP(ctx)) {
+		if (ps_root_ip6forwarding(ctx, ifp->name) != 0)
+			na->nd_na_flags_reserved |= ND_NA_FLAG_ROUTER;
+	} else
+#endif
+	if (ip6_forwarding(ifp->name) != 0)
 		na->nd_na_flags_reserved |= ND_NA_FLAG_ROUTER;
 	na->nd_na_target = ia->addr;
 
@@ -531,19 +576,13 @@ ipv6nd_expire(void *arg)
 {
 	struct interface *ifp = arg;
 	struct ra *rap;
-	struct ipv6_addr *ia;
-	struct timespec now = { .tv_sec = 1 };
 
 	if (ifp->ctx->ra_routers == NULL)
 		return;
 
 	TAILQ_FOREACH(rap, ifp->ctx->ra_routers, next) {
-		if (rap->iface == ifp)
-			continue;
-		rap->acquired = now;
-		TAILQ_FOREACH(ia, &rap->addrs, next) {
-			ia->acquired = now;
-		}
+		if (rap->iface == ifp && rap->willexpire)
+			rap->doexpire = true;
 	}
 	ipv6nd_expirera(ifp);
 }
@@ -551,12 +590,20 @@ ipv6nd_expire(void *arg)
 void
 ipv6nd_startexpire(struct interface *ifp)
 {
+	struct ra *rap;
 
-	eloop_timeout_add_sec(ifp->ctx->eloop, RTR_CARRIER_EXPIRE,
-	    ipv6nd_expire, ifp);
+	if (ifp->ctx->ra_routers == NULL)
+		return;
+
+	TAILQ_FOREACH(rap, ifp->ctx->ra_routers, next) {
+		if (rap->iface == ifp)
+			rap->willexpire = true;
+	}
+	eloop_q_timeout_add_sec(ifp->ctx->eloop, ELOOP_IPV6RA_EXPIRE,
+	    RTR_CARRIER_EXPIRE, ipv6nd_expire, ifp);
 }
 
-static int
+int
 ipv6nd_rtpref(struct ra *rap)
 {
 
@@ -584,19 +631,22 @@ ipv6nd_sortrouters(struct dhcpcd_ctx *ctx)
 	while ((ra1 = TAILQ_FIRST(ctx->ra_routers)) != NULL) {
 		TAILQ_REMOVE(ctx->ra_routers, ra1, next);
 		TAILQ_FOREACH(ra2, &sorted_routers, next) {
-			if (ra1->iface->metric < ra2->iface->metric)
+			if (ra1->iface->metric > ra2->iface->metric)
 				continue;
 			if (ra1->expired && !ra2->expired)
+				continue;
+			if (ra1->willexpire && !ra2->willexpire)
 				continue;
 			if (ra1->lifetime == 0 && ra2->lifetime != 0)
 				continue;
 			if (!ra1->isreachable && ra2->reachable)
 				continue;
-			if (ipv6nd_rtpref(ra1) < ipv6nd_rtpref(ra2))
+			if (ipv6nd_rtpref(ra1) <= ipv6nd_rtpref(ra2))
 				continue;
 			/* All things being equal, prefer older routers. */
-			if (timespeccmp(&ra1->acquired, &ra2->acquired, >=))
-				continue;
+			/* We don't need to check time, becase newer
+			 * routers are always added to the tail and then
+			 * sorted. */
 			TAILQ_INSERT_BEFORE(ra2, ra1, next);
 			break;
 		}
@@ -608,21 +658,28 @@ ipv6nd_sortrouters(struct dhcpcd_ctx *ctx)
 }
 
 static void
-ipv6nd_applyra(struct dhcpcd_ctx *ctx, struct interface *ifp)
+ipv6nd_applyra(struct interface *ifp)
 {
 	struct ra *rap;
 	struct rs_state *state = RS_STATE(ifp);
+	struct ra defra = {
+		.iface = ifp,
+		.hoplimit = IPV6_DEFHLIM ,
+		.reachable = REACHABLE_TIME,
+		.retrans = RETRANS_TIMER,
+	};
 
-	TAILQ_FOREACH(rap, ctx->ra_routers, next) {
+	TAILQ_FOREACH(rap, ifp->ctx->ra_routers, next) {
 		if (rap->iface == ifp)
 			break;
 	}
 
-	if (rap == NULL)
-		return;
+	/* If we have no Router Advertisement, then set default values. */
+	if (rap == NULL || rap->expired || rap->willexpire)
+		rap = &defra;
 
 	state->retrans = rap->retrans;
-	if (if_applyra(rap) == -1)
+	if (if_applyra(rap) == -1 && errno != ENOENT)
 		logerr(__func__);
 }
 
@@ -661,7 +718,7 @@ ipv6nd_neighbour(struct dhcpcd_ctx *ctx, struct in6_addr *addr, bool reachable)
 
 	/* See if we can install a reachable default router. */
 	ipv6nd_sortrouters(ctx);
-	ipv6nd_applyra(ctx, rap->iface);
+	ipv6nd_applyra(rap->iface);
 	rt_build(ctx, AF_INET6);
 
 	if (reachable)
@@ -717,6 +774,40 @@ ipv6nd_findaddr(struct dhcpcd_ctx *ctx, const struct in6_addr *addr,
 		}
 	}
 	return NULL;
+}
+
+static struct ipv6_addr *
+ipv6nd_rapfindprefix(struct ra *rap,
+    const struct in6_addr *pfx, uint8_t pfxlen)
+{
+	struct ipv6_addr *ia;
+
+	TAILQ_FOREACH(ia, &rap->addrs, next) {
+		if (ia->prefix_vltime == 0)
+			continue;
+		if (ia->prefix_len == pfxlen &&
+		    IN6_ARE_ADDR_EQUAL(&ia->prefix, pfx))
+			break;
+	}
+	return ia;
+}
+
+struct ipv6_addr *
+ipv6nd_iffindprefix(struct interface *ifp,
+    const struct in6_addr *pfx, uint8_t pfxlen)
+{
+	struct ra *rap;
+	struct ipv6_addr *ia;
+
+	ia = NULL;
+	TAILQ_FOREACH(rap, ifp->ctx->ra_routers, next) {
+		if (rap->iface != ifp)
+			continue;
+		ia = ipv6nd_rapfindprefix(rap, pfx, pfxlen);
+		if (ia != NULL)
+			break;
+	}
+	return ia;
 }
 
 static void
@@ -786,10 +877,10 @@ ipv6nd_free(struct interface *ifp)
 	return n;
 }
 
-static int
+static void
 ipv6nd_scriptrun(struct ra *rap)
 {
-	int hasdns, hasaddress, pid;
+	int hasdns, hasaddress;
 	struct ipv6_addr *ap;
 
 	hasaddress = 0;
@@ -807,7 +898,7 @@ ipv6nd_scriptrun(struct ra *rap)
 				logdebugx("%s: waiting for Router Advertisement"
 				    " DAD to complete",
 				    rap->iface->name);
-				return 0;
+				return;
 			}
 		}
 	}
@@ -820,19 +911,16 @@ ipv6nd_scriptrun(struct ra *rap)
 	}
 
 	script_runreason(rap->iface, "ROUTERADVERT");
-	pid = 0;
 	if (hasdns && (hasaddress ||
 	    !(rap->flags & (ND_RA_FLAG_MANAGED | ND_RA_FLAG_OTHER))))
-		pid = dhcpcd_daemonise(rap->iface->ctx);
+		dhcpcd_daemonise(rap->iface->ctx);
 #if 0
 	else if (options & DHCPCD_DAEMONISE &&
 	    !(options & DHCPCD_DAEMONISED) && new_data)
 		logwarnx("%s: did not fork due to an absent"
 		    " RDNSS option in the RA",
 		    ifp->name);
-}
 #endif
-	return pid;
 }
 
 static void
@@ -869,7 +957,6 @@ ipv6nd_dadcallback(void *arg)
 	struct interface *ifp;
 	struct ra *rap;
 	int wascompleted, found;
-	struct timespec tv;
 	char buf[INET6_ADDRSTRLEN];
 	const char *p;
 	int dadcounter;
@@ -877,7 +964,7 @@ ipv6nd_dadcallback(void *arg)
 	ifp = ia->iface;
 	wascompleted = (ia->flags & IPV6_AF_DADCOMPLETED);
 	ia->flags |= IPV6_AF_DADCOMPLETED;
-	if (ia->flags & IPV6_AF_DUPLICATED) {
+	if (ia->addr_flags & IN6_IFF_DUPLICATED) {
 		ia->dadcounter++;
 		logwarnx("%s: DAD detected %s", ifp->name, ia->saddr);
 
@@ -885,7 +972,11 @@ ipv6nd_dadcallback(void *arg)
 		 * Because ap->dadcounter is always increamented,
 		 * a different address is generated. */
 		/* XXX Cache DAD counter per prefix/id/ssid? */
-		if (ifp->options->options & DHCPCD_SLAACPRIVATE) {
+		if (ifp->options->options & DHCPCD_SLAACPRIVATE &&
+		    IA6_CANAUTOCONF(ia))
+		{
+			unsigned int delay;
+
 			if (ia->dadcounter >= IDGEN_RETRIES) {
 				logerrx("%s: unable to obtain a"
 				    " stable private address",
@@ -916,11 +1007,8 @@ ipv6nd_dadcallback(void *arg)
 				    p, ia->prefix_len);
 			else
 				ia->saddr[0] = '\0';
-			tv.tv_sec = 0;
-			tv.tv_nsec = (suseconds_t)
-			    arc4random_uniform(IDGEN_DELAY * NSEC_PER_SEC);
-			timespecnorm(&tv);
-			eloop_timeout_add_tv(ifp->ctx->eloop, &tv,
+			delay = arc4random_uniform(IDGEN_DELAY * MSEC_PER_SEC);
+			eloop_timeout_add_msec(ifp->ctx->eloop, delay,
 			    ipv6nd_addaddr, ia);
 			return;
 		}
@@ -949,14 +1037,37 @@ try_script:
 				logdebugx("%s: Router Advertisement DAD "
 				    "completed",
 				    rap->iface->name);
-				if (ipv6nd_scriptrun(rap))
-					return;
+				ipv6nd_scriptrun(rap);
 			}
 		}
 #ifdef ND6_ADVERTISE
 		ipv6nd_advertise(ia);
 #endif
 	}
+}
+
+static struct ipv6_addr *
+ipv6nd_findmarkstale(struct ra *rap, struct ipv6_addr *ia, bool mark)
+{
+	struct dhcpcd_ctx *ctx = ia->iface->ctx;
+	struct ra *rap2;
+	struct ipv6_addr *ia2;
+
+	TAILQ_FOREACH(rap2, ctx->ra_routers, next) {
+		if (rap2 == rap ||
+		    rap2->iface != rap->iface ||
+		    rap2->expired)
+			continue;
+		TAILQ_FOREACH(ia2, &rap2->addrs, next) {
+			if (!IN6_ARE_ADDR_EQUAL(&ia->prefix, &ia2->prefix))
+				continue;
+			if (!(ia2->flags & IPV6_AF_STALE))
+				return ia2;
+			if (mark)
+				ia2->prefix_pltime = 0;
+		}
+	}
+	return NULL;
 }
 
 #ifndef DHCP6
@@ -989,17 +1100,18 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 	uint8_t *p;
 	struct ra *rap;
 	struct in6_addr pi_prefix;
-	struct ipv6_addr *ap;
+	struct ipv6_addr *ia;
 	struct dhcp_opt *dho;
 	bool new_rap, new_data, has_address;
 	uint32_t old_lifetime;
 	int ifmtu;
-	__printflike(1, 2) void (*logfunc)(const char *, ...);
+	int loglevel;
+	unsigned int flags;
 #ifdef IPV6_MANAGETEMPADDR
-	uint8_t new_ap;
+	bool new_ia;
 #endif
 
-	if (ifp == NULL) {
+	if (ifp == NULL || RS_STATE(ifp) == NULL) {
 #ifdef DEBUG_RS
 		logdebugx("RA for unexpected interface from %s", sfrom);
 #endif
@@ -1042,6 +1154,19 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 		    ifp->name, sfrom);
 		return;
 	}
+
+	/*
+	 * Because we preserve RA's and expire them quickly after
+	 * carrier up, it's important to reset the kernels notion of
+	 * reachable timers back to default values before applying
+	 * new RA values.
+	 */
+	TAILQ_FOREACH(rap, ctx->ra_routers, next) {
+		if (ifp == rap->iface)
+			break;
+	}
+	if (rap != NULL && rap->willexpire)
+		ipv6nd_applyra(ifp);
 
 	TAILQ_FOREACH(rap, ctx->ra_routers, next) {
 		if (ifp == rap->iface &&
@@ -1093,8 +1218,12 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 	 * routers like to decrease the advertised valid and preferred times
 	 * in accordance with the own prefix times which would result in too
 	 * much needless log spam. */
-	logfunc = new_data || !rap->isreachable ? loginfox : logdebugx,
-	logfunc("%s: Router Advertisement from %s", ifp->name, rap->sfrom);
+	if (rap->willexpire)
+		new_data = true;
+	loglevel = new_rap || rap->willexpire || !rap->isreachable ?
+	    LOG_INFO : LOG_DEBUG;
+	logmessage(loglevel, "%s: Router Advertisement from %s",
+	    ifp->name, rap->sfrom);
 
 	clock_gettime(CLOCK_MONOTONIC, &rap->acquired);
 	rap->flags = nd_ra->nd_ra_flags_reserved;
@@ -1117,7 +1246,7 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 		rap->retrans = ntohl(nd_ra->nd_ra_retransmit);
 	else
 		rap->retrans = RETRANS_TIMER;
-	rap->expired = false;
+	rap->expired = rap->willexpire = rap->doexpire = false;
 	rap->hasdns = false;
 	rap->isreachable = true;
 	has_address = false;
@@ -1126,8 +1255,8 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 #ifdef IPV6_AF_TEMPORARY
 	ipv6_markaddrsstale(ifp, IPV6_AF_TEMPORARY);
 #endif
-	TAILQ_FOREACH(ap, &rap->addrs, next) {
-		ap->flags |= IPV6_AF_STALE;
+	TAILQ_FOREACH(ia, &rap->addrs, next) {
+		ia->flags |= IPV6_AF_STALE;
 	}
 
 	len -= sizeof(struct nd_router_advert);
@@ -1177,15 +1306,17 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 
 		switch (ndo.nd_opt_type) {
 		case ND_OPT_PREFIX_INFORMATION:
-			logfunc = new_data ? logerrx : logdebugx;
+			loglevel = new_data ? LOG_ERR : LOG_DEBUG;
 			if (ndo.nd_opt_len != 4) {
-				logfunc("%s: invalid option len for prefix",
+				logmessage(loglevel,
+				    "%s: invalid option len for prefix",
 				    ifp->name);
 				continue;
 			}
 			memcpy(&pi, p, sizeof(pi));
 			if (pi.nd_opt_pi_prefix_len > 128) {
-				logfunc("%s: invalid prefix len", ifp->name);
+				logmessage(loglevel, "%s: invalid prefix len",
+				    ifp->name);
 				continue;
 			}
 			/* nd_opt_pi_prefix is not aligned. */
@@ -1194,38 +1325,42 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 			if (IN6_IS_ADDR_MULTICAST(&pi_prefix) ||
 			    IN6_IS_ADDR_LINKLOCAL(&pi_prefix))
 			{
-				logfunc("%s: invalid prefix in RA", ifp->name);
+				logmessage(loglevel, "%s: invalid prefix in RA",
+				    ifp->name);
 				continue;
 			}
 			if (ntohl(pi.nd_opt_pi_preferred_time) >
 			    ntohl(pi.nd_opt_pi_valid_time))
 			{
-				logfunc("%s: pltime > vltime", ifp->name);
+				logmessage(loglevel, "%s: pltime > vltime",
+				    ifp->name);
 				continue;
 			}
-			TAILQ_FOREACH(ap, &rap->addrs, next)
-				if (ap->prefix_len ==pi.nd_opt_pi_prefix_len &&
-				    IN6_ARE_ADDR_EQUAL(&ap->prefix, &pi_prefix))
-					break;
-			if (ap == NULL) {
-				unsigned int flags;
 
-				flags = IPV6_AF_RAPFX;
-				if (pi.nd_opt_pi_flags_reserved &
-				    ND_OPT_PI_FLAG_AUTO &&
-				    rap->iface->options->options &
-				    DHCPCD_IPV6RA_AUTOCONF)
-					flags |= IPV6_AF_AUTOCONF;
+			flags = IPV6_AF_RAPFX;
+			/* If no flags are set, that means the prefix is
+			 * available via the router. */
+			if (pi.nd_opt_pi_flags_reserved & ND_OPT_PI_FLAG_ONLINK)
+				flags |= IPV6_AF_ONLINK;
+			if (pi.nd_opt_pi_flags_reserved & ND_OPT_PI_FLAG_AUTO &&
+			    rap->iface->options->options &
+			    DHCPCD_IPV6RA_AUTOCONF)
+				flags |= IPV6_AF_AUTOCONF;
+			if (pi.nd_opt_pi_flags_reserved & ND_OPT_PI_FLAG_ROUTER)
+				flags |= IPV6_AF_ROUTER;
 
-				ap = ipv6_newaddr(rap->iface,
+			ia = ipv6nd_rapfindprefix(rap,
+			    &pi_prefix, pi.nd_opt_pi_prefix_len);
+			if (ia == NULL) {
+				ia = ipv6_newaddr(rap->iface,
 				    &pi_prefix, pi.nd_opt_pi_prefix_len, flags);
-				if (ap == NULL)
+				if (ia == NULL)
 					break;
-				ap->prefix = pi_prefix;
+				ia->prefix = pi_prefix;
 				if (flags & IPV6_AF_AUTOCONF)
-					ap->dadcallback = ipv6nd_dadcallback;
-				ap->created = ap->acquired = rap->acquired;
-				TAILQ_INSERT_TAIL(&rap->addrs, ap, next);
+					ia->dadcallback = ipv6nd_dadcallback;
+				ia->created = ia->acquired = rap->acquired;
+				TAILQ_INSERT_TAIL(&rap->addrs, ia, next);
 
 #ifdef IPV6_MANAGETEMPADDR
 				/* New address to dhcpcd RA handling.
@@ -1234,43 +1369,42 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 				 * extend the existing one rather than
 				 * create a new one */
 				if (flags & IPV6_AF_AUTOCONF &&
-				    ipv6_iffindaddr(ifp, &ap->addr,
+				    ipv6_iffindaddr(ifp, &ia->addr,
 				    IN6_IFF_NOTUSEABLE) &&
-				    ipv6_settemptime(ap, 0))
-					new_ap = 0;
+				    ipv6_settemptime(ia, 0))
+					new_ia = false;
 				else
-					new_ap = 1;
+					new_ia = true;
 #endif
 			} else {
 #ifdef IPV6_MANAGETEMPADDR
-				new_ap = 0;
+				new_ia = false;
 #endif
-				ap->flags &= ~IPV6_AF_STALE;
-				ap->acquired = rap->acquired;
+				ia->flags |= flags;
+				ia->flags &= ~IPV6_AF_STALE;
+				ia->acquired = rap->acquired;
 			}
-			if (pi.nd_opt_pi_flags_reserved &
-			    ND_OPT_PI_FLAG_ONLINK)
-				ap->flags |= IPV6_AF_ONLINK;
-			ap->prefix_vltime =
+			ia->prefix_vltime =
 			    ntohl(pi.nd_opt_pi_valid_time);
-			ap->prefix_pltime =
+			ia->prefix_pltime =
 			    ntohl(pi.nd_opt_pi_preferred_time);
-			if (ap->prefix_vltime != 0 &&
-			    ap->flags & IPV6_AF_AUTOCONF)
+			if (ia->prefix_vltime != 0 &&
+			    ia->flags & IPV6_AF_AUTOCONF)
 				has_address = true;
 
 #ifdef IPV6_MANAGETEMPADDR
 			/* RFC4941 Section 3.3.3 */
-			if (ap->flags & IPV6_AF_AUTOCONF &&
-			    ip6_use_tempaddr(ap->iface->name))
+			if (ia->flags & IPV6_AF_AUTOCONF &&
+			    ia->iface->options->options & DHCPCD_SLAACTEMP &&
+			    IA6_CANAUTOCONF(ia))
 			{
-				if (!new_ap) {
-					if (ipv6_settemptime(ap, 1) == NULL)
-						new_ap = 1;
+				if (!new_ia) {
+					if (ipv6_settemptime(ia, 1) == NULL)
+						new_ia = true;
 				}
-				if (new_ap && ap->prefix_pltime) {
-					if (ipv6_createtempaddr(ap,
-					    &ap->acquired) == NULL)
+				if (new_ia && ia->prefix_pltime) {
+					if (ipv6_createtempaddr(ia,
+					    &ia->acquired) == NULL)
 						logerr("ipv6_createtempaddr");
 				}
 			}
@@ -1279,13 +1413,13 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 
 		case ND_OPT_MTU:
 			if (len < sizeof(mtu)) {
-				logfunc("%s: short MTU option", ifp->name);
+				logmessage(loglevel, "%s: short MTU option", ifp->name);
 				break;
 			}
 			memcpy(&mtu, p, sizeof(mtu));
 			mtu.nd_opt_mtu_mtu = ntohl(mtu.nd_opt_mtu_mtu);
 			if (mtu.nd_opt_mtu_mtu < IPV6_MMTU) {
-				logfunc("%s: invalid MTU %d",
+				logmessage(loglevel, "%s: invalid MTU %d",
 				    ifp->name, mtu.nd_opt_mtu_mtu);
 				break;
 			}
@@ -1293,7 +1427,7 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 			if (ifmtu == -1)
 				logerr("if_getmtu");
 			else if (mtu.nd_opt_mtu_mtu > (uint32_t)ifmtu) {
-				logfunc("%s: advertised MTU %d"
+				logmessage(loglevel, "%s: advertised MTU %d"
 				    " is greater than link MTU %d",
 				    ifp->name, mtu.nd_opt_mtu_mtu, ifmtu);
 				rap->mtu = (uint32_t)ifmtu;
@@ -1302,7 +1436,7 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 			break;
 		case ND_OPT_RDNSS:
 			if (len < sizeof(rdnss)) {
-				logfunc("%s: short RDNSS option", ifp->name);
+				logmessage(loglevel, "%s: short RDNSS option", ifp->name);
 				break;
 			}
 			memcpy(&rdnss, p, sizeof(rdnss));
@@ -1332,6 +1466,19 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 		}
 	}
 
+	TAILQ_FOREACH(ia, &rap->addrs, next) {
+		if (!(ia->flags & IPV6_AF_STALE) || ia->prefix_pltime == 0)
+			continue;
+		if (ipv6nd_findmarkstale(rap, ia, false) != NULL)
+			continue;
+		ipv6nd_findmarkstale(rap, ia, true);
+		logdebugx("%s: %s: became stale", ifp->name, ia->saddr);
+		/* Technically this violates RFC 4861 6.3.4,
+		 * but we need a mechanism to tell the kernel to
+		 * try and prefer other addresses. */
+		ia->prefix_pltime = 0;
+	}
+
 	if (new_data && !has_address && rap->lifetime && !ipv6_anyglobal(ifp))
 		logwarnx("%s: no global addresses for default route",
 		    ifp->name);
@@ -1345,15 +1492,19 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 		script_runreason(ifp, "TEST");
 		goto handle_flag;
 	}
-	ipv6nd_applyra(ifp->ctx, ifp);
+
+	if (!(ifp->options->options & DHCPCD_CONFIGURE))
+		goto run;
+
+	ipv6nd_applyra(ifp);
 	ipv6_addaddrs(&rap->addrs);
 #ifdef IPV6_MANAGETEMPADDR
 	ipv6_addtempaddrs(ifp, &rap->acquired);
 #endif
-
 	rt_build(ifp->ctx, AF_INET6);
-	if (ipv6nd_scriptrun(rap))
-		return;
+
+run:
+	ipv6nd_scriptrun(rap);
 
 	eloop_timeout_delete(ifp->ctx->eloop, NULL, ifp);
 	eloop_timeout_delete(ifp->ctx->eloop, NULL, rap); /* reachable timer */
@@ -1396,7 +1547,8 @@ ipv6nd_hasralifetime(const struct interface *ifp, bool lifetime)
 
 	if (ifp->ctx->ra_routers) {
 		TAILQ_FOREACH(rap, ifp->ctx->ra_routers, next)
-			if (rap->iface == ifp && !rap->expired &&
+			if (rap->iface == ifp &&
+			    !rap->expired &&
 			    (!lifetime ||rap->lifetime))
 				return true;
 	}
@@ -1404,15 +1556,16 @@ ipv6nd_hasralifetime(const struct interface *ifp, bool lifetime)
 }
 
 bool
-ipv6nd_hasradhcp(const struct interface *ifp)
+ipv6nd_hasradhcp(const struct interface *ifp, bool managed)
 {
 	const struct ra *rap;
 
 	if (ifp->ctx->ra_routers) {
 		TAILQ_FOREACH(rap, ifp->ctx->ra_routers, next) {
 			if (rap->iface == ifp &&
-			    !rap->expired &&
-			    (rap->flags &(ND_RA_FLAG_MANAGED|ND_RA_FLAG_OTHER)))
+			    !rap->expired && !rap->willexpire &&
+			    ((managed && rap->flags & ND_RA_FLAG_MANAGED) ||
+			    (!managed && rap->flags & ND_RA_FLAG_OTHER)))
 				return true;
 		}
 	}
@@ -1469,6 +1622,7 @@ ipv6nd_env(FILE *fp, const struct interface *ifp)
 	struct nd_opt_hdr ndo;
 	struct ipv6_addr *ia;
 	struct timespec now;
+	int pref;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	i = n = 0;
@@ -1484,6 +1638,18 @@ ipv6nd_env(FILE *fp, const struct interface *ifp)
 			return -1;
 		if (efprintf(fp, "%s_now=%lld", ndprefix,
 		    (long long)now.tv_sec) == -1)
+			return -1;
+		if (efprintf(fp, "%s_hoplimit=%u", ndprefix, rap->hoplimit) == -1)
+			return -1;
+		pref = ipv6nd_rtpref(rap);
+		if (efprintf(fp, "%s_flags=%s%s%s%s%s", ndprefix,
+		    rap->flags & ND_RA_FLAG_MANAGED    ? "M" : "",
+		    rap->flags & ND_RA_FLAG_OTHER      ? "O" : "",
+		    rap->flags & ND_RA_FLAG_HOME_AGENT ? "H" : "",
+		    pref == RTPREF_HIGH ? "h" : pref == RTPREF_LOW ? "l" : "",
+		    rap->flags & ND_RA_FLAG_PROXY      ? "P" : "") == -1)
+			return -1;
+		if (efprintf(fp, "%s_lifetime=%u", ndprefix, rap->lifetime) == -1)
 			return -1;
 
 		/* Zero our indexes */
@@ -1547,7 +1713,7 @@ ipv6nd_env(FILE *fp, const struct interface *ifp)
 			    ia->prefix_vltime == 0)
 				continue;
 			if (efprintf(fp, "%s_addr%zu=%s",
-			    ndprefix, j++, ia->saddr) == -1)
+			    ndprefix, ++j, ia->saddr) == -1)
 				return -1;
 		}
 	}
@@ -1576,7 +1742,8 @@ ipv6nd_expirera(void *arg)
 {
 	struct interface *ifp;
 	struct ra *rap, *ran;
-	struct timespec now, lt, expire, next;
+	struct timespec now;
+	uint32_t elapsed;
 	bool expired, valid;
 	struct ipv6_addr *ia;
 	size_t len, olen;
@@ -1587,23 +1754,21 @@ ipv6nd_expirera(void *arg)
 #endif
 	struct nd_opt_dnssl dnssl;
 	struct nd_opt_rdnss rdnss;
-	uint32_t ltime;
+	unsigned int next = 0, ltime;
 	size_t nexpired = 0;
 
 	ifp = arg;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	expired = false;
-	timespecclear(&next);
 
 	TAILQ_FOREACH_SAFE(rap, ifp->ctx->ra_routers, next, ran) {
 		if (rap->iface != ifp || rap->expired)
 			continue;
 		valid = false;
 		if (rap->lifetime) {
-			lt.tv_sec = (time_t)rap->lifetime;
-			lt.tv_nsec = 0;
-			timespecadd(&rap->acquired, &lt, &expire);
-			if (timespeccmp(&now, &expire, >)) {
+			elapsed = (uint32_t)eloop_timespec_diff(&now,
+			    &rap->acquired, NULL);
+			if (elapsed >= rap->lifetime || rap->doexpire) {
 				if (!rap->expired) {
 					logwarnx("%s: %s: router expired",
 					    ifp->name, rap->sfrom);
@@ -1612,10 +1777,9 @@ ipv6nd_expirera(void *arg)
 				}
 			} else {
 				valid = true;
-				timespecsub(&expire, &now, &lt);
-				if (!timespecisset(&next) ||
-				    timespeccmp(&next, &lt, >))
-					next = lt;
+				ltime = rap->lifetime - elapsed;
+				if (next == 0 || ltime < next)
+					next = ltime;
 			}
 		}
 
@@ -1625,17 +1789,21 @@ ipv6nd_expirera(void *arg)
 		TAILQ_FOREACH(ia, &rap->addrs, next) {
 			if (ia->prefix_vltime == 0)
 				continue;
-			if (ia->prefix_vltime == ND6_INFINITE_LIFETIME) {
+			if (ia->prefix_vltime == ND6_INFINITE_LIFETIME &&
+			    !rap->doexpire)
+			{
 				valid = true;
 				continue;
 			}
-			lt.tv_sec = (time_t)ia->prefix_vltime;
-			lt.tv_nsec = 0;
-			timespecadd(&ia->acquired, &lt, &expire);
-			if (timespeccmp(&now, &expire, >)) {
+			elapsed = (uint32_t)eloop_timespec_diff(&now,
+			    &ia->acquired, NULL);
+			if (elapsed >= ia->prefix_vltime || rap->doexpire) {
 				if (ia->flags & IPV6_AF_ADDED) {
-					logwarnx("%s: expired address %s",
-					    ia->iface->name, ia->saddr);
+					logwarnx("%s: expired %s %s",
+					    ia->iface->name,
+					    ia->flags & IPV6_AF_AUTOCONF ?
+					    "address" : "prefix",
+					    ia->saddr);
 					if (if_address6(RTM_DELADDR, ia)== -1 &&
 					    errno != EADDRNOTAVAIL &&
 					    errno != ENXIO)
@@ -1646,15 +1814,16 @@ ipv6nd_expirera(void *arg)
 				    ~(IPV6_AF_ADDED | IPV6_AF_DADCOMPLETED);
 				expired = true;
 			} else {
-				timespecsub(&expire, &now, &lt);
-				if (!timespecisset(&next) ||
-				    timespeccmp(&next, &lt, >))
-					next = lt;
 				valid = true;
+				ltime = ia->prefix_vltime - elapsed;
+				if (next == 0 || ltime < next)
+					next = ltime;
 			}
 		}
 
 		/* Work out expiry for ND options */
+		elapsed = (uint32_t)eloop_timespec_diff(&now,
+		    &rap->acquired, NULL);
 		len = rap->data_len - sizeof(struct nd_router_advert);
 		for (p = rap->data + sizeof(struct nd_router_advert);
 		    len >= sizeof(ndo);
@@ -1699,26 +1868,25 @@ ipv6nd_expirera(void *arg)
 
 			if (ltime == 0)
 				continue;
+			if (rap->doexpire) {
+				expired = true;
+				continue;
+			}
 			if (ltime == ND6_INFINITE_LIFETIME) {
 				valid = true;
 				continue;
 			}
 
-			lt.tv_sec = (time_t)ntohl(ltime);
-			lt.tv_nsec = 0;
-			timespecadd(&rap->acquired, &lt, &expire);
-			if (timespeccmp(&now, &expire, >)) {
+			ltime = ntohl(ltime);
+			if (elapsed >= ltime) {
 				expired = true;
 				continue;
 			}
 
-			timespecsub(&expire, &now, &lt);
-			if (!timespecisset(&next) ||
-			    timespeccmp(&next, &lt, >))
-			{
-				next = lt;
-				valid = true;
-			}
+			valid = true;
+			ltime -= elapsed;
+			if (next == 0 || ltime < next)
+				next = ltime;
 		}
 
 		if (valid)
@@ -1730,11 +1898,14 @@ ipv6nd_expirera(void *arg)
 			ipv6nd_free_ra(rap);
 	}
 
-	if (timespecisset(&next))
-		eloop_timeout_add_tv(ifp->ctx->eloop,
-		    &next, ipv6nd_expirera, ifp);
+	if (next != 0)
+		eloop_timeout_add_sec(ifp->ctx->eloop,
+		    next, ipv6nd_expirera, ifp);
 	if (expired) {
-		logwarnx("%s: part of Router Advertisement expired", ifp->name);
+		logwarnx("%s: part of a Router Advertisement expired",
+		    ifp->name);
+		ipv6nd_sortrouters(ifp->ctx);
+		ipv6nd_applyra(ifp);
 		rt_build(ifp->ctx, AF_INET6);
 		script_runreason(ifp, "ROUTERADVERT");
 	}
@@ -1757,13 +1928,14 @@ ipv6nd_drop(struct interface *ifp)
 		}
 	}
 	if (expired) {
+		ipv6nd_applyra(ifp);
 		rt_build(ifp->ctx, AF_INET6);
 		if ((ifp->options->options & DHCPCD_NODROP) != DHCPCD_NODROP)
 			script_runreason(ifp, "ROUTERADVERT");
 	}
 }
 
-static void
+void
 ipv6nd_recvmsg(struct dhcpcd_ctx *ctx, struct msghdr *msg)
 {
 	struct sockaddr_in6 *from = (struct sockaddr_in6 *)msg->msg_name;
@@ -1810,16 +1982,22 @@ ipv6nd_handledata(void *arg)
 	struct dhcpcd_ctx *ctx;
 	int fd;
 	struct sockaddr_in6 from;
-	unsigned char buf[64 * 1024]; /* Maximum ICMPv6 size */
+	union {
+		struct icmp6_hdr hdr;
+		uint8_t buf[64 * 1024]; /* Maximum ICMPv6 size */
+	} iovbuf;
 	struct iovec iov = {
-		.iov_base = buf,
-		.iov_len = sizeof(buf),
+		.iov_base = iovbuf.buf, .iov_len = sizeof(iovbuf.buf),
 	};
-	unsigned char ctl[CMSG_SPACE(sizeof(struct in6_pktinfo)) + CMSG_SPACE(sizeof(int))] = { 0 };
+	union {
+		struct cmsghdr hdr;
+		uint8_t buf[CMSG_SPACE(sizeof(struct in6_pktinfo)) +
+		    CMSG_SPACE(sizeof(int))];
+	} cmsgbuf = { .buf = { 0 } };
 	struct msghdr msg = {
 	    .msg_name = &from, .msg_namelen = sizeof(from),
 	    .msg_iov = &iov, .msg_iovlen = 1,
-	    .msg_control = ctl, .msg_controllen = sizeof(ctl),
+	    .msg_control = cmsgbuf.buf, .msg_controllen = sizeof(cmsgbuf.buf),
 	};
 	ssize_t len;
 
@@ -1865,18 +2043,6 @@ ipv6nd_startrs1(void *arg)
 #endif
 	}
 
-#ifdef __sun
-	if (ipv6nd_open(ifp) == -1) {
-		logerr(__func__);
-		return;
-	}
-#else
-	if (ipv6nd_open(ifp->ctx) == -1) {
-		logerr(__func__);
-		return;
-	}
-#endif
-
 	/* Always make a new probe as the underlying hardware
 	 * address could have changed. */
 	ipv6nd_makersprobe(ifp);
@@ -1893,7 +2059,7 @@ ipv6nd_startrs1(void *arg)
 void
 ipv6nd_startrs(struct interface *ifp)
 {
-	struct timespec tv;
+	unsigned int delay;
 
 	eloop_timeout_delete(ifp->ctx->eloop, NULL, ifp);
 	if (!(ifp->options->options & DHCPCD_INITIAL_DELAY)) {
@@ -1901,12 +2067,9 @@ ipv6nd_startrs(struct interface *ifp)
 		return;
 	}
 
-	tv.tv_sec = 0;
-	tv.tv_nsec = (suseconds_t)arc4random_uniform(
-	    MAX_RTR_SOLICITATION_DELAY * NSEC_PER_SEC);
-	timespecnorm(&tv);
+	delay = arc4random_uniform(MAX_RTR_SOLICITATION_DELAY * MSEC_PER_SEC);
 	logdebugx("%s: delaying IPv6 router solicitation for %0.1f seconds",
-	    ifp->name, timespec_to_double(&tv));
-	eloop_timeout_add_tv(ifp->ctx->eloop, &tv, ipv6nd_startrs1, ifp);
+	    ifp->name, (float)delay / MSEC_PER_SEC);
+	eloop_timeout_add_msec(ifp->ctx->eloop, delay, ipv6nd_startrs1, ifp);
 	return;
 }

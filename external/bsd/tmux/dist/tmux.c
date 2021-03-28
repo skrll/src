@@ -18,6 +18,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 
 #include <errno.h>
 #include <event.h>
@@ -36,7 +37,6 @@ struct options	*global_options;	/* server options */
 struct options	*global_s_options;	/* session options */
 struct options	*global_w_options;	/* window options */
 struct environ	*global_environ;
-struct hooks	*global_hooks;
 
 struct timeval	 start_time;
 const char	*socket_path;
@@ -128,6 +128,7 @@ make_label(const char *label, char **cause)
 		free(base);
 		goto fail;
 	}
+	free(base);
 
 	if (mkdir(resolved, S_IRWXU) != 0 && errno != EEXIST)
 		goto fail;
@@ -209,6 +210,12 @@ find_home(void)
 	return (home);
 }
 
+const char *
+getversion(void)
+{
+	return TMUX_VERSION;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -235,7 +242,7 @@ main(int argc, char **argv)
 		flags = 0;
 
 	label = path = NULL;
-	while ((opt = getopt(argc, argv, "2c:Cdf:lL:qS:uUVv")) != -1) {
+	while ((opt = getopt(argc, argv, "2c:Cdf:lL:qS:uUvV")) != -1) {
 		switch (opt) {
 		case '2':
 			flags |= CLIENT_256COLOURS;
@@ -249,12 +256,12 @@ main(int argc, char **argv)
 			else
 				flags |= CLIENT_CONTROL;
 			break;
-		case 'V':
-			printf("%s %s\n", getprogname(), VERSION);
-			exit(0);
 		case 'f':
 			set_cfg_file(optarg);
 			break;
+ 		case 'V':
+			printf("%s %s\n", getprogname(), getversion());
+ 			exit(0);
 		case 'l':
 			flags |= CLIENT_LOGIN;
 			break;
@@ -312,8 +319,6 @@ main(int argc, char **argv)
 			flags |= CLIENT_UTF8;
 	}
 
-	global_hooks = hooks_create(NULL);
-
 	global_environ = environ_create();
 	for (var = environ; *var != NULL; var++)
 		environ_put(global_environ, *var);
@@ -324,11 +329,11 @@ main(int argc, char **argv)
 	global_s_options = options_create(NULL);
 	global_w_options = options_create(NULL);
 	for (oe = options_table; oe->name != NULL; oe++) {
-		if (oe->scope == OPTIONS_TABLE_SERVER)
+		if (oe->scope & OPTIONS_TABLE_SERVER)
 			options_default(global_options, oe);
-		if (oe->scope == OPTIONS_TABLE_SESSION)
+		if (oe->scope & OPTIONS_TABLE_SESSION)
 			options_default(global_s_options, oe);
-		if (oe->scope == OPTIONS_TABLE_WINDOW)
+		if (oe->scope & OPTIONS_TABLE_WINDOW)
 			options_default(global_w_options, oe);
 	}
 

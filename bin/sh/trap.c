@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.53 2019/12/09 00:14:30 kre Exp $	*/
+/*	$NetBSD: trap.c,v 1.55 2020/08/20 23:09:56 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)trap.c	8.5 (Berkeley) 6/5/95";
 #else
-__RCSID("$NetBSD: trap.c,v 1.53 2019/12/09 00:14:30 kre Exp $");
+__RCSID("$NetBSD: trap.c,v 1.55 2020/08/20 23:09:56 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -115,7 +115,7 @@ signame_to_signum(const char *p)
 
 	if (strcasecmp(p, "exit") == 0 )
 		return 0;
-	
+
 	i = signalnumber(p);
 	if (i == 0)
 		i = -1;
@@ -153,7 +153,7 @@ printsignals(struct output *out, int len)
 		outc(' ', out);
 	for (n = 1; n < NSIG; n++) {
 		outfmt(out, "%s", trap_signame(n));
-		if ((n == NSIG/2) ||  n == (NSIG - 1))
+		if ((n == NSIG/2) || n == (NSIG - 1))
 			outstr("\n", out);
 		else
 			outc(' ', out);
@@ -232,6 +232,8 @@ trapcmd(int argc, char **argv)
 	ap = argv + 1;
 
 	CTRACE(DBG_TRAP, ("trapcmd: "));
+	if (argc == 3 && strcmp(ap[1], "--") == 0)
+		argc--;
 	if (argc == 2 && strcmp(*ap, "-l") == 0) {
 		CTRACE(DBG_TRAP, ("-l\n"));
 		out1str("EXIT");
@@ -253,9 +255,9 @@ trapcmd(int argc, char **argv)
 		traps_invalid = 0;
 		return 0;
 	}
-	if (argc >= 2 && strcmp(*ap, "-p") == 0) {
-		CTRACE(DBG_TRAP, ("-p "));
-		printonly = 1;
+	if (argc >= 2 && (strcmp(*ap, "-p") == 0 || strcmp(*ap, "-P") == 0)) {
+		CTRACE(DBG_TRAP, ("%s ", *ap));
+		printonly = 1 + (ap[0][1] == 'p');
 		ap++;
 		argc--;
 	}
@@ -264,6 +266,9 @@ trapcmd(int argc, char **argv)
 		argc--;
 		ap++;
 	}
+
+	if (printonly == 1 && argc < 2)
+		goto usage;
 
 	if (argc <= 1) {
 		int count;
@@ -339,8 +344,10 @@ trapcmd(int argc, char **argv)
 	}
 
 	if (argc < 2) {		/* there must be at least 1 condition */
+ usage:
 		out2str("Usage: trap [-l]\n"
 			"       trap -p [condition ...]\n"
+			"       trap -P  condition ...\n"
 			"       trap action condition ...\n"
 			"       trap N condition ...\n");
 		return 2;
@@ -365,12 +372,17 @@ trapcmd(int argc, char **argv)
 			 * (action will always be "-") here, if someone
 			 * really wants to get that particular output
 			 */
-			out1str("trap -- ");
-			if (trap[signo] == NULL)
-				out1str("-");
-			else
-				print_quoted(trap[signo]);
-			out1fmt(" %s\n", trap_signame(signo));
+			if (printonly == 1) {
+				if (trap[signo] != NULL)
+					out1fmt("%s\n", trap[signo]);
+			} else {
+				out1str("trap -- ");
+				if (trap[signo] == NULL)
+					out1str("-");
+				else
+					print_quoted(trap[signo]);
+				out1fmt(" %s\n", trap_signame(signo));
+			}
 			continue;
 		}
 
@@ -580,7 +592,7 @@ setsignal(int signo, int vforked)
 
 	switch (action) {
 		case S_DFL:	sigact = SIG_DFL;	break;
-		case S_CATCH:  	sigact = onsig;		break;
+		case S_CATCH:	sigact = onsig;		break;
 		case S_IGN:	sigact = SIG_IGN;	break;
 	}
 
@@ -694,7 +706,7 @@ onsig(int signo)
 
 	if (signo == SIGINT && (traps_invalid || trap[SIGINT] == NULL)) {
 		VTRACE(DBG_SIG, ("onsig(SIGINT), doing it now\n"));
-		if (suppressint && !in_dotrap)	
+		if (suppressint && !in_dotrap)
 			intpending = 1;
 		else
 			onint();
@@ -841,7 +853,7 @@ exitshell_savedstatus(void)
 	sigset_t sigs;
 
 	CTRACE(DBG_ERRS|DBG_PROCS|DBG_CMDS|DBG_TRAP,
-         ("pid %d: exitshell_savedstatus()%s $?=%d xs=%d dt=%d ts=%d\n",
+	  ("pid %d: exitshell_savedstatus()%s $?=%d xs=%d dt=%d ts=%d\n",
 	    getpid(), exiting ? " exiting" : "", exitstatus,
 	    exiting_status, in_dotrap, last_trapsig));
 

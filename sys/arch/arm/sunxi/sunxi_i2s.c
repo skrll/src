@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_i2s.c,v 1.7 2019/11/17 17:33:34 jmcneill Exp $ */
+/* $NetBSD: sunxi_i2s.c,v 1.12 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_i2s.c,v 1.7 2019/11/17 17:33:34 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_i2s.c,v 1.12 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -139,13 +139,13 @@ static const struct sunxi_i2s_config sun8i_h3_config = {
 	.rxchmap = 0x58,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "allwinner,sun50i-a64-codec-i2s",
-	  (uintptr_t)&sun50i_a64_codec_config },
-	{ "allwinner,sun8i-h3-i2s",
-	  (uintptr_t)&sun8i_h3_config },
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun50i-a64-codec-i2s",
+	  .data = &sun50i_a64_codec_config },
+	{ .compat = "allwinner,sun8i-h3-i2s",
+	  .data = &sun8i_h3_config },
 
-	{ NULL }
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_i2s_softc;
@@ -186,7 +186,7 @@ struct sunxi_i2s_softc {
 	bus_addr_t		sc_baseaddr;
 	struct clk		*sc_clk;
 
-	struct sunxi_i2s_config	*sc_cfg;
+	const struct sunxi_i2s_config *sc_cfg;
 
 	LIST_HEAD(, sunxi_i2s_dma) sc_dmalist;
 
@@ -390,16 +390,6 @@ sunxi_i2s_get_props(void *priv)
 }
 
 static int
-sunxi_i2s_round_blocksize(void *priv, int bs, int mode,
-    const audio_params_t *params)
-{
-	bs &= ~3;
-	if (bs == 0)
-		bs = 4;
-	return bs;
-}
-
-static int
 sunxi_i2s_trigger_output(void *priv, void *start, void *end, int blksize,
     void (*intr)(void *), void *intrarg, const audio_params_t *params)
 {
@@ -587,7 +577,6 @@ static const struct audio_hw_if sunxi_i2s_hw_if = {
 	.allocm = sunxi_i2s_allocm,
 	.freem = sunxi_i2s_freem,
 	.get_props = sunxi_i2s_get_props,
-	.round_blocksize = sunxi_i2s_round_blocksize,
 	.trigger_output = sunxi_i2s_trigger_output,
 	.trigger_input = sunxi_i2s_trigger_input,
 	.halt_output = sunxi_i2s_halt_output,
@@ -871,7 +860,7 @@ sunxi_i2s_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -899,7 +888,7 @@ sunxi_i2s_attach(device_t parent, device_t self, void *aux)
 	}
 	sc->sc_dmat = faa->faa_dmat;
 	LIST_INIT(&sc->sc_dmalist);
-	sc->sc_cfg = (void *)of_search_compatible(phandle, compat_data)->data;
+	sc->sc_cfg = of_compatible_lookup(phandle, compat_data)->data;
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 

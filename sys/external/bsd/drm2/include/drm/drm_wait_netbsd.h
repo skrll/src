@@ -1,4 +1,4 @@
-/*	$NetBSD: drm_wait_netbsd.h,v 1.15 2019/04/16 10:00:04 mrg Exp $	*/
+/*	$NetBSD: drm_wait_netbsd.h,v 1.17 2020/07/03 16:23:02 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -43,8 +43,6 @@
 #include <linux/spinlock.h>
 
 typedef kcondvar_t drm_waitqueue_t;
-
-#define	DRM_HZ	hz		/* XXX Hurk...  */
 
 #define	DRM_UDELAY	DELAY
 
@@ -142,10 +140,10 @@ DRM_SPIN_WAKEUP_ALL(drm_waitqueue_t *q, spinlock_t *interlock)
 			(RET) = -EBUSY;		/* Match Linux...  */	      \
 			break;						      \
 		}							      \
-		_dswo_start = hardclock_ticks;				      \
+		_dswo_start = getticks();				      \
 		/* XXX errno NetBSD->Linux */				      \
 		(RET) = -cv_timedwait_sig((Q), &(INTERLOCK)->sl_lock, 1);     \
-		_dswo_end = hardclock_ticks;				      \
+		_dswo_end = getticks();					      \
 		if (_dswo_end - _dswo_start < _dswo_ticks)		      \
 			_dswo_ticks -= _dswo_end - _dswo_start;		      \
 		else							      \
@@ -241,11 +239,11 @@ DRM_SPIN_WAKEUP_ALL(drm_waitqueue_t *q, spinlock_t *interlock)
 			(RET) = 0;					\
 			break;						\
 		}							\
-		_dtwu_start = hardclock_ticks;				\
+		_dtwu_start = getticks();				\
 		/* XXX errno NetBSD->Linux */				\
 		(RET) = -WAIT((Q), &(INTERLOCK)->mtx_lock,		\
 		    MIN(_dtwu_ticks, INT_MAX/2));			\
-		_dtwu_end = hardclock_ticks;				\
+		_dtwu_end = getticks();					\
 		if ((_dtwu_end - _dtwu_start) < _dtwu_ticks)		\
 			_dtwu_ticks -= _dtwu_end - _dtwu_start;		\
 		else							\
@@ -316,11 +314,11 @@ DRM_SPIN_WAKEUP_ALL(drm_waitqueue_t *q, spinlock_t *interlock)
 			(RET) = 0;					\
 			break;						\
 		}							\
-		_dstwu_start = hardclock_ticks;				\
+		_dstwu_start = getticks();				\
 		/* XXX errno NetBSD->Linux */				\
 		(RET) = -WAIT((Q), &(INTERLOCK)->sl_lock,		\
 		    MIN(_dstwu_ticks, INT_MAX/2));			\
-		_dstwu_end = hardclock_ticks;				\
+		_dstwu_end = getticks();				\
 		if ((_dstwu_end - _dstwu_start) < _dstwu_ticks)		\
 			_dstwu_ticks -= _dstwu_end - _dstwu_start;	\
 		else							\

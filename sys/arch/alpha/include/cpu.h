@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.86 2019/12/01 15:34:44 ad Exp $ */
+/* $NetBSD: cpu.h,v 1.99 2020/10/15 01:00:01 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -84,10 +84,9 @@
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #include <sys/cpu_data.h>
-#ifndef _KMEMUSER
 #include <sys/cctr.h>
+#include <sys/intr.h>
 #include <machine/frame.h>
-#endif
 
 /*
  * Machine check information.
@@ -97,43 +96,55 @@ struct mchkinfo {
 	volatile int mc_received;	/* machine check was received */
 };
 
+/*
+ * Per-cpu information.  Data accessed by MI code is marked [MI].
+ */
 struct cpu_info {
-	/*
-	 * Private members accessed in assembly with 8 bit offsets.
-	 */
-	struct lwp *ci_fpcurlwp;	/* current owner of the FPU */
-	paddr_t ci_curpcb;		/* PA of current HW PCB */
+	struct cpu_data ci_data;	/* [MI] general per-cpu data */
+	struct lwp *ci_curlwp;		/* [MI] current owner of the cpu */
+	struct lwp *ci_onproc;		/* [MI] current user LWP / kthread */
+	struct cctr_state ci_cc;	/* [MI] cycle counter state */
 
-	/*
-	 * Public members.
-	 */
-	struct lwp *ci_curlwp;		/* current owner of the processor */
-	struct lwp *ci_onproc;		/* current user LWP / kthread */
-	struct cpu_data ci_data;	/* MI per-cpu data */
-#if !defined(_KMEMUSER)
-	struct cctr_state ci_cc;	/* cycle counter state */
-	struct cpu_info *ci_next;	/* next cpu_info structure */
-	int ci_mtx_count;
-	int ci_mtx_oldspl;
+	volatile int ci_mtx_count;	/* [MI] neg count of spin mutexes */
+	volatile int ci_mtx_oldspl;	/* [MI] for spin mutex splx() */
 
-	/*
-	 * Private members.
-	 */
-	struct mchkinfo ci_mcinfo;	/* machine check info */
-	cpuid_t ci_cpuid;		/* our CPU ID */
-	struct cpu_softc *ci_softc;	/* pointer to our device */
-	u_int ci_want_resched;		/* preempt current process */
-	u_int ci_unused;		/* unused */
 	u_long ci_intrdepth;		/* interrupt trap depth */
-	struct trapframe *ci_db_regs;	/* registers for debuggers */
-	uint64_t ci_pcc_freq;		/* cpu cycles/second */
+	volatile u_long ci_ssir;	/* simulated software interrupt reg */
+					/* LWPs for soft intr dispatch */
+	struct lwp *ci_silwps[SOFTINT_COUNT];
+	struct cpu_softc *ci_softc;	/* pointer to our device */
 
-#if defined(MULTIPROCESSOR)
+	struct pmap *ci_pmap;		/* currently-activated pmap */
+	u_int ci_next_asn;		/* next ASN to assign */
+	u_long ci_asn_gen;		/* current ASN generation */
+
+	struct mchkinfo ci_mcinfo;	/* machine check info */
+
+	/*
+	 * The following must be in their own cache line, as they are
+	 * stored to regularly by remote CPUs.
+	 */
+	volatile u_long ci_ipis		/* interprocessor interrupts pending */
+			__aligned(64);
+	u_int	ci_want_resched;	/* [MI] preempt current process */
+
+	/*
+	 * These are largely static, and will frequently be fetched
+	 * by other CPUs.  For that reason, they get their own cache
+	 * line, too.
+	 */
+	struct cpu_info *ci_next	/* next cpu_info structure */
+			__aligned(64);
+	cpuid_t ci_cpuid;		/* [MI] our CPU ID */
 	volatile u_long ci_flags;	/* flags; see below */
-	volatile u_long ci_ipis;	/* interprocessor interrupts pending */
-#endif
-#endif /* !_KMEMUSER */
+	uint64_t ci_pcc_freq;		/* cpu cycles/second */
+	struct trapframe *ci_db_regs;	/* registers for debuggers */
+	u_int	ci_nintrhand;		/* # of interrupt handlers */
 };
+
+/* Ensure some cpu_info fields are within the signed 16-bit displacement. */
+__CTASSERT(offsetof(struct cpu_info, ci_curlwp) <= 0x7ff0);
+__CTASSERT(offsetof(struct cpu_info, ci_ssir) <= 0x7ff0);
 
 #endif /* _KERNEL || _KMEMUSER */
 
@@ -143,7 +154,6 @@ struct cpu_info {
 #define	CPUF_PRESENT	0x02		/* CPU is present */
 #define	CPUF_RUNNING	0x04		/* CPU is running */
 #define	CPUF_PAUSED	0x08		/* CPU is paused */
-#define	CPUF_FPUSAVE	0x10		/* CPU is currently in fpusave_cpu() */
 
 extern	struct cpu_info cpu_info_primary;
 extern	struct cpu_info *cpu_info_list;
@@ -157,7 +167,8 @@ extern	volatile u_long cpus_running;
 extern	volatile u_long cpus_paused;
 extern	struct cpu_info *cpu_info[];
 
-#define	curcpu()		((struct cpu_info *)alpha_pal_rdval())
+#define	curlwp			((struct lwp *)alpha_pal_rdval())
+#define	curcpu()		curlwp->l_cpu
 #define	CPU_IS_PRIMARY(ci)	((ci)->ci_flags & CPUF_PRIMARY)
 
 void	cpu_boot_secondary_processors(void);
@@ -166,11 +177,9 @@ void	cpu_pause_resume(unsigned long, int);
 void	cpu_pause_resume_all(int);
 #else /* ! MULTIPROCESSOR */
 #define	curcpu()	(&cpu_info_primary)
+#define	curlwp		curcpu()->ci_curlwp
 #endif /* MULTIPROCESSOR */
 
-#define	curlwp		curcpu()->ci_curlwp
-#define	fpcurlwp	curcpu()->ci_fpcurlwp
-#define	curpcb		curcpu()->ci_curpcb
 
 /*
  * definitions of cpu-dependent requirements
@@ -204,30 +213,10 @@ struct clockframe {
  */
 #define	LWP_PC(p)		((l)->l_md.md_tf->tf_regs[FRAME_PC])
 
-/*
- * Give a profiling tick to the current process when the user profiling
- * buffer pages are invalid.  On the alpha, request an AST to send us
- * through trap, marking the proc as needing a profiling tick.
- */
-#define	cpu_need_proftick(l)						\
-do {									\
-	(l)->l_pflag |= LP_OWEUPC;					\
-	aston(l);							\
-} while (/*CONSTCOND*/0)
+void	cpu_need_proftick(struct lwp *);
+void	cpu_signotify(struct lwp *);
 
-/*
- * Notify the current process (p) that it has a signal pending,
- * process as soon as possible.
- */
-#define	cpu_signotify(l)	aston(l)
-
-/*
- * XXXSMP
- * Should we send an AST IPI?  Or just let it handle it next time
- * it sees a normal kernel entry?  I guess letting it happen later
- * follows the `asynchronous' part of the name...
- */
-#define	aston(l)	((l)->l_md.md_astpending = 1)
+#define	aston(l)		((l)->l_md.md_astpending = 1)
 #endif /* _KERNEL */
 
 /*
@@ -240,6 +229,9 @@ do {									\
 #define	CPU_UNALIGNED_SIGBUS	5	/* int: SIGBUS unaligned accesses */
 #define	CPU_BOOTED_KERNEL	6	/* string: booted kernel name */
 #define	CPU_FP_SYNC_COMPLETE	7	/* int: always fixup sync fp traps */
+#define	CPU_CCTR		8	/* int: using CC timecounter */
+#define	CPU_IS_QEMU		9	/* int: running under Qemu */
+
 
 #ifdef _KERNEL
 
@@ -253,7 +245,11 @@ int	badaddr(void *, size_t);
 void *	cpu_uarea_alloc(bool);
 bool	cpu_uarea_free(void *);
 
-#define	cpu_idle()	/* nothing */
+void	cpu_idle_wtint(void);
+extern	void (*cpu_idle_fn)(void);
+#define	cpu_idle()	(*cpu_idle_fn)()
+
+void	cpu_initclocks_secondary(void);
 
 #endif /* _KERNEL */
 #endif /* _ALPHA_CPU_H_ */

@@ -1,7 +1,7 @@
-/*	$NetBSD: subr_kmem.c,v 1.77 2019/11/14 16:23:52 maxv Exp $	*/
+/*	$NetBSD: subr_kmem.c,v 1.82 2021/02/06 13:54:48 joerg Exp $	*/
 
 /*
- * Copyright (c) 2009-2015 The NetBSD Foundation, Inc.
+ * Copyright (c) 2009-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -62,23 +62,23 @@
 
 /*
  * KMEM_SIZE: detect alloc/free size mismatch bugs.
- *	Prefix each allocations with a fixed-sized, aligned header and record
- *	the exact user-requested allocation size in it. When freeing, compare
- *	it with kmem_free's "size" argument.
+ *	Append to each allocation a fixed-sized footer and record the exact
+ *	user-requested allocation size in it.  When freeing, compare it with
+ *	kmem_free's "size" argument.
  *
  * This option is enabled on DIAGNOSTIC.
  *
- *  |CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|
- *  +-----+-----+-----+-----+-----+-----+-----+-----+-----+---+-+
- *  |/////|     |     |     |     |     |     |     |     |   |U|
- *  |/HSZ/|     |     |     |     |     |     |     |     |   |U|
- *  |/////|     |     |     |     |     |     |     |     |   |U|
- *  +-----+-----+-----+-----+-----+-----+-----+-----+-----+---+-+
- *  |Size |    Buffer usable by the caller (requested size)   |Unused\
+ *  |CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|CHUNK|CHUNK| |
+ *  +-----+-----+-----+-----+-----+-----+-----+-----+-----+-+
+ *  |     |     |     |     |     |     |     |     |/////|U|
+ *  |     |     |     |     |     |     |     |     |/HSZ/|U|
+ *  |     |     |     |     |     |     |     |     |/////|U|
+ *  +-----+-----+-----+-----+-----+-----+-----+-----+-----+-+
+ *  | Buffer usable by the caller (requested size)  |Size |Unused
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_kmem.c,v 1.77 2019/11/14 16:23:52 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_kmem.c,v 1.82 2021/02/06 13:54:48 joerg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_kmem.h"
@@ -105,35 +105,35 @@ struct kmem_cache_info {
 };
 
 static const struct kmem_cache_info kmem_cache_sizes[] = {
-	{  8, "kmem-8" },
-	{ 16, "kmem-16" },
-	{ 24, "kmem-24" },
-	{ 32, "kmem-32" },
-	{ 40, "kmem-40" },
-	{ 48, "kmem-48" },
-	{ 56, "kmem-56" },
-	{ 64, "kmem-64" },
-	{ 80, "kmem-80" },
-	{ 96, "kmem-96" },
-	{ 112, "kmem-112" },
-	{ 128, "kmem-128" },
-	{ 160, "kmem-160" },
-	{ 192, "kmem-192" },
-	{ 224, "kmem-224" },
-	{ 256, "kmem-256" },
-	{ 320, "kmem-320" },
-	{ 384, "kmem-384" },
-	{ 448, "kmem-448" },
-	{ 512, "kmem-512" },
-	{ 768, "kmem-768" },
-	{ 1024, "kmem-1024" },
+	{  8, "kmem-00008" },
+	{ 16, "kmem-00016" },
+	{ 24, "kmem-00024" },
+	{ 32, "kmem-00032" },
+	{ 40, "kmem-00040" },
+	{ 48, "kmem-00048" },
+	{ 56, "kmem-00056" },
+	{ 64, "kmem-00064" },
+	{ 80, "kmem-00080" },
+	{ 96, "kmem-00096" },
+	{ 112, "kmem-00112" },
+	{ 128, "kmem-00128" },
+	{ 160, "kmem-00160" },
+	{ 192, "kmem-00192" },
+	{ 224, "kmem-00224" },
+	{ 256, "kmem-00256" },
+	{ 320, "kmem-00320" },
+	{ 384, "kmem-00384" },
+	{ 448, "kmem-00448" },
+	{ 512, "kmem-00512" },
+	{ 768, "kmem-00768" },
+	{ 1024, "kmem-01024" },
 	{ 0, NULL }
 };
 
 static const struct kmem_cache_info kmem_cache_big_sizes[] = {
-	{ 2048, "kmem-2048" },
-	{ 4096, "kmem-4096" },
-	{ 8192, "kmem-8192" },
+	{ 2048, "kmem-02048" },
+	{ 4096, "kmem-04096" },
+	{ 8192, "kmem-08192" },
 	{ 16384, "kmem-16384" },
 	{ 0, NULL }
 };
@@ -168,10 +168,7 @@ static void *kmem_freecheck;
 #endif
 
 #if defined(KMEM_SIZE)
-struct kmem_header {
-	size_t		size;
-} __aligned(KMEM_ALIGN);
-#define	SIZE_SIZE	sizeof(struct kmem_header)
+#define	SIZE_SIZE	sizeof(size_t)
 static void kmem_size_set(void *, size_t);
 static void kmem_size_check(void *, size_t);
 #else
@@ -229,7 +226,6 @@ kmem_intr_alloc(size_t requested_size, km_flag_t kmflags)
 	if (__predict_true(p != NULL)) {
 		FREECHECK_OUT(&kmem_freecheck, p);
 		kmem_size_set(p, requested_size);
-		p += SIZE_SIZE;
 		kasan_mark(p, origsize, size, KASAN_KMEM_REDZONE);
 		return p;
 	}
@@ -262,7 +258,9 @@ kmem_intr_free(void *p, size_t requested_size)
 	pool_cache_t pc;
 
 	KASSERT(p != NULL);
-	KASSERT(requested_size > 0);
+	if (__predict_false(requested_size == 0)) {
+		panic("%s: zero size with pointer %p", __func__, p);
+	}
 
 	kasan_add_redzone(&requested_size);
 	size = kmem_roundup_size(requested_size);
@@ -283,7 +281,6 @@ kmem_intr_free(void *p, size_t requested_size)
 
 	kasan_mark(p, size, size, 0);
 
-	p = (uint8_t *)p - SIZE_SIZE;
 	kmem_size_check(p, requested_size);
 	FREECHECK_IN(&kmem_freecheck, p);
 	LOCKDEBUG_MEM_CHECK(p, size);
@@ -359,22 +356,28 @@ kmem_create_caches(const struct kmem_cache_info *array,
 		pool_cache_t pc;
 		size_t align;
 
-		if ((cache_size & (CACHE_LINE_SIZE - 1)) == 0)
-			align = CACHE_LINE_SIZE;
-		else if ((cache_size & (PAGE_SIZE - 1)) == 0)
-			align = PAGE_SIZE;
-		else
-			align = KMEM_ALIGN;
-
-		if (cache_size < CACHE_LINE_SIZE)
-			flags |= PR_NOTOUCH;
-
 		/* check if we reached the requested size */
 		if (cache_size > maxsize || cache_size > PAGE_SIZE) {
 			break;
 		}
-		if ((cache_size >> shift) > maxidx) {
-			maxidx = cache_size >> shift;
+
+		/*
+		 * Exclude caches with size not a factor or multiple of the
+		 * coherency unit.
+		 */
+		if (cache_size < COHERENCY_UNIT) {
+			if (COHERENCY_UNIT % cache_size > 0) {
+			    	continue;
+			}
+			flags |= PR_NOTOUCH;
+			align = KMEM_ALIGN;
+		} else if ((cache_size & (PAGE_SIZE - 1)) == 0) {
+			align = PAGE_SIZE;
+		} else {
+			if ((cache_size % COHERENCY_UNIT) > 0) {
+				continue;
+			}
+			align = COHERENCY_UNIT;
 		}
 
 		if ((cache_size >> shift) > maxidx) {
@@ -473,31 +476,50 @@ kmem_strfree(char *str)
 	kmem_free(str, strlen(str) + 1);
 }
 
+/*
+ * Utility routine to maybe-allocate a temporary buffer if the size
+ * is larger than we're willing to put on the stack.
+ */
+void *
+kmem_tmpbuf_alloc(size_t size, void *stackbuf, size_t stackbufsize,
+    km_flag_t flags)
+{
+	if (size <= stackbufsize) {
+		return stackbuf;
+	}
+
+	return kmem_alloc(size, flags);
+}
+
+void
+kmem_tmpbuf_free(void *buf, size_t size, void *stackbuf)
+{
+	if (buf != stackbuf) {
+		kmem_free(buf, size);
+	}
+}
+
 /* --------------------------- DEBUG / DIAGNOSTIC --------------------------- */
 
 #if defined(KMEM_SIZE)
 static void
 kmem_size_set(void *p, size_t sz)
 {
-	struct kmem_header *hd;
-	hd = (struct kmem_header *)p;
-	hd->size = sz;
+	memcpy((char *)p + sz, &sz, sizeof(size_t));
 }
 
 static void
 kmem_size_check(void *p, size_t sz)
 {
-	struct kmem_header *hd;
 	size_t hsz;
 
-	hd = (struct kmem_header *)p;
-	hsz = hd->size;
+	memcpy(&hsz, (char *)p + sz, sizeof(size_t));
 
 	if (hsz != sz) {
-		panic("kmem_free(%p, %zu) != allocated size %zu",
-		    (const uint8_t *)p + SIZE_SIZE, sz, hsz);
+		panic("kmem_free(%p, %zu) != allocated size %zu; overwrote?",
+		    p, sz, hsz);
 	}
 
-	hd->size = -1;
+	memset((char *)p + sz, 0xff, sizeof(size_t));
 }
 #endif /* defined(KMEM_SIZE) */

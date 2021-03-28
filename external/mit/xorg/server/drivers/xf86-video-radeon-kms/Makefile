@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.9 2019/03/10 02:29:53 mrg Exp $
+#	$NetBSD: Makefile,v 1.12 2020/02/09 12:28:28 jmcneill Exp $
 
 .include <bsd.own.mk>
 
@@ -16,7 +16,6 @@ CPPFLAGS+= \
 		-DHAS_DIRTYTRACKING2 \
 		-DHAVE_XORG_LIST \
 		-DHAVE_XF86_CURSOR_RESET_CURSOR \
-		-DHAVE_DRI3_H \
 		-DHAVE_MISYNCSHM_H \
 		-DHAVE_PRESENT_H
 .endif
@@ -46,7 +45,12 @@ SRCS=		radeon_accel.c radeon_video.c \
 		$(SRCS.GLAMOR)
 
 MAN=		radeon.4
+
+.if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64"
 MANSUBDIR=	/x86
+.else
+MANSUBDIR=	/${MACHINE}
+.endif
 
 CPPFLAGS+=	-DHAVE_CONFIG_H
 CPPFLAGS+=	-I${DESTDIR}${X11INCDIR}/X11 \

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vlan.c,v 1.149 2019/12/12 02:15:43 pgoyette Exp $	*/
+/*	$NetBSD: if_vlan.c,v 1.153 2020/09/26 18:38:09 roy Exp $	*/
 
 /*
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.149 2019/12/12 02:15:43 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.153 2020/09/26 18:38:09 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -355,9 +355,8 @@ vlan_clone_create(struct if_clone *ifc, int unit)
 	if_initname(ifp, ifc->ifc_name, unit);
 	ifp->if_softc = ifv;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
 #ifdef NET_MPSAFE
-	ifp->if_extflags |= IFEF_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_start = vlan_start;
 	ifp->if_transmit = vlan_transmit;
@@ -370,6 +369,13 @@ vlan_clone_create(struct if_clone *ifc, int unit)
 		    rv);
 		goto fail;
 	}
+
+	/*
+	 * Set the link state to down.
+	 * When the parent interface attaches we will use that link state.
+	 * When the parent interface link state changes, so will ours.
+	 */
+	ifp->if_link_state = LINK_STATE_DOWN;
 
 	vlan_reset_linkname(ifp);
 	if_register(ifp);
@@ -541,12 +547,6 @@ vlan_config(struct ifvlan *ifv, struct ifnet *p, uint16_t tag)
 	nmib->ifvm_p = p;
 	nmib->ifvm_tag = vid;
 	ifv->ifv_if.if_mtu = p->if_mtu - nmib->ifvm_mtufudge;
-#ifdef INET6
-	KERNEL_LOCK_UNLESS_NET_MPSAFE();
-	if (in6_present)
-		nd6_setmtu(ifp);
-	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
-#endif
 	ifv->ifv_if.if_flags = p->if_flags &
 	    (IFF_UP | IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST);
 
@@ -567,6 +567,12 @@ vlan_config(struct ifvlan *ifv, struct ifnet *p, uint16_t tag)
 	nmib = NULL;
 	nmib_psref = NULL;
 	omib_cleanup = true;
+
+
+	/*
+	 * We inherit the parents link state.
+	 */
+	if_link_state_change(&ifv->ifv_if, p->if_link_state);
 
 done:
 	mutex_exit(&ifv->ifv_lock);
@@ -780,12 +786,11 @@ vlan_getref_linkmib(struct ifvlan *sc, struct psref *psref)
 	int s;
 
 	s = pserialize_read_enter();
-	mib = sc->ifv_mib;
+	mib = atomic_load_consume(&sc->ifv_mib);
 	if (mib == NULL) {
 		pserialize_read_exit(s);
 		return NULL;
 	}
-	membar_datadep_consumer();
 	psref_acquire(psref, &mib->ifvm_psref, ifvm_psref_class);
 	pserialize_read_exit(s);
 
@@ -812,7 +817,7 @@ vlan_lookup_tag_psref(struct ifnet *ifp, uint16_t tag, struct psref *psref)
 	s = pserialize_read_enter();
 	PSLIST_READER_FOREACH(sc, &ifv_hash.lists[idx], struct ifvlan,
 	    ifv_hash) {
-		struct ifvlan_linkmib *mib = sc->ifv_mib;
+		struct ifvlan_linkmib *mib = atomic_load_consume(&sc->ifv_mib);
 		if (mib == NULL)
 			continue;
 		if (mib->ifvm_tag != tag)
@@ -835,8 +840,7 @@ vlan_linkmib_update(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 
 	KASSERT(mutex_owned(&ifv->ifv_lock));
 
-	membar_producer();
-	ifv->ifv_mib = nmib;
+	atomic_store_release(&ifv->ifv_mib, nmib);
 
 	pserialize_perform(ifv->ifv_psz);
 	psref_target_destroy(&omib->ifvm_psref, ifvm_psref_class);
@@ -1391,7 +1395,7 @@ vlan_start(struct ifnet *ifp)
 			if (m == NULL) {
 				printf("%s: unable to prepend encap header",
 				    p->if_xname);
-				ifp->if_oerrors++;
+				if_statinc(ifp, if_oerrors);
 				continue;
 			}
 
@@ -1406,7 +1410,7 @@ vlan_start(struct ifnet *ifp)
 				if (m == NULL) {
 					printf("%s: unable to pullup encap "
 					    "header", p->if_xname);
-					ifp->if_oerrors++;
+					if_statinc(ifp, if_oerrors);
 					continue;
 				}
 
@@ -1455,10 +1459,10 @@ vlan_start(struct ifnet *ifp)
 		error = if_transmit_lock(p, m);
 		if (error) {
 			/* mbuf is already freed */
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 	}
 
 	ifp->if_flags &= ~IFF_OACTIVE;
@@ -1509,7 +1513,7 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 		if (m == NULL) {
 			printf("%s: unable to prepend encap header",
 			    p->if_xname);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			error = ENOBUFS;
 			goto out;
 		}
@@ -1525,7 +1529,7 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 			if (m == NULL) {
 				printf("%s: unable to pullup encap "
 				    "header", p->if_xname);
-				ifp->if_oerrors++;
+				if_statinc(ifp, if_oerrors);
 				error = ENOBUFS;
 				goto out;
 			}
@@ -1574,16 +1578,17 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	error = if_transmit_lock(p, m);
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
 	if (error) {
 		/* mbuf is already freed */
-		ifp->if_oerrors++;
+		if_statinc_ref(nsr, if_oerrors);
 	} else {
-
-		ifp->if_opackets++;
-		ifp->if_obytes += pktlen;
+		if_statinc_ref(nsr, if_opackets);
+		if_statadd_ref(nsr, if_obytes, pktlen);
 		if (mcast)
-			ifp->if_omcasts++;
+			if_statinc_ref(nsr, if_omcasts);
 	}
+	IF_STAT_PUTREF(ifp);
 
 out:
 	/* Remove reference to mib before release */
@@ -1639,7 +1644,7 @@ vlan_input(struct ifnet *ifp, struct mbuf *m)
 	mib = vlan_lookup_tag_psref(ifp, vid, &psref);
 	if (mib == NULL) {
 		m_freem(m);
-		ifp->if_noproto++;
+		if_statinc(ifp, if_noproto);
 		return;
 	}
 	KASSERT(mib->ifvm_encaplen == ETHER_VLAN_ENCAP_LEN);
@@ -1648,7 +1653,7 @@ vlan_input(struct ifnet *ifp, struct mbuf *m)
 	if ((ifv->ifv_if.if_flags & (IFF_UP | IFF_RUNNING)) !=
 	    (IFF_UP | IFF_RUNNING)) {
 		m_freem(m);
-		ifp->if_noproto++;
+		if_statinc(ifp, if_noproto);
 		goto out;
 	}
 
@@ -1673,6 +1678,35 @@ vlan_input(struct ifnet *ifp, struct mbuf *m)
 	if_input(&ifv->ifv_if, m);
 out:
 	vlan_putref_linkmib(mib, &psref);
+}
+
+/*
+ * If the parent link state changed, the vlan link state should change also.
+ */
+void
+vlan_link_state_changed(struct ifnet *p, int link_state)
+{
+	struct ifvlan *ifv;
+	struct ifvlan_linkmib *mib;
+	struct psref psref;
+	struct ifnet *ifp;
+
+	mutex_enter(&ifv_list.lock);
+
+	LIST_FOREACH(ifv, &ifv_list.list, ifv_list) {
+		mib = vlan_getref_linkmib(ifv, &psref);
+		if (mib == NULL)
+			continue;
+
+		if (mib->ifvm_p == p) {
+			ifp = &mib->ifvm_ifvlan->ifv_if;
+			if_link_state_change(ifp, link_state);
+		}
+
+		vlan_putref_linkmib(mib, &psref);
+	}
+
+	mutex_exit(&ifv_list.lock);
 }
 
 /*

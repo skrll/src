@@ -234,7 +234,7 @@ ctf_fdopen(int fd, int *errp)
 	bzero(&ctfsect, sizeof (ctf_sect_t));
 	bzero(&symsect, sizeof (ctf_sect_t));
 	bzero(&strsect, sizeof (ctf_sect_t));
-	bzero(&hdr.ctf, sizeof (hdr));
+	bzero(&hdr, sizeof (hdr));
 
 	if (fstat64(fd, &st) == -1)
 		return (ctf_set_open_errno(errp, errno));
@@ -373,6 +373,9 @@ ctf_fdopen(int fd, int *errp)
 
 		strs_map = mmap64(NULL, strs_mapsz, PROT_READ, MAP_PRIVATE,
 		    fd, sp[shstrndx].sh_offset & _PAGEMASK);
+
+		if (strs_map == MAP_FAILED)
+			return (ctf_set_open_errno(errp, errno));
 
 		strs = (char *)strs_map +
 		    (sp[shstrndx].sh_offset & ~_PAGEMASK);

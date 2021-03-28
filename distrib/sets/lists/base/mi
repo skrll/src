@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1223 2019/12/18 07:37:17 maxv Exp $
+# $NetBSD: mi,v 1.1274 2021/01/17 19:32:52 rillig Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -33,6 +33,7 @@
 ./bin/echo					base-util-root
 ./bin/ed					base-util-root
 ./bin/expr					base-util-root
+./bin/getfacl					base-util-root
 ./bin/hostname					base-util-root
 ./bin/kill					base-util-root
 ./bin/ksh					base-util-root
@@ -51,6 +52,7 @@
 ./bin/rmail					base-obsolete		obsolete
 ./bin/rmdir					base-util-root
 ./bin/rump.dd					base-util-root		rump
+./bin/setfacl					base-util-root
 ./bin/sh					base-util-root
 ./bin/sleep					base-util-root
 ./bin/stty					base-util-root
@@ -75,6 +77,7 @@
 ./dev/i4btrc0					base-obsolete		obsolete
 ./dev/i4btrc1					base-obsolete		obsolete
 ./dev/log					base-sys-root
+./dev/pts					base-sys-root
 ./etc						base-sys-root
 ./etc/X11					base-x11-root
 ./etc/X11/ctwm					base-x11-root
@@ -120,7 +123,7 @@
 ./etc/racoon					base-netutil-bin
 ./etc/rc.conf.d					base-sys-root
 ./etc/rc.d					base-sys-root
-./etc/release					etc-sys-etc
+./etc/release					base-sys-etc
 ./etc/skel					base-sys-root
 ./etc/sliphome					base-slip-root
 ./etc/ssh					base-sys-root
@@ -147,10 +150,18 @@
 ./libdata/firmware/if_bwfm/brcmfmac43143.bin	base-firmware-root	firmware
 ./libdata/firmware/if_bwfm/brcmfmac43236b.bin	base-firmware-root	firmware
 ./libdata/firmware/if_bwfm/brcmfmac43242a.bin	base-firmware-root	firmware
-./libdata/firmware/if_bwfm/brcmfmac43569.bin	base-firmware-root	firmware
 ./libdata/firmware/if_bwfm/brcmfmac4350-pcie.bin	base-firmware-root	firmware
 ./libdata/firmware/if_bwfm/brcmfmac4350c2-pcie.bin	base-firmware-root	firmware
+./libdata/firmware/if_bwfm/brcmfmac4356-pcie.bin	base-firmware-root	firmware
+./libdata/firmware/if_bwfm/brcmfmac43569.bin	base-firmware-root	firmware
+./libdata/firmware/if_bwfm/brcmfmac43570-pcie.bin	base-firmware-root	firmware
+./libdata/firmware/if_bwfm/brcmfmac4358-pcie.bin	base-firmware-root	firmware
+./libdata/firmware/if_bwfm/brcmfmac43602-pcie.ap.bin	base-firmware-root	firmware
 ./libdata/firmware/if_bwfm/brcmfmac43602-pcie.bin	base-firmware-root	firmware
+./libdata/firmware/if_bwfm/brcmfmac4366b-pcie.bin	base-firmware-root	firmware
+./libdata/firmware/if_bwfm/brcmfmac4366c-pcie.bin	base-firmware-root	firmware
+./libdata/firmware/if_bwfm/brcmfmac4371-pcie.bin	base-firmware-root	firmware
+./libdata/firmware/if_bwfm/brcmfmac4373.bin	base-firmware-root	firmware
 ./libdata/firmware/if_ipw			base-firmware-root
 ./libdata/firmware/if_ipw/LICENSE		base-firmware-root	firmware
 ./libdata/firmware/if_ipw/ipw2100-1.2-i.fw	base-firmware-root	firmware
@@ -248,12 +259,20 @@
 ./libdata/firmware/if_urtwn/rtl8192cfwU.bin	base-firmware-root	firmware
 ./libdata/firmware/if_urtwn/rtl8192eefw.bin	base-firmware-root	firmware
 ./libdata/firmware/if_wpi			base-firmware-root
-./libdata/firmware/if_wpi/LICENSE.ipw3945-ucode	base-obsolete	obsolete	firmware
+./libdata/firmware/if_wpi/LICENSE.ipw3945-ucode	base-obsolete	obsolete,firmware
 ./libdata/firmware/if_wpi/LICENSE.iwlwifi-3945-ucode	base-firmware-root	firmware
-./libdata/firmware/if_wpi/README.ipw3945-ucode	base-obsolete	obsolete	firmware
+./libdata/firmware/if_wpi/README.ipw3945-ucode	base-obsolete	obsolete,firmware
 ./libdata/firmware/if_wpi/README.iwlwifi-3945-ucode	base-firmware-root	firmware
-./libdata/firmware/if_wpi/ipw3945.ucode		base-obsolete	obsolete	firmware
+./libdata/firmware/if_wpi/ipw3945.ucode		base-obsolete	obsolete,firmware
 ./libdata/firmware/if_wpi/iwlwifi-3945.ucode		base-firmware-root	firmware
+./libdata/firmware/nouveau			base-firmware-usr
+./libdata/firmware/nouveau/nvidia			base-firmware-usr
+./libdata/firmware/nouveau/nvidia/LICENCE.nvidia	base-firmware-usr	nouveaufirmware
+./libdata/firmware/nouveau/nvidia/gm206			base-firmware-usr
+./libdata/firmware/nouveau/nvidia/gm206/fecs_data.bin	base-firmware-usr	nouveaufirmware
+./libdata/firmware/nouveau/nvidia/gm206/fecs_inst.bin	base-firmware-usr	nouveaufirmware
+./libdata/firmware/nouveau/nvidia/gm206/gpccs_data.bin	base-firmware-usr	nouveaufirmware
+./libdata/firmware/nouveau/nvidia/gm206/gpccs_inst.bin	base-firmware-usr	nouveaufirmware
 ./libdata/firmware/nvidia			base-firmware-root
 ./libdata/firmware/nvidia/tegra124		base-firmware-root
 ./libdata/firmware/nvidia/tegra124/LICENCE.nvidia	base-firmware-root	tegrafirmware
@@ -261,14 +280,6 @@
 ./libdata/firmware/nvidia/tegra210		base-firmware-root
 ./libdata/firmware/nvidia/tegra210/LICENCE.nvidia	base-firmware-root	tegrafirmware
 ./libdata/firmware/nvidia/tegra210/xusb.bin	base-firmware-root	tegrafirmware
-./libdata/firmware/nouveau			base-firmware-usr
-./libdata/firmware/nouveau/nvidia			base-firmware-usr
-./libdata/firmware/nouveau/nvidia/LICENCE.nvidia	base-firmware-usr	nouveaufirmware
-./libdata/firmware/nouveau/nvidia/gm206			base-firmware-usr
-./libdata/firmware/nouveau/nvidia/gm206/fecs_inst.bin	base-firmware-usr	nouveaufirmware
-./libdata/firmware/nouveau/nvidia/gm206/gpccs_inst.bin	base-firmware-usr	nouveaufirmware
-./libdata/firmware/nouveau/nvidia/gm206/fecs_data.bin	base-firmware-usr	nouveaufirmware
-./libdata/firmware/nouveau/nvidia/gm206/gpccs_data.bin	base-firmware-usr	nouveaufirmware
 ./libdata/firmware/qat				base-firmware-root
 ./libdata/firmware/qat/mmp_firmware_c2xxx.bin	base-firmware-root	firmware
 ./libdata/firmware/qat/mof_firmware_c2xxx.bin	base-firmware-root	firmware
@@ -447,8 +458,8 @@
 ./libdata/firmware/rum				base-firmware-root
 ./libdata/firmware/rum/rum-license		base-firmware-root	firmware
 ./libdata/firmware/rum/rum-rt2573		base-firmware-root	firmware
-./libdata/firmware/rum/run-rt2870		base-obsolete	obsolete	firmware
-./libdata/firmware/rum/run-rt3071		base-obsolete	obsolete	firmware
+./libdata/firmware/rum/run-rt2870		base-obsolete	obsolete,firmware
+./libdata/firmware/rum/run-rt3071		base-obsolete	obsolete,firmware
 ./libdata/firmware/run				base-firmware-root
 ./libdata/firmware/run/run-license		base-firmware-root	firmware
 ./libdata/firmware/run/run-rt2870		base-firmware-root	firmware
@@ -461,14 +472,15 @@
 ./libdata/firmware/zyd/zyd-zd1211		base-firmware-root	firmware
 ./libdata/firmware/zyd/zyd-zd1211b		base-firmware-root	firmware
 ./libexec					base-sys-root
-./libexec/blacklistd-helper			base-sysutil-root
+./libexec/blacklistd-helper			base-obsolete		obsolete
+./libexec/blocklistd-helper			base-sysutil-root
 ./libexec/devpubd-hooks				base-sysutil-root
 ./libexec/devpubd-hooks/01-makedev		base-sysutil-root
 ./libexec/devpubd-hooks/02-wedgenames		base-sysutil-root
 ./libexec/devpubd-run-hooks			base-sysutil-root
 ./libexec/dhcpcd-hooks				base-dhcpcd-root
 ./libexec/dhcpcd-hooks/01-test			base-dhcpcd-root
-./libexec/dhcpcd-hooks/02-dump			base-dhcpcd-root
+./libexec/dhcpcd-hooks/02-dump			base-obsolete      obsolete
 ./libexec/dhcpcd-hooks/10-mtu			base-obsolete      obsolete
 ./libexec/dhcpcd-hooks/10-resolv.conf		base-obsolete      obsolete
 ./libexec/dhcpcd-hooks/14-lookup-hostname	base-obsolete      obsolete
@@ -481,11 +493,15 @@
 ./libexec/resolvconf				base-resolvconf-root
 ./libexec/resolvconf/dnsmasq			base-resolvconf-root
 ./libexec/resolvconf/libc			base-resolvconf-root
+./libexec/resolvconf/libc.d			base-resolvconf-root
+./libexec/resolvconf/libc.d/avahi-daemon	base-resolvconf-root
+./libexec/resolvconf/libc.d/mdnsd		base-resolvconf-root
 ./libexec/resolvconf/named			base-resolvconf-root
 ./libexec/resolvconf/pdns_recursor		base-resolvconf-root
 ./libexec/resolvconf/pdnsd			base-resolvconf-root
 ./libexec/resolvconf/unbound			base-resolvconf-root
 ./mnt						base-sys-root
+./netbsd					base-sys-root		kernel_dir
 ./rescue					base-sys-root
 ./root						base-sys-root
 ./sbin						base-sys-root
@@ -494,8 +510,10 @@
 ./sbin/atactl					base-sysutil-root
 ./sbin/badsect					base-sysutil-root
 ./sbin/bioctl					base-sysutil-root
-./sbin/blacklistctl				base-sysutil-root
-./sbin/blacklistd				base-sysutil-root
+./sbin/blacklistctl				base-obsolete		obsolete
+./sbin/blacklistd				base-obsolete		obsolete
+./sbin/blocklistctl				base-sysutil-root
+./sbin/blocklistd				base-sysutil-root
 ./sbin/brconfig					base-netutil-root
 ./sbin/canconfig				base-netutil-root
 ./sbin/ccdconfig				base-sysutil-root
@@ -571,7 +589,7 @@
 ./sbin/mount_ptyfs				base-miscfs-root
 ./sbin/mount_puffs				base-sysutil-root
 ./sbin/mount_qemufwcfg				base-sysutil-root
-./sbin/mount_smbfs				base-smbfs-root
+./sbin/mount_smbfs				base-obsolete		obsolete
 ./sbin/mount_sysvbfs				base-sysutil-root
 ./sbin/mount_tmpfs				base-miscfs-root
 ./sbin/mount_udf				base-sysutil-root
@@ -742,6 +760,9 @@
 ./usr/bin/expand				base-util-bin
 ./usr/bin/false					base-util-bin
 ./usr/bin/fgrep					base-util-bin
+./usr/bin/fido2-assert				base-util-bin
+./usr/bin/fido2-cred				base-util-bin
+./usr/bin/fido2-token				base-util-bin
 ./usr/bin/file					base-util-bin
 ./usr/bin/fincore				base-util-bin
 ./usr/bin/find					base-util-bin
@@ -776,6 +797,7 @@
 ./usr/bin/host					base-netutil-bin
 ./usr/bin/hoststat				base-mailwrapper-bin
 ./usr/bin/hxtool				base-krb5-bin		kerberos
+./usr/bin/iasl					base-util-bin		acpi
 ./usr/bin/iconv					base-util-bin
 ./usr/bin/id					base-util-bin
 ./usr/bin/ident					base-util-bin
@@ -786,6 +808,7 @@
 ./usr/bin/install				base-util-bin
 ./usr/bin/install-info				base-texinfo-bin
 ./usr/bin/install-sid				base-gnats-bin
+./usr/bin/ioctlprint				base-debug-bin
 ./usr/bin/ipcrm					base-util-bin
 ./usr/bin/ipcs					base-util-bin
 ./usr/bin/join					base-util-bin
@@ -891,6 +914,7 @@
 ./usr/bin/openssl				base-crypto-bin
 ./usr/bin/page					base-util-bin
 ./usr/bin/pagesize				base-util-bin
+./usr/bin/pamu2fcfg				base-util-bin		pam
 ./usr/bin/passwd				base-util-bin
 ./usr/bin/paste					base-util-bin
 ./usr/bin/patch					base-util-bin
@@ -923,9 +947,11 @@
 ./usr/bin/rcsmerge				base-rcs-bin
 ./usr/bin/rdist					base-netutil-bin
 ./usr/bin/readlink				base-util-bin
+./usr/bin/realpath				base-util-bin
 ./usr/bin/renice				base-util-bin
 ./usr/bin/reset					base-util-bin
 ./usr/bin/rev					base-util-bin
+./usr/bin/resize				base-util-bin
 ./usr/bin/revoke				base-util-bin
 ./usr/bin/rfcomm_sppd				base-util-bin
 ./usr/bin/rlog					base-rcs-bin
@@ -970,7 +996,7 @@
 ./usr/bin/skeyinfo				base-util-bin		skey
 ./usr/bin/skeyinit				base-util-bin		skey
 ./usr/bin/slogin				base-secsh-bin
-./usr/bin/smbutil				base-util-bin
+./usr/bin/smbutil				base-obsolete		obsolete
 ./usr/bin/sockstat				base-util-bin
 ./usr/bin/sort					base-util-bin
 ./usr/bin/spell					base-util-bin
@@ -1160,7 +1186,7 @@
 ./usr/include/fs/nilfs				base-c-usr
 ./usr/include/fs/ptyfs				base-c-usr
 ./usr/include/fs/puffs				base-puffs-usr
-./usr/include/fs/smbfs				base-c-usr
+./usr/include/fs/smbfs				base-obsolete		obsolete
 ./usr/include/fs/sysvbfs			base-c-usr
 ./usr/include/fs/tmpfs				base-c-usr
 ./usr/include/fs/udf				base-c-usr
@@ -1200,6 +1226,7 @@
 ./usr/include/g++/parallel			base-cxx-usr
 ./usr/include/g++/profile			base-cxx-usr
 ./usr/include/g++/profile/impl			base-cxx-usr
+./usr/include/g++/pstl				base-cxx-usr
 ./usr/include/g++/std				base-obsolete		obsolete
 ./usr/include/g++/tr1				base-cxx-usr
 ./usr/include/g++/tr1_impl			base-cxx-usr
@@ -1211,10 +1238,12 @@
 ./usr/include/gcc-5/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-6				base-obsolete		obsolete
 ./usr/include/gcc-6/sanitizer			base-obsolete		obsolete
-./usr/include/gcc-7				base-c-usr
-./usr/include/gcc-7/sanitizer			base-c-usr
+./usr/include/gcc-7				base-obsolete		obsolete
+./usr/include/gcc-7/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-8				base-c-usr
 ./usr/include/gcc-8/sanitizer			base-c-usr
+./usr/include/gcc-9				base-c-usr
+./usr/include/gcc-9/sanitizer			base-c-usr
 ./usr/include/gssapi				base-c-usr
 ./usr/include/gssapi/rpc			base-obsolete		obsolete
 ./usr/include/isofs				base-c-usr
@@ -1258,7 +1287,7 @@
 ./usr/include/netnatm				base-obsolete		obsolete
 ./usr/include/netns				base-obsolete		obsolete
 ./usr/include/netpgp				base-c-usr
-./usr/include/netsmb				base-c-usr
+./usr/include/netsmb				base-obsolete		obsolete
 ./usr/include/nfs				base-c-usr
 ./usr/include/ntfs				base-c-usr
 ./usr/include/objc				base-objc-usr
@@ -1285,17 +1314,25 @@
 ./usr/include/ufs/lfs				base-c-usr
 ./usr/include/ufs/mfs				base-c-usr
 ./usr/include/ufs/ufs				base-c-usr
+./usr/include/uv				base-obsolete		obsolete
 ./usr/include/uvm				base-c-usr
 ./usr/include/vm				base-obsolete		obsolete
 ./usr/lib					base-sys-usr		compatdir
 ./usr/lib/clang					base-sys-usr
-./usr/lib/clang/7.0.0				base-sys-usr
-./usr/lib/clang/7.0.0/include			base-sys-usr
-./usr/lib/clang/7.0.0/include/sanitizer		base-sys-usr
-./usr/lib/clang/7.0.0/include/xray		base-sys-usr
-./usr/lib/clang/7.0.0/lib			base-sys-usr
-./usr/lib/clang/7.0.0/lib/netbsd		base-sys-usr
-./usr/lib/clang/7.0.0/share			base-sys-usr
+./usr/lib/clang/7.0.0				base-obsolete	obsolete
+./usr/lib/clang/7.0.0/include			base-obsolete	obsolete
+./usr/lib/clang/7.0.0/include/sanitizer		base-obsolete	obsolete
+./usr/lib/clang/7.0.0/include/xray		base-obsolete	obsolete
+./usr/lib/clang/7.0.0/lib			base-obsolete	obsolete
+./usr/lib/clang/7.0.0/lib/netbsd		base-obsolete	obsolete
+./usr/lib/clang/7.0.0/share			base-obsolete	obsolete
+./usr/lib/clang/9.0.0				base-sys-usr
+./usr/lib/clang/9.0.0/include			base-sys-usr
+./usr/lib/clang/9.0.0/include/sanitizer		base-sys-usr
+./usr/lib/clang/9.0.0/include/xray		base-sys-usr
+./usr/lib/clang/9.0.0/lib			base-sys-usr
+./usr/lib/clang/9.0.0/lib/netbsd		base-sys-usr
+./usr/lib/clang/9.0.0/share			base-sys-usr
 ./usr/lib/dtrace				base-sys-usr		dtrace
 ./usr/lib/dtrace/errno.d			base-sys-usr		dtrace
 ./usr/lib/dtrace/psinfo.d			base-sys-usr		dtrace
@@ -1348,6 +1385,7 @@
 ./usr/libdata/debug/lib/npf			base-sys-usr		compatfile
 ./usr/libdata/debug/libexec			base-sys-usr
 ./usr/libdata/debug/sbin			base-sys-usr
+./usr/libdata/debug/stand			base-sys-usr
 ./usr/libdata/debug/usr				base-sys-usr
 ./usr/libdata/debug/usr/bin			base-sys-usr
 ./usr/libdata/debug/usr/games			base-sys-usr
@@ -1522,6 +1560,7 @@
 ./usr/libdata/firmware/radeon/VERDE_smc.bin	base-obsolete	obsolete
 ./usr/libdata/ldscripts				base-c-usr
 ./usr/libdata/lint				base-c-usr
+./usr/libdata/lint/strict-bool			base-c-usr
 ./usr/libexec					base-sys-usr
 ./usr/libexec/atf-check				base-atf-bin		atf
 ./usr/libexec/atf-cleanup			base-obsolete		obsolete
@@ -1622,6 +1661,7 @@
 ./usr/libexec/spellprog				base-util-bin
 ./usr/libexec/ssh-keysign			base-secsh-bin
 ./usr/libexec/ssh-pkcs11-helper			base-secsh-bin
+./usr/libexec/ssh-sk-helper			base-secsh-bin
 ./usr/libexec/telnetd				base-netutil-bin
 ./usr/libexec/tftp-proxy			base-pf-bin		pf
 ./usr/libexec/tftpd				base-netutil-bin
@@ -1671,9 +1711,11 @@
 ./usr/sbin					base-sys-usr
 ./usr/sbin/ac					base-sysutil-bin
 ./usr/sbin/accton				base-sysutil-bin
+./usr/sbin/acpidump				base-sysutil-bin	acpi
 ./usr/sbin/altqd				base-router-bin
 ./usr/sbin/altqstat				base-router-bin
 ./usr/sbin/amd					base-amd-bin
+./usr/sbin/amldb				base-sysutil-bin	acpi
 ./usr/sbin/amq					base-amd-bin
 ./usr/sbin/arp					base-netutil-bin
 ./usr/sbin/audit-packages			base-pkgutil-bin
@@ -1732,10 +1774,10 @@
 ./usr/sbin/editmap				base-obsolete		obsolete
 ./usr/sbin/edquota				base-sysutil-bin
 ./usr/sbin/envstat				base-sysutil-bin
-./usr/sbin/eshconfig				base-sysutil-bin
+./usr/sbin/eshconfig				base-obsolete		obsolete
 ./usr/sbin/etcupdate				base-sysutil-bin
-./usr/sbin/extattrctl				base-sysutil-bin
 ./usr/sbin/execsnoop				base-debug-bin		dtrace
+./usr/sbin/extattrctl				base-sysutil-bin
 ./usr/sbin/faithd				base-router-bin		inet6
 ./usr/sbin/fixmount				base-nfsclient-bin
 ./usr/sbin/flashctl				base-sysutil-bin
@@ -1864,14 +1906,14 @@
 ./usr/sbin/netgroup_mkdb			base-nis-bin
 ./usr/sbin/nfsd					base-nfsserver-bin
 ./usr/sbin/nfsiod				base-obsolete		obsolete
-./usr/sbin/npfd					base-npf-bin		npf
 ./usr/sbin/npfctl				base-obsolete		obsolete
+./usr/sbin/npfd					base-npf-bin		npf
 ./usr/sbin/npftest				base-npf-bin		npf,rump,pic
 ./usr/sbin/nsd					base-nsd-bin		nsd
 ./usr/sbin/nsd-checkconf			base-nsd-bin		nsd
 ./usr/sbin/nsd-checkzone			base-nsd-bin		nsd
-./usr/sbin/nsd-control-setup			base-nsd-bin		nsd
 ./usr/sbin/nsd-control				base-nsd-bin		nsd
+./usr/sbin/nsd-control-setup			base-nsd-bin		nsd
 ./usr/sbin/nsec3hash				base-bind-bin
 ./usr/sbin/nslookup				base-obsolete		obsolete
 ./usr/sbin/nsquery				base-obsolete		obsolete
@@ -1884,6 +1926,7 @@
 ./usr/sbin/ntptime				base-ntp-bin
 ./usr/sbin/ntptimeset				base-obsolete		obsolete
 ./usr/sbin/ntptrace				base-ntp-bin
+./usr/sbin/nvmmctl				base-sysutil-bin	nvmm
 ./usr/sbin/omshell				base-dhcpd-bin
 ./usr/sbin/opensnoop				base-debug-bin		dtrace
 ./usr/sbin/pac					base-sysutil-bin
@@ -1952,6 +1995,7 @@
 ./usr/sbin/rpc.pcnfsd				base-nfsserver-bin
 ./usr/sbin/rpc.statd				base-nfsserver-bin
 ./usr/sbin/rpc.yppasswdd			base-nis-bin		yp
+./usr/sbin/rpcapd				base-netutil-bin
 ./usr/sbin/rpcbind				base-rpcbind-bin
 ./usr/sbin/rtadvd				base-router-bin		use_inet6
 ./usr/sbin/rtquery				base-netutil-bin
@@ -1972,7 +2016,7 @@
 ./usr/sbin/rump_msdos				base-puffs-bin	rump
 ./usr/sbin/rump_nfs				base-puffs-bin	rump
 ./usr/sbin/rump_ntfs				base-puffs-bin	rump
-./usr/sbin/rump_smbfs				base-puffs-bin	rump
+./usr/sbin/rump_smbfs				base-obsolete		obsolete
 ./usr/sbin/rump_syspuffs			base-puffs-bin	rump
 ./usr/sbin/rump_sysvbfs				base-puffs-bin	rump
 ./usr/sbin/rump_tmpfs				base-puffs-bin	rump
@@ -2067,6 +2111,9 @@
 ./usr/sbin/vndconfig				base-sysutil-bin
 ./usr/sbin/wake					base-obsolete		obsolete
 ./usr/sbin/wakeonlan				base-netutil-bin
+./usr/sbin/wg-keygen				base-netutil-bin
+./usr/sbin/wg-userspace				base-netutil-bin
+./usr/sbin/wgconfig				base-netutil-bin
 ./usr/sbin/wiconfig				base-sysutil-bin
 ./usr/sbin/wire-test				base-netutil-bin
 ./usr/sbin/wlanctl				base-sysutil-bin
@@ -2252,9 +2299,12 @@
 ./usr/share/examples				base-sys-share
 ./usr/share/examples/amd			base-amd-examples
 ./usr/share/examples/apm			base-sys-examples
-./usr/share/examples/blacklist			base-sys-examples
-./usr/share/examples/blacklist/blacklistd.conf	base-sys-examples
-./usr/share/examples/blacklist/npf.conf		base-sys-examples
+./usr/share/examples/blacklist			base-obsolete		obsolete
+./usr/share/examples/blacklist/blacklistd.conf	base-obsolete		obsolete
+./usr/share/examples/blacklist/npf.conf		base-obsolete		obsolete
+./usr/share/examples/blocklist			base-sys-examples
+./usr/share/examples/blocklist/blocklistd.conf	base-sys-examples
+./usr/share/examples/blocklist/npf.conf		base-sys-examples
 ./usr/share/examples/dhcp			base-dhcpd-examples
 ./usr/share/examples/dhcpcd			base-dhcpcd-examples
 ./usr/share/examples/dhcpcd/hooks		base-dhcpcd-examples
@@ -2293,11 +2343,13 @@
 ./usr/share/examples/racoon/roadwarrior		base-netutil-examples
 ./usr/share/examples/racoon/roadwarrior/client	base-netutil-examples
 ./usr/share/examples/racoon/roadwarrior/server	base-netutil-examples
+./usr/share/examples/rpcapd			base-netutil-examples
 ./usr/share/examples/rtadvd			base-router-examples
 ./usr/share/examples/slip			base-slip-examples
-./usr/share/examples/smbfs			base-sysutil-examples
+./usr/share/examples/smbfs			base-obsolete	obsolete
 ./usr/share/examples/supfiles			base-obsolete	obsolete
 ./usr/share/examples/syslogd			base-sysutil-examples
+./usr/share/examples/unbound			base-netutil-examples   share
 ./usr/share/examples/veriexecctl		base-obsolete	obsolete
 ./usr/share/examples/veriexecctl/fpgen.sh	base-obsolete	obsolete
 ./usr/share/examples/veriexecctl/gen_md5	base-obsolete	obsolete
@@ -2310,7 +2362,6 @@
 ./usr/share/examples/wpa_supplicant/wpa_supplicant.conf		base-netutil-examples	share
 ./usr/share/examples/wsmoused			base-sysutil-examples
 ./usr/share/examples/wsmoused/wsmoused.conf	base-sysutil-examples	share
-./usr/share/examples/unbound			base-netutil-examples   share
 ./usr/share/games				base-games-share
 ./usr/share/games/atc				base-games-share
 ./usr/share/games/boggle			base-games-share
@@ -2318,6 +2369,9 @@
 ./usr/share/games/fortune			base-games-share
 ./usr/share/games/larn				base-games-share
 ./usr/share/games/quiz.db			base-games-share
+./usr/share/games/warp				base-games-share
+./usr/share/gdb					base-util-share
+./usr/share/gdb/syscalls			base-util-share
 ./usr/share/gnats				base-gnats-share
 ./usr/share/gnats/netbsd			base-gnats-share	share
 ./usr/share/gnats/send-pr.el			base-gnats-share	share
@@ -3097,6 +3151,8 @@
 ./usr/share/installboot				base-sysutil-share
 ./usr/share/installboot/evbarm			base-sysutil-share
 ./usr/share/installboot/evbarm/boards.plist	base-sysutil-share
+./usr/share/installboot/evbmips			base-sysutil-share
+./usr/share/installboot/evbmips/boards.plist	base-sysutil-share
 ./usr/share/keymaps				base-sys-share
 ./usr/share/keymaps/amiga			base-sys-share
 ./usr/share/keymaps/atari			base-sys-share
@@ -4821,6 +4877,7 @@
 ./usr/share/misc/nslookup.help			base-obsolete		obsolete
 ./usr/share/misc/terminfo			base-terminfo-share	share
 ./usr/share/misc/terminfo.cdb			base-terminfo-share	share
+./usr/share/misc/terminfo2.cdb			base-obsolete		obsolete
 ./usr/share/misc/units.lib			base-reference-share	share
 ./usr/share/misc/usb_hid_usages			base-reference-share	share
 ./usr/share/misc/vgrindefs.db			base-groff-share	share
@@ -4833,6 +4890,7 @@
 ./usr/share/mk/bsd.dep.mk			base-mk-share		share
 ./usr/share/mk/bsd.depall.mk			base-obsolete		obsolete
 ./usr/share/mk/bsd.doc.mk			base-mk-share		share
+./usr/share/mk/bsd.dtb.mk			base-mk-share		share
 ./usr/share/mk/bsd.endian.mk			base-mk-share		share
 ./usr/share/mk/bsd.files.mk			base-mk-share		share
 ./usr/share/mk/bsd.gcc.mk			base-mk-share		share
@@ -5288,6 +5346,12 @@
 ./usr/share/wscons/fonts/latin2.814		base-util-share		share
 ./usr/share/wscons/fonts/latin2.816		base-util-share		share
 ./usr/share/wscons/fonts/orator.816		base-util-share		share
+./usr/share/wscons/fonts/spleen-12x24.fnt	base-util-share		share
+./usr/share/wscons/fonts/spleen-16x32.fnt	base-util-share		share
+./usr/share/wscons/fonts/spleen-32x64.fnt	base-util-share		share
+./usr/share/wscons/fonts/spleen-5x8.fnt		base-util-share		share
+./usr/share/wscons/fonts/spleen-6x12.fnt	base-util-share		share
+./usr/share/wscons/fonts/spleen-8x16.fnt	base-util-share		share
 ./usr/share/wscons/fonts/vt220h.808		base-util-share		share
 ./usr/share/wscons/fonts/vt220h.810		base-util-share		share
 ./usr/share/wscons/fonts/vt220h.814		base-util-share		share
@@ -5504,6 +5568,7 @@
 ./usr/share/zoneinfo/America/North_Dakota/Beulah	base-sys-share	share
 ./usr/share/zoneinfo/America/North_Dakota/Center	base-sys-share	share
 ./usr/share/zoneinfo/America/North_Dakota/New_Salem	base-sys-share	share
+./usr/share/zoneinfo/America/Nuuk		base-sys-share		share
 ./usr/share/zoneinfo/America/Ojinaga		base-sys-share		share
 ./usr/share/zoneinfo/America/Panama		base-sys-share		share
 ./usr/share/zoneinfo/America/Pangnirtung	base-sys-share		share
@@ -5996,7 +6061,7 @@
 ./usr/share/zoneinfo/US/Michigan		base-sys-share		share
 ./usr/share/zoneinfo/US/Mountain		base-sys-share		share
 ./usr/share/zoneinfo/US/Pacific			base-sys-share		share
-./usr/share/zoneinfo/US/Pacific-New		base-sys-share		share
+./usr/share/zoneinfo/US/Pacific-New		base-obsolete		obsolete
 ./usr/share/zoneinfo/US/Samoa			base-sys-share		share
 ./usr/share/zoneinfo/UTC			base-sys-share		share
 ./usr/share/zoneinfo/Universal			base-sys-share		share
@@ -6015,6 +6080,12 @@
 ./var/at/spool					base-cron-root
 ./var/backups					base-sys-root
 ./var/chroot					base-sys-root
+./var/chroot/dhcpcd				base-dhcpcd-root
+./var/chroot/dhcpcd/etc				base-obsolete		obsolete
+./var/chroot/dhcpcd/var				base-obsolete		obsolete
+./var/chroot/dhcpcd/var/db			base-obsolete		obsolete
+./var/chroot/dhcpcd/var/db/dhcpcd		base-obsolete		obsolete
+./var/chroot/dhcpcd/var/run			base-obsolete		obsolete
 ./var/chroot/ftp-proxy				base-sys-root
 ./var/chroot/named				base-bind-root
 ./var/chroot/named/dev				base-bind-root
@@ -6078,6 +6149,7 @@
 ./var/games/larn				base-games-root
 ./var/games/phantasia				base-games-root
 ./var/games/sail				base-games-root
+./var/games/warp				base-games-root
 ./var/games/save				base-obsolete		obsolete
 ./var/heimdal					base-krb5-root
 ./var/lock					base-obsolete		obsolete

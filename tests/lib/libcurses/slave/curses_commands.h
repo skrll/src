@@ -1,7 +1,8 @@
-/*	$NetBSD: curses_commands.h,v 1.3 2011/09/15 11:46:19 blymn Exp $	*/
+/*	$NetBSD: curses_commands.h,v 1.7 2021/02/13 08:14:46 rillig Exp $	*/
 
 /*-
  * Copyright 2009 Brett Lymn <blymn@NetBSD.org>
+ * Copyright 2021 Roland Illig <rillig@NetBSD.org>
  *
  * All rights reserved.
  *
@@ -13,7 +14,7 @@
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. The name of the author may not be used to endorse or promote products
- *    derived from this software withough specific prior written permission
+ *    derived from this software without specific prior written permission
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -25,22 +26,33 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *
  */
 
-#ifndef _CURSES_COMMANDS_H_
-#define	_CURSES_COMMANDS_H_
+#ifndef CTF_CURSES_COMMANDS_H
+#define	CTF_CURSES_COMMANDS_H
 
 struct command_def {
 	const char *name;
 	void (*func)(int, char **);
 };
 
+int set_int(char *, int *);
+int set_uint(char *, unsigned int *);
+int set_short(char *, short *);
+int set_win(char *, WINDOW **);
+int set_scrn(char *, SCREEN **);
+
 /*
  * prototypes for test commands
  */
+
 void cmd_DRAIN(int, char **); /* not a curses function */
+
+/* These functions can be called before initscr*/
+void cmd_filter(int, char **);
+void cmd_ripoffline(int, char **);
+void cmd_use_env(int, char **);
+void cmd_slk_init(int, char **);
 
 void cmd_addbytes(int, char **);
 void cmd_addch(int, char **);
@@ -156,6 +168,10 @@ void cmd_getmaxx(int, char **);
 void cmd_getpary(int, char **);
 void cmd_getparx(int, char **);
 void cmd_getparyx(int, char **);
+void cmd_getmaxyx(int, char **);
+void cmd_getbegyx(int, char **);
+void cmd_setsyx(int, char **);
+void cmd_getsyx(int, char **);
 void cmd_gettmode(int, char **);
 void cmd_getwin(int, char **);
 void cmd_halfdelay(int, char **);
@@ -174,9 +190,11 @@ void cmd_is_linetouched(int, char **);
 void cmd_is_wintouched(int, char **);
 void cmd_keyok(int, char **);
 void cmd_keypad(int, char **);
+void cmd_is_keypad(int, char **);
 void cmd_keyname(int, char **);
 void cmd_killchar(int, char **);
 void cmd_leaveok(int, char **);
+void cmd_is_leaveok(int, char **);
 void cmd_meta(int, char **);
 void cmd_mvchgat(int, char **);
 void cmd_mvcur(int, char **);
@@ -305,10 +323,6 @@ void cmd_mvwinsstr(int, char **);
 void cmd_winsnstr(int, char **);
 void cmd_winsstr(int, char **);
 
-void cmd_chgat(int, char **);
-void cmd_wchgat(int, char **);
-void cmd_mvchgat(int, char **);
-void cmd_mvwchgat(int, char **);
 void cmd_add_wch(int, char **);
 void cmd_wadd_wch(int, char **);
 void cmd_mvadd_wch(int, char **);
@@ -416,7 +430,27 @@ void cmd_wbkgrnd(int, char **);
 void cmd_wbkgrndset(int, char **);
 void cmd_wgetbkgrnd(int, char **);
 
+void cmd_immedok(int, char **);
 
+void cmd_syncok(int, char **);
+void cmd_wcursyncup(int, char **);
+void cmd_wsyncup(int, char **);
+void cmd_wsyncdown(int, char **);
 
+void cmd_slk_attroff(int, char**);
+void cmd_slk_attr_off(int, char**);
+void cmd_slk_attron(int, char**);
+void cmd_slk_attr_on(int, char**);
+void cmd_slk_attrset(int, char**);
+void cmd_slk_attr_set(int, char**);
+void cmd_slk_clear(int, char**);
+void cmd_slk_color(int, char**);
+void cmd_slk_label(int, char**);
+void cmd_slk_noutrefresh(int, char**);
+void cmd_slk_refresh(int, char**);
+void cmd_slk_restore(int, char**);
+void cmd_slk_set(int, char**);
+void cmd_slk_touch(int, char**);
+void cmd_slk_wset(int, char**);
 
-#endif /* !_CURSES_COMMAND_H_ */
+#endif

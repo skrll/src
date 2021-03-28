@@ -1,4 +1,4 @@
-/*	$NetBSD: asm.h,v 1.48 2015/01/12 02:32:33 dennis Exp $	*/
+/*	$NetBSD: asm.h,v 1.52 2020/07/06 08:20:40 rin Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -81,7 +81,7 @@
 #  define PIC_TOCSETUP(n, r)
 # endif /* __PIC__ */
 
-#endif /* __LP64__ */
+#endif /* _LP64 */
 
 #define	_C_LABEL(x)	x
 #define	_ASM_LABEL(x)	x
@@ -148,7 +148,7 @@ y:	.quad	.##y,.TOC.@tocbase,0;	\
 
 # define ENTRY_NOPROFILE(y) _ENTRY(_C_LABEL(y))
 # define ASENTRY(y)	_ENTRY(_ASM_LABEL(y)); _PROF_PROLOGUE
-#endif /* __LP64__ */
+#endif /* _LP64 */
 
 #define	GLOBAL(y)	_GLOBAL(_C_LABEL(y))
 
@@ -156,7 +156,9 @@ y:	.quad	.##y,.TOC.@tocbase,0;	\
 
 #undef __RCSID
 #define RCSID(x)	__RCSID(x)
-#define	__RCSID(x)	.pushsection .ident; .asciz x; .popsection
+#define __RCSID(x)	.pushsection ".ident","MS",@progbits,1;		\
+			.asciz x;					\
+			.popsection
 
 #ifdef __ELF__
 # define WEAK_ALIAS(alias,sym)						\
@@ -367,7 +369,7 @@ y:	.quad	.##y,.TOC.@tocbase,0;	\
 # define cmplongli	cmplwi
 # define cmpregli	cmplwi
 
-#else /* __LP64__ */
+#else /* _LP64 */
 
 # define ldlong		ld	/* load "C" long */
 # define ldlongu	ldu	/* load "C" long with update */
@@ -412,7 +414,7 @@ y:	.quad	.##y,.TOC.@tocbase,0;	\
 # define cmplongli	cmpldi
 # define cmpregli	cmpldi
 
-#endif /* __LP64__ */
+#endif /* _LP64 */
 
 #ifdef _LOCORE
 .macro	stmd	r,dst
@@ -431,5 +433,21 @@ y:	.quad	.##y,.TOC.@tocbase,0;	\
     .endr
 .endm
 #endif /* _LOCORE */
+
+#if defined(IBM405_ERRATA77) || \
+    ((defined(_MODULE) || !defined(_KERNEL)) && !defined(_LP64))
+/*
+ * Workaround for IBM405 Errata 77 (CPU_210): interrupted stwcx. may
+ * errantly write data to memory
+ *
+ * (1) Insert dcbt before every stwcx. instruction
+ * (2) Insert sync before every rfi/rfci instruction
+ */
+#define	IBM405_ERRATA77_DCBT(ra, rb)	dcbt ra,rb
+#define	IBM405_ERRATA77_SYNC		sync
+#else
+#define	IBM405_ERRATA77_DCBT(ra, rb)	/* nothing */
+#define	IBM405_ERRATA77_SYNC		/* nothing */
+#endif
 
 #endif /* !_PPC_ASM_H_ */

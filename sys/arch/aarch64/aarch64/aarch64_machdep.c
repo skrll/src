@@ -1,4 +1,4 @@
-/* $NetBSD: aarch64_machdep.c,v 1.35 2019/12/18 21:45:43 riastradh Exp $ */
+/* $NetBSD: aarch64_machdep.c,v 1.56 2020/12/12 09:27:31 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,13 +30,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.35 2019/12/18 21:45:43 riastradh Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.56 2020/12/12 09:27:31 skrll Exp $");
 
 #include "opt_arm_debug.h"
+#include "opt_cpuoptions.h"
 #include "opt_ddb.h"
+#include "opt_fdt.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
-#include "opt_fdt.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -50,6 +51,7 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.35 2019/12/18 21:45:43 riastra
 #include <sys/msgbuf.h>
 #include <sys/reboot.h>
 #include <sys/sysctl.h>
+#include <sys/xcall.h>
 
 #include <dev/mm.h>
 
@@ -57,8 +59,9 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.35 2019/12/18 21:45:43 riastra
 
 #include <machine/bootconfig.h>
 
+#include <arm/cpufunc.h>
+
 #include <aarch64/armreg.h>
-#include <aarch64/cpufunc.h>
 #ifdef DDB
 #include <aarch64/db_machdep.h>
 #endif
@@ -69,8 +72,8 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.35 2019/12/18 21:45:43 riastra
 #include <aarch64/vmparam.h>
 #include <aarch64/kcore.h>
 
-#include <arch/evbarm/fdt/platform.h>
 #include <arm/fdt/arm_fdtvar.h>
+#include <dev/fdt/fdt_memory.h>
 
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(...)	printf(__VA_ARGS__)
@@ -99,7 +102,8 @@ vaddr_t physical_end;
 /* filled in before cleaning bss. keep in .data */
 u_long kern_vtopdiff __attribute__((__section__(".data")));
 
-long kernend_extra;	/* extra memory allocated from round_page(_end[]) */
+/* extra physical memory allocated from round_page(_end[]) */
+long kernend_extra;
 
 /* dump configuration */
 int	cpu_dump(void);
@@ -110,6 +114,24 @@ uint32_t dumpmag = 0x8fca0101;  /* magic number for savecore */
 int     dumpsize = 0;           /* also for savecore */
 long    dumplo = 0;
 
+int aarch64_bti_enabled __read_mostly;
+
+static void
+bti_init(void)
+{
+#ifdef ARMV85_BTI
+	extern uint64_t pmap_attr_gp;
+	uint64_t reg;
+
+	reg = reg_id_aa64pfr1_el1_read();
+
+	if (reg >= ID_AA64PFR1_EL1_BT_SUPPORTED) {
+		pmap_attr_gp = LX_BLKPAG_GP;
+		aarch64_bti_enabled = 1;
+	}
+#endif
+}
+
 void
 cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused)
 {
@@ -119,6 +141,8 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 	extern char __rodata_start[];
 	u_int blk;
 
+	bti_init();
+
 	vaddr_t kernstart = trunc_page((vaddr_t)__kernel_text);
 	vaddr_t kernend = round_page((vaddr_t)_end);
 	paddr_t kernstart_phys = KERN_VTOPHYS(kernstart);
@@ -126,85 +150,28 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 	vaddr_t data_start = (vaddr_t)__data_start;
 	vaddr_t rodata_start = (vaddr_t)__rodata_start;
 
-	/* add KSEG mappings of whole memory */
-	const pt_entry_t ksegattr =
+	/* add direct mappings of whole memory */
+	const pt_entry_t dmattr =
 	    LX_BLKPAG_ATTR_NORMAL_WB |
 	    LX_BLKPAG_AP_RW |
 	    LX_BLKPAG_PXN |
 	    LX_BLKPAG_UXN;
 	for (blk = 0; blk < bootconfig.dramblocks; blk++) {
-		uint64_t start, end, left, mapsize, nblocks;
+		uint64_t start, end;
 
 		start = trunc_page(bootconfig.dram[blk].address);
 		end = round_page(bootconfig.dram[blk].address +
 		    (uint64_t)bootconfig.dram[blk].pages * PAGE_SIZE);
-		left = end - start;
 
-		/* align the start address to L2 blocksize */
-		nblocks = ulmin(left / L3_SIZE,
-		    Ln_ENTRIES - __SHIFTOUT(start, L3_ADDR_BITS));
-		if (((start & L3_ADDR_BITS) != 0) && (nblocks > 0)) {
-			mapsize = nblocks * L3_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L3)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L3_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-
-			start += mapsize;
-			left -= mapsize;
-		}
-
-		/* align the start address to L1 blocksize */
-		nblocks = ulmin(left / L2_SIZE,
-		    Ln_ENTRIES - __SHIFTOUT(start, L2_ADDR_BITS));
-		if (((start & L2_ADDR_BITS) != 0) && (nblocks > 0)) {
-			mapsize = nblocks * L2_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L2)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L2_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-			start += mapsize;
-			left -= mapsize;
-		}
-
-		nblocks = left / L1_SIZE;
-		if (nblocks > 0) {
-			mapsize = nblocks * L1_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L1)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L1_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-			start += mapsize;
-			left -= mapsize;
-		}
-
-		if ((left & L2_ADDR_BITS) != 0) {
-			nblocks = left / L2_SIZE;
-			mapsize = nblocks * L2_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L2)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L2_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-			start += mapsize;
-			left -= mapsize;
-		}
-
-		if ((left & L3_ADDR_BITS) != 0) {
-			nblocks = left / L3_SIZE;
-			mapsize = nblocks * L3_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L3)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L3_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-			start += mapsize;
-			left -= mapsize;
-		}
+		pmapboot_enter_range(AARCH64_PA_TO_KVA(start), start,
+		    end - start, dmattr, printf);
 	}
+
+	/* Disable translation table walks using TTBR0 */
+	uint64_t tcr = reg_tcr_el1_read();
+	reg_tcr_el1_write(tcr | TCR_EPD0);
+	isb();
+
 	aarch64_tlbi_all();
 
 	/*
@@ -220,13 +187,13 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 	pmapboot_protect(L2_TRUNC_BLOCK(kernstart),
 	    L2_TRUNC_BLOCK(data_start), VM_PROT_WRITE);
 	pmapboot_protect(L2_ROUND_BLOCK(rodata_start),
-	    L2_ROUND_BLOCK(kernend + kernend_extra), VM_PROT_EXECUTE);
+	    L2_ROUND_BLOCK(kernend), VM_PROT_EXECUTE);
 
 	aarch64_tlbi_all();
 
 	VPRINTF("%s: kernel phys start %lx end %lx+%lx\n", __func__,
 	    kernstart_phys, kernend_phys, kernend_extra);
-	fdt_add_reserved_memory_range(kernstart_phys,
+	fdt_memory_remove_range(kernstart_phys,
 	     kernend_phys - kernstart_phys + kernend_extra);
 }
 
@@ -238,18 +205,17 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
  *               0xffff_ffff_ffe0_0000  End of KVA
  *                                      = VM_MAX_KERNEL_ADDRESS
  *
- *               0xffff_ffc0_0???_????  End of kernel
+ *               0xffff_c000_0???_????  End of kernel
  *                                      = _end[]
- *               0xffff_ffc0_00??_????  Start of kernel
+ *               0xffff_c000_00??_????  Start of kernel
  *                                      = __kernel_text[]
  *
- *               0xffff_ffc0_0000_0000  Kernel base address & start of KVA
+ *               0xffff_c000_0000_0000  Kernel base address & start of KVA
  *                                      = VM_MIN_KERNEL_ADDRESS
  *
- *               0xffff_ffbf_ffff_ffff  End of direct mapped
+ *               0xffff_bfff_ffff_ffff  End of direct mapped
  *               0xffff_0000_0000_0000  Start of direct mapped
- *                                      = AARCH64_KSEG_START
- *                                      = AARCH64_KMEMORY_BASE
+ *                                      = AARCH64_DIRECTMAP_START
  *
  * Hole:         0xfffe_ffff_ffff_ffff
  *               0x0001_0000_0000_0000
@@ -280,16 +246,15 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	kernstart = trunc_page((vaddr_t)__kernel_text);
 	kernend = round_page((vaddr_t)_end);
 	kernstart_l2 = L2_TRUNC_BLOCK(kernstart);
-	kernend_l2 = L2_ROUND_BLOCK(kernend + kernend_extra);
+	kernend_l2 = L2_ROUND_BLOCK(kernend);
 	kernelvmstart = kernend_l2;
 
 #ifdef MODULAR
 	/*
-	 * aarch64 compiler (gcc & llvm) uses R_AARCH_CALL26/R_AARCH_JUMP26
-	 * for function calling/jumping.
-	 * (at this time, both compilers doesn't support -mlong-calls)
-	 * therefore kernel modules should be loaded within maximum 26bit word,
-	 * or +-128MB from kernel.
+	 * The aarch64 compilers (gcc & llvm) use R_AARCH_CALL26/R_AARCH_JUMP26
+	 * for function calls (bl)/jumps(b). At this time, neither compiler
+	 * supports -mlong-calls therefore the kernel modules should be loaded
+	 * within the maximum range of +/-128MB from kernel text.
 	 */
 #define MODULE_RESERVED_MAX	(1024 * 1024 * 128)
 #define MODULE_RESERVED_SIZE	(1024 * 1024 * 32)	/* good enough? */
@@ -334,14 +299,14 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	    "physical_start        = 0x%016lx\n"
 	    "kernel_start_phys     = 0x%016lx\n"
 	    "kernel_end_phys       = 0x%016lx\n"
+	    "pagetables_start_phys = 0x%016lx\n"
+	    "pagetables_end_phys   = 0x%016lx\n"
 	    "msgbuf                = 0x%016lx\n"
 	    "physical_end          = 0x%016lx\n"
 	    "VM_MIN_KERNEL_ADDRESS = 0x%016lx\n"
 	    "kernel_start_l2       = 0x%016lx\n"
 	    "kernel_start          = 0x%016lx\n"
 	    "kernel_end            = 0x%016lx\n"
-	    "pagetables            = 0x%016lx\n"
-	    "pagetables_end        = 0x%016lx\n"
 	    "kernel_end_l2         = 0x%016lx\n"
 #ifdef MODULAR
 	    "module_start          = 0x%016lx\n"
@@ -355,14 +320,14 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	    physical_start,
 	    kernstart_phys,
 	    kernend_phys,
+	    round_page(kernend_phys),
+	    round_page(kernend_phys) + kernend_extra,
 	    msgbufaddr,
 	    physical_end,
 	    VM_MIN_KERNEL_ADDRESS,
 	    kernstart_l2,
 	    kernstart,
 	    kernend,
-	    round_page(kernend),
-	    round_page(kernend) + kernend_extra,
 	    kernend_l2,
 #ifdef MODULAR
 	    module_start,
@@ -401,7 +366,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		 * order.
 		 */
 		paddr_t segend = end;
-		for (size_t j = 0; j < nbp; j++ /*, start = segend, segend = end */) {
+		for (size_t j = 0; j < nbp; j++) {
 			paddr_t bp_start = bp[j].bp_start;
 			paddr_t bp_end = bp_start + bp[j].bp_pages;
 
@@ -452,6 +417,90 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	return (vaddr_t)tf;
 }
 
+/*
+ * machine dependent system variables.
+ */
+static xcfunc_t
+set_user_tagged_address(void *arg1, void *arg2)
+{
+	uint64_t enable = PTRTOUINT64(arg1);
+	uint64_t tcr = reg_tcr_el1_read();
+	if (enable)
+		tcr |= TCR_TBI0;
+	else
+		tcr &= ~TCR_TBI0;
+	reg_tcr_el1_write(tcr);
+
+	return 0;
+}
+
+static int
+sysctl_machdep_tagged_address(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	int error, cur, val;
+	uint64_t tcr;
+
+	tcr = reg_tcr_el1_read();
+	cur = val = (tcr & TCR_TBI0) ? 1 : 0;
+
+	node = *rnode;
+	node.sysctl_data = &val;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+	if (val < 0 || val > 1)
+		return EINVAL;
+
+	if (cur != val) {
+		uint64_t where = xc_broadcast(0,
+		    (xcfunc_t)set_user_tagged_address, UINT64TOPTR(val), NULL);
+		xc_wait(where);
+	}
+
+	return 0;
+}
+
+SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
+{
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_NODE, "machdep", NULL,
+	    NULL, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+	    CTLTYPE_INT, "tagged_address",
+	    SYSCTL_DESCR("top byte ignored in the address calculation"),
+	    sysctl_machdep_tagged_address, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_INT, "pan",
+	    SYSCTL_DESCR("Whether Privileged Access Never is enabled"),
+	    NULL, 0,
+	    &aarch64_pan_enabled, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_INT, "pac",
+	    SYSCTL_DESCR("Whether Pointer Authentication is enabled"),
+	    NULL, 0,
+	    &aarch64_pac_enabled, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_INT, "bti",
+	    SYSCTL_DESCR("Whether Branch Target Identification is enabled"),
+	    NULL, 0,
+	    &aarch64_bti_enabled, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+}
+
 void
 parse_mi_bootargs(char *args)
 {
@@ -480,6 +529,8 @@ machdep_init(void)
 {
 	/* clear cpu reset hook for early boot */
 	cpu_reset_address0 = NULL;
+
+	configure_cpu_traps();
 }
 
 #ifdef MODULAR
@@ -487,6 +538,9 @@ machdep_init(void)
 void
 module_init_md(void)
 {
+#ifdef FDT
+	arm_fdt_module_init();
+#endif
 }
 #endif /* MODULAR */
 
@@ -546,13 +600,13 @@ mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 #define IN_RANGE(addr,sta,end)	(((sta) <= (addr)) && ((addr) < (end)))
 
 	*handled = false;
-	if (IN_RANGE(v, kernstart, kernend + kernend_extra)) {
+	if (IN_RANGE(v, kernstart, kernend)) {
 		*handled = true;
 		if ((v < data_start) && (prot & VM_PROT_WRITE))
 			return EFAULT;
-	} else if (IN_RANGE(v, AARCH64_KSEG_START, AARCH64_KSEG_END)) {
+	} else if (IN_RANGE(v, AARCH64_DIRECTMAP_START, AARCH64_DIRECTMAP_END)) {
 		/*
-		 * if defined PMAP_MAP_POOLPAGE, direct mapped address (KSEG)
+		 * if defined PMAP_MAP_POOLPAGE, direct mapped address
 		 * will be appeared as kvm(3) address.
 		 */
 		paddr_t pa = AARCH64_KVA_TO_PA(v);

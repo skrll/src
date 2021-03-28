@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.216 2019/10/15 18:33:57 christos Exp $
+# $NetBSD: mi,v 1.219 2020/08/03 17:26:13 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -779,16 +779,16 @@
 ./usr/share/doc/reference/ref7/quotas/quotas.html		misc-smm-doc		doc,html,groffhtmldoc
 ./usr/share/doc/reference/ref7/quotas/quotas.ps.gz		misc-smm-doc		doc,groff
 ./usr/share/doc/reference/ref7/quotas/quotas.txt		misc-smm-doc		doc,groff
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch01.html	misc-bind-htmldoc	doc
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch02.html	misc-bind-htmldoc	doc
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch03.html	misc-bind-htmldoc	doc
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch04.html	misc-bind-htmldoc	doc
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch05.html	misc-bind-htmldoc	doc
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch06.html	misc-bind-htmldoc	doc
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch07.html	misc-bind-htmldoc	doc
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch08.html	misc-bind-htmldoc	doc
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch09.html	misc-bind-htmldoc	doc
-./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.html		misc-bind-htmldoc	doc
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch01.html	misc-obsolete	obsolete
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch02.html	misc-obsolete	obsolete
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch03.html	misc-obsolete	obsolete
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch04.html	misc-obsolete	obsolete
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch05.html	misc-obsolete	obsolete
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch06.html	misc-obsolete	obsolete
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch07.html	misc-obsolete	obsolete
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch08.html	misc-obsolete	obsolete
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.ch09.html	misc-obsolete	obsolete
+./usr/share/doc/reference/ref8/bind9/arm/Bv9ARM.html		misc-obsolete	obsolete
 ./usr/share/doc/reference/ref8/lpd/lpd.html			misc-smm-doc		doc,html,groffhtmldoc
 ./usr/share/doc/reference/ref8/lpd/lpd.ps.gz			misc-smm-doc		doc,groff
 ./usr/share/doc/reference/ref8/lpd/lpd.txt			misc-smm-doc		doc,groff
@@ -1602,9 +1602,12 @@
 ./usr/share/examples/racoon/roadwarrior/server/phase1-down.sh	misc-obsolete		obsolete
 ./usr/share/examples/racoon/roadwarrior/server/racoon.conf		misc-netutil-examples	share
 ./usr/share/examples/racoon/roadwarrior/server/racoon.conf-radius	misc-netutil-examples	share
+./usr/share/examples/rpcapd/rpcapd.inetd.conf	misc-netutil-examples	share
+./usr/share/examples/rpcapd/rpcapd.socket	misc-netutil-examples	share
+./usr/share/examples/rpcapd/rpcapd@.service	misc-netutil-examples	share
 ./usr/share/examples/rtadvd/rtadvd.conf		misc-router-examples	use_inet6,share
 ./usr/share/examples/slip/slip.login		misc-slip-examples	share
-./usr/share/examples/smbfs/dot.nsmbrc		misc-sysutil-examples	share
+./usr/share/examples/smbfs/dot.nsmbrc		misc-obsolete		obsolete
 ./usr/share/examples/supfiles/ftp.cs.umn.edu	misc-obsolete		obsolete
 ./usr/share/examples/supfiles/skarven.itea.unit.no	misc-obsolete		obsolete
 ./usr/share/examples/supfiles/sup.au.netbsd.org	misc-obsolete		obsolete

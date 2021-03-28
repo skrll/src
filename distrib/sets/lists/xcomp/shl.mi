@@ -1,4 +1,4 @@
-#	$NetBSD: shl.mi,v 1.53 2019/08/28 12:24:03 uki Exp $
+#	$NetBSD: shl.mi,v 1.56 2020/10/28 08:10:09 nia Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -15,7 +15,7 @@
 ./usr/X11R7/lib/libX11-xcb_pic.a			xcomp-libX11-xcb-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libX11_pic.a				xcomp-libX11-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libXRes_pic.a				xcomp-libXres-lib	xorg,picinstall,compatx11file
-./usr/X11R7/lib/libXTrap_pic.a				xcomp-libXTrap-lib	xorg,picinstall,compatx11file
+./usr/X11R7/lib/libXTrap_pic.a				xcomp-obsolete	obsolete
 ./usr/X11R7/lib/libXau_pic.a				xcomp-libXau-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libXaw7_pic.a				xcomp-libXaw-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libXaw8_pic.a				xcomp-obsolete	obsolete
@@ -24,7 +24,7 @@
 ./usr/X11R7/lib/libXdamage_pic.a			xcomp-libXdamage-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libXdmGreet_pic.a			xcomp-libXdmGreet-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libXdmcp_pic.a				xcomp-libXdmcp-lib	xorg,picinstall,compatx11file
-./usr/X11R7/lib/libXevie_pic.a				xcomp-libXevie-lib	xorg,picinstall,compatx11file
+./usr/X11R7/lib/libXevie_pic.a				xcomp-obsolete	obsolete
 ./usr/X11R7/lib/libXext_pic.a				xcomp-libXext-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libXfixes_pic.a				xcomp-libXfixes-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libXfont2_pic.a				xcomp-libXfont2-lib	xorg,picinstall,compatx11file
@@ -61,7 +61,7 @@
 ./usr/X11R7/lib/libfreetype_pic.a			xcomp-freetype-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libgbm_pic.a				xcomp-libgbm-lib	xorg,picinstall,compatx11file
 ./usr/X11R7/lib/libglapi_pic.a				xcomp-libglapi-lib	xorg,picinstall,compatx11file
-./usr/X11R7/lib/libglut_pic.a				xcomp-libglut-lib	xorg,picinstall,compatx11file
+./usr/X11R7/lib/libglut_pic.a				xcomp-obsolete	obsolete
 ./usr/X11R7/lib/liblbxutil_pic.a			xcomp-obsolete	obsolete
 ./usr/X11R7/lib/liblisp_pic.a				xcomp-obsolete	obsolete
 ./usr/X11R7/lib/libmp_pic.a				xcomp-obsolete	obsolete

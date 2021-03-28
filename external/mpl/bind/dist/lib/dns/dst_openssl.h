@@ -1,11 +1,11 @@
-/*	$NetBSD: dst_openssl.h,v 1.2 2018/08/12 13:02:35 christos Exp $	*/
+/*	$NetBSD: dst_openssl.h,v 1.4 2021/02/19 16:42:15 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -14,16 +14,16 @@
 #ifndef DST_OPENSSL_H
 #define DST_OPENSSL_H 1
 
+#include <openssl/bn.h>
+#include <openssl/conf.h>
+#include <openssl/crypto.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+
 #include <isc/lang.h>
 #include <isc/log.h>
 #include <isc/result.h>
-
-#include <openssl/err.h>
-#include <openssl/rand.h>
-#include <openssl/evp.h>
-#include <openssl/conf.h>
-#include <openssl/crypto.h>
-#include <openssl/bn.h>
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
 /*
@@ -34,10 +34,11 @@
  *     	 _cb;
  * #endif
  */
-#define BN_GENCB_free(x) ((void)0)
-#define BN_GENCB_new() (&_cb)
+#define BN_GENCB_free(x)    ((void)0)
+#define BN_GENCB_new()	    (&_cb)
 #define BN_GENCB_get_arg(x) ((x)->arg)
-#endif
+#endif /* if OPENSSL_VERSION_NUMBER < 0x10100000L || \
+	* defined(LIBRESSL_VERSION_NUMBER) */
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
 /*
@@ -46,7 +47,7 @@
  * the link has been eliminated and EVP_sha1() can be used now instead.
  */
 #define EVP_dss1 EVP_sha1
-#endif
+#endif /* if OPENSSL_VERSION_NUMBER >= 0x10100000L */
 
 ISC_LANG_BEGINDECLS
 
@@ -57,15 +58,15 @@ isc_result_t
 dst__openssl_toresult2(const char *funcname, isc_result_t fallback);
 
 isc_result_t
-dst__openssl_toresult3(isc_logcategory_t *category,
-		       const char *funcname, isc_result_t fallback);
+dst__openssl_toresult3(isc_logcategory_t *category, const char *funcname,
+		       isc_result_t fallback);
 
 #if !defined(OPENSSL_NO_ENGINE)
 ENGINE *
 dst__openssl_getengine(const char *engine);
-#else
+#else /* if !defined(OPENSSL_NO_ENGINE) */
 #define dst__openssl_getengine(x) NULL
-#endif
+#endif /* if !defined(OPENSSL_NO_ENGINE) */
 
 ISC_LANG_ENDDECLS
 

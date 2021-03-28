@@ -2,7 +2,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -252,16 +252,19 @@ idna_enabled_test() {
     #            is displayed as the corresponding A-label.
     #
     # The "+[no]idnout" flag has no effect in these cases.
+    saved_LC_ALL="${LC_ALL}"
+    LC_ALL="C"
     text="Checking valid A-label in C locale"
     label="xn--nxasmq6b.com"
-    if command -v idn2 >/dev/null && ! LC_ALL=C idn2 -d "$label" >/dev/null 2>/dev/null; then
-	LC_ALL=C idna_test "$text" ""                   "$label" "$label."
-	LC_ALL=C idna_test "$text" "+noidnin +noidnout" "$label" "$label."
-	LC_ALL=C idna_test "$text" "+noidnin +idnout"   "$label" "$label."
-	LC_ALL=C idna_test "$text" "+idnin +noidnout"   "$label" "$label."
-	LC_ALL=C idna_test "$text" "+idnin +idnout"     "$label" "$label."
-	LC_ALL=C idna_test "$text" "+noidnin +idnout"   "$label" "$label."
+    if command -v idn2 >/dev/null && ! idn2 -d "$label" >/dev/null 2>/dev/null; then
+	idna_test "$text" ""                   "$label" "$label."
+	idna_test "$text" "+noidnin +noidnout" "$label" "$label."
+	idna_test "$text" "+noidnin +idnout"   "$label" "$label."
+	idna_test "$text" "+idnin +noidnout"   "$label" "$label."
+	idna_test "$text" "+idnin +idnout"     "$label" "$label."
+	idna_test "$text" "+noidnin +idnout"   "$label" "$label."
     fi
+    LC_ALL="${saved_LC_ALL}"
 
 
 

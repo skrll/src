@@ -1,4 +1,4 @@
-/* $NetBSD: dwiic_acpi.c,v 1.3 2019/09/23 08:50:52 jmcneill Exp $ */
+/* $NetBSD: dwiic_acpi.c,v 1.7 2021/02/04 23:59:46 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dwiic_acpi.c,v 1.3 2019/09/23 08:50:52 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dwiic_acpi.c,v 1.7 2021/02/04 23:59:46 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -59,10 +59,12 @@ static void	dwiic_acpi_configure(struct dwiic_softc *, ACPI_HANDLE);
 
 CFATTACH_DECL_NEW(dwiic_acpi, sizeof(struct dwiic_softc), dwiic_acpi_match, dwiic_acpi_attach, NULL, NULL);
 
-static const char * const compatible[] = {
-	"AMDI0510",	/* AMD Seattle */
-	"APMC0D0F",	/* Ampere eMAG */
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "AMD0010" },	/* AMD FCH */
+	{ .compat = "AMDI0010" },	/* AMD FCH */
+	{ .compat = "AMDI0510" },	/* AMD Seattle */
+	{ .compat = "APMC0D0F" },	/* Ampere eMAG */
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -70,10 +72,7 @@ dwiic_acpi_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct acpi_attach_args *aa = aux;
 
-	if (aa->aa_node->ad_type != ACPI_TYPE_DEVICE)
-		return 0;
-
-	return acpi_match_hid(aa->aa_node->ad_devinfo, compatible);
+	return acpi_compatible_match(aa, compat_data);
 }
 
 static void
@@ -115,7 +114,8 @@ dwiic_acpi_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	ih = acpi_intr_establish(self, (uint64_t)aa->aa_node->ad_handle,
+	ih = acpi_intr_establish(self,
+	    (uint64_t)(uintptr_t)aa->aa_node->ad_handle,
 	    IPL_VM, true, dwiic_intr, sc, device_xname(self));
 	if (ih == NULL) {
 		aprint_error_dev(self, "couldn't install interrupt handler\n");
@@ -125,7 +125,7 @@ dwiic_acpi_attach(device_t parent, device_t self, void *aux)
 
 	dwiic_acpi_configure(sc, aa->aa_node->ad_handle);
 
-	sc->sc_iba.iba_child_devices = acpi_enter_i2c_devs(aa->aa_node);
+	sc->sc_iba.iba_child_devices = acpi_enter_i2c_devs(self, aa->aa_node);
 
 	dwiic_attach(sc);
 

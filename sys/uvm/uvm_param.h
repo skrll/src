@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_param.h,v 1.38 2018/08/22 01:05:24 msaitoh Exp $	*/
+/*	$NetBSD: uvm_param.h,v 1.41 2020/07/23 19:07:01 skrll Exp $	*/
 
 /*
  * Copyright (c) 1991, 1993
@@ -133,11 +133,11 @@
 
 /*
  * If MIN_PAGE_SIZE and MAX_PAGE_SIZE are not equal, then we must use
- * non-constant PAGE_SIZE, et al for LKMs.
+ * non-constant PAGE_SIZE, et al for modules.
  */
 #if (MIN_PAGE_SIZE != MAX_PAGE_SIZE)
 #define	__uvmexp_pagesize
-#if defined(_LKM) || defined(_MODULE)
+#if defined(_MODULE)
 #undef PAGE_SIZE
 #undef PAGE_MASK
 #undef PAGE_SHIFT
@@ -212,8 +212,7 @@ extern unsigned int user_thread_stack_guard_size;
 #endif
 
 extern int		ubc_nwins;	/* number of UBC mapping windows */
-extern int		ubc_winshift;	/* shift for a UBC mapping window */
-extern u_int		uvm_emap_size;	/* size of emap */
+extern const int	ubc_winshift;	/* shift for a UBC mapping window */
 
 #else
 /* out-of-kernel versions of round_page and trunc_page */

@@ -1,4 +1,4 @@
-/*	$NetBSD: dp83932.c,v 1.44 2019/05/28 07:41:48 msaitoh Exp $	*/
+/*	$NetBSD: dp83932.c,v 1.47 2021/02/20 09:36:31 rin Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dp83932.c,v 1.44 2019/05/28 07:41:48 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dp83932.c,v 1.47 2021/02/20 09:36:31 rin Exp $");
 
 
 #include <sys/param.h>
@@ -47,6 +47,8 @@ __KERNEL_RCSID(0, "$NetBSD: dp83932.c,v 1.44 2019/05/28 07:41:48 msaitoh Exp $")
 #include <sys/ioctl.h>
 #include <sys/errno.h>
 #include <sys/device.h>
+
+#include <sys/rndsource.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -215,6 +217,9 @@ sonic_attach(struct sonic_softc *sc, const uint8_t *enaddr)
 	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, enaddr);
 
+	rnd_attach_source(&sc->sc_rndsource, ifp->if_xname, RND_TYPE_NET,
+	    RND_FLAG_DEFAULT);
+
 	/*
 	 * Make sure the interface is shutdown during reboot.
 	 */
@@ -287,7 +292,7 @@ sonic_start(struct ifnet *ifp)
 	int error, olasttx, nexttx, opending, totlen, olseg;
 	int seg = 0;	/* XXX: gcc */
 
-	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
+	if ((ifp->if_flags & IFF_RUNNING) != IFF_RUNNING)
 		return;
 
 	/*
@@ -471,11 +476,6 @@ sonic_start(struct ifnet *ifp)
 		bpf_mtap(ifp, m0, BPF_D_OUT);
 	}
 
-	if (sc->sc_txpending == (SONIC_NTXDESC - 1)) {
-		/* No more slots left; notify upper layer. */
-		ifp->if_flags |= IFF_OACTIVE;
-	}
-
 	if (sc->sc_txpending != opending) {
 		/*
 		 * We enqueued packets.  If the transmitter was idle,
@@ -534,7 +534,7 @@ sonic_watchdog(struct ifnet *ifp)
 	struct sonic_softc *sc = ifp->if_softc;
 
 	printf("%s: device timeout\n", device_xname(sc->sc_dev));
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	(void)sonic_init(ifp);
 }
@@ -632,10 +632,9 @@ sonic_txintr(struct sonic_softc *sc)
 	struct sonic_tda32 *tda32;
 	struct sonic_tda16 *tda16;
 	uint16_t status, totstat = 0;
-	int i;
+	int i, count;
 
-	ifp->if_flags &= ~IFF_OACTIVE;
-
+	count = 0;
 	for (i = sc->sc_txdirty; sc->sc_txpending != 0;
 	     i = SONIC_NEXTTX(i), sc->sc_txpending--) {
 		ds = &sc->sc_txsoft[i];
@@ -668,11 +667,16 @@ sonic_txintr(struct sonic_softc *sc)
 		/*
 		 * Check for errors and collisions.
 		 */
-		if (status & TCR_PTX)
-			ifp->if_opackets++;
-		else
-			ifp->if_oerrors++;
-		ifp->if_collisions += TDA_STATUS_NCOL(status);
+		net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+		if (status & TCR_PTX) {
+			if_statinc_ref(nsr, if_opackets);
+			count++;
+		} else
+			if_statinc_ref(nsr, if_oerrors);
+		if (TDA_STATUS_NCOL(status))
+			if_statadd_ref(nsr, if_collisions,
+			    TDA_STATUS_NCOL(status));
+		IF_STAT_PUTREF(ifp);
 	}
 
 	/* Update the dirty transmit buffer pointer. */
@@ -684,6 +688,9 @@ sonic_txintr(struct sonic_softc *sc)
 	 */
 	if (sc->sc_txpending == 0)
 		ifp->if_timer = 0;
+
+	if (count != 0)
+		rnd_add_uint32(&sc->sc_rndsource, count);
 
 	return totstat;
 }
@@ -701,9 +708,10 @@ sonic_rxintr(struct sonic_softc *sc)
 	struct sonic_rda32 *rda32;
 	struct sonic_rda16 *rda16;
 	struct mbuf *m;
-	int i, len;
+	int i, len, count;
 	uint16_t status, bytecount /*, ptr0, ptr1, seqno */;
 
+	count = 0;
 	for (i = sc->sc_rxptr;; i = SONIC_NEXTRX(i)) {
 		ds = &sc->sc_rxsoft[i];
 
@@ -755,7 +763,7 @@ sonic_rxintr(struct sonic_softc *sc)
 			else if (status & RCR_CRCR)
 				printf("%s: Rx CRC error\n",
 				    device_xname(sc->sc_dev));
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			SONIC_INIT_RXDESC(sc, i);
 			continue;
 		}
@@ -827,7 +835,7 @@ sonic_rxintr(struct sonic_softc *sc)
 			m = ds->ds_mbuf;
 			if (sonic_add_rxbuf(sc, i) != 0) {
  dropit:
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				SONIC_INIT_RXDESC(sc, i);
 				bus_dmamap_sync(sc->sc_dmat, ds->ds_dmamap, 0,
 				    ds->ds_dmamap->dm_mapsize,
@@ -841,11 +849,16 @@ sonic_rxintr(struct sonic_softc *sc)
 
 		/* Pass it on. */
 		if_percpuq_enqueue(ifp->if_percpuq, m);
+
+		count++;
 	}
 
 	/* Update the receive pointer. */
 	sc->sc_rxptr = i;
 	CSR_WRITE(sc, SONIC_RWR, SONIC_CDRRADDR(sc, SONIC_PREVRX(i)));
+
+	if (count != 0)
+		rnd_add_uint32(&sc->sc_rndsource, count);
 }
 
 /*
@@ -1013,7 +1026,6 @@ sonic_init(struct ifnet *ifp)
 	 * ...all done!
 	 */
 	ifp->if_flags |= IFF_RUNNING;
-	ifp->if_flags &= ~IFF_OACTIVE;
 
  out:
 	if (error)
@@ -1086,7 +1098,7 @@ sonic_stop(struct ifnet *ifp, int disable)
 	/*
 	 * Mark the interface down and cancel the watchdog timer.
 	 */
-	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+	ifp->if_flags &= ~IFF_RUNNING;
 	ifp->if_timer = 0;
 
 	if (disable)

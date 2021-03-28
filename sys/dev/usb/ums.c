@@ -1,4 +1,4 @@
-/*	$NetBSD: ums.c,v 1.95 2019/12/01 08:27:54 maxv Exp $	*/
+/*	$NetBSD: ums.c,v 1.100 2021/02/03 23:26:08 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 2017 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ums.c,v 1.95 2019/12/01 08:27:54 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ums.c,v 1.100 2021/02/03 23:26:08 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -77,6 +77,8 @@ int	umsdebug = 0;
 struct ums_softc {
 	struct uhidev sc_hdev;
 	struct hidms sc_ms;
+
+	bool	sc_alwayson;
 
 	int	sc_enabled;
 	char	sc_dying;
@@ -135,7 +137,9 @@ ums_attach(device_t parent, device_t self, void *aux)
 {
 	struct ums_softc *sc = device_private(self);
 	struct uhidev_attach_arg *uha = aux;
-	int size;
+	struct hid_data *d;
+	struct hid_item item;
+	int size, error;
 	void *desc;
 	uint32_t quirks;
 
@@ -162,6 +166,7 @@ ums_attach(device_t parent, device_t self, void *aux)
 
 	if (uha->uiaa->uiaa_vendor == USB_VENDOR_MICROSOFT) {
 		int fixpos;
+		int woffset = 8;
 		/*
 		 * The Microsoft Wireless Laser Mouse 6000 v2.0 and the
 		 * Microsoft Comfort Mouse 2.0 report a bad position for
@@ -173,6 +178,10 @@ ums_attach(device_t parent, device_t self, void *aux)
 		case USB_PRODUCT_MICROSOFT_24GHZ_XCVR20:
 		case USB_PRODUCT_MICROSOFT_NATURAL_6000:
 			fixpos = 24;
+			break;
+		case USB_PRODUCT_MICROSOFT_24GHZ_XCVR80:
+			fixpos = 40;
+			woffset = sc->sc_ms.hidms_loc_z.size;
 			break;
 		case USB_PRODUCT_MICROSOFT_CM6000:
 			fixpos = 40;
@@ -188,12 +197,69 @@ ums_attach(device_t parent, device_t self, void *aux)
 			if ((sc->sc_ms.flags & HIDMS_W) &&
 			    sc->sc_ms.hidms_loc_w.pos == 0)
 				sc->sc_ms.hidms_loc_w.pos =
-				    sc->sc_ms.hidms_loc_z.pos + 8;
+				    sc->sc_ms.hidms_loc_z.pos + woffset;
 		}
 	}
 
+	if (uha->uiaa->uiaa_vendor == USB_VENDOR_HAILUCK &&
+	    uha->uiaa->uiaa_product == USB_PRODUCT_HAILUCK_KEYBOARD) {
+		/*
+		 * The HAILUCK USB Keyboard has a built-in touchpad, which
+		 * needs to be active for the keyboard to function properly.
+		 */
+		sc->sc_alwayson = true;
+	}
+
+	if (uha->uiaa->uiaa_vendor == USB_VENDOR_CHICONY &&
+	    uha->uiaa->uiaa_product == USB_PRODUCT_CHICONY_OPTMOUSE0939) {
+		/*
+		 * This cheap mouse will disconnect after 60 seconds,
+		 * reconnect, and then disconnect again (ad nauseum)
+		 * unless it's kept open.
+		 */
+		sc->sc_alwayson = true;
+	}
+
 	tpcalib_init(&sc->sc_ms.sc_tpcalib);
+
+	/* calibrate the pointer if it reports absolute events */
+	if (sc->sc_ms.flags & HIDMS_ABS) {
+		memset(&sc->sc_ms.sc_calibcoords, 0, sizeof(sc->sc_ms.sc_calibcoords));
+		sc->sc_ms.sc_calibcoords.maxx = 0;
+		sc->sc_ms.sc_calibcoords.maxy = 0;
+		sc->sc_ms.sc_calibcoords.samplelen = WSMOUSE_CALIBCOORDS_RESET;
+		d = hid_start_parse(desc, size, hid_input);
+		if (d != NULL) {
+			while (hid_get_item(d, &item)) {
+				if (item.kind != hid_input
+				    || HID_GET_USAGE_PAGE(item.usage) != HUP_GENERIC_DESKTOP
+				    || item.report_ID != sc->sc_hdev.sc_report_id)
+					continue;
+				if (HID_GET_USAGE(item.usage) == HUG_X) {
+					sc->sc_ms.sc_calibcoords.minx = item.logical_minimum;
+					sc->sc_ms.sc_calibcoords.maxx = item.logical_maximum;
+				}
+				if (HID_GET_USAGE(item.usage) == HUG_Y) {
+					sc->sc_ms.sc_calibcoords.miny = item.logical_minimum;
+					sc->sc_ms.sc_calibcoords.maxy = item.logical_maximum;
+				}
+			}
+			hid_end_parse(d);
+		}
+        	tpcalib_ioctl(&sc->sc_ms.sc_tpcalib, WSMOUSEIO_SCALIBCOORDS,
+        	    (void *)&sc->sc_ms.sc_calibcoords, 0, 0);
+	}
+
 	hidms_attach(self, &sc->sc_ms, &ums_accessops);
+
+	if (sc->sc_alwayson) {
+		error = uhidev_open(&sc->sc_hdev);
+		if (error != 0) {
+			aprint_error_dev(self,
+			    "WARNING: couldn't open always-on device\n");
+			sc->sc_alwayson = false;
+		}
+	}
 }
 
 static int
@@ -227,6 +293,9 @@ ums_detach(device_t self, int flags)
 
 	DPRINTF(("ums_detach: sc=%p flags=%d\n", sc, flags));
 
+	if (sc->sc_alwayson)
+		uhidev_close(&sc->sc_hdev);
+
 	/* No need to do reference counting of ums, wsmouse has all the goo. */
 	if (sc->sc_ms.hidms_wsmousedev != NULL)
 		rv = config_detach(sc->sc_ms.hidms_wsmousedev, flags);
@@ -240,14 +309,16 @@ Static void
 ums_intr(struct uhidev *addr, void *ibuf, u_int len)
 {
 	struct ums_softc *sc = (struct ums_softc *)addr;
-	hidms_intr(&sc->sc_ms, ibuf, len);
+
+	if (sc->sc_enabled)
+		hidms_intr(&sc->sc_ms, ibuf, len);
 }
 
 Static int
 ums_enable(void *v)
 {
 	struct ums_softc *sc = v;
-	int error;
+	int error = 0;
 
 	DPRINTFN(1,("ums_enable: sc=%p\n", sc));
 
@@ -260,9 +331,11 @@ ums_enable(void *v)
 	sc->sc_enabled = 1;
 	sc->sc_ms.hidms_buttons = 0;
 
-	error = uhidev_open(&sc->sc_hdev);
-	if (error)
-		sc->sc_enabled = 0;
+	if (!sc->sc_alwayson) {
+		error = uhidev_open(&sc->sc_hdev);
+		if (error)
+			sc->sc_enabled = 0;
+	}
 
 	return error;
 }
@@ -282,16 +355,25 @@ ums_disable(void *v)
 
 	if (sc->sc_enabled) {
 		sc->sc_enabled = 0;
-		uhidev_close(&sc->sc_hdev);
+		if (!sc->sc_alwayson)
+			uhidev_close(&sc->sc_hdev);
 	}
 }
 
 Static int
 ums_ioctl(void *v, u_long cmd, void *data, int flag,
-    struct lwp * p)
+    struct lwp *l)
 
 {
 	struct ums_softc *sc = v;
+	int error;
+
+	if (sc->sc_ms.flags & HIDMS_ABS) {
+		error = tpcalib_ioctl(&sc->sc_ms.sc_tpcalib, cmd, data,
+		    flag, l);
+		if (error != EPASSTHROUGH)
+			return error;
+	}
 
 	switch (cmd) {
 	case WSMOUSEIO_GTYPE:

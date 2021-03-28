@@ -1,14 +1,14 @@
-#	$NetBSD: Makefile,v 1.109 2019/06/12 09:03:32 mrg Exp $
+#	$NetBSD: Makefile,v 1.111 2020/08/28 12:13:09 christos Exp $
 #	from: @(#)Makefile	8.1 (Berkeley) 6/5/93
 
 MAN=	MAKEDEV.8 MAKEDEV.local.8 afterboot.8 boot.8 compat_30.8 \
-	compat_freebsd.8 compat_linux.8 \
+	compat_bsdos.8 compat_freebsd.8 compat_linux.8 \
 	compat_netbsd32.8 compat_sunos.8 \
 	compat_ultrix.8 \
 	creds_msdos.8 \
 	diskless.8 hpcboot.8 \
 	intro.8 nis.8 pam.8 rc.8 rc.subr.8 rescue.8 \
-	sysinst.8 veriexec.8 \
+	veriexec.8 \
 	wizd.8
 MLINKS+=MAKEDEV.8 makedev.8
 MLINKS+=MAKEDEV.local.8 makedev.local.8

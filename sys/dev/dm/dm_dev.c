@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_dev.c,v 1.16 2019/12/15 14:39:42 tkusumi Exp $      */
+/*        $NetBSD: dm_dev.c,v 1.18 2020/07/08 15:07:13 thorpej Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_dev.c,v 1.16 2019/12/15 14:39:42 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_dev.c,v 1.18 2020/07/08 15:07:13 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -51,7 +51,7 @@ static struct dm_dev_head dm_dev_list = TAILQ_HEAD_INITIALIZER(dm_dev_list);
 static kmutex_t dm_dev_mutex;
 
 /* dm_dev_mutex must be holdby caller before using disable_dev. */
-__inline static void
+static void
 disable_dev(dm_dev_t *dmv)
 {
 
@@ -381,7 +381,7 @@ dm_dev_prop_list(void)
 	TAILQ_FOREACH(dmv, &dm_dev_list, next_devlist) {
 		dev_dict = prop_dictionary_create();
 
-		prop_dictionary_set_cstring(dev_dict, DM_DEV_NAME, dmv->name);
+		prop_dictionary_set_string(dev_dict, DM_DEV_NAME, dmv->name);
 		prop_dictionary_set_uint32(dev_dict, DM_DEV_DEV, dmv->minor);
 
 		prop_array_add(dev_array, dev_dict);

@@ -1,4 +1,4 @@
-/* $NetBSD: umbctl.c,v 1.2 2018/08/02 03:40:51 roy Exp $ */
+/* $NetBSD: umbctl.c,v 1.4 2020/05/13 21:44:30 khorben Exp $ */
 /*
  * Copyright (c) 2018 Pierre Pronchery <khorben@defora.org>
  *
@@ -80,8 +80,8 @@ static const struct umb_valdescr _umb_ber[] =
 static int _char_to_utf16(const char * in, uint16_t * out, size_t outlen);
 static int _error(int ret, char const * format, ...);
 static int _umbctl(char const * ifname, int verbose, int argc, char * argv[]);
-static int _umbctl_file(char const * ifname, char const * filename, int verbose,
-		int argc, char * argv[]);
+static int _umbctl_file(char const * ifname, char const * filename,
+		int verbose);
 static void _umbctl_info(char const * ifname, struct umb_info * umbi);
 static int _umbctl_ioctl(char const * ifname, int fd, unsigned long request,
 		struct ifreq * ifr);
@@ -177,15 +177,17 @@ static int _umbctl(char const * ifname, int verbose, int argc, char * argv[])
 
 
 /* umbctl_file */
-static int _umbctl_file(char const * ifname, char const * filename, int verbose,
-		int argc, char * argv[])
+static int _umbctl_file(char const * ifname, char const * filename, int verbose)
 {
+	int ret = 0;
 	int fd;
 	struct ifreq ifr;
 	struct umb_info umbi;
 	struct umb_parameter umbp;
 	FILE * fp;
 	char buf[512];
+	size_t len;
+	int i;
 	int eof;
 	char * tokens[3] = { buf, NULL, NULL };
 	char * p;
@@ -198,25 +200,38 @@ static int _umbctl_file(char const * ifname, char const * filename, int verbose,
 		if(buf[0] == '#')
 			continue;
 		buf[sizeof(buf) - 1] = '\0';
-		if((p = strstr(buf, "=")) != NULL)
+		if((len = strlen(buf)) > 0)
+		{
+			if(buf[len - 1] != '\n')
+			{
+				ret = _error(2, "%s: %s", filename,
+						"Line too long");
+				while((i = fgetc(fp)) != EOF && i != '\n');
+				continue;
+			}
+			else
+				buf[len - 1] = '\0';
+		}
+		if((p = strchr(buf, '=')) != NULL)
 		{
 			tokens[1] = p + 1;
 			*p = '\0';
 		} else
 			tokens[1] = NULL;
-		if(_umbctl_set(ifname, &umbp, (p != NULL) ? 2 : 1, tokens) != 0)
-			break;
+		ret |= _umbctl_set(ifname, &umbp, (p != NULL) ? 2 : 1, tokens)
+			? 2 : 0;
 	}
 	eof = feof(fp);
 	if(fclose(fp) != 0 || !eof)
 		return _error(2, "%s: %s", filename, strerror(errno));
+	if(ret != 0)
+		return ret;
 	if((fd = _umbctl_socket()) < 0)
 		return 2;
 	memset(&ifr, 0, sizeof(ifr));
 	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
 	ifr.ifr_data = &umbp;
 	if(_umbctl_ioctl(ifname, fd, SIOCGUMBPARAM, &ifr) != 0
-			|| _umbctl_set(ifname, &umbp, argc, argv) != 0
 			|| _umbctl_ioctl(ifname, fd, SIOCSUMBPARAM, &ifr) != 0)
 	{
 		close(fd);
@@ -427,7 +442,7 @@ static int _umbctl_socket(void)
 /* usage */
 static int _usage(void)
 {
-	fputs("Usage: umbctl [-v] ifname [parameter[=value]] [...]\n"
+	fputs("Usage: umbctl [-v] ifname [parameter [value]] [...]\n"
 "       umbctl -f config-file ifname [...]\n",
 			stderr);
 	return 1;
@@ -475,8 +490,11 @@ int main(int argc, char * argv[])
 	if(optind == argc)
 		return _usage();
 	if(filename != NULL)
-		return _umbctl_file(argv[optind], filename, verbose,
-				argc - optind - 1, &argv[optind + 1]);
+	{
+		if(optind + 1 != argc)
+			return _usage();
+		return _umbctl_file(argv[optind], filename, verbose);
+	}
 	return _umbctl(argv[optind], verbose, argc - optind - 1,
 			&argv[optind + 1]);
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: progress.c,v 1.21 2015/01/17 10:57:51 gson Exp $ */
+/*	$NetBSD: progress.c,v 1.23 2021/01/07 12:02:52 lukem Exp $ */
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: progress.c,v 1.21 2015/01/17 10:57:51 gson Exp $");
+__RCSID("$NetBSD: progress.c,v 1.23 2021/01/07 12:02:52 lukem Exp $");
 #endif				/* not lint */
 
 #include <sys/types.h>
@@ -74,7 +74,6 @@ usage(void)
 	    getprogname(), (int) strlen(getprogname()), "");
 	exit(EXIT_FAILURE);
 }
-
 
 int
 main(int argc, char *argv[])
@@ -237,6 +236,10 @@ main(int argc, char *argv[])
 		for (off = 0; nr; nr -= nw, off += nw, bytes += nw)
 			if ((nw = write(outpipe[1], fb_buf + off,
 			    (size_t) nr)) < 0) {
+				if (errno == EINTR) {
+					nw = 0;
+					continue;
+				}
 				progressmeter(1);
 				err(1, "writing %u bytes to output pipe",
 							(unsigned) nr);

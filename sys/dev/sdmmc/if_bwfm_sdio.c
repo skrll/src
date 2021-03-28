@@ -1,4 +1,4 @@
-/* $NetBSD: if_bwfm_sdio.c,v 1.9 2019/10/28 06:37:52 mlelstv Exp $ */
+/* $NetBSD: if_bwfm_sdio.c,v 1.25 2021/01/27 03:10:21 thorpej Exp $ */
 /* $OpenBSD: if_bwfm_sdio.c,v 1.1 2017/10/11 17:19:50 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -18,37 +18,36 @@
  */
 
 #include <sys/param.h>
-#include <sys/systm.h>
+#include <sys/types.h>
+
 #include <sys/buf.h>
+#include <sys/device.h>
 #include <sys/endian.h>
 #include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/malloc.h>
-#include <sys/device.h>
+#include <sys/mutex.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
-#include <sys/mutex.h>
+#include <sys/systm.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
 #include <net/if_dl.h>
-#include <net/if_media.h>
 #include <net/if_ether.h>
+#include <net/if_media.h>
 
 #include <netinet/in.h>
 
-#include <dev/ofw/openfirm.h>
-#include <dev/fdt/fdtvar.h>
-
-#include <dev/firmload.h>
-
 #include <net80211/ieee80211_var.h>
 
+#include <dev/fdt/fdtvar.h>
+#include <dev/ic/bwfmreg.h>
+#include <dev/ic/bwfmvar.h>
+#include <dev/ofw/openfirm.h>
+#include <dev/sdmmc/if_bwfm_sdio.h>
 #include <dev/sdmmc/sdmmcdevs.h>
 #include <dev/sdmmc/sdmmcvar.h>
-
-#include <dev/ic/bwfmvar.h>
-#include <dev/ic/bwfmreg.h>
-#include <dev/sdmmc/if_bwfm_sdio.h>
 
 #ifdef BWFM_DEBUG
 #define DPRINTF(x)	do { if (bwfm_debug > 0) printf x; } while (0)
@@ -71,7 +70,6 @@ enum bwfm_sdio_clkstate {
 struct bwfm_sdio_softc {
 	struct bwfm_softc	sc_sc;
 	kmutex_t		sc_lock;
-	kmutex_t		sc_intr_lock;
 
 	bool			sc_bwfm_attached;
 
@@ -116,6 +114,7 @@ static void	bwfm_sdio_attach(device_t, device_t, void *);
 static int	bwfm_sdio_detach(device_t, int);
 static void	bwfm_sdio_attachhook(device_t);
 static int	bwfm_fdt_find_phandle(device_t, device_t);
+static const char *bwfm_fdt_get_model(void);
 
 static void	bwfm_sdio_backplane(struct bwfm_sdio_softc *, uint32_t);
 static uint8_t	bwfm_sdio_read_1(struct bwfm_sdio_softc *, uint32_t);
@@ -187,7 +186,67 @@ static void	bwfm_sdio_rx_glom(struct bwfm_sdio_softc *,
 static void	bwfm_sdio_debug_console(struct bwfm_sdio_softc *);
 #endif 
 
-struct bwfm_bus_ops bwfm_sdio_bus_ops = {
+static const struct bwfm_firmware_selector bwfm_sdio_fwtab[] = {
+	BWFM_FW_ENTRY(BRCM_CC_43143_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac43143-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_43241_CHIP_ID,
+		      BWFM_FWSEL_REV_LE(4), "brcmfmac43241b0-sdio"),
+	BWFM_FW_ENTRY(BRCM_CC_43241_CHIP_ID,
+		      BWFM_FWSEL_REV_EQ(5), "brcmfmac43241b4-sdio"),
+	BWFM_FW_ENTRY(BRCM_CC_43241_CHIP_ID,
+		      BWFM_FWSEL_REV_GE(6), "brcmfmac43241b5-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_4329_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac4329-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_4330_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac4330-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_4334_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac4334-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_43340_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac43340-sdio"),
+	BWFM_FW_ENTRY(BRCM_CC_43341_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac43340-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_4335_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac4335-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_43362_CHIP_ID,
+		      BWFM_FWSEL_REV_GE(1), "brcmfmac43362-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_4339_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac4339-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_43430_CHIP_ID,
+		      BWFM_FWSEL_REV_EQ(0), "brcmfmac43430a0-sdio"),
+	BWFM_FW_ENTRY(BRCM_CC_43430_CHIP_ID,
+		      BWFM_FWSEL_REV_GE(1), "brcmfmac43430-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_4345_CHIP_ID,
+		      BWFM_FWSEL_REV_EQ(9), "brcmfmac43456-sdio"),
+	BWFM_FW_ENTRY(BRCM_CC_4345_CHIP_ID,
+		      BWFM_FWSEL_REV_LE(8) + BWFM_FWSEL_REV_GE(10),
+		      "brcmfmac43455-sdio"),
+
+	BWFM_FW_ENTRY(BRCM_CC_4354_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac4354-sdio"),
+	
+	BWFM_FW_ENTRY(BRCM_CC_4356_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac4356-sdio"),
+
+	BWFM_FW_ENTRY(CY_CC_4373_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac4373-sdio"),
+
+	BWFM_FW_ENTRY(CY_CC_43012_CHIP_ID,
+		      BWFM_FWSEL_ALLREVS, "brcmfmac43012-sdio"),
+
+	BWFM_FW_ENTRY_END
+};
+
+static const struct bwfm_bus_ops bwfm_sdio_bus_ops = {
 	.bs_init = NULL,
 	.bs_stop = NULL,
 	.bs_txcheck = bwfm_sdio_txcheck,
@@ -196,7 +255,7 @@ struct bwfm_bus_ops bwfm_sdio_bus_ops = {
 	.bs_rxctl = bwfm_sdio_rxctl,
 };
 
-struct bwfm_buscore_ops bwfm_sdio_buscore_ops = {
+static const struct bwfm_buscore_ops bwfm_sdio_buscore_ops = {
 	.bc_read = bwfm_sdio_buscore_read,
 	.bc_write = bwfm_sdio_buscore_write,
 	.bc_prepare = bwfm_sdio_buscore_prepare,
@@ -233,11 +292,21 @@ static const struct bwfm_sdio_product {
 		SDMMC_PRODUCT_BROADCOM_BCM43430, 
 		SDMMC_CIS_BROADCOM_BCM43430
 	},
+	{
+		SDMMC_VENDOR_BROADCOM,
+		SDMMC_PRODUCT_BROADCOM_BCM43455, 
+		SDMMC_CIS_BROADCOM_BCM43455
+	},
+	{
+		SDMMC_VENDOR_BROADCOM,
+		SDMMC_PRODUCT_BROADCOM_BCM43362, 
+		SDMMC_CIS_BROADCOM_BCM43362
+	},
 };
 
-static const char *compatible[] = {
-	"brcm,bcm4329-fmac",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "brcm,bcm4329-fmac" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -292,10 +361,8 @@ bwfm_sdio_attach(device_t parent, device_t self, void *aux)
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	cv_init(&sc->sc_rxctl_cv, "bwfmctl");
-	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_NONE);
 
 	sdmmc_init_task(&sc->sc_task, bwfm_sdio_task, sc);
-	sc->sc_task_queued = false;
 
 	sc->sc_bounce_size = 64 * 1024;
 	sc->sc_bounce_buf = kmem_alloc(sc->sc_bounce_size, KM_SLEEP);
@@ -376,129 +443,55 @@ bwfm_sdio_attachhook(device_t self)
 {
 	struct bwfm_sdio_softc *sc = device_private(self);
 	struct bwfm_softc *bwfm = &sc->sc_sc;
-	firmware_handle_t fwh;
-	const char *name, *nvname;
-	u_char *ucode, *nvram;
-	size_t size, nvlen, nvsize;
+	struct bwfm_firmware_context fwctx;
+	size_t ucsize = 0, nvlen = 0, nvsize = 0;
+	uint8_t *ucode, *nvram;
 	uint32_t reg, clk;
-	int error;
 
 	DPRINTF(("%s: chip 0x%08x rev %u\n", DEVNAME(sc),
 	    bwfm->sc_chip.ch_chip, bwfm->sc_chip.ch_chiprev));
-	switch (bwfm->sc_chip.ch_chip) {
-	case BRCM_CC_4330_CHIP_ID:
-		name = "brcmfmac4330-sdio.bin";
-		nvname = "brcmfmac4330-sdio.txt";
-		break;
-	case BRCM_CC_4334_CHIP_ID:
-		name = "brcmfmac4334-sdio.bin";
-		nvname = "brcmfmac4334-sdio.txt";
-		break;
-	case BRCM_CC_4345_CHIP_ID:
-		name = "brcmfmac43455-sdio.bin";
-		nvname = "brcmfmac43455-sdio.txt";
-		break;
-	case BRCM_CC_43340_CHIP_ID:
-		name = "brcmfmac43340-sdio.bin";
-		nvname = "brcmfmac43340-sdio.txt";
-		break;
-	case BRCM_CC_4335_CHIP_ID:
-		if (bwfm->sc_chip.ch_chiprev < 2) {
-			name = "brcmfmac4335-sdio.bin";
-			nvname = "brcmfmac4335-sdio.txt";
-		} else {
-			name = "brcmfmac4339-sdio.bin";
-			nvname = "brcmfmac4339-sdio.txt";
-			bwfm->sc_chip.ch_chip = BRCM_CC_4339_CHIP_ID;
-		}
-		break;
-	case BRCM_CC_4339_CHIP_ID:
-		name = "brcmfmac4339-sdio.bin";
-		nvname = "brcmfmac4339-sdio.txt";
-		break;
-	case BRCM_CC_43430_CHIP_ID:
-		if (bwfm->sc_chip.ch_chiprev == 0) {
-			name = "brcmfmac43430a0-sdio.bin";
-			nvname = "brcmfmac43430a0-sdio.txt";
-		} else {
-			name = "brcmfmac43430-sdio.bin";
-			nvname = "brcmfmac43430-sdio.txt";
-		}
-		break;
-	case BRCM_CC_4356_CHIP_ID:
-		name = "brcmfmac4356-sdio.bin";
-		nvname = "brcmfmac4356-sdio.txt";
-		break;
-	default:
-		printf("%s: unknown firmware for chip %s\n",
-		    DEVNAME(sc), bwfm->sc_chip.ch_name);
+
+	/*
+	 * 4335s >= rev 2 are considered 4339s.
+	 */
+	if (bwfm->sc_chip.ch_chip == BRCM_CC_4335_CHIP_ID &&
+	    bwfm->sc_chip.ch_chiprev >= 2)
+		bwfm->sc_chip.ch_chip = BRCM_CC_4339_CHIP_ID;
+
+	bwfm_firmware_context_init(&fwctx,
+	    bwfm->sc_chip.ch_chip, bwfm->sc_chip.ch_chiprev,
+	    bwfm_fdt_get_model(),
+	    BWFM_FWREQ(BWFM_FILETYPE_UCODE) | BWFM_FWREQ(BWFM_FILETYPE_NVRAM));
+
+	if (!bwfm_firmware_open(bwfm, bwfm_sdio_fwtab, &fwctx)) {
+		/* Error message already displayed. */
 		goto err;
 	}
 
-	if (firmware_open("if_bwfm", name, &fwh) != 0) {
-		printf("%s: failed firmware_open of file %s\n",
-		    DEVNAME(sc), name);
-		goto err;
-	}
-	size = firmware_get_size(fwh);
-	ucode = firmware_malloc(size);
-	if (ucode == NULL) {
-		printf("%s: failed firmware_open of file %s\n",
-		    DEVNAME(sc), name);
-		firmware_close(fwh);
-		goto err;
-	}
-	error = firmware_read(fwh, 0, ucode, size);
-	firmware_close(fwh);
-	if (error != 0) {
-		printf("%s: failed to read firmware (error %d)\n",
-		    DEVNAME(sc), error);
-		goto err1;
-	}
-
-	if (firmware_open("if_bwfm", nvname, &fwh) != 0) {
-		printf("%s: failed firmware_open of file %s\n",
-		    DEVNAME(sc), nvname);
-		goto err1;
-	}
-	nvlen = firmware_get_size(fwh);
-	nvram = firmware_malloc(nvlen);
-	if (nvram == NULL) {
-		printf("%s: failed firmware_open of file %s\n",
-		    DEVNAME(sc), name);
-		firmware_close(fwh);
-		goto err1;
-	}
-	error = firmware_read(fwh, 0, nvram, nvlen);
-	firmware_close(fwh);
-	if (error != 0) {
-		printf("%s: failed to read firmware (error %d)\n",
-		    DEVNAME(sc), error);
-		goto err2;
-	}
+	ucode = bwfm_firmware_data(&fwctx, BWFM_FILETYPE_UCODE, &ucsize);
+	KASSERT(ucode != NULL);
+	nvram = bwfm_firmware_data(&fwctx, BWFM_FILETYPE_NVRAM, &nvlen);
+	KASSERT(nvram != NULL);
 
 	if (bwfm_nvram_convert(nvram, nvlen, &nvsize)) {
-		printf("%s: failed to convert nvram\n", DEVNAME(sc));
-		goto err2;
+		aprint_error_dev(bwfm->sc_dev,
+		    "unable to convert %s file\n",
+		    bwfm_firmware_description(BWFM_FILETYPE_NVRAM));
+		goto err;
 	}
 
 	sc->sc_alp_only = true;
-	if (bwfm_sdio_load_microcode(sc, ucode, size, nvram, nvsize) != 0) {
-		printf("%s: could not load microcode\n",
-		    DEVNAME(sc));
-		goto err2;
+	if (bwfm_sdio_load_microcode(sc, ucode, ucsize, nvram, nvsize) != 0) {
+		aprint_error_dev(bwfm->sc_dev, "could not load microcode\n");
+		goto err;
 	}
 	sc->sc_alp_only = false;
-
-	firmware_free(nvram, nvlen);
-	firmware_free(ucode, size);
 
 	sdmmc_pause(hztoms(1)*1000, NULL);
 
 	bwfm_sdio_clkctl(sc, CLK_AVAIL, false);
 	if (sc->sc_clkstate != CLK_AVAIL) {
-		printf("%s: could not access clock\n",
-		    DEVNAME(sc));
+		aprint_error_dev(bwfm->sc_dev, "could not access clock\n");
 		goto err;
 	}
 
@@ -509,13 +502,12 @@ bwfm_sdio_attachhook(device_t self)
 	bwfm_sdio_dev_write(sc, SDPCMD_TOSBMAILBOXDATA,
 	    SDPCM_PROT_VERSION << SDPCM_PROT_VERSION_SHIFT);
 	if (sdmmc_io_function_enable(sc->sc_sf[2])) {
-		printf("%s: cannot enable function 2\n", DEVNAME(sc));
+		aprint_error_dev(bwfm->sc_dev, "cannot enable function 2\n");
 		goto err;
 	}
 
-//	bwfm_sdio_dev_write(sc, SDPCMD_HOSTINTMASK,
-//	    SDPCMD_INTSTATUS_HMB_SW_MASK | SDPCMD_INTSTATUS_CHIPACTIVE);
-	bwfm_sdio_dev_write(sc, SDPCMD_HOSTINTMASK, 0xffffffff);
+	bwfm_sdio_dev_write(sc, SDPCMD_HOSTINTMASK,
+	    SDPCMD_INTSTATUS_HMB_SW_MASK | SDPCMD_INTSTATUS_CHIPACTIVE);
 	bwfm_sdio_write_1(sc, BWFM_SDIO_WATERMARK, 8);
 
 	if (bwfm_chip_sr_capable(bwfm)) {
@@ -559,14 +551,8 @@ bwfm_sdio_attachhook(device_t self)
 	bwfm_attach(&sc->sc_sc);
 	sc->sc_bwfm_attached = true;
 
-	return;
-
-err2:
-	firmware_free(nvram, nvlen);
-err1:
-	firmware_free(ucode, size);
-err:
-	return;
+ err:
+	bwfm_firmware_close(&fwctx);
 }
 
 static int
@@ -597,10 +583,19 @@ bwfm_fdt_find_phandle(device_t self, device_t parent)
 		phandle = OF_child(OF_finddevice(str));
 	}
 
-	if (!of_match_compatible(phandle, compatible))
+	if (!of_compatible_match(phandle, compat_data))
 		return -1;
 
 	return phandle;
+}
+
+static const char *
+bwfm_fdt_get_model(void)
+{
+	int phandle;
+
+	phandle = OF_finddevice("/");
+	return fdtbus_get_string_index(phandle, "compatible", 0);
 }
 
 static int
@@ -622,10 +617,11 @@ bwfm_sdio_detach(device_t self, int flags)
 	if (sc->sc_bwfm_attached)
 		bwfm_detach(&sc->sc_sc, flags);
 
+	sdmmc_del_task(sc->sc_sf[1]->sc, &sc->sc_task, NULL);
+
 	kmem_free(sc->sc_sf, sc->sc_sf_size);
 	kmem_free(sc->sc_bounce_buf, sc->sc_bounce_size);
 
-	mutex_destroy(&sc->sc_intr_lock);
 	cv_destroy(&sc->sc_rxctl_cv);
 	mutex_destroy(&sc->sc_lock);
 
@@ -693,7 +689,7 @@ bwfm_sdio_read_4(struct bwfm_sdio_softc *sc, uint32_t addr)
 		sf = sc->sc_sf[1];
 
 	rv = sdmmc_io_read_4(sf, addr);
-	return rv;
+	return htole32(rv);
 }
 
 static void
@@ -736,7 +732,7 @@ bwfm_sdio_write_4(struct bwfm_sdio_softc *sc, uint32_t addr, uint32_t data)
 	else
 		sf = sc->sc_sf[1];
 
-	sdmmc_io_write_4(sf, addr, data);
+	sdmmc_io_write_4(sf, addr, htole32(data));
 }
 
 static int
@@ -1088,7 +1084,7 @@ bwfm_nvram_convert(u_char *buf, size_t len, size_t *newlenp)
 			skip = true;
 			continue;
 		}
-		if (*src == '\r')
+		if (*src == '\r' || *src == ' ')
 			continue;
 		*dst++ = *src;
 		++count;
@@ -1111,7 +1107,7 @@ bwfm_nvram_convert(u_char *buf, size_t len, size_t *newlenp)
 	memcpy(dst, &token, sizeof(token));
 	count += sizeof(token);
 
-	*newlenp = count ;
+	*newlenp = count;
 
 	return 0;
 }
@@ -1428,11 +1424,7 @@ bwfm_sdio_intr1(void *v, const char *name)
 
 	DPRINTF(("%s: %s\n", DEVNAME(sc), name));
 
-	mutex_enter(&sc->sc_intr_lock);
-	if (!sdmmc_task_pending(&sc->sc_task))
-		sdmmc_add_task(sc->sc_sf[1]->sc, &sc->sc_task);
-	sc->sc_task_queued = true;
-	mutex_exit(&sc->sc_intr_lock);
+	sdmmc_add_task(sc->sc_sf[1]->sc, &sc->sc_task);
 	return 1;
 }
 
@@ -1446,33 +1438,13 @@ static void
 bwfm_sdio_task(void *v)
 {
 	struct bwfm_sdio_softc *sc = (void *)v;
-#ifdef BWFM_DEBUG
-	unsigned count = 0;
-#endif
 
-	mutex_enter(&sc->sc_intr_lock);
-	while (sc->sc_task_queued) {
+	mutex_enter(&sc->sc_lock);
+	bwfm_sdio_task1(sc);
 #ifdef BWFM_DEBUG
-		++count;
+	bwfm_sdio_debug_console(sc);
 #endif
-		sc->sc_task_queued = false;
-		mutex_exit(&sc->sc_intr_lock);
-
-		mutex_enter(&sc->sc_lock);
-		bwfm_sdio_task1(sc);
-#ifdef BWFM_DEBUG
-		bwfm_sdio_debug_console(sc);
-#endif
-		mutex_exit(&sc->sc_lock);
-
-		mutex_enter(&sc->sc_intr_lock);
-	}
-	mutex_exit(&sc->sc_intr_lock);
-
-#ifdef BWFM_DEBUG
-	if (count > 1)
-		DPRINTF(("%s: finished %u tasks\n", DEVNAME(sc), count));
-#endif
+	mutex_exit(&sc->sc_lock);
 }
 
 static void
@@ -1495,7 +1467,6 @@ bwfm_sdio_task1(struct bwfm_sdio_softc *sc)
 
 	intstat = bwfm_sdio_dev_read(sc, BWFM_SDPCMD_INTSTATUS);
 	DPRINTF(("%s: intstat 0x%" PRIx32 "\n", DEVNAME(sc), intstat));
-	intstat &= (SDPCMD_INTSTATUS_HMB_SW_MASK|SDPCMD_INTSTATUS_CHIPACTIVE);
 	if (intstat)
 		bwfm_sdio_dev_write(sc, BWFM_SDPCMD_INTSTATUS, intstat);
 
@@ -1507,6 +1478,8 @@ bwfm_sdio_task1(struct bwfm_sdio_softc *sc)
 		DPRINTF(("%s: hostint 0x%" PRIx32 "\n", DEVNAME(sc), hostint));
 		bwfm_sdio_dev_write(sc, SDPCMD_TOSBMAILBOX,
 		    SDPCMD_TOSBMAILBOX_INT_ACK);
+		if (hostint & SDPCMD_TOHOSTMAILBOXDATA_FWHALT)
+			printf("%s: firmware halted\n", DEVNAME(sc));
 		if (hostint & SDPCMD_TOHOSTMAILBOXDATA_NAKHANDLED)
 			sc->sc_rxskip = false;
 		if (hostint & SDPCMD_TOHOSTMAILBOXDATA_DEVREADY ||
@@ -1569,7 +1542,7 @@ bwfm_sdio_tx_frames(struct bwfm_sdio_softc *sc)
 			bwfm_sdio_tx_ctrlframe(sc, m);
 		else {
 			bwfm_sdio_tx_dataframe(sc, m);  
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 			ifstart = true;
 		}
 
@@ -1687,7 +1660,7 @@ bwfm_sdio_rxctl(struct bwfm_softc *bwfm, char *buf, size_t *lenp)
 	if (err)
 		return 1;
 
-	if (m->m_len < *lenp) {
+	if (m->m_len > *lenp) {
 		m_freem(m);
 		return 1;
 	}
@@ -1755,6 +1728,8 @@ bwfm_sdio_rx_frames(struct bwfm_sdio_softc *sc)
 
 		flen = hwhdr->frmlen - (sizeof(*hwhdr) + sizeof(*swhdr));
 		if (flen == 0) {
+			DPRINTF(("%s: empty payload (frmlen=%u)\n",
+			    DEVNAME(sc), hwhdr->frmlen));
 			nextlen = swhdr->nextlen << 4;
 			continue;
 		}
@@ -1823,11 +1798,10 @@ bwfm_sdio_rx_frames(struct bwfm_sdio_softc *sc)
 			}
 			m_adj(m, hoff);
 			/* don't pass empty packet to stack */
-			if (m->m_len == 0) {
+			if (m->m_len > 0)
+				bwfm_rx(&sc->sc_sc, m);
+			else
 				m_freem(m);
-				break;
-			}
-			bwfm_rx(&sc->sc_sc, m);
 			nextlen = swhdr->nextlen << 4;
 			break;
 		case BWFM_SDIO_SWHDR_CHANNEL_GLOM:

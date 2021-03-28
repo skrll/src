@@ -1,6 +1,7 @@
-#	$NetBSD: Makefile,v 1.19 2017/03/22 21:33:06 jdolecek Exp $
+#	$NetBSD: Makefile,v 1.22 2020/05/15 23:32:28 christos Exp $
 #
 
+RUMPFIFO=yes	# use the real rump fifofs
 .include <bsd.own.mk>
 
 TESTSDIR=	${TESTSBASE}/fs/ffs
@@ -20,6 +21,7 @@ TESTS_SH+=	${name}
 TESTS_SH_SRC_${name}=	ffs_common.sh quotas_common.sh ${name}.sh
 .endfor
 
+TESTS_C+=	t_extattr
 TESTS_C+=	t_fifos
 TESTS_C+=	t_snapshot
 TESTS_C+=	t_snapshot_log
@@ -32,10 +34,8 @@ TESTS_C+=	t_update_log
 LDADD+=-lrumpfs_ffs						# ffs
 LDADD+=-lrumpdev_fss						# snapshot dev
 LDADD+=-lrumpdev_disk -lrumpdev					# disk device
-LDADD+=-lrumpvfs_fifofs -lrumpnet_local -lrumpnet_net -lrumpnet	# fifos
 VFSTESTDIR != cd ${.CURDIR}/../common && ${PRINTOBJDIR}
 LDADD+=-L${VFSTESTDIR} -lvfstest
-LDADD+=-lrumpvfs -lrumpkern_sysproxy -lrump -lrumpuser		# base
-LDADD+=-lpthread
+LDADD+=-lrumpkern_sysproxy ${LIBRUMPBASE}
 
 .include <bsd.test.mk>

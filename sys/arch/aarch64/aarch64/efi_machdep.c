@@ -1,4 +1,4 @@
-/* $NetBSD: efi_machdep.c,v 1.5 2019/12/16 00:03:50 jmcneill Exp $ */
+/* $NetBSD: efi_machdep.c,v 1.8 2020/10/22 07:31:15 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,11 +30,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: efi_machdep.c,v 1.5 2019/12/16 00:03:50 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: efi_machdep.c,v 1.8 2020/10/22 07:31:15 skrll Exp $");
 
 #include <sys/param.h>
 #include <uvm/uvm_extern.h>
-#include <machine/cpufunc.h>
+
+#include <arm/cpufunc.h>
 
 #include <arm/arm/efi_runtime.h>
 
@@ -70,7 +71,7 @@ arm_efirt_md_map_range(vaddr_t va, paddr_t pa, size_t sz, enum arm_efirt_mem_typ
 		panic("arm_efirt_md_map_range: unsupported type %d", type);
 	}
 
-	pmapboot_enter(va, pa, sz, L3_SIZE, attr, 0, bootpage_alloc, NULL);
+	pmapboot_enter(va, pa, sz, L3_SIZE, attr, NULL);
 	while (sz >= PAGE_SIZE) {
 		aarch64_tlbi_by_va(va);
 		va += PAGE_SIZE;
@@ -90,7 +91,7 @@ arm_efirt_md_enter(void)
 
 	/* Enable FP access (AArch64 UEFI calling convention) */
 	reg_cpacr_el1_write(CPACR_FPEN_ALL);
-	__asm __volatile ("isb");
+	isb();
 
 	/*
 	 * Install custom fault handler. EFI lock is held across calls so
@@ -106,7 +107,7 @@ arm_efirt_md_exit(void)
 
 	/* Disable FP access */
 	reg_cpacr_el1_write(CPACR_FPEN_NONE);
-	__asm __volatile ("isb");
+	isb();
 
 	/* Restore FPU state */
 	if (arm_efirt_state.fpu_used)

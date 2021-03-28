@@ -1,15 +1,17 @@
-/*	$NetBSD: db_interface.c,v 1.53 2015/01/23 07:27:05 nonaka Exp $ */
+/*	$NetBSD: db_interface.c,v 1.55 2021/02/23 07:13:52 mrg Exp $ */
 /*	$OpenBSD: db_interface.c,v 1.2 1996/12/28 06:21:50 rahnds Exp $	*/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.53 2015/01/23 07:27:05 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.55 2021/02/23 07:13:52 mrg Exp $");
 
 #define USERACC
 
+#ifdef _KERNEL_OPT
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_multiprocessor.h"
 #include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -154,8 +156,7 @@ const struct db_command db_machine_command_table[] = {
 	  "switch to another cpu", "cpu-no", NULL) },
 #endif	/* MULTIPROCESSOR */
 
-	{ DDB_ADD_CMD(NULL,	NULL,			0,
-	  NULL,NULL,NULL) }
+	{ DDB_END_CMD },
 };
 
 void

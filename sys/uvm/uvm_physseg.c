@@ -1,4 +1,4 @@
-/* $NetBSD: uvm_physseg.c,v 1.12 2019/12/20 19:03:17 ad Exp $ */
+/* $NetBSD: uvm_physseg.c,v 1.17 2020/07/15 15:08:26 rin Exp $ */
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -87,16 +87,18 @@
  * uvm_physseg: describes one segment of physical memory
  */
 struct uvm_physseg {
+	/* used during RB tree lookup for PHYS_TO_VM_PAGE(). */
 	struct  rb_node rb_node;	/* tree information */
 	paddr_t	start;			/* PF# of first page in segment */
 	paddr_t	end;			/* (PF# of last page in segment) + 1 */
+	struct	vm_page *pgs;		/* vm_page structures (from start) */
+
+	/* less performance sensitive fields. */
 	paddr_t	avail_start;		/* PF# of first free page in segment */
 	paddr_t	avail_end;		/* (PF# of last free page in segment) +1  */
-	struct	vm_page *pgs;		/* vm_page structures (from start) */
 	struct  extent *ext;		/* extent(9) structure to manage pgs[] */
 	int	free_list;		/* which free list they belong on */
 	u_int	start_hint;		/* start looking for free pages here */
-					/* protected by uvm_fpageqlock */
 #ifdef __HAVE_PMAP_PHYSSEG
 	struct	pmap_physseg pmseg;	/* pmap specific (MD) data */
 #endif
@@ -122,9 +124,9 @@ struct vm_page *uvm_physseg_seg_alloc_from_slab(uvm_physseg_t, size_t);
 struct uvm_physseg_graph {
 	struct rb_tree rb_tree;		/* Tree for entries */
 	int            nentries;	/* Number of entries */
-};
+} __aligned(COHERENCY_UNIT);
 
-static struct uvm_physseg_graph uvm_physseg_graph;
+static struct uvm_physseg_graph uvm_physseg_graph __read_mostly;
 
 /*
  * Note on kmem(9) allocator usage:
@@ -1103,15 +1105,17 @@ uvm_physseg_init_seg(uvm_physseg_t upm, struct vm_page *pgs)
 	/* init and free vm_pages (we've already zeroed them) */
 	paddr = ctob(seg->start);
 	for (i = 0 ; i < n ; i++, paddr += PAGE_SIZE) {
-		seg->pgs[i].phys_addr = paddr;
+		pg = &seg->pgs[i];
+		pg->phys_addr = paddr;
 #ifdef __HAVE_VM_PAGE_MD
-		VM_MDPAGE_INIT(&seg->pgs[i]);
+		VM_MDPAGE_INIT(pg);
 #endif
 		if (atop(paddr) >= seg->avail_start &&
 		    atop(paddr) < seg->avail_end) {
 			uvmexp.npages++;
 			/* add page to free pool */
-			pg = &seg->pgs[i];
+			uvm_page_set_freelist(pg,
+			    uvm_page_lookup_freelist(pg));
 			/* Disable LOCKDEBUG: too many and too early. */
 			mutex_init(&pg->interlock, MUTEX_NODEBUG, IPL_NONE);
 			uvm_pagefree(pg);
@@ -1205,7 +1209,8 @@ uvm_page_physload(paddr_t start, paddr_t end, paddr_t avail_start,
 	if (free_list >= VM_NFREELIST || free_list < VM_FREELIST_DEFAULT)
 		panic("uvm_page_physload: bad free list %d", free_list);
 	if (start >= end)
-		panic("uvm_page_physload: start >= end");
+		panic("uvm_page_physload: start[%" PRIxPADDR "] >= end[%"
+		    PRIxPADDR "]", start, end);
 
 	if (uvm_physseg_plug(start, end - start, &upm) == false) {
 		panic("uvm_physseg_plug() failed at boot.");

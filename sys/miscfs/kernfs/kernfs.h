@@ -1,4 +1,4 @@
-/*	$NetBSD: kernfs.h,v 1.40 2014/07/20 13:58:04 hannken Exp $	*/
+/*	$NetBSD: kernfs.h,v 1.44 2020/04/07 08:14:42 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -48,10 +48,11 @@ typedef enum {
 	KFSkern,		/* the filesystem itself (.) */
 	KFSroot,		/* the filesystem root (..) */
 	KFSnull,		/* none aplicable */
-	KFStime,		/* boottime */
+	KFStime,		/* time */
+	KFSboottime,		/* boottime */
 	KFSint,			/* integer */
 	KFSstring,		/* string */
-	KFShostname,	/* hostname */
+	KFShostname,		/* hostname */
 	KFSavenrun,		/* loadavg */
 	KFSdevice,		/* device file (rootdev/rrootdev) */
 	KFSmsgbuf,		/* msgbuf */
@@ -121,11 +122,12 @@ extern const struct kern_target kern_targets[];
 extern int nkern_targets;
 extern const int static_nkern_targets;
 extern int (**kernfs_vnodeop_p)(void *);
+extern int (**kernfs_specop_p)(void *);
 extern struct vfsops kernfs_vfsops;
 extern dev_t rrootdev;
 extern kmutex_t kfs_lock;
 
-int kernfs_root(struct mount *, struct vnode **);
+int kernfs_root(struct mount *, int, struct vnode **);
 
 /*
  * Data types for the kernfs file operations.
@@ -167,9 +169,9 @@ typedef struct dyn_kern_target kernfs_entry_t;
 kfstype kernfs_alloctype(int, const struct kernfs_fileop *);
 #define	KERNFS_ALLOCTYPE(kf) kernfs_alloctype(sizeof((kf)) / \
 	sizeof((kf)[0]), (kf))
-#define	KERNFS_ALLOCENTRY(dkt, m_type, m_flags)				\
-	dkt = (struct dyn_kern_target *)malloc(				\
-		sizeof(struct dyn_kern_target), (m_type), (m_flags))
+#define	KERNFS_ALLOCENTRY(dkt, km_flags)				\
+	dkt = (kernfs_entry_t *)kmem_zalloc(				\
+		sizeof(struct dyn_kern_target), (km_flags))
 #define	KERNFS_INITENTRY(dkt, type, name, data, tag, vtype, mode) do {	\
 	(dkt)->dkt_kt.kt_type = (type);					\
 	(dkt)->dkt_kt.kt_namlen = strlen((name));			\

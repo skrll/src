@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_platform.c,v 1.20 2019/01/03 12:52:40 jmcneill Exp $ */
+/* $NetBSD: tegra_platform.c,v 1.26 2021/02/04 22:36:53 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -34,7 +34,7 @@
 #include "ukbd.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_platform.c,v 1.20 2019/01/03 12:52:40 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_platform.c,v 1.26 2021/02/04 22:36:53 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -69,7 +69,7 @@ __KERNEL_RCSID(0, "$NetBSD: tegra_platform.c,v 1.20 2019/01/03 12:52:40 jmcneill
 
 void tegra_platform_early_putchar(char);
 
-void
+void __noasan
 tegra_platform_early_putchar(char c)
 {
 #ifdef CONSADDR
@@ -86,6 +86,7 @@ tegra_platform_early_putchar(char c)
 #endif
 }
 
+#if defined(SOC_TEGRA124) || defined(SOC_TEGRA210)
 static const struct pmap_devmap *
 tegra_platform_devmap(void)
 {
@@ -107,6 +108,7 @@ tegra_platform_devmap(void)
 
 	return devmap;
 }
+#endif	/* SOC_TEGRA124 || SOC_TEGRA210 */
 
 #if defined(SOC_TEGRA124)
 static void
@@ -133,15 +135,14 @@ tegra210_platform_bootstrap(void)
 }
 #endif
 
+#if defined(SOC_TEGRA124) || defined(SOC_TEGRA210)
 static void
 tegra_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	extern struct bus_space arm_generic_bs_tag;
-	extern struct bus_space arm_generic_a4x_bs_tag;
 	extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 
 	faa->faa_bst = &arm_generic_bs_tag;
-	faa->faa_a4x_bst = &arm_generic_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
@@ -149,6 +150,8 @@ static void
 tegra_platform_device_register(device_t self, void *aux)
 {
 	prop_dictionary_t dict = device_properties(self);
+
+	fdtbus_device_register(self, aux);
 
 	if (device_is_a(self, "tegrafb") &&
 	    match_bootconf_option(boot_args, "console", "fb")) {
@@ -161,31 +164,32 @@ tegra_platform_device_register(device_t self, void *aux)
 	if (device_is_a(self, "tegradrm")) {
 		const char *video = get_bootconf_string(boot_args, "video");
 		if (video)
-			prop_dictionary_set_cstring(dict, "HDMI-A-1", video);
+			prop_dictionary_set_string(dict, "HDMI-A-1", video);
 		if (match_bootconf_option(boot_args, "hdmi.forcemode", "dvi"))
 			prop_dictionary_set_bool(dict, "force-dvi", true);
 	}
 
 	if (device_is_a(self, "tegracec"))
-		prop_dictionary_set_cstring(dict, "hdmi-device", "tegradrm0");
+		prop_dictionary_set_string(dict, "hdmi-device", "tegradrm0");
 
 	if (device_is_a(self, "nouveau")) {
 		const char *config = get_bootconf_string(boot_args,
 		    "nouveau.config");
 		if (config)
-			prop_dictionary_set_cstring(dict, "config", config);
+			prop_dictionary_set_string(dict, "config", config);
 		const char *debug = get_bootconf_string(boot_args,
 		    "nouveau.debug");
 		if (debug)
-			prop_dictionary_set_cstring(dict, "debug", debug);
+			prop_dictionary_set_string(dict, "debug", debug);
 	}
 
 	if (device_is_a(self, "tegrapcie")) {
-		const char * const jetsontk1_compat[] = {
-		    "nvidia,jetson-tk1", NULL
+		static const struct device_compatible_entry jetsontk1[] = {
+			{ .compat = "nvidia,jetson-tk1" },
+			DEVICE_COMPAT_EOL
 		};
 		const int phandle = OF_peer(0);
-		if (of_match_compatible(phandle, jetsontk1_compat)) {
+		if (of_compatible_match(phandle, jetsontk1)) {
 			/* rfkill GPIO at GPIO X7 */
 			struct tegra_gpio_pin *pin =
 			    tegra_gpio_acquire("X7", GPIO_PIN_OUTPUT);
@@ -212,6 +216,7 @@ tegra_platform_uart_freq(void)
 {
 	return PLLP_OUT0_FREQ;
 }
+#endif	/* SOC_TEGRA124 || SOC_TEGRA210 */
 
 #if defined(SOC_TEGRA124)
 static const struct arm_platform tegra124_platform = {

@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -44,7 +44,6 @@
 #ifndef __ASLMESSAGES_H
 #define __ASLMESSAGES_H
 
-
 /* These values must match error type string tables in aslmessages.c */
 
 typedef enum
@@ -59,8 +58,11 @@ typedef enum
 
 } ASL_MESSAGE_TYPES;
 
-
 #define ASL_ERROR_LEVEL_LENGTH          8 /* Length of strings for types above */
+
+void
+AhDecodeAslException (
+    char                    *HexString);
 
 /*
  * Exception code blocks, 0 - 999
@@ -265,6 +267,21 @@ typedef enum
     ASL_MSG_LEGACY_PROCESSOR_OP,
     ASL_MSG_NAMESTRING_LENGTH,
     ASL_MSG_CASE_FOUND_HERE,
+    ASL_MSG_EXTERN_INVALID_RET_TYPE,
+    ASL_MSG_EXTERN_INVALID_PARAM_TYPE,
+    ASL_MSG_NAMED_OBJECT_CREATION,
+    ASL_MSG_ARG_COUNT_MISMATCH,
+    ASL_MSG_STATIC_OPREGION_IN_METHOD,
+    ASL_MSG_DECLARATION_TYPE_MISMATCH,
+    ASL_MSG_TYPE_MISMATCH_FOUND_HERE,
+    ASL_MSG_DUPLICATE_EXTERN_MISMATCH,
+    ASL_MSG_DUPLICATE_EXTERN_FOUND_HERE,
+    ASL_MSG_CONDREF_NEEDS_EXTERNAL_DECL,
+    ASL_MSG_EXTERNAL_FOUND_HERE,
+    ASL_MSG_LOWER_CASE_NAMESEG,
+    ASL_MSG_LOWER_CASE_NAMEPATH,
+    ASL_MSG_UUID_NOT_FOUND,
+
 
     /* These messages are used by the Data Table compiler only */
 

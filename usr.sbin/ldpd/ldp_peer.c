@@ -1,4 +1,4 @@
-/* $NetBSD: ldp_peer.c,v 1.16 2013/08/02 07:29:56 kefren Exp $ */
+/* $NetBSD: ldp_peer.c,v 1.18 2020/06/22 07:50:53 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -55,6 +55,7 @@
 #include "ldp_peer.h"
 
 extern int ldp_holddown_time;
+struct ldp_peer_head ldp_peer_head;
 
 static struct label_mapping *ldp_peer_get_lm(struct ldp_peer *,
     const struct sockaddr *, uint);
@@ -300,7 +301,7 @@ get_ldp_peer_by_socket(int s)
 
 /*
  * Adds address list bounded to a specific peer
- * Returns the number of addresses inserted successfuly
+ * Returns the number of addresses inserted successfully
  */
 int 
 add_ifaddresses(struct ldp_peer * p, const struct al_tlv * a)

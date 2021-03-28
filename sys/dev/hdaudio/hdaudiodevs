@@ -1,4 +1,4 @@
-$NetBSD: hdaudiodevs,v 1.2 2015/05/30 14:12:42 jmcneill Exp $
+$NetBSD: hdaudiodevs,v 1.5 2020/04/29 07:24:53 nia Exp $
 
 /*
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>
@@ -28,16 +28,21 @@ $NetBSD: hdaudiodevs,v 1.2 2015/05/30 14:12:42 jmcneill Exp $
  * SUCH DAMAGE.
  */
 
-/* The following is duplicated from pci except SIGMATEL* and CMEDIA */
-vendor	ATI		0x1002	ATI Technologies
+/*
+ * Try to keep vendor and product names 15 characters or less. They are
+ * used by the AUDIO_GETDEV ioctl and copied into buffers that are
+ * constrained by MAX_AUDIO_DEV_LEN (sys/audioio.h).
+ */
+
+vendor	ATI		0x1002	ATI
 vendor	NVIDIA		0x10de	NVIDIA
-vendor	REALTEK		0x10ec	Realtek Semiconductor
-vendor	VIATECH		0x1106	VIA TeCHnologies
+vendor	REALTEK		0x10ec	Realtek
+vendor	VIATECH		0x1106	VIA
 vendor	SIGMATEL2	0x111d	Sigmatel
 vendor	ANALOG		0x11d4	Analog Devices
-vendor	CONEXANT	0x14f1	Conexant Systems
+vendor	CONEXANT	0x14f1	Conexant
 vendor	VMWARE		0x15ad	VMware
-vendor	CMEDIA		0x434d	C-Media Electronics
+vendor	CMEDIA		0x434d	C-Media
 vendor	INTEL		0x8086	Intel
 vendor	SIGMATEL	0x8384	Sigmatel
 
@@ -72,6 +77,8 @@ product	REALTEK		ALC270		0x0270	ALC270
 product	REALTEK		ALC272		0x0272	ALC272
 product	REALTEK		ALC275		0x0275	ALC275
 product	REALTEK		ALC280		0x0280	ALC280
+product	REALTEK		ALC292		0x0292	ALC292
+product	REALTEK		ALC293		0x0293	ALC293
 product	REALTEK		ALC660_VD	0x0660	ALC660-VD
 product	REALTEK		ALC662		0x0662	ALC662
 product	REALTEK		ALC663		0x0663	ALC663

@@ -1,4 +1,4 @@
-/*      $NetBSD: xenevt.c,v 1.54 2019/11/22 14:30:58 martin Exp $      */
+/*      $NetBSD: xenevt.c,v 1.63 2021/01/11 22:02:28 skrll Exp $      */
 
 /*
  * Copyright (c) 2005 Manuel Bouyer.
@@ -26,12 +26,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xenevt.c,v 1.54 2019/11/22 14:30:58 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xenevt.c,v 1.63 2021/01/11 22:02:28 skrll Exp $");
 
 #include "opt_xen.h"
 #include <sys/param.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/systm.h>
 #include <sys/device.h>
@@ -47,7 +46,11 @@ __KERNEL_RCSID(0, "$NetBSD: xenevt.c,v 1.54 2019/11/22 14:30:58 martin Exp $");
 #include <uvm/uvm_extern.h>
 
 #include <xen/hypervisor.h>
+#include <xen/evtchn.h>
+#include <xen/intr.h>
+#ifdef XENPV
 #include <xen/xenpmap.h>
+#endif
 #include <xen/xenio.h>
 #include <xen/xenio3.h>
 #include <xen/xen.h>
@@ -126,8 +129,11 @@ struct xenevt_d {
 #define XENEVT_F_OVERFLOW 0x01 /* ring overflow */
 #define XENEVT_F_FREE 0x02 /* free entry */
 	struct selinfo sel; /* used by poll */
-	struct cpu_info *ci; /* prefered CPU for events for this device */
+	struct cpu_info *ci; /* preferred CPU for events for this device */
 };
+
+static struct intrhand *xenevt_ih;
+static evtchn_port_t xenevt_ev;
 
 /* event -> user device mapping */
 static struct xenevt_d *devevent[NR_EVENT_CHANNELS];
@@ -152,7 +158,7 @@ static evtchn_port_t xenevt_alloc_event(void)
 	op.u.alloc_unbound.dom = DOMID_SELF;
 	op.u.alloc_unbound.remote_dom = DOMID_SELF;
 	if (HYPERVISOR_event_channel_op(&op) != 0)
-		panic("%s: Failed to allocate loopback event\n", __func__);	
+		panic("%s: Failed to allocate loopback event\n", __func__);
 
 	return op.u.alloc_unbound.port;
 }
@@ -161,9 +167,14 @@ static evtchn_port_t xenevt_alloc_event(void)
 void
 xenevtattach(int n)
 {
-	struct intrhand *ih __diagused;
 	int level = IPL_HIGH;
-	bool mpsafe = (level != IPL_VM);
+
+	if (!xendomain_is_privileged())
+		return;
+#ifndef XENPV
+	if (vm_guest != VM_GUEST_XENPVH)
+		return;
+#endif
 
 	mutex_init(&devevent_lock, MUTEX_DEFAULT, IPL_HIGH);
 	STAILQ_INIT(&devevent_pending);
@@ -176,26 +187,31 @@ xenevtattach(int n)
 
 	/*
 	 * Allocate a loopback event port.
-	 * This helps us massage xenevt_processevt() into the
-	 * callchain at the appropriate level using only
-	 * xen_intr_establish_xname().
+	 * It won't be used by itself, but will help registering IPL
+	 * handlers.
 	 */
-	evtchn_port_t evtchn = xenevt_alloc_event();
+	xenevt_ev = xenevt_alloc_event();
 
-	/* The real objective here is to wiggle into the ih callchain for IPL level */
-	ih = xen_intr_establish_xname(-1, &xen_pic, evtchn,  IST_LEVEL, level,
-	    xenevt_processevt, NULL, mpsafe, "xenevt");
+	/*
+	 * The real objective here is to wiggle into the ih callchain for
+	 * IPL level on vCPU 0. (events are bound to vCPU 0 by default).
+	 */
+	xenevt_ih = event_set_handler(xenevt_ev, xenevt_processevt, NULL,
+	    level, NULL, "xenevt", true, &cpu_info_primary);
 
-	KASSERT(ih != NULL);
+	KASSERT(xenevt_ih != NULL);
 }
 
 /* register pending event - always called with interrupt disabled */
 void
 xenevt_setipending(int l1, int l2)
 {
+	KASSERT(curcpu() == xenevt_ih->ih_cpu);
+	KASSERT(xenevt_ih->ih_cpu->ci_ilevel >= IPL_HIGH);
 	atomic_or_ulong(&xenevt_ev1, 1UL << l1);
 	atomic_or_ulong(&xenevt_ev2[l1], 1UL << l2);
-	atomic_or_32(&cpu_info_primary.ci_xpending, 1 << IPL_HIGH);
+	atomic_or_32(&xenevt_ih->ih_cpu->ci_ipending, 1 << SIR_XENIPL_HIGH);
+	evtsource[xenevt_ev]->ev_evcnt.ev_count++;
 }
 
 /* process pending events */
@@ -308,8 +324,8 @@ xenevtopen(dev_t dev, int flags, int mode, struct lwp *l)
 		if ((error = fd_allocfile(&fp, &fd)) != 0)
 			return error;
 
-		d = malloc(sizeof(*d), M_DEVBUF, M_WAITOK | M_ZERO);
-		d->ci = &cpu_info_primary;
+		d = kmem_zalloc(sizeof(*d), KM_SLEEP);
+		d->ci = xenevt_ih->ih_cpu;
 		mutex_init(&d->lock, MUTEX_DEFAULT, IPL_HIGH);
 		cv_init(&d->cv, "xenevt");
 		selinit(&d->sel);
@@ -359,8 +375,13 @@ xenevtmmap(dev_t dev, off_t off, int prot)
 		/* only one page, so off is always 0 */
 		if (off != 0)
 			return -1;
+#ifdef XENPV
 		return x86_btop(
 		   xpmap_mtop((paddr_t)xen_start_info.store_mfn << PAGE_SHIFT));
+#else
+		return x86_btop(
+		   (paddr_t)xen_start_info.store_mfn << PAGE_SHIFT);
+#endif
 	}
 	return -1;
 }
@@ -393,7 +414,7 @@ xenevt_free(struct xenevt_d *d)
 	seldestroy(&d->sel);
 	cv_destroy(&d->cv);
 	mutex_destroy(&d->lock);
-	free(d, M_DEVBUF);
+	kmem_free(d, sizeof(*d));
 }
 
 static int
@@ -583,7 +604,7 @@ xenevt_fioctl(struct file *fp, u_long cmd, void *addr)
 	case IOCTL_EVTCHN_UNBIND:
 	{
 		struct ioctl_evtchn_unbind *unbind = addr;
-		
+
 		if (unbind->port >= NR_EVENT_CHANNELS)
 			return EINVAL;
 		mutex_enter(&devevent_lock);
@@ -604,7 +625,7 @@ xenevt_fioctl(struct file *fp, u_long cmd, void *addr)
 	case IOCTL_EVTCHN_NOTIFY:
 	{
 		struct ioctl_evtchn_notify *notify = addr;
-		
+
 		if (notify->port >= NR_EVENT_CHANNELS)
 			return EINVAL;
 		mutex_enter(&devevent_lock);
@@ -624,11 +645,11 @@ xenevt_fioctl(struct file *fp, u_long cmd, void *addr)
 	return 0;
 }
 
-/*      
- * Support for poll() system call  
+/*
+ * Support for poll() system call
  *
  * Return true if the specific operation will not block indefinitely.
- */      
+ */
 
 static int
 xenevt_fpoll(struct file *fp, int events)

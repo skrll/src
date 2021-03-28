@@ -1,4 +1,4 @@
-/*	$NetBSD: adm1021.c,v 1.19 2018/06/26 06:03:57 thorpej Exp $ */
+/*	$NetBSD: adm1021.c,v 1.27 2021/01/30 01:22:06 thorpej Exp $ */
 /*	$OpenBSD: adm1021.c,v 1.27 2007/06/24 05:34:35 dlg Exp $	*/
 
 /*
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: adm1021.c,v 1.19 2018/06/26 06:03:57 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: adm1021.c,v 1.27 2021/01/30 01:22:06 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -46,14 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: adm1021.c,v 1.19 2018/06/26 06:03:57 thorpej Exp $")
 #include <dev/sysmon/sysmonvar.h>
 
 #include <dev/i2c/i2cvar.h>
-
-#ifdef macppc
-#define HAVE_OF 1
-#endif
-
-#ifdef HAVE_OF
-#include <dev/ofw/openfirm.h>
-#endif
 
 /* Registers */
 #define ADM1021_INT_TEMP	0x00	/* Internal temperature value */
@@ -118,6 +110,7 @@ __KERNEL_RCSID(0, "$NetBSD: adm1021.c,v 1.19 2018/06/26 06:03:57 thorpej Exp $")
 struct admtemp_softc {
 	i2c_tag_t	sc_tag;
 	i2c_addr_t	sc_addr;
+	prop_dictionary_t sc_prop;
 
 	int		sc_flags;
 	int		sc_noexternal, sc_noneg, sc_nolow;
@@ -150,12 +143,43 @@ void	admtemp_setlim_1032(struct sysmon_envsys *, envsys_data_t *,
 CFATTACH_DECL_NEW(admtemp, sizeof(struct admtemp_softc),
 	admtemp_match, admtemp_attach, NULL, NULL);
 
-/* XXX: add flags for compats to admtemp_setflags() */
+struct admtemp_params {
+	const char *name;
+	int	noneg;
+	int	nolow;
+	int	ext11;
+	int	therm;
+};
+
+static const struct admtemp_params admtemp_params_max1617 = {
+	.name = "MAX1617A",
+	.noneg = 0,
+	.nolow = 0,
+	.ext11 = 0,
+	.therm = 0,
+};
+
+static const struct admtemp_params admtemp_params_max6642 = {
+	.name = "MAX6642",
+	.noneg = 0,
+	.nolow = 1,
+	.ext11 = 0,
+	.therm = 0,
+};
+
+static const struct admtemp_params admtemp_params_max6690 = {
+	.name = "MAX6690",
+	.noneg = 0,
+	.nolow = 0,
+	.ext11 = 1,
+	.therm = 0,
+};
+
 static const struct device_compatible_entry compat_data[] = {
-	{ "i2c-max1617",		0 },
-	{ "max6642",			0 },
-	{ "max6690",			0 },
-	{ NULL,				0 }
+	{ .compat = "i2c-max1617",	.data = &admtemp_params_max1617 },
+	{ .compat = "max6642",		.data = &admtemp_params_max6642 },
+	{ .compat = "max6690",		.data = &admtemp_params_max6690 },
+	DEVICE_COMPAT_EOL
 };
 
 int
@@ -210,7 +234,6 @@ admtemp_setflags(struct admtemp_softc *sc, struct i2c_attach_args *ia,
     uint8_t* comp, uint8_t *rev, char* name)
 {
 	uint8_t cmd, data, tmp;
-	int i;
 
 	*comp = 0;
 	*rev = 0;
@@ -227,24 +250,17 @@ admtemp_setflags(struct admtemp_softc *sc, struct i2c_attach_args *ia,
 	sc->sc_therm = 0;
 
 	/* Direct config */
-	for (i = 0; i < ia->ia_ncompat; i++) {
-		if (strcmp("i2c-max1617", ia->ia_compat[i]) == 0) {
-			sc->sc_noneg = 0;
-			strlcpy(name, "MAX1617A", ADMTEMP_NAMELEN);
-			return;
-		}
-		if (strcmp("max6642", ia->ia_compat[i]) == 0) {
-			sc->sc_noneg = 0;
-			sc->sc_nolow = 1;
-			strlcpy(name, "MAX6642", ADMTEMP_NAMELEN);
-			return;
-		}
-		if (strcmp("max6690", ia->ia_compat[i]) == 0) {
-			sc->sc_noneg = 0;
-			sc->sc_ext11 = 1;
-			strlcpy(name, "MAX6690", ADMTEMP_NAMELEN);
-			return;
-		}
+	const struct device_compatible_entry *dce =
+	    iic_compatible_lookup(ia, compat_data);
+	if (dce != NULL) {
+		const struct admtemp_params *params = dce->data;
+
+		sc->sc_noneg = params->noneg;
+		sc->sc_nolow = params->nolow;
+		sc->sc_ext11 = params->ext11;
+		sc->sc_therm = params->therm;
+		strlcpy(name, params->name, ADMTEMP_NAMELEN);
+		return;
 	}
 
 	/* Indirect config */
@@ -320,12 +336,13 @@ admtemp_attach(device_t parent, device_t self, void *aux)
 	struct i2c_attach_args *ia = aux;
 	uint8_t cmd, data, stat, comp, rev;
 	char name[ADMTEMP_NAMELEN];
-#ifdef HAVE_OF
-	char ename[64], iname[64];
-	int ch;
-#endif
+	char ename[64] = "external", iname[64] = "internal";
+	const char *desc;
+
 	sc->sc_tag = ia->ia_tag;
 	sc->sc_addr = ia->ia_addr;
+	sc->sc_prop = ia->ia_prop;
+	prop_object_retain(sc->sc_prop);
 
 	iic_acquire_bus(sc->sc_tag, 0);
 	cmd = ADM1021_CONFIG_READ;
@@ -383,33 +400,29 @@ admtemp_attach(device_t parent, device_t self, void *aux)
 	sc->sc_sensor[ADMTEMP_INT].units = ENVSYS_STEMP;
 	sc->sc_sensor[ADMTEMP_EXT].state = ENVSYS_SINVALID;
 	sc->sc_sensor[ADMTEMP_EXT].units = ENVSYS_STEMP;
-	sc->sc_sensor[ADMTEMP_INT].flags = ENVSYS_FMONLIMITS;
-	sc->sc_sensor[ADMTEMP_EXT].flags = ENVSYS_FMONLIMITS;
-#ifdef HAVE_OF
-	strcpy(iname, "internal");
-	strcpy(ename, "external");
-	ch = OF_child(ia->ia_cookie);
-	if (ch != 0) {
-		OF_getprop(ch, "location", iname, 64);
-		ch = OF_peer(ch);
-		if (ch != 0) {
-			OF_getprop(ch, "location", ename, 64);
-		}
-	}	
+	sc->sc_sensor[ADMTEMP_INT].flags =
+	    ENVSYS_FMONLIMITS | ENVSYS_FHAS_ENTROPY;
+	sc->sc_sensor[ADMTEMP_EXT].flags =
+	    ENVSYS_FMONLIMITS | ENVSYS_FHAS_ENTROPY;
+
+	if (prop_dictionary_get_cstring_nocopy(sc->sc_prop, "s00", &desc)) {
+		strncpy(iname, desc, 64);
+	}
+
+	if (prop_dictionary_get_cstring_nocopy(sc->sc_prop, "s01", &desc)) {
+		strncpy(ename, desc, 64);
+	}
+
 	strlcpy(sc->sc_sensor[ADMTEMP_INT].desc, iname,
 	    sizeof(sc->sc_sensor[ADMTEMP_INT].desc));
 	strlcpy(sc->sc_sensor[ADMTEMP_EXT].desc, ename,
 	    sizeof(sc->sc_sensor[ADMTEMP_EXT].desc));
-#else
-	strlcpy(sc->sc_sensor[ADMTEMP_INT].desc, "internal",
-	    sizeof(sc->sc_sensor[ADMTEMP_INT].desc));
-	strlcpy(sc->sc_sensor[ADMTEMP_EXT].desc, "external",
-	    sizeof(sc->sc_sensor[ADMTEMP_EXT].desc));
-#endif
+
 	sc->sc_sme = sysmon_envsys_create();
 	if (sysmon_envsys_sensor_attach(
 	    sc->sc_sme, &sc->sc_sensor[ADMTEMP_INT])) {
 		sysmon_envsys_destroy(sc->sc_sme);
+		sc->sc_sme = NULL;
 		aprint_error_dev(self,
 		    "unable to attach internal at sysmon\n");
 		return;
@@ -418,6 +431,7 @@ admtemp_attach(device_t parent, device_t self, void *aux)
 	    sysmon_envsys_sensor_attach(
 	    sc->sc_sme, &sc->sc_sensor[ADMTEMP_EXT])) {
 		sysmon_envsys_destroy(sc->sc_sme);
+		sc->sc_sme = NULL;
 		aprint_error_dev(self,
 		    "unable to attach external at sysmon\n");
 		return;
@@ -439,6 +453,7 @@ admtemp_attach(device_t parent, device_t self, void *aux)
 		aprint_error_dev(self,
 		    "unable to register with sysmon\n");
 		sysmon_envsys_destroy(sc->sc_sme);
+		sc->sc_sme = NULL;
 		return;
 	}
 }
@@ -451,7 +466,10 @@ admtemp_refresh(struct sysmon_envsys *sme, envsys_data_t *edata)
 	uint8_t cmd, xdata;
 	int8_t sdata;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	if (iic_acquire_bus(sc->sc_tag, 0)) {
+		edata->state = ENVSYS_SINVALID;
+		return;
+	}
 
 	if (edata->sensor == ADMTEMP_INT)
 		cmd = ADM1021_INT_TEMP;
@@ -486,7 +504,8 @@ admtemp_getlim_1021(struct sysmon_envsys *sme, envsys_data_t *edata,
 
 	*props &= ~(PROP_CRITMAX | PROP_CRITMIN);
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	if (iic_acquire_bus(sc->sc_tag, 0))
+		return;
 
 	if (edata->sensor == ADMTEMP_INT)
 		cmd = ADM1021_INT_HIGH_READ;
@@ -535,7 +554,8 @@ admtemp_getlim_1023(struct sysmon_envsys *sme, envsys_data_t *edata,
 
 	*props &= ~(PROP_CRITMAX | PROP_CRITMIN);
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	if (iic_acquire_bus(sc->sc_tag, 0))
+		return;
 
 	if (edata->sensor == ADMTEMP_INT)
 		cmd = ADM1021_INT_HIGH_READ;
@@ -599,7 +619,8 @@ admtemp_getlim_1032(struct sysmon_envsys *sme, envsys_data_t *edata,
 
 	*props &= ~(PROP_WARNMAX | PROP_CRITMAX | PROP_WARNMIN);
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	if (iic_acquire_bus(sc->sc_tag, 0))
+		return;
 
 	if (edata->sensor == ADMTEMP_INT)
 		cmd = ADM1032_INT_THERM;
@@ -674,7 +695,8 @@ admtemp_setlim_1021(struct sysmon_envsys *sme, envsys_data_t *edata,
 	int tmp;
 	int8_t sdata;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	if (iic_acquire_bus(sc->sc_tag, 0))
+		return;
 
 	if (*props & PROP_CRITMAX) {
 		if (edata->sensor == ADMTEMP_INT)
@@ -760,7 +782,8 @@ admtemp_setlim_1023(struct sysmon_envsys *sme, envsys_data_t *edata,
 	else
 		ext11 = 1;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	if (iic_acquire_bus(sc->sc_tag, 0))
+		return;
 
 	if (*props & PROP_CRITMAX) {
 		if (edata->sensor == ADMTEMP_INT)
@@ -817,7 +840,8 @@ admtemp_setlim_1032(struct sysmon_envsys *sme, envsys_data_t *edata,
 	else
 		ext11 = 1;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	if (iic_acquire_bus(sc->sc_tag, 0))
+		return;
 
 	if (*props & PROP_CRITMAX) {
 		if (edata->sensor == ADMTEMP_INT)

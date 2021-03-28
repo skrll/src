@@ -1,4 +1,4 @@
-/*	$NetBSD: if_sk.c,v 1.102 2019/11/28 17:09:10 maxv Exp $	*/
+/*	$NetBSD: if_sk.c,v 1.106 2020/07/02 09:07:10 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -115,7 +115,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_sk.c,v 1.102 2019/11/28 17:09:10 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_sk.c,v 1.106 2020/07/02 09:07:10 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -864,7 +864,7 @@ sk_alloc_jumbo_mem(struct sk_if_softc *sc_if)
 
 	state = 4;
 	sc_if->sk_cdata.sk_jumbo_buf = (void *)kva;
-	DPRINTFN(1,("sk_jumbo_buf = 0x%p\n", sc_if->sk_cdata.sk_jumbo_buf));
+	DPRINTFN(1,("sk_jumbo_buf = %p\n", sc_if->sk_cdata.sk_jumbo_buf));
 
 	LIST_INIT(&sc_if->sk_jfree_listhead);
 	LIST_INIT(&sc_if->sk_jinuse_listhead);
@@ -1247,7 +1247,7 @@ sk_attach(device_t parent, device_t self, void *aux)
 		 */
 		KASSERT(prop_object_type(data) == PROP_TYPE_DATA);
 		KASSERT(prop_data_size(data) == ETHER_ADDR_LEN);
-		memcpy(sc_if->sk_enaddr, prop_data_data_nocopy(data),
+		memcpy(sc_if->sk_enaddr, prop_data_value(data),
 		    ETHER_ADDR_LEN);
 	} else
 		for (i = 0; i < ETHER_ADDR_LEN; i++)
@@ -2011,7 +2011,7 @@ sk_watchdog(struct ifnet *ifp)
 	if (sc_if->sk_cdata.sk_tx_cnt != 0) {
 		aprint_error_dev(sc_if->sk_dev, "watchdog timeout\n");
 
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 
 		sk_init(ifp);
 	}
@@ -2086,7 +2086,7 @@ sk_rxeof(struct sk_if_softc *sc_if)
 		SK_INC(i, SK_RX_RING_CNT);
 
 		if (rxstat & XM_RXSTAT_ERRFRAME) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			sk_newbuf(sc_if, cur, m, dmamap);
 			continue;
 		}
@@ -2106,7 +2106,7 @@ sk_rxeof(struct sk_if_softc *sc_if)
 			if (m0 == NULL) {
 				aprint_error_dev(sc_if->sk_dev, "no receive "
 				    "buffers available -- packet dropped!\n");
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				continue;
 			}
 			m_adj(m0, ETHER_ALIGN);
@@ -2152,7 +2152,7 @@ sk_txeof(struct sk_if_softc *sc_if)
 			break;
 		}
 		if (sk_ctl & SK_TXCTL_LASTFRAG)
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 		if (sc_if->sk_cdata.sk_tx_chain[idx].sk_mbuf != NULL) {
 			entry = sc_if->sk_cdata.sk_tx_map[idx];
 
@@ -2513,7 +2513,7 @@ sk_init_xmac(struct sk_if_softc *sc_if)
 	SK_XM_SETBIT_2(sc_if, XM_TXCMD, XM_TXCMD_AUTOPAD);
 
 	/*
-	 * Enable the reception of all error frames. This is is
+	 * Enable the reception of all error frames. This is
 	 * a necessary evil due to the design of the XMAC. The
 	 * XMAC's receive FIFO is only 8K in size, however jumbo
 	 * frames can be up to 9000 bytes in length. When bad

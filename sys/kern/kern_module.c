@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_module.c,v 1.141 2019/12/12 22:55:20 pgoyette Exp $	*/
+/*	$NetBSD: kern_module.c,v 1.151 2020/06/11 19:20:46 ad Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_module.c,v 1.141 2019/12/12 22:55:20 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_module.c,v 1.151 2020/06/11 19:20:46 ad Exp $");
 
 #define _MODULE_INTERNAL
 
@@ -47,6 +47,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_module.c,v 1.141 2019/12/12 22:55:20 pgoyette E
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/proc.h>
+#include <sys/lwp.h>
 #include <sys/kauth.h>
 #include <sys/kobj.h>
 #include <sys/kmem.h>
@@ -55,6 +56,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_module.c,v 1.141 2019/12/12 22:55:20 pgoyette E
 #include <sys/kthread.h>
 #include <sys/sysctl.h>
 #include <sys/lock.h>
+#include <sys/evcnt.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -134,8 +136,8 @@ static void	module_callback_unload(struct module *);
 static void
 module_incompat(const modinfo_t *mi, int modclass)
 {
-	module_error("incompatible module class for `%s' (%d != %d)",
-	    mi->mi_name, modclass, mi->mi_class);
+	module_error("incompatible module class %d for `%s' (wanted %d)",
+	    mi->mi_class, mi->mi_name, modclass);
 }
 
 struct module *
@@ -419,6 +421,18 @@ module_init(void)
 	module_init_md();
 #endif
 
+#ifdef KERNEL_DIR
+	const char *booted_kernel = get_booted_kernel();
+	if (booted_kernel) {
+		char *ptr = strrchr(booted_kernel, '/');
+		snprintf(module_base, sizeof(module_base), "/%.*s/modules",
+		    (int)(ptr - booted_kernel), booted_kernel);
+	} else {
+		strlcpy(module_base, "/netbsd/modules", sizeof(module_base));
+		printf("Cannot find kernel name, loading modules from \"%s\"\n",
+		    module_base);
+	}
+#else
 	if (!module_machine)
 		module_machine = machine;
 #if __NetBSD_Version__ / 1000000 % 100 == 99	/* -current */
@@ -428,6 +442,7 @@ module_init(void)
 	snprintf(module_base, sizeof(module_base), "/stand/%s/%d.%d/modules",
 	    module_machine, __NetBSD_Version__ / 100000000,
 	    __NetBSD_Version__ / 1000000 % 100);
+#endif
 #endif
 
 	module_listener = kauth_listen_scope(KAUTH_SCOPE_SYSTEM,
@@ -677,6 +692,7 @@ int
 module_autoload(const char *filename, modclass_t modclass)
 {
 	int error;
+	struct proc *p = curlwp->l_proc;
 
 	kernconfig_lock();
 
@@ -701,6 +717,8 @@ module_autoload(const char *filename, modclass_t modclass)
 		error = module_do_load(filename, false, 0, NULL, NULL, modclass,
 		    true);
 
+	module_print("Autoload for `%s' requested by pid %d (%s), status %d\n",
+	    filename, p->p_pid, p->p_comm, error);
 	kernconfig_unlock();
 	return error;
 }
@@ -979,8 +997,72 @@ module_load_sysctl(module_t *mod)
 			ls_funcp++;
 		}
 	}
-	else
-		error = 0;	/* no setup funcs registered */
+}
+
+/*
+ * module_load_evcnt
+ *
+ * Check to see if a non-builtin module has any static evcnt's defined;
+ * if so, attach them.
+ */
+
+static void
+module_load_evcnt(module_t *mod)
+{
+	struct evcnt * const *ls_evp;
+	void *ls_start;
+	size_t ls_size, count;
+	int error;
+
+	/*
+	 * Built-in modules' static evcnt stuff will be handled
+	 * automatically as part of general kernel initialization
+	 */
+	if (mod->mod_source == MODULE_SOURCE_KERNEL)
+		return;
+
+	error = kobj_find_section(mod->mod_kobj, "link_set_evcnts",
+	    &ls_start, &ls_size);
+	if (error == 0) {
+		count = ls_size / sizeof(*ls_evp);
+		ls_evp = ls_start;
+		while (count--) {
+			evcnt_attach_static(*ls_evp++);
+		}
+	}
+}
+
+/*
+ * module_unload_evcnt
+ *
+ * Check to see if a non-builtin module has any static evcnt's defined;
+ * if so, detach them.
+ */
+
+static void
+module_unload_evcnt(module_t *mod)
+{
+	struct evcnt * const *ls_evp;
+	void *ls_start;
+	size_t ls_size, count;
+	int error;
+
+	/*
+	 * Built-in modules' static evcnt stuff will be handled
+	 * automatically as part of general kernel initialization
+	 */
+	if (mod->mod_source == MODULE_SOURCE_KERNEL)
+		return;
+
+	error = kobj_find_section(mod->mod_kobj, "link_set_evcnts",
+	    &ls_start, &ls_size);
+	if (error == 0) {
+		count = ls_size / sizeof(*ls_evp);
+		ls_evp = (void *)((char *)ls_start + ls_size);
+		while (count--) {
+			evcnt_detach(*--ls_evp);
+		}
+	}
 }
 
 /*
@@ -1303,6 +1385,7 @@ module_do_load(const char *name, bool isdep, int flags,
 	}
 
 	module_load_sysctl(mod);	/* Set-up module's sysctl if any */
+	module_load_evcnt(mod);		/* Attach any static evcnt needed */
 
 	/*
 	 * Good, the module loaded successfully.  Put it onto the
@@ -1391,10 +1474,12 @@ module_do_unload(const char *name, bool load_requires_force)
 	if (mod->mod_sysctllog) {
 		sysctl_teardown(&mod->mod_sysctllog);
 	}
+	module_unload_evcnt(mod);
 	error = (*mod->mod_info->mi_modcmd)(MODULE_CMD_FINI, NULL);
 	module_active = prev_active;
 	if (error != 0) {
 		module_load_sysctl(mod);	/* re-enable sysctl stuff */
+		module_load_evcnt(mod);		/* and reenable evcnts */
 		module_print("cannot unload module `%s' error=%d", name,
 		    error);
 		return error;
@@ -1570,7 +1655,7 @@ module_thread(void *cookie)
 			if (!ISSET(mod->mod_flags, MODFLG_AUTO_LOADED))
 				continue;
 
-			if (uvmexp.free < uvmexp.freemin) {
+			if (uvm_availmem(false) < uvmexp.freemin) {
 				module_thread_ticks = hz;
 			} else if (module_autotime == 0 ||
 				   mod->mod_autotime == 0) {
@@ -1714,7 +1799,7 @@ module_merge_dicts(prop_dictionary_t existing_dict,
 
 	while ((props_obj = prop_object_iterator_next(props_iter)) != NULL) {
 		props_keysym = (prop_dictionary_keysym_t)props_obj;
-		props_key = prop_dictionary_keysym_cstring_nocopy(props_keysym);
+		props_key = prop_dictionary_keysym_value(props_keysym);
 		props_obj = prop_dictionary_get_keysym(new_dict, props_keysym);
 		if ((props_obj == NULL) || !prop_dictionary_set(existing_dict,
 		    props_key, props_obj)) {

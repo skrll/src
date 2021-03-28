@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.rump,v 1.124 2018/03/03 22:46:30 christos Exp $
+#	$NetBSD: Makefile.rump,v 1.129 2020/06/12 11:04:45 roy Exp $
 #
 
 .if !defined(_RUMP_MK)
@@ -24,6 +24,12 @@ CPPFLAGS+=	-D_RUMPKERNEL -I${RUMPTOP}/librump/rumpkern
 # aborts after kern_assert on NULL pointer checks.
 CFLAGS+=    ${${ACTIVE_CC} == "gcc":? -fno-delete-null-pointer-checks :}
 
+# NULL + 0 arithmetic raises LLVM UBSan warnings, specially in sys/pslist.h
+# in the type-safe macros _PSLIST_VALIDATE_PTRS and _PSLIST_VALIDATE_CONTAINER.
+.if ${MKSANITIZER:Uno} == "yes" || ${MKLIBCSANITIZER:Uno} == "yes"
+CFLAGS+=    ${${ACTIVE_CC} == "clang":? -fno-delete-null-pointer-checks :}
+.endif
+
 # Define baseline cpu for mips ports, required for
 # rumpcomp_sync_icache() hypercall.
 .if !empty(MACHINE_ARCH:Mmips*)
@@ -37,7 +43,7 @@ CPPFLAGS+=	-DMIPS1=1
 # which NetBSD compat to build
 RUMP_NBCOMPAT?=default
 .if ${RUMP_NBCOMPAT} == "all" || ${RUMP_NBCOMPAT} == "default"
-RUMP_NBCOMPAT=	50 60 70 80
+RUMP_NBCOMPAT=	50 60 70 80 90
 .endif
 .if ${RUMP_NBCOMPAT} == "none"
 RUMP_NBCOMPAT=
@@ -235,7 +241,7 @@ __archivebuild: .USE
 .endif
 	for renameobj in ${RUMP_SYMREN:U${.ALLSRC:C/(${RUMPOBJ_NORENAME:ts|})//g}}; do \
 		${NM} -go $${renameobj} | ${TOOL_AWK} ' \
-		    $$NF!~/^'${_PQ}'(rump|RUMP|__|_GLOBAL_OFFSET_TABLE'${_SYMQUIRK}'${RUMP_SYM_NORENAME:D|${RUMP_SYM_NORENAME}})/ \
+		    $$NF!~/^'${_PQ}'(rump|RUMP|__|_GLOBAL_OFFSET_TABLE|\.TOC\.'${_SYMQUIRK}'${RUMP_SYM_NORENAME:D|${RUMP_SYM_NORENAME}})/ \
 		      {s=$$NF;sub(/^'${_PQ}'/, "&rumpns_", s); print $$NF, s}'\
 		    | sort | uniq  > renametab.$${renameobj}; \
 		${OBJCOPY} --preserve-dates --redefine-syms \

@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_object.h,v 1.35 2019/12/15 21:11:35 ad Exp $	*/
+/*	$NetBSD: uvm_object.h,v 1.39 2020/08/14 09:06:15 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -53,14 +53,22 @@
  * For other objects, it is arbitrary (may use the lock or atomics).
  */
 
+struct krwlock;
 struct uvm_object {
-	kmutex_t *		vmobjlock;	/* lock on object */
+	struct krwlock *	vmobjlock;	/* lock on object */
 	const struct uvm_pagerops *pgops;	/* pager ops */
 	int			uo_npages;	/* # of pages in uo_pages */
 	unsigned		uo_refs;	/* reference count */
 	struct radix_tree	uo_pages;	/* tree of pages */
 	LIST_HEAD(,ubc_map)	uo_ubc;		/* ubc mappings */
 };
+
+/*
+ * tags for uo_pages
+ */
+
+#define	UVM_PAGE_DIRTY_TAG	1	/* might be dirty (!PG_CLEAN) */
+#define	UVM_PAGE_WRITEBACK_TAG	2	/* being written back */
 
 /*
  * UVM_OBJ_KERN is a 'special' uo_refs value which indicates that the
@@ -96,7 +104,7 @@ extern const struct uvm_pagerops aobj_pager;
 	(UVM_OBJ_IS_VNODE(uobj) && uvn_text_p(uobj))
 
 #define	UVM_OBJ_IS_CLEAN(uobj)						\
-	(UVM_OBJ_IS_VNODE(uobj) && uvn_clean_p(uobj))
+	(UVM_OBJ_IS_VNODE(uobj) && uvm_obj_clean_p(uobj))
 
 /*
  * UVM_OBJ_NEEDS_WRITEFAULT: true if the uobj needs to detect modification.
@@ -106,7 +114,7 @@ extern const struct uvm_pagerops aobj_pager;
  */
 
 #define	UVM_OBJ_NEEDS_WRITEFAULT(uobj)					\
-	(UVM_OBJ_IS_VNODE(uobj) && uvn_needs_writefault_p(uobj))
+	(UVM_OBJ_IS_VNODE(uobj) && uvm_obj_clean_p(uobj))
 
 #define	UVM_OBJ_IS_AOBJ(uobj)						\
 	((uobj)->pgops == &aobj_pager)

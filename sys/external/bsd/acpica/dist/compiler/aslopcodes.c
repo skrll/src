@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -690,7 +690,13 @@ OpcDoUuId (
     }
     else
     {
+        /* Convert UUID string to a buffer, check for a known UUID */
+
         AcpiUtConvertStringToUuid (InString, Buffer);
+        if (!AcpiAhMatchUuid (Buffer))
+        {
+            AslError (ASL_REMARK, ASL_MSG_UUID_NOT_FOUND, Op, NULL);
+        }
     }
 
     /* Change Op to a Buffer */

@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -209,7 +209,7 @@ AcpiUtGetArgumentTypes (
 
 static const char   *UtExternalTypeNames[] = /* Indexed by ACPI_TYPE_* */
 {
-    ", UNSUPPORTED-TYPE",
+    ", Type_ANY",
     ", Integer",
     ", String",
     ", Buffer",
@@ -391,7 +391,7 @@ AcpiUtGetArgumentTypes (
     {
         ThisArgumentType = METHOD_GET_NEXT_TYPE (ArgumentTypes);
 
-        if (!ThisArgumentType || (ThisArgumentType > METHOD_MAX_ARG_TYPE))
+        if (ThisArgumentType > METHOD_MAX_ARG_TYPE)
         {
             printf ("**** Invalid argument type (%u) "
                 "in predefined info structure\n", ThisArgumentType);

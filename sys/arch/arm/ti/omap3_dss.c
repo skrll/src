@@ -1,4 +1,4 @@
-/*	$NetBSD: omap3_dss.c,v 1.1 2019/10/31 17:08:54 jmcneill Exp $	*/
+/*	$NetBSD: omap3_dss.c,v 1.3 2021/01/27 03:10:20 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2010 Michael Lorenz
@@ -33,7 +33,7 @@
 #include "opt_wsdisplay_compat.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: omap3_dss.c,v 1.1 2019/10/31 17:08:54 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omap3_dss.c,v 1.3 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -164,9 +164,9 @@ uint32_t venc_mode_ntsc[] = {
 
 extern const u_char rasops_cmap[768];
 
-static const char * const compatible[] = {
-	"ti,omap3-dss",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "ti,omap3-dss" },
+	DEVICE_COMPAT_EOL
 };
 
 static int omapfb_console_phandle = -1;
@@ -176,7 +176,7 @@ omapfb_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -262,8 +262,7 @@ omapfb_attach(device_t parent, device_t self, void *aux)
 
 		sc->sc_edid_size = uimin(prop_data_size(edid_data), 1024);
 		memset(sc->sc_edid_data, 0, sizeof(sc->sc_edid_data));
-		memcpy(sc->sc_edid_data, prop_data_data_nocopy(edid_data),
-		    sc->sc_edid_size);
+		memcpy(sc->sc_edid_data, prop_data_value(edid_data), sc->sc_edid_size);
 
 		edid_parse(sc->sc_edid_data, &ei);
 		edid_print(&ei);
@@ -1243,7 +1242,7 @@ omapfb_do_cursor(struct omapfb_softc * sc,
 static int
 omapfb_console_match(int phandle)
 {
-	return of_match_compatible(phandle, compatible);
+	return of_compatible_match(phandle, compat_data);
 }
 
 static void

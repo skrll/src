@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.c,v 1.175 2018/10/20 06:35:34 skrll Exp $	*/
+/*	$NetBSD: cpufunc.c,v 1.180 2021/01/31 05:59:55 skrll Exp $	*/
 
 /*
  * arm7tdmi support code Copyright (c) 2001 John Fremlin
@@ -49,7 +49,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.175 2018/10/20 06:35:34 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.180 2021/01/31 05:59:55 skrll Exp $");
 
 #include "opt_arm_start.h"
 #include "opt_compat_netbsd.h"
@@ -90,7 +90,6 @@ __KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.175 2018/10/20 06:35:34 skrll Exp $");
 #endif
 
 #if defined(CPU_PJ4B)
-#include "opt_cputypes.h"
 #include "opt_mvsoc.h"
 #include <machine/bus_defs.h>
 #if defined(ARMADAXP)
@@ -1330,7 +1329,7 @@ get_cachesize_cp15(int cssr)
 	__asm volatile(".arch\tarmv7a");
 
 	armreg_csselr_write(cssr);
-	arm_isb();			 /* sync to the new cssr */
+	isb();			 /* sync to the new cssr */
 
 #else
 	__asm volatile("mcr p15, 1, %0, c0, c0, 2" :: "r" (cssr) : "memory");
@@ -1776,7 +1775,7 @@ set_cpufuncs(void)
 #ifdef ARM11_CACHE_WRITE_THROUGH
 		pmap_pte_init_arm11();
 #else
-		pmap_pte_init_generic();
+		pmap_pte_init_armv6();
 #endif
 		if (arm_cache_prefer_mask)
 			uvmexp.ncolors = (arm_cache_prefer_mask >> PGSHIFT) + 1;
@@ -2372,7 +2371,7 @@ struct cpu_option {
 
 static u_int parse_cpu_options(char *, struct cpu_option *, u_int);
 
-static u_int
+static u_int __noasan
 parse_cpu_options(char *args, struct cpu_option *optlist, u_int cpuctrl)
 {
 	int integer;
@@ -2769,6 +2768,11 @@ arm11_setup(char *args)
 #endif
 	    | CPU_CONTROL_IC_ENABLE | CPU_CONTROL_DC_ENABLE
 	    /* | CPU_CONTROL_BPRD_ENABLE */;
+
+#ifdef __ARMEB__
+	cpuctrl |= CPU_CONTROL_EX_BEND;
+#endif
+
 	int cpuctrlmask = cpuctrl
 	    | CPU_CONTROL_ROM_ENABLE | CPU_CONTROL_BPRD_ENABLE
 	    | CPU_CONTROL_BEND_ENABLE | CPU_CONTROL_AFLT_ENABLE
@@ -2779,10 +2783,6 @@ arm11_setup(char *args)
 #endif
 
 	cpuctrl = parse_cpu_options(args, arm11_options, cpuctrl);
-
-#ifdef __ARMEB__
-	cpuctrl |= CPU_CONTROL_BEND_ENABLE;
-#endif
 
 #ifndef ARM_HAS_VBAR
 	if (vector_page == ARM_VECTORS_HIGH)
@@ -2818,6 +2818,11 @@ arm11mpcore_setup(char *args)
 	    | CPU_CONTROL_XP_ENABLE
 #endif
 	    | CPU_CONTROL_BPRD_ENABLE ;
+
+#ifdef __ARMEB__
+	cpuctrl |= CPU_CONTROL_EX_BEND;
+#endif
+
 	int cpuctrlmask = cpuctrl
 	    | CPU_CONTROL_AFLT_ENABLE
 	    | CPU_CONTROL_VECRELOC;
@@ -3062,6 +3067,10 @@ arm11x6_setup(char *args)
 #endif
 		CPU_CONTROL_IC_ENABLE;
 
+#ifdef __ARMEB__
+	cpuctrl |= CPU_CONTROL_EX_BEND;
+#endif
+
 	/*
 	 * "write as existing" bits
 	 * inverse of this is mask
@@ -3079,10 +3088,6 @@ arm11x6_setup(char *args)
 #endif
 
 	cpuctrl = parse_cpu_options(args, arm11_options, cpuctrl);
-
-#ifdef __ARMEB__
-	cpuctrl |= CPU_CONTROL_BEND_ENABLE;
-#endif
 
 #ifndef ARM_HAS_VBAR
 	if (vector_page == ARM_VECTORS_HIGH)

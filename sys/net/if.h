@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.277 2019/09/19 06:07:24 knakahara Exp $	*/
+/*	$NetBSD: if.h,v 1.289 2020/10/15 10:20:44 roy Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -173,6 +173,8 @@ struct if_clonereq {
 /*
  * Structure defining statistics and other data kept regarding a network
  * interface.
+ *
+ * Only used for exporting data from the interface.
  */
 struct if_data {
 	/* generic interface information */
@@ -206,6 +208,31 @@ struct if_data {
 #define	LINK_STATE_UP		2	/* link is up */
 
 /*
+ * Status bit descriptions for the various interface types.
+ */
+struct if_status_description {
+	unsigned char	ifs_type;
+	unsigned char	ifs_state;
+	const char	*ifs_string;
+};
+
+#define LINK_STATE_DESC_MATCH(_ifs, _t, _s)				\
+	(((_ifs)->ifs_type == (_t) || (_ifs)->ifs_type == 0) &&		\
+	    (_ifs)->ifs_state == (_s))
+
+#define LINK_STATE_DESCRIPTIONS {					\
+	{ IFT_ETHER, LINK_STATE_DOWN, "no carrier" },			\
+	{ IFT_IEEE80211, LINK_STATE_DOWN, "no network" },		\
+	{ IFT_PPP, LINK_STATE_DOWN, "no carrier" },			\
+	{ IFT_CARP, LINK_STATE_DOWN, "backup" },			\
+	{ IFT_CARP, LINK_STATE_UP, "master" },				\
+	{ 0, LINK_STATE_UP, "active" },					\
+	{ 0, LINK_STATE_UNKNOWN, "unknown" },				\
+	{ 0, LINK_STATE_DOWN, "down" },					\
+	{ 0, 0, NULL }							\
+}
+
+/*
  * Structure defining a queue for a network interface.
  */
 struct ifqueue {
@@ -221,6 +248,7 @@ struct ifqueue {
 #include <sys/percpu.h>
 #include <sys/callout.h>
 #include <sys/rwlock.h>
+#include <sys/workqueue.h>
 
 #endif /* _KERNEL */
 
@@ -273,7 +301,20 @@ typedef struct ifnet {
 	short		if_timer;	/* ?: time 'til if_slowtimo called */
 	unsigned short	if_flags;	/* i: up/down, broadcast, etc. */
 	short		if_extflags;	/* :: if_output MP-safe, etc. */
-	struct if_data	if_data;	/* ?: statistics and other data about if */
+	u_char		if_type;	/* :: ethernet, tokenring, etc. */
+	u_char		if_addrlen;	/* :: media address length */
+	u_char		if_hdrlen;	/* :: media header length */
+	/* XXX audit :? fields here. */
+	int		if_link_state;	/* :? current link state */
+	uint64_t	if_mtu;		/* :? maximum transmission unit */
+	uint64_t	if_metric;	/* :? routing metric (external only) */
+	uint64_t	if_baudrate;	/* :? linespeed */
+	struct timespec	if_lastchange;	/* :? last operational state change */
+#ifdef _KERNEL
+	percpu_t	*if_stats;	/* :: statistics */
+#else
+	void		*if_stats;	/* opaque to user-space */
+#endif /* _KERNEL */
 	/*
 	 * Procedure handles.  If you add more of these, don't forget the
 	 * corresponding NULL stub in if.c.
@@ -365,9 +406,6 @@ typedef struct ifnet {
 			*if_sysctl_log;	/* :: */
 	int		(*if_initaddr)  /* :: */
 			    (struct ifnet *, struct ifaddr *, bool);
-	int		(*if_mcastop)	/* :: */
-			    (struct ifnet *, const unsigned long,
-			    const struct sockaddr *);
 	int		(*if_setflags)	/* :: */
 			    (struct ifnet *, const u_short);
 	kmutex_t	*if_ioctl_lock;	/* :: */
@@ -377,8 +415,11 @@ typedef struct ifnet {
 	struct krwlock	*if_afdata_lock;/* :: */
 	struct if_percpuq
 			*if_percpuq;	/* :: we should remove it in the future */
-	void		*if_link_si;	/* :: softint to handle link state changes */
+	struct work	if_link_work;	/* q: linkage on link state work queue */
 	uint16_t	if_link_queue;	/* q: masked link state change queue */
+					/* q: is link state work scheduled? */
+	bool		if_link_scheduled;
+	void		(*if_link_state_changed)(struct ifnet *, int);
 	struct pslist_entry
 			if_pslist_entry;/* i: */
 	struct psref_target
@@ -393,26 +434,9 @@ typedef struct ifnet {
 			if_multiaddrs;	/* 6: */
 #endif
 } ifnet_t;
+
+#include <net/if_stats.h>
  
-#define	if_mtu		if_data.ifi_mtu
-#define	if_type		if_data.ifi_type
-#define	if_addrlen	if_data.ifi_addrlen
-#define	if_hdrlen	if_data.ifi_hdrlen
-#define	if_metric	if_data.ifi_metric
-#define	if_link_state	if_data.ifi_link_state
-#define	if_baudrate	if_data.ifi_baudrate
-#define	if_ipackets	if_data.ifi_ipackets
-#define	if_ierrors	if_data.ifi_ierrors
-#define	if_opackets	if_data.ifi_opackets
-#define	if_oerrors	if_data.ifi_oerrors
-#define	if_collisions	if_data.ifi_collisions
-#define	if_ibytes	if_data.ifi_ibytes
-#define	if_obytes	if_data.ifi_obytes
-#define	if_imcasts	if_data.ifi_imcasts
-#define	if_omcasts	if_data.ifi_omcasts
-#define	if_iqdrops	if_data.ifi_iqdrops
-#define	if_noproto	if_data.ifi_noproto
-#define	if_lastchange	if_data.ifi_lastchange
 #define	if_name(ifp)	((ifp)->if_xname)
 
 #define	IFF_UP		0x0001		/* interface is up */
@@ -433,7 +457,6 @@ typedef struct ifnet {
 #define	IFF_MULTICAST	0x8000		/* supports multicast */
 
 #define	IFEF_MPSAFE			__BIT(0)	/* handlers can run in parallel (see below) */
-#define	IFEF_NO_LINK_STATE_CHANGE	__BIT(1)	/* doesn't use link state interrupts */
 
 /*
  * The guidelines for converting an interface to IFEF_MPSAFE are as follows
@@ -511,13 +534,6 @@ if_start_lock(struct ifnet *ifp)
 		(*ifp->if_start)(ifp);
 		KERNEL_UNLOCK_ONE(NULL);
 	}
-}
-
-static __inline bool
-if_is_link_state_changeable(struct ifnet *ifp)
-{
-
-	return ((ifp->if_extflags & IFEF_NO_LINK_STATE_CHANGE) == 0);
 }
 
 #define KERNEL_LOCK_IF_IFP_MPSAFE(ifp)					\
@@ -1069,6 +1085,20 @@ do {									\
 #define	IFQ_INC_DROPS(ifq)		((ifq)->ifq_drops++)
 #define	IFQ_SET_MAXLEN(ifq, len)	((ifq)->ifq_maxlen = (len))
 
+#define	IFQ_ENQUEUE_ISR(ifq, m, isr)					\
+do {									\
+	IFQ_LOCK(inq);							\
+	if (IF_QFULL(inq)) {						\
+		IF_DROP(inq);						\
+		IFQ_UNLOCK(inq);					\
+		m_freem(m);						\
+	} else {							\
+		IF_ENQUEUE(inq, m);					\
+		IFQ_UNLOCK(inq);					\
+		schednetisr(isr);					\
+	}								\
+} while (/*CONSTCOND*/ 0)
+
 #include <sys/mallocvar.h>
 MALLOC_DECLARE(M_IFADDR);
 MALLOC_DECLARE(M_IFMADDR);
@@ -1090,12 +1120,13 @@ int	if_attach(struct ifnet *); /* Deprecated. Use if_initialize and if_register 
 void	if_attachdomain(void);
 void	if_deactivate(struct ifnet *);
 bool	if_is_deactivated(const struct ifnet *);
+void	if_export_if_data(struct ifnet *, struct if_data *, bool);
 void	if_purgeaddrs(struct ifnet *, int, void (*)(struct ifaddr *));
 void	if_detach(struct ifnet *);
 void	if_down(struct ifnet *);
 void	if_down_locked(struct ifnet *);
 void	if_link_state_change(struct ifnet *, int);
-void	if_link_state_change_softint(struct ifnet *, int);
+void	if_domain_link_state_change(struct ifnet *, int);
 void	if_up(struct ifnet *);
 void	ifinit(void);
 void	ifinit1(void);

@@ -1,4 +1,4 @@
-/*	$NetBSD: pciconf.c,v 1.43 2019/12/05 07:03:01 msaitoh Exp $	*/
+/*	$NetBSD: pciconf.c,v 1.52 2021/01/03 10:31:37 skrll Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -65,16 +65,16 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pciconf.c,v 1.43 2019/12/05 07:03:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pciconf.c,v 1.52 2021/01/03 10:31:37 skrll Exp $");
 
 #include "opt_pci.h"
 
 #include <sys/param.h>
-#include <sys/extent.h>
 #include <sys/queue.h>
 #include <sys/systm.h>
 #include <sys/malloc.h>
 #include <sys/kmem.h>
+#include <sys/vmem.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pciconf.h>
@@ -95,6 +95,40 @@ int pci_conf_debug = 0;
 
 struct _s_pciconf_bus_t;			/* Forward declaration */
 
+struct pciconf_resource {
+	vmem_t		*arena;
+	bus_addr_t	min_addr;
+	bus_addr_t	max_addr;
+	bus_size_t	total_size;
+};
+
+#define	PCICONF_RESOURCE_NTYPES	3
+CTASSERT(PCICONF_RESOURCE_IO < PCICONF_RESOURCE_NTYPES);
+CTASSERT(PCICONF_RESOURCE_MEM < PCICONF_RESOURCE_NTYPES);
+CTASSERT(PCICONF_RESOURCE_PREFETCHABLE_MEM < PCICONF_RESOURCE_NTYPES);
+
+static const char *pciconf_resource_names[] = {
+	[PCICONF_RESOURCE_IO]			=	"pci-io",
+	[PCICONF_RESOURCE_MEM]			=	"pci-mem",
+	[PCICONF_RESOURCE_PREFETCHABLE_MEM]	=	"pci-pmem",
+};
+
+struct pciconf_resources {
+	struct pciconf_resource resources[PCICONF_RESOURCE_NTYPES];
+};
+
+struct pciconf_resource_rsvd {
+	int		type;
+	uint64_t	start;
+	bus_size_t	size;
+	void		(*callback)(void *, uint64_t);
+	void		*callback_arg;
+	LIST_ENTRY(pciconf_resource_rsvd) next;
+};
+
+static LIST_HEAD(, pciconf_resource_rsvd) pciconf_resource_reservations =
+    LIST_HEAD_INITIALIZER(pciconf_resource_reservations);
+
 typedef struct _s_pciconf_dev_t {
 	int		ipin;
 	int		iline;
@@ -104,6 +138,7 @@ typedef struct _s_pciconf_dev_t {
 	pcitag_t	tag;
 	pci_chipset_tag_t	pc;
 	struct _s_pciconf_bus_t	*ppb;		/* I am really a bridge */
+	pcireg_t	ea_cap_ptr;
 } pciconf_dev_t;
 
 typedef struct _s_pciconf_win_t {
@@ -131,6 +166,7 @@ typedef struct _s_pciconf_bus_t {
 	int		swiz;
 	int		io_32bit;
 	int		pmem_64bit;
+	int		mem_64bit;
 	int		io_align;
 	int		mem_align;
 	int		pmem_align;
@@ -148,9 +184,9 @@ typedef struct _s_pciconf_bus_t {
 	bus_size_t	mem_total;
 	bus_size_t	pmem_total;
 
-	struct extent	*ioext;
-	struct extent	*memext;
-	struct extent	*pmemext;
+	struct pciconf_resource io_res;
+	struct pciconf_resource mem_res;
+	struct pciconf_resource pmem_res;
 
 	pci_chipset_tag_t	pc;
 	struct _s_pciconf_bus_t *parent_bus;
@@ -164,12 +200,56 @@ static int	setup_iowins(pciconf_bus_t *);
 static int	setup_memwins(pciconf_bus_t *);
 static int	configure_bridge(pciconf_dev_t *);
 static int	configure_bus(pciconf_bus_t *);
-static uint64_t	pci_allocate_range(struct extent *, uint64_t, int);
+static uint64_t	pci_allocate_range(struct pciconf_resource *, uint64_t, int,
+		    bool);
 static pciconf_win_t	*get_io_desc(pciconf_bus_t *, bus_size_t);
 static pciconf_win_t	*get_mem_desc(pciconf_bus_t *, bus_size_t);
 static pciconf_bus_t	*query_bus(pciconf_bus_t *, pciconf_dev_t *, int);
 
 static void	print_tag(pci_chipset_tag_t, pcitag_t);
+
+static vmem_t *
+create_vmem_arena(const char *name, bus_addr_t start, bus_size_t size,
+    int flags)
+{
+	KASSERT(start < VMEM_ADDR_MAX);
+	KASSERT(size == 0 ||
+		(VMEM_ADDR_MAX - start) >= (size - 1));
+
+	return vmem_create(name, start, size,
+			   1,		/*quantum*/
+			   NULL,	/*importfn*/
+			   NULL,	/*releasefn*/
+			   NULL,	/*source*/
+			   0,		/*qcache_max*/
+			   flags,
+			   IPL_NONE);
+}
+
+static int
+init_range_resource(struct pciconf_resource *r, const char *name,
+    bus_addr_t start, bus_addr_t size)
+{
+	r->arena = create_vmem_arena(name, start, size, VM_NOSLEEP);
+	if (r->arena == NULL)
+		return ENOMEM;
+
+	r->min_addr = start;
+	r->max_addr = start + (size - 1);
+	r->total_size = size;
+
+	return 0;
+}
+
+static void
+fini_range_resource(struct pciconf_resource *r)
+{
+	if (r->arena) {
+		vmem_xfreeall(r->arena);
+		vmem_destroy(r->arena);
+	}
+	memset(r, 0, sizeof(*r));
+}
 
 static void
 print_tag(pci_chipset_tag_t pc, pcitag_t tag)
@@ -179,6 +259,12 @@ print_tag(pci_chipset_tag_t pc, pcitag_t tag)
 	pci_decompose_tag(pc, tag, &bus, &dev, &func);
 	printf("PCI: bus %d, device %d, function %d: ", bus, dev, func);
 }
+
+#ifdef _LP64
+#define	__used_only_lp64	__unused
+#else
+#define	__used_only_lp64	/* nothing */
+#endif /* _LP64 */
 
 /************************************************************************/
 /************************************************************************/
@@ -306,9 +392,9 @@ set_busreg(pci_chipset_tag_t pc, pcitag_t tag, int prim, int sec, int sub)
 {
 	pcireg_t	busreg;
 
-	busreg  =  __SHIFTIN(prim, PCI_BRIDGE_BUS_PRIMARY);
-	busreg |=  __SHIFTIN(sec,  PCI_BRIDGE_BUS_SECONDARY);
-	busreg |=  __SHIFTIN(sub,  PCI_BRIDGE_BUS_SUBORDINATE);
+	busreg  = __SHIFTIN(prim, PCI_BRIDGE_BUS_PRIMARY);
+	busreg |= __SHIFTIN(sec,  PCI_BRIDGE_BUS_SECONDARY);
+	busreg |= __SHIFTIN(sub,  PCI_BRIDGE_BUS_SUBORDINATE);
 	pci_conf_write(pc, tag, PCI_BRIDGE_BUS_REG, busreg);
 }
 
@@ -332,9 +418,10 @@ query_bus(pciconf_bus_t *parent, pciconf_dev_t *pd, int dev)
 
 	pb->swiz = parent->swiz + dev;
 
-	pb->ioext = NULL;
-	pb->memext = NULL;
-	pb->pmemext = NULL;
+	memset(&pb->io_res, 0, sizeof(pb->io_res));
+	memset(&pb->mem_res, 0, sizeof(pb->mem_res));
+	memset(&pb->pmem_res, 0, sizeof(pb->pmem_res));
+
 	pb->pc = parent->pc;
 	pb->io_total = pb->mem_total = pb->pmem_total = 0;
 
@@ -352,6 +439,9 @@ query_bus(pciconf_bus_t *parent, pciconf_dev_t *pd, int dev)
 		if (PCI_BRIDGE_PREFETCHMEM_64BITS(pmem))
 			pb->pmem_64bit = 1;
 	}
+
+	/* Bridges only forward a 32-bit range of non-prefetcable memory. */
+	pb->mem_64bit = 0;
 
 	if (probe_bus(pb)) {
 		printf("Failed to probe bus %d\n", pb->busno);
@@ -429,6 +519,72 @@ err:
 	return NULL;
 }
 
+static struct pciconf_resource_rsvd *
+pci_resource_is_reserved(int type, uint64_t addr, uint64_t size)
+{
+	struct pciconf_resource_rsvd *rsvd;
+
+	LIST_FOREACH(rsvd, &pciconf_resource_reservations, next) {
+		if (rsvd->type != type)
+			continue;
+		if (rsvd->start <= addr + size && rsvd->start + rsvd->size >= addr)
+			return rsvd;
+	}
+
+	return NULL;
+}
+
+static struct pciconf_resource_rsvd *
+pci_bar_is_reserved(pciconf_bus_t *pb, pciconf_dev_t *pd, int br)
+{
+	pcireg_t base, base64, mask, mask64;
+	pcitag_t tag;
+	uint64_t addr, size;
+
+	/*
+	 * Resource reservation does not apply to bridges
+	 */
+	if (pd->ppb)
+		return NULL;
+
+	tag = pd->tag;
+
+	/*
+	 * Look to see if this device is enabled and one of the resources
+	 * is already in use (eg. firmware configured console device).
+	 */
+	base = pci_conf_read(pb->pc, tag, br);
+	pci_conf_write(pb->pc, tag, br, 0xffffffff);
+	mask = pci_conf_read(pb->pc, tag, br);
+	pci_conf_write(pb->pc, tag, br, base);
+
+	switch (PCI_MAPREG_TYPE(base)) {
+	case PCI_MAPREG_TYPE_IO:
+		addr = PCI_MAPREG_IO_ADDR(base);
+		size = PCI_MAPREG_IO_SIZE(mask);
+		return pci_resource_is_reserved(PCI_CONF_MAP_IO, addr, size);
+
+	case PCI_MAPREG_TYPE_MEM:
+		if (PCI_MAPREG_MEM_TYPE(base) == PCI_MAPREG_MEM_TYPE_64BIT) {
+			base64 = pci_conf_read(pb->pc, tag, br + 4);
+			pci_conf_write(pb->pc, tag, br + 4, 0xffffffff);
+			mask64 = pci_conf_read(pb->pc, tag, br + 4);
+			pci_conf_write(pb->pc, tag, br + 4, base64);
+			addr = (uint64_t)PCI_MAPREG_MEM64_ADDR(
+			      (((uint64_t)base64) << 32) | base);
+			size = (uint64_t)PCI_MAPREG_MEM64_SIZE(
+			      (((uint64_t)mask64) << 32) | mask);
+		} else {
+			addr = PCI_MAPREG_MEM_ADDR(base);
+			size = PCI_MAPREG_MEM_SIZE(mask);
+		}
+		return pci_resource_is_reserved(PCI_CONF_MAP_MEM, addr, size);
+
+	default:
+		return NULL;
+	}
+}
+
 static int
 pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
     int mode)
@@ -445,11 +601,20 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 	pd->tag = tag;
 	pd->ppb = NULL;
 	pd->enable = mode;
+	pd->ea_cap_ptr = 0;
 
 	classreg = pci_conf_read(pb->pc, tag, PCI_CLASS_REG);
 
 	cmd = pci_conf_read(pb->pc, tag, PCI_COMMAND_STATUS_REG);
 	bhlc = pci_conf_read(pb->pc, tag, PCI_BHLC_REG);
+
+	if (pci_get_capability(pb->pc, tag, PCI_CAP_EA, &pd->ea_cap_ptr,
+	    NULL)) {
+		/* XXX Skip devices with EA for now. */
+		print_tag(pb->pc, tag);
+		printf("skipping devices with Enhanced Allocations\n");
+		return 0;
+	}
 
 	if (PCI_CLASS(classreg) != PCI_CLASS_BRIDGE
 	    && PCI_HDRTYPE_TYPE(bhlc) != PCI_HDRTYPE_PPB) {
@@ -482,7 +647,7 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 		reg_end = PCI_MAPREG_PCB_END;
 
 		busreg = pci_conf_read(pb->pc, tag, PCI_BUSNUM);
-		busreg  =  (busreg & 0xff000000) |
+		busreg = (busreg & 0xff000000) |
 		    __SHIFTIN(pb->busno, PCI_BRIDGE_BUS_PRIMARY) |
 		    __SHIFTIN(pb->next_busno, PCI_BRIDGE_BUS_SECONDARY) |
 		    __SHIFTIN(pb->next_busno, PCI_BRIDGE_BUS_SUBORDINATE);
@@ -660,14 +825,22 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 			pm->reg = PCI_MAPREG_ROM;
 			pm->size = size;
 			pm->align = 4;
-			pm->prefetch = 1;
+			pm->prefetch = 0;
 			if (pci_conf_debug) {
 				print_tag(pb->pc, tag);
 				printf("Expansion ROM memory size %"
 				    PRIu64 "\n", pm->size);
 			}
 			pb->nmemwin++;
-			pb->pmem_total += size;
+			if (pm->prefetch) {
+				pb->pmem_total += size;
+				if (pb->pmem_align < pm->size)
+					pb->pmem_align = pm->size;
+			} else {
+				pb->mem_total += size;
+				if (pb->mem_align < pm->size)
+					pb->mem_align = pm->size;
+			}
 		}
 	} else {
 		/* Don't enable ROMs if we aren't going to map them. */
@@ -691,19 +864,48 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 /************************************************************************/
 /************************************************************************/
 static uint64_t
-pci_allocate_range(struct extent *ex, uint64_t amt, int align)
+pci_allocate_range(struct pciconf_resource * const r, const uint64_t amt,
+		   const int align, const bool ok64 __used_only_lp64)
 {
-	int	r;
-	u_long	addr;
+	vmem_size_t const size = (vmem_size_t) amt;
+	vmem_addr_t result;
+	int error;
 
-	r = extent_alloc(ex, amt, align, 0, EX_NOWAIT, &addr);
-	if (r) {
-		printf("extent_alloc(%p, %#" PRIx64 ", %#x) returned %d\n",
-		    ex, amt, align, r);
-		extent_print(ex);
-		return ~0ULL;
+#ifdef _LP64
+	/*
+	 * If a 64-bit range IS OK, then we prefer allocating above 4GB.
+	 *
+	 * XXX We guard this with _LP64 because vmem uses uintptr_t
+	 * internally.
+	 */
+	if (!ok64) {
+		error = vmem_xalloc(r->arena, size, align, 0, 0,
+				    VMEM_ADDR_MIN, 0xffffffffUL,
+				    VM_BESTFIT | VM_NOSLEEP,
+				    &result);
+	} else {
+		error = vmem_xalloc(r->arena, size, align, 0, 0,
+				    (1UL << 32), VMEM_ADDR_MAX,
+				    VM_BESTFIT | VM_NOSLEEP,
+				    &result);
+		if (error) {
+			error = vmem_xalloc(r->arena, size, align, 0, 0,
+					    VMEM_ADDR_MIN, VMEM_ADDR_MAX,
+					    VM_BESTFIT | VM_NOSLEEP,
+					    &result);
+		}
 	}
-	return addr;
+#else
+	error = vmem_xalloc(r->arena, size, align, 0, 0,
+			    VMEM_ADDR_MIN, 0xffffffffUL,
+			    VM_BESTFIT | VM_NOSLEEP,
+			    &result);
+#endif /* _L64 */
+
+	if (error)
+		return ~0ULL;
+
+	return result;
 }
 
 static int
@@ -711,14 +913,25 @@ setup_iowins(pciconf_bus_t *pb)
 {
 	pciconf_win_t	*pi;
 	pciconf_dev_t	*pd;
+	struct pciconf_resource_rsvd *rsvd;
+	int		error;
 
 	for (pi = pb->pciiowin; pi < &pb->pciiowin[pb->niowin]; pi++) {
 		if (pi->size == 0)
 			continue;
 
 		pd = pi->dev;
-		pi->address = pci_allocate_range(pb->ioext, pi->size,
-		    pi->align);
+		rsvd = pci_bar_is_reserved(pb, pd, pi->reg);
+
+		if (pb->io_res.arena == NULL) {
+			/* Bus has no IO ranges, disable IO BAR */
+			pi->address = 0;
+			pd->enable &= ~PCI_CONF_ENABLE_IO;
+			goto write_ioaddr;
+		}
+
+		pi->address = pci_allocate_range(&pb->io_res, pi->size,
+		    pi->align, false);
 		if (~pi->address == 0) {
 			print_tag(pd->pc, pd->tag);
 			printf("Failed to allocate PCI I/O space (%"
@@ -726,12 +939,11 @@ setup_iowins(pciconf_bus_t *pb)
 			return -1;
 		}
 		if (pd->ppb && pi->reg == 0) {
-			pd->ppb->ioext = extent_create("pciconf", pi->address,
-			    pi->address + pi->size, NULL, 0,
-			    EX_NOWAIT);
-			if (pd->ppb->ioext == NULL) {
+			error = init_range_resource(&pd->ppb->io_res,
+			    "ppb-io", pi->address, pi->size);
+			if (error) {
 				print_tag(pd->pc, pd->tag);
-				printf("Failed to alloc I/O ext. for bus %d\n",
+				printf("Failed to alloc I/O arena for bus %d\n",
 				    pd->ppb->busno);
 				return -1;
 			}
@@ -743,6 +955,7 @@ setup_iowins(pciconf_bus_t *pb)
 		} else {
 			pd->enable |= PCI_CONF_ENABLE_IO;
 		}
+write_ioaddr:
 		if (pci_conf_debug) {
 			print_tag(pd->pc, pd->tag);
 			printf("Putting %" PRIu64 " I/O bytes @ %#" PRIx64
@@ -750,6 +963,9 @@ setup_iowins(pciconf_bus_t *pb)
 		}
 		pci_conf_write(pd->pc, pd->tag, pi->reg,
 		    PCI_MAPREG_IO_ADDR(pi->address) | PCI_MAPREG_TYPE_IO);
+
+		if (rsvd != NULL && rsvd->start != pi->address)
+			rsvd->callback(rsvd->callback_arg, pi->address);
 	}
 	return 0;
 }
@@ -760,40 +976,66 @@ setup_memwins(pciconf_bus_t *pb)
 	pciconf_win_t	*pm;
 	pciconf_dev_t	*pd;
 	pcireg_t	base;
-	struct extent	*ex;
+	struct pciconf_resource *r;
+	struct pciconf_resource_rsvd *rsvd;
+	bool		ok64;
+	int		error;
 
 	for (pm = pb->pcimemwin; pm < &pb->pcimemwin[pb->nmemwin]; pm++) {
 		if (pm->size == 0)
 			continue;
 
+		ok64 = false;
 		pd = pm->dev;
-		ex = (pm->prefetch) ? pb->pmemext : pb->memext;
-		pm->address = pci_allocate_range(ex, pm->size, pm->align);
+		rsvd = pci_bar_is_reserved(pb, pd, pm->reg);
+
+		if (pm->prefetch) {
+			r = &pb->pmem_res;
+			ok64 = pb->pmem_64bit;
+		} else {
+			r = &pb->mem_res;
+			ok64 = pb->mem_64bit && pd->ppb == NULL;
+		}
+
+		/*
+		 * We need to figure out if the memory BAR is 64-bit
+		 * capable or not.  If it's not, then we need to constrain
+		 * the address allocation.
+		 */
+		if (pm->reg == PCI_MAPREG_ROM) {
+			ok64 = false;
+		} else if (ok64) {
+			base = pci_conf_read(pd->pc, pd->tag, pm->reg);
+			ok64 = PCI_MAPREG_MEM_TYPE(base) ==
+			    PCI_MAPREG_MEM_TYPE_64BIT;
+		}
+
+		pm->address = pci_allocate_range(r, pm->size, pm->align,
+						 ok64);
 		if (~pm->address == 0) {
 			print_tag(pd->pc, pd->tag);
 			printf(
 			   "Failed to allocate PCI memory space (%" PRIu64
-			   " req)\n", pm->size);
+			   " req, prefetch=%d ok64=%d)\n", pm->size,
+			   pm->prefetch, (int)ok64);
 			return -1;
 		}
 		if (pd->ppb && pm->reg == 0) {
-			ex = extent_create("pciconf", pm->address,
-			    pm->address + pm->size, NULL, 0, EX_NOWAIT);
-			if (ex == NULL) {
+			const char *name = pm->prefetch ? "ppb-pmem"
+							: "ppb-mem";
+			r = pm->prefetch ? &pd->ppb->pmem_res
+					 : &pd->ppb->mem_res;
+			error = init_range_resource(r, name,
+			    pm->address, pm->size);
+			if (error) {
 				print_tag(pd->pc, pd->tag);
-				printf("Failed to alloc MEM ext. for bus %d\n",
+				printf("Failed to alloc MEM arena for bus %d\n",
 				    pd->ppb->busno);
 				return -1;
 			}
-			if (pm->prefetch)
-				pd->ppb->pmemext = ex;
-			else
-				pd->ppb->memext = ex;
-
 			continue;
 		}
-		if (pm->prefetch && !pb->pmem_64bit &&
-		    pm->address > 0xFFFFFFFFULL) {
+		if (!ok64 && pm->address > 0xFFFFFFFFULL) {
 			pm->address = 0;
 			pd->enable &= ~PCI_CONF_ENABLE_MEM;
 		} else
@@ -819,6 +1061,10 @@ setup_memwins(pciconf_bus_t *pb)
 				    base);
 			}
 		}
+
+		if (rsvd != NULL && rsvd->start != pm->address) {
+			rsvd->callback(rsvd->callback_arg, pm->address);
+		}
 	}
 	for (pm = pb->pcimemwin; pm < &pb->pcimemwin[pb->nmemwin]; pm++) {
 		if (pm->reg == PCI_MAPREG_ROM && pm->address != -1) {
@@ -842,6 +1088,30 @@ setup_memwins(pciconf_bus_t *pb)
 	return 0;
 }
 
+static bool
+constrain_bridge_mem_range(struct pciconf_resource * const r,
+			   u_long * const base,
+			   u_long * const limit,
+			   const bool ok64 __used_only_lp64)
+{
+
+	*base = r->min_addr;
+	*limit = r->max_addr;
+
+#ifdef _LP64
+	if (!ok64) {
+		if (r->min_addr >= (1UL << 32)) {
+			return true;
+		}
+		if (r->max_addr > 0xffffffffUL) {
+			*limit = 0xffffffffUL;
+		}
+	}
+#endif /* _LP64 */
+
+	return false;
+}
+
 /*
  * Configure I/O, memory, and prefetcable memory spaces, then make
  * a call to configure_bus().
@@ -854,12 +1124,13 @@ configure_bridge(pciconf_dev_t *pd)
 	pcireg_t	io, iohigh, mem, cmd;
 	int		rv;
 	bool		isprefetchmem64;
+	bool		bad_range;
 
 	pb = pd->ppb;
 	/* Configure I/O base & limit*/
-	if (pb->ioext) {
-		io_base = pb->ioext->ex_start;
-		io_limit = pb->ioext->ex_end;
+	if (pb->io_res.arena) {
+		io_base = pb->io_res.min_addr;
+		io_limit = pb->io_res.max_addr;
 	} else {
 		io_base  = 0x1000;	/* 4K */
 		io_limit = 0x0000;
@@ -887,21 +1158,22 @@ configure_bridge(pciconf_dev_t *pd)
 	pci_conf_write(pb->pc, pd->tag, PCI_BRIDGE_IOHIGH_REG, iohigh);
 
 	/* Configure mem base & limit */
-	if (pb->memext) {
-		mem_base = pb->memext->ex_start;
-		mem_limit = pb->memext->ex_end;
+	bad_range = false;
+	if (pb->mem_res.arena) {
+		bad_range = constrain_bridge_mem_range(&pb->mem_res,
+						       &mem_base,
+						       &mem_limit,
+						       false);
 	} else {
 		mem_base  = 0x100000;	/* 1M */
 		mem_limit = 0x000000;
 	}
-#if ULONG_MAX > 0xffffffff
-	if (mem_limit > 0xFFFFFFFFULL) {
+	if (bad_range) {
 		printf("Bus %d bridge MEM range out of range.  ", pb->busno);
 		printf("Disabling MEM accesses\n");
 		mem_base  = 0x100000;	/* 1M */
 		mem_limit = 0x000000;
 	}
-#endif
 	mem = __SHIFTIN((mem_base >> 16) & PCI_BRIDGE_MEMORY_ADDR,
 	    PCI_BRIDGE_MEMORY_BASE);
 	mem |= __SHIFTIN((mem_limit >> 16) & PCI_BRIDGE_MEMORY_ADDR,
@@ -909,24 +1181,25 @@ configure_bridge(pciconf_dev_t *pd)
 	pci_conf_write(pb->pc, pd->tag, PCI_BRIDGE_MEMORY_REG, mem);
 
 	/* Configure prefetchable mem base & limit */
-	if (pb->pmemext) {
-		mem_base = pb->pmemext->ex_start;
-		mem_limit = pb->pmemext->ex_end;
+	mem = pci_conf_read(pb->pc, pd->tag, PCI_BRIDGE_PREFETCHMEM_REG);
+	isprefetchmem64 = PCI_BRIDGE_PREFETCHMEM_64BITS(mem);
+	bad_range = false;
+	if (pb->pmem_res.arena) {
+		bad_range = constrain_bridge_mem_range(&pb->pmem_res,
+						       &mem_base,
+						       &mem_limit,
+						       isprefetchmem64);
 	} else {
 		mem_base  = 0x100000;	/* 1M */
 		mem_limit = 0x000000;
 	}
-	mem = pci_conf_read(pb->pc, pd->tag, PCI_BRIDGE_PREFETCHMEM_REG);
-	isprefetchmem64 = PCI_BRIDGE_PREFETCHMEM_64BITS(mem);
-#if ULONG_MAX > 0xffffffff
-	if (!isprefetchmem64 && mem_limit > 0xFFFFFFFFULL) {
+	if (bad_range) {
 		printf("Bus %d bridge does not support 64-bit PMEM.  ",
 		    pb->busno);
 		printf("Disabling prefetchable-MEM accesses\n");
 		mem_base  = 0x100000;	/* 1M */
 		mem_limit = 0x000000;
 	}
-#endif
 	mem = __SHIFTIN((mem_base >> 16) & PCI_BRIDGE_PREFETCHMEM_ADDR,
 	    PCI_BRIDGE_PREFETCHMEM_BASE);
 	mem |= __SHIFTIN((mem_limit >> 16) & PCI_BRIDGE_PREFETCHMEM_ADDR,
@@ -946,12 +1219,10 @@ configure_bridge(pciconf_dev_t *pd)
 
 	rv = configure_bus(pb);
 
-	if (pb->ioext)
-		extent_destroy(pb->ioext);
-	if (pb->memext)
-		extent_destroy(pb->memext);
-	if (pb->pmemext)
-		extent_destroy(pb->pmemext);
+	fini_range_resource(&pb->io_res);
+	fini_range_resource(&pb->mem_res);
+	fini_range_resource(&pb->pmem_res);
+
 	if (rv == 0) {
 		cmd = pci_conf_read(pd->pc, pd->tag, PCI_BRIDGE_CONTROL_REG);
 		cmd &= ~PCI_BRIDGE_CONTROL; /* Clear control bit first */
@@ -1078,6 +1349,159 @@ configure_bus(pciconf_bus_t *pb)
 	return 0;
 }
 
+static bool
+mem_region_ok64(struct pciconf_resource * const r __used_only_lp64)
+{
+	bool rv = false;
+
+#ifdef _LP64
+	/*
+	 * XXX We need to guard this with _LP64 because vmem uses
+	 * uintptr_t internally.
+	 */
+	vmem_size_t result;
+	if (vmem_xalloc(r->arena, 1/*size*/, 1/*align*/, 0/*phase*/,
+			0/*nocross*/, (1UL << 32), VMEM_ADDR_MAX,
+			VM_INSTANTFIT | VM_NOSLEEP, &result) == 0) {
+		vmem_free(r->arena, result, 1);
+		rv = true;
+	}
+#endif /* _LP64 */
+
+	return rv;
+}
+
+/*
+ * pciconf_resource_init:
+ *
+ *	Allocate and initilize a pci configuration resources container.
+ */
+struct pciconf_resources *
+pciconf_resource_init(void)
+{
+	struct pciconf_resources *rs;
+
+	rs = kmem_zalloc(sizeof(*rs), KM_SLEEP);
+
+	return (rs);
+}
+
+/*
+ * pciconf_resource_fini:
+ *
+ *	Dispose of a pci configuration resources container.
+ */
+void
+pciconf_resource_fini(struct pciconf_resources *rs)
+{
+	int i;
+
+	for (i = 0; i < PCICONF_RESOURCE_NTYPES; i++) {
+		fini_range_resource(&rs->resources[i]);
+	}
+
+	kmem_free(rs, sizeof(*rs));
+}
+
+/*
+ * pciconf_resource_add:
+ *
+ *	Add a pci configuration resource to a container.
+ */
+int
+pciconf_resource_add(struct pciconf_resources *rs, int type,
+    bus_addr_t start, bus_size_t size)
+{
+	bus_addr_t end = start + (size - 1);
+	struct pciconf_resource *r;
+	struct pciconf_resource_rsvd *rsvd;
+	int error, rsvd_type, align;
+	vmem_addr_t result;
+	bool first;
+
+	if (size == 0 || end <= start)
+		return EINVAL;
+
+	if (type < 0 || type >= PCICONF_RESOURCE_NTYPES)
+		return EINVAL;
+
+	r = &rs->resources[type];
+
+	first = r->arena == NULL;
+	if (first) {
+		r->arena = create_vmem_arena(pciconf_resource_names[type],
+		    0, 0, VM_SLEEP);
+		r->min_addr = VMEM_ADDR_MAX;
+		r->max_addr = VMEM_ADDR_MIN;
+	}
+
+	error = vmem_add(r->arena, start, size, VM_SLEEP);
+	if (error == 0) {
+		if (start < r->min_addr)
+			r->min_addr = start;
+		if (end > r->max_addr)
+			r->max_addr = end;
+	}
+
+	r->total_size += size;
+
+	switch (type) {
+	case PCICONF_RESOURCE_IO:
+		rsvd_type = PCI_CONF_MAP_IO;
+		align = 0x1000;
+		break;
+	case PCICONF_RESOURCE_MEM:
+	case PCICONF_RESOURCE_PREFETCHABLE_MEM:
+		rsvd_type = PCI_CONF_MAP_MEM;
+		align = 0x100000;
+		break;
+	default:
+		rsvd_type = 0;
+		align = 0;
+		break;
+	}
+
+	/*
+	 * Exclude reserved ranges from available resources
+	 */
+	LIST_FOREACH(rsvd, &pciconf_resource_reservations, next) {
+		if (rsvd->type != rsvd_type)
+			continue;
+		/*
+		 * The reserved range may not be within our resource window.
+		 * That's fine, so ignore the error.
+		 */
+		(void)vmem_xalloc(r->arena, rsvd->size, align, 0, 0,
+				  rsvd->start, rsvd->start + rsvd->size,
+				  VM_BESTFIT | VM_NOSLEEP,
+				  &result);
+	}
+
+	return 0;
+}
+
+/*
+ * pciconf_resource_reserve:
+ *
+ *	Mark a pci configuration resource as in-use. Devices
+ *	already configured to use these resources are notified
+ *	during resource assignment if their resources are changed.
+ */
+void
+pciconf_resource_reserve(int type, bus_addr_t start, bus_size_t size,
+    void (*callback)(void *, uint64_t), void *callback_arg)
+{
+	struct pciconf_resource_rsvd *rsvd;
+
+	rsvd = kmem_zalloc(sizeof(*rsvd), KM_SLEEP);
+	rsvd->type = type;
+	rsvd->start = start;
+	rsvd->size = size;
+	rsvd->callback = callback;
+	rsvd->callback_arg = callback_arg;
+	LIST_INSERT_HEAD(&pciconf_resource_reservations, rsvd, next);
+}
+
 /*
  * Let's configure the PCI bus.
  * This consists of basically scanning for all existing devices,
@@ -1106,9 +1530,8 @@ configure_bus(pciconf_bus_t *pb)
  * bridges are probed and configured recursively.
  */
 int
-pci_configure_bus(pci_chipset_tag_t pc, struct extent *ioext,
-    struct extent *memext, struct extent *pmemext, int firstbus,
-    int cacheline_size)
+pci_configure_bus(pci_chipset_tag_t pc, struct pciconf_resources *rs,
+    int firstbus, int cacheline_size)
 {
 	pciconf_bus_t	*pb;
 	int		rv;
@@ -1121,13 +1544,22 @@ pci_configure_bus(pci_chipset_tag_t pc, struct extent *ioext,
 	pb->parent_bus = NULL;
 	pb->swiz = 0;
 	pb->io_32bit = 1;
-	pb->pmem_64bit = 0;
-	pb->ioext = ioext;
-	pb->memext = memext;
-	if (pmemext == NULL)
-		pb->pmemext = memext;
-	else
-		pb->pmemext = pmemext;
+	pb->io_res = rs->resources[PCICONF_RESOURCE_IO];
+
+	pb->mem_res = rs->resources[PCICONF_RESOURCE_MEM];
+	if (pb->mem_res.arena == NULL)
+		pb->mem_res = rs->resources[PCICONF_RESOURCE_PREFETCHABLE_MEM];
+
+	pb->pmem_res = rs->resources[PCICONF_RESOURCE_PREFETCHABLE_MEM];
+	if (pb->pmem_res.arena == NULL)
+		pb->pmem_res = rs->resources[PCICONF_RESOURCE_MEM];
+
+	/*
+	 * Probe the memory region arenas to see if allocation of
+	 * 64-bit addresses is possible.
+	 */
+	pb->mem_64bit = mem_region_ok64(&pb->mem_res);
+	pb->pmem_64bit = mem_region_ok64(&pb->pmem_res);
 
 	pb->pc = pc;
 	pb->io_total = pb->mem_total = pb->pmem_total = 0;

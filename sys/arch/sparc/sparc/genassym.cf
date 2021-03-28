@@ -1,4 +1,4 @@
-#	$NetBSD: genassym.cf,v 1.68 2012/11/02 00:01:19 chs Exp $
+#	$NetBSD: genassym.cf,v 1.71 2020/09/12 05:19:16 isaki Exp $
 
 #
 # Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -97,7 +97,6 @@ include <sparc/dev/zsvar.h>
 endif
 
 include <sys/bus.h>
-include <sparc/dev/audioamdvar.h>
 
 include <sparc/dev/fdreg.h>
 include <sparc/dev/fdvar.h>
@@ -109,14 +108,8 @@ define	USRSTACK	USRSTACK
 # LWP fields and values
 define	L_PCB		offsetof(struct lwp, l_addr)
 define	L_PROC		offsetof(struct lwp, l_proc)
-define	L_STAT		offsetof(struct lwp, l_stat)
-define	L_WCHAN		offsetof(struct lwp, l_wchan)
 define	L_CPU		offsetof(struct lwp, l_cpu)
-define	L_PRIORITY	offsetof(struct lwp, l_priority)
 define	L_TF		offsetof(struct lwp, l_md.md_tf)
-
-define	LSRUN		LSRUN
-define	LSONPROC	LSONPROC
 
 # proc fields
 define	P_VMSPACE	offsetof(struct proc, p_vmspace)
@@ -242,14 +235,6 @@ define	ZL_RBPUT	offsetof(struct zs_line, zl_rbput)
 define	ZL_RBUF		offsetof(struct zs_line, zl_rbuf)
 define	ZSRR1_DO_bit	ffs(ZSRR1_DO) - 1
 endif
-
-# audio trap handler fields
-define	AU_BH		offsetof(struct auio, au_bh)
-define	AU_RDATA	offsetof(struct auio, au_rdata)
-define	AU_REND		offsetof(struct auio, au_rend)
-define	AU_PDATA	offsetof(struct auio, au_pdata)
-define	AU_PEND		offsetof(struct auio, au_pend)
-define	AU_EVCNT	offsetof(struct auio, au_intrcnt.ev_count)
 
 define	PROM_BASE	PROM_BASE
 

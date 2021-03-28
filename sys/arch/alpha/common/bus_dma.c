@@ -1,4 +1,4 @@
-/* $NetBSD: bus_dma.c,v 1.69 2012/10/02 23:54:51 christos Exp $ */
+/* $NetBSD: bus_dma.c,v 1.71 2020/11/18 02:04:29 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -32,13 +32,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.69 2012/10/02 23:54:51 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.71 2020/11/18 02:04:29 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/mbuf.h>
 
@@ -56,6 +56,17 @@ int	_bus_dmamap_load_buffer_direct(bus_dma_tag_t,
 
 extern paddr_t avail_start, avail_end;	/* from pmap.c */
 
+#define	DMA_COUNT_DECL(cnt)	_DMA_COUNT_DECL(dma_direct, cnt)
+#define	DMA_COUNT(cnt)		_DMA_COUNT(dma_direct, cnt)
+
+static size_t
+_bus_dmamap_mapsize(int const nsegments)
+{
+	KASSERT(nsegments > 0);
+	return sizeof(struct alpha_bus_dmamap) +
+	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
+}
+
 /*
  * Common function for DMA map creation.  May be called by bus-specific
  * DMA map creation functions.
@@ -66,7 +77,6 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 {
 	struct alpha_bus_dmamap *map;
 	void *mapstore;
-	size_t mapsize;
 
 	/*
 	 * Allocate and initialize the DMA map.  The end of the map
@@ -80,13 +90,10 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	 * The bus_dmamap_t includes one bus_dma_segment_t, hence
 	 * the (nsegments - 1).
 	 */
-	mapsize = sizeof(struct alpha_bus_dmamap) +
-	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
-	if ((mapstore = malloc(mapsize, M_DMAMAP,
-	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)) == NULL)
+	if ((mapstore = kmem_zalloc(_bus_dmamap_mapsize(nsegments),
+	    (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP)) == NULL)
 		return (ENOMEM);
 
-	memset(mapstore, 0, mapsize);
 	map = (struct alpha_bus_dmamap *)mapstore;
 	map->_dm_size = size;
 	map->_dm_segcnt = nsegments;
@@ -113,7 +120,7 @@ void
 _bus_dmamap_destroy(bus_dma_tag_t t, bus_dmamap_t map)
 {
 
-	free(map, M_DMAMAP);
+	kmem_free(map, _bus_dmamap_mapsize(map->_dm_segcnt));
 }
 
 /*
@@ -218,6 +225,9 @@ _bus_dmamap_load_buffer_direct(bus_dma_tag_t t, bus_dmamap_t map,
 	return (0);
 }
 
+DMA_COUNT_DECL(load);
+DMA_COUNT_DECL(load_next_window);
+
 /*
  * Common function for loading a direct-mapped DMA map with a linear
  * buffer.  Called by bus-specific DMA map load functions with the
@@ -252,6 +262,7 @@ _bus_dmamap_load_direct(bus_dma_tag_t t, bus_dmamap_t map, void *buf,
 	error = _bus_dmamap_load_buffer_direct(t, map, buf, buflen,
 	    vm, flags, &lastaddr, &seg, 1);
 	if (error == 0) {
+		DMA_COUNT(load);
 		map->dm_mapsize = buflen;
 		map->dm_nsegs = seg + 1;
 		map->_dm_window = t;
@@ -259,11 +270,15 @@ _bus_dmamap_load_direct(bus_dma_tag_t t, bus_dmamap_t map, void *buf,
 		/*
 		 * Give the next window a chance.
 		 */
+		DMA_COUNT(load_next_window);
 		error = bus_dmamap_load(t->_next_window, map, buf, buflen,
 		    p, flags);
 	}
 	return (error);
 }
+
+DMA_COUNT_DECL(load_mbuf);
+DMA_COUNT_DECL(load_mbuf_next_window);
 
 /*
  * Like _bus_dmamap_load_direct(), but for mbufs.
@@ -341,6 +356,7 @@ _bus_dmamap_load_mbuf_direct(bus_dma_tag_t t, bus_dmamap_t map,
 		first = 0;
 	}
 	if (error == 0) {
+		DMA_COUNT(load_mbuf);
 		map->dm_mapsize = m0->m_pkthdr.len;
 		map->dm_nsegs = seg + 1;
 		map->_dm_window = t;
@@ -348,10 +364,14 @@ _bus_dmamap_load_mbuf_direct(bus_dma_tag_t t, bus_dmamap_t map,
 		/*
 		 * Give the next window a chance.
 		 */
+		DMA_COUNT(load_mbuf_next_window);
 		error = bus_dmamap_load_mbuf(t->_next_window, map, m0, flags);
 	}
 	return (error);
 }
+
+DMA_COUNT_DECL(load_uio);
+DMA_COUNT_DECL(load_uio_next_window);
 
 /*
  * Like _bus_dmamap_load_direct(), but for uios.
@@ -398,6 +418,7 @@ _bus_dmamap_load_uio_direct(bus_dma_tag_t t, bus_dmamap_t map,
 		resid -= minlen;
 	}
 	if (error == 0) {
+		DMA_COUNT(load_uio);
 		map->dm_mapsize = uio->uio_resid;
 		map->dm_nsegs = seg + 1;
 		map->_dm_window = t;
@@ -405,6 +426,7 @@ _bus_dmamap_load_uio_direct(bus_dma_tag_t t, bus_dmamap_t map,
 		/*
 		 * Give the next window a chance.
 		 */
+		DMA_COUNT(load_uio_next_window);
 		error = bus_dmamap_load_uio(t->_next_window, map, uio, flags);
 	}
 	return (error);
@@ -426,7 +448,7 @@ _bus_dmamap_load_raw_direct(bus_dma_tag_t t, bus_dmamap_t map,
  * chipset-specific DMA map unload functions.
  */
 void
-_bus_dmamap_unload(bus_dma_tag_t t, bus_dmamap_t map)
+_bus_dmamap_unload_common(bus_dma_tag_t t, bus_dmamap_t map)
 {
 
 	/*
@@ -440,6 +462,16 @@ _bus_dmamap_unload(bus_dma_tag_t t, bus_dmamap_t map)
 	map->_dm_flags &= ~(BUS_DMA_READ|BUS_DMA_WRITE);
 }
 
+DMA_COUNT_DECL(unload);
+
+void
+_bus_dmamap_unload(bus_dma_tag_t t, bus_dmamap_t map)
+{
+	KASSERT(map->_dm_window == t);
+	DMA_COUNT(unload);
+	_bus_dmamap_unload_common(t, map);
+}
+
 /*
  * Common function for DMA map synchronization.  May be called
  * by chipset-specific DMA map synchronization functions.
@@ -449,9 +481,6 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
     bus_size_t len, int ops)
 {
 
-	/*
-	 * Flush the store buffer.
-	 */
 	alpha_mb();
 }
 

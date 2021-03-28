@@ -1,4 +1,4 @@
-/*	$NetBSD: mipsX_subr.S,v 1.105 2019/06/25 21:26:04 skrll Exp $	*/
+/*	$NetBSD: mipsX_subr.S,v 1.113 2021/02/16 06:06:58 simonb Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -115,6 +115,10 @@
  *
  *	@(#)locore.s	8.5 (Berkeley) 1/4/94
  */
+
+#include <mips/asm.h>
+RCSID("$NetBSD: mipsX_subr.S,v 1.113 2021/02/16 06:06:58 simonb Exp $")
+
 #include "opt_cputype.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -125,7 +129,6 @@
 #include <sys/cdefs.h>
 #include <sys/endian.h>
 
-#include <mips/asm.h>
 #include <mips/cpuregs.h>
 #if defined(MIPS3)
 #include <mips/cache_r4k.h>
@@ -133,6 +136,12 @@
 #include <mips/trap.h>
 
 #include "assym.h"
+
+#if defined(MIPS64_OCTEON)
+#include "cpunode.h"			/* for NWDOG */
+#else
+#define NWDOG 0
+#endif
 
 #if defined(MIPS1) || defined(MIPS2)
 #error use locore_mips1.S
@@ -906,7 +915,7 @@ MIPSX(kern_return):
 	.set	at
 END(MIPSX(kern_gen_exception))
 
-#ifdef DDB
+#if NWDOG > 0 || defined(DDB)
 /*
  * mipsN_kern_nonmaskable_intr
  *
@@ -1044,7 +1053,7 @@ NESTED_NOPROFILE(MIPSX(kern_nonmaskable_intr), KERNFRAME_SIZ, ra)
 	 nop
 	.set	at
 END(MIPSX(kern_nonmaskable_intr))
-#endif /* DDB */
+#endif /* NWDOG > 0 || DDB */
 
 /*
  * mipsN_kern_intr
@@ -1321,8 +1330,8 @@ NESTED_NOPROFILE(MIPSX(user_reserved_insn), CALLFRAME_SIZ, ra)
 	/*
 	 * Was this rdhwr $3,$29?
 	 */
-	lui	v0, %hi(0x7c03e83b)
-	addiu	v0, %lo(0x7c03e83b)
+	lui	v0, %hi(0x7c03e83b)	# 0x7c03e83b => rdhwr $3,$29
+	addiu	v0, %lo(0x7c03e83b)	#        or ... rdhwr v1,ulr
 	bne	AT, v0, MIPSX(user_gen_exception_common)
 	 nop
 
@@ -1826,7 +1835,7 @@ END(MIPSX(cache_exception))
  *	virtual address.
  *
  *	If we are page sizes which use both TLB LO entries, either both
- *	are valid or neither are.  So this expection should never happen.
+ *	are valid or neither are.  So this exception should never happen.
  *
  * Results:
  *	None.
@@ -1960,7 +1969,7 @@ MIPSX(kern_tlbi_odd):
 	_SLL	k0, k0, WIRED_SHIFT		# get rid of wired bit
 	_SRL	k0, k0, WIRED_SHIFT
 #endif
-	_MTC0	k0, MIPS_COP_0_TLB_LO1		# save PTE entry
+	_MTC0	k0, MIPS_COP_0_TLB_LO1		# load PTE entry
 	COP0_SYNC
 	and	k0, k0, MIPS3_PG_V		# check for valid entry
 #ifdef MIPS3
@@ -1981,7 +1990,7 @@ MIPSX(kern_tlbi_odd):
 	sltiu	k1, k1, MIPS3_TLB_WIRED_UPAGES	# Luckily this is MIPS3_PG_G
 	or	k1, k1, k0
 #endif
-	_MTC0	k0, MIPS_COP_0_TLB_LO0		# save PTE entry
+	_MTC0	k0, MIPS_COP_0_TLB_LO0		# load PTE entry
 	COP0_SYNC
 #ifdef MIPS3
 	nop					# required for QED5230
@@ -2618,8 +2627,10 @@ END(MIPSX(tlb_record_asids))
  * Arrange for a function to be invoked neatly, after a cpu_switch().
  * Call the service function with one argument, specified by the s0
  * and s1 respectively.  There is no need register save operation.
+ * XXX - Not profiled because we pass an arg in with v0 which isn't
+ *       preserved by _mcount()
  */
-LEAF(MIPSX(lwp_trampoline))
+LEAF_NOPROFILE(MIPSX(lwp_trampoline))
 	PTR_ADDU sp, -CALLFRAME_SIZ
 
 	# Call lwp_startup(), with args from cpu_switchto()/cpu_lwp_fork()
@@ -2707,12 +2718,14 @@ END(MIPSX(lwp_trampoline))
  * Disable the optimisation for PGSHIFT == 14 (aka ENABLE_MIPS_16KB_PAGE)
  * as the code needs fixing for this case
  *
- * _LP64 with UPAGES == 1 is always direct mappable; everything else can have
- * non-direct mappable USPACE.
+ * A TLB entry isn't used for the following cases:
+ *  - 16kB USPACE
+ *  - LP64 - USPACE is always accessed directly via XKPHYS
  */
 
 LEAF_NOPROFILE(MIPSX(cpu_switch_resume))
-#if (PGSHIFT < 14)
+#if !defined(_LP64)
+#if (PAGE_SIZE < 16384)
 #if (USPACE > PAGE_SIZE) || !defined(_LP64)
 	INT_L	a1, L_MD_UPTE_0(a0)		# a1 = upte[0]
 #if (PGSHIFT & 1)
@@ -2789,7 +2802,8 @@ MIPSX(entry0set):
 	COP0_SYNC
 MIPSX(resume):
 #endif /* (USPACE > PAGE_SIZE) || !defined(_LP64) */
-#endif /* PGSHIFT < 14 */
+#endif /* PAGE_SIZE < 16384 */
+#endif /* ! LP64 */
 #ifdef MIPSNNR2
 	PTR_L	v0, L_PRIVATE(a0)		# get lwp private
 	_MTC0	v0, MIPS_COP_0_USERLOCAL	# make available for rdhwr

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.691 2019/12/18 07:37:18 maxv Exp $
+#	$NetBSD: Makefile,v 1.711 2020/10/27 08:57:10 ryo Exp $
 #	@(#)Makefile	8.1 (Berkeley) 6/18/93
 
 MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
@@ -6,10 +6,10 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	adc.4 adm1026hm.4 admtemp.4 adv.4 adw.4 age.4 agp.4 agr.4 ahb.4 ahc.4 \
 	ahcisata.4 ahd.4 aibs.4 alc.4 ale.4 alipm.4 altmem.4 altq.4 \
 	am2315temp.4 amdpm.4 amdtemp.4 amhphy.4 amr.4 aps.4 asus.4 \
-	an.4 arcmsr.4 arcofi.4 aria.4 artsata.4 ata.4 atalk.4 ataraid.4 \
+	an.4 aq.4 arcmsr.4 arcofi.4 aria.4 artsata.4 ata.4 atalk.4 ataraid.4 \
 	ath.4 athn.4 atphy.4 atppc.4 attimer.4 atw.4 \
 	auacer.4 audio.4 audiocs.4 auich.4 \
-	auixp.4 autri.4 auvia.4 awi.4 azalia.4 \
+	auixp.4 autri.4 auvia.4 awi.4 \
 	battery_pmu.4 bba.4 bce.4 bcsp.4 be.4 bge.4 bnx.4 bha.4 \
 	bio.4 bktr.4 bluetooth.4 bmtphy.4 bpf.4 bpfjit.4 \
 	brgphy.4 bridge.4 bthidev.4 bthub.4 btkbd.4 \
@@ -19,19 +19,19 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	cec.4 cgd.4 cfb.4 ch.4 chipsfb.4 ciphy.4 ciss.4 clcs.4 clct.4 \
 	clockctl.4 cmdide.4 cmpci.4 cms.4 cnw.4 \
 	com.4 coram.4 crypto.4 cs80bus.4 cuda.4 cypide.4 cxdtv.4 \
-	ddb.4 ddc.4 de.4 dge.4 dk.4 dm.4 dmoverio.4 \
+	ddb.4 ddc.4 dge.4 dk.4 dm.4 dmoverio.4 \
 	dmphy.4 dpt.4 dpti.4 drm.4 drum.4 drvctl.4 dtv.4 dtviic.4 dwctwo.4 \
-	eap.4 ebus.4 edc.4 elmc.4 emuxki.4 ena.4 envsys.4 ep.4 esh.4 \
+	eap.4 ebus.4 edc.4 elmc.4 emuxki.4 ena.4 envsys.4 ep.4 \
 	esa.4 esiop.4 esm.4 eso.4 et.4 etphy.4 exphy.4 \
-	fd.4 finsio.4 flash.4 fpa.4 fms.4 fss.4 \
+	fd.4 finsio.4 flash.4 fms.4 fss.4 \
 	fujbp.4 full.4 fxp.4 \
 	gcscaudio.4 gem.4 genfb.4 gentbi.4 geodeide.4 \
 	glxtphy.4 gpib.4 gpio.4 gpioirq.4 gpiolock.4 gpiopps.4 gpiopwm.4 \
 	gpiosim.4 gre.4 gphyter.4 gsip.4 \
 	hdaudio.4 hifn.4 hme.4 hpacel.4 hpqlb.4 hptide.4 hythygtemp.4 \
-	ibmcd.4 ibmhawk.4 ichsmb.4 icmp.4 icp.4 icsphy.4 iee.4 ieee80211.4 \
-	ifmedia.4 igmafb.4 igphy.4 igsfb.4 iha.4 ihidev.4 ihphy.4 iic.4 ims.4 \
-	inet.4 ikphy.4 inphy.4 intersil7170.4 intro.4 \
+	iavf.4 ibmcd.4 ibmhawk.4 ichsmb.4 icmp.4 icp.4 icsphy.4 iee.4 \
+	ieee80211.4 ifmedia.4 igmafb.4 igphy.4 igsfb.4 iha.4 ihidev.4 \
+	ihphy.4 iic.4 ims.4 inet.4 ikphy.4 inphy.4 intersil7170.4 intro.4 \
 	ioasic.4 ioat.4 iop.4 iophy.4 iopsp.4 ip.4 ipgphy.4 ipmi.4 ipw.4 \
 	irmce.4 isp.4 ismt.4 isv.4 itesio.4 iteide.4 iwi.4 iwm.4 iwn.4 ixg.4 \
 	ixl.4 ixpide.4 ixv.4 \
@@ -43,7 +43,7 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	micphy.4 midi.4 mii.4 mk48txx.4 mlx.4 mly.4 mpls.4 mpii.4 mpt.4 \
 	mpu.4 mtd.4 mtio.4 msm6242b.4 multicast.4 mvsata.4 \
 	nadb.4 ne.4 neo.4 netintro.4 nfe.4 nfsmb.4 njata.4 njs.4 \
-	nsclpcsio.4 nside.4 nsphy.4 nsphyter.4 ntwoc.4 null.4 nsmb.4 \
+	nsclpcsio.4 nside.4 nsphy.4 nsphyter.4 ntwoc.4 null.4 \
 	nvme.4 nvmm.4 \
 	oak.4 oosiop.4 opl.4 options.4 optiide.4 osiop.4 otus.4 \
 	pad.4 pas.4 pcdisplay.4 pcf8563rtc.4 pciide.4 pckbc.4 pckbd.4 pcn.4 \
@@ -60,20 +60,22 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	siisata.4 siop.4 sip.4 siside.4 sk.4 sl.4 slide.4 \
 	sm.4 smscphy.4 smsh.4 sn.4 sony.4 spc.4 speaker.4 spif.4 sqphy.4 \
 	srt.4 ss.4 \
-	ssdfb.4 st.4 ste.4 stge.4 sti.4 stpcide.4 sv.4 strip.4 \
+	ssdfb.4 st.4 ste.4 stge.4 sti.4 stpcide.4 sv.4 \
 	svwsata.4 swsensor.4 swwdog.4 sysmon.4 \
 	tap.4 tc.4 tcds.4 tcp.4 tcu.4 tdvfb.4 tea5767radio.4 termios.4 tfb.4 \
-	thinkpad.4 ti.4 tl.4 tlp.4 tlphy.4 tpm.4 tprof.4 tr.4 tra.4 \
+	thinkpad.4 ti.4 tl.4 tlp.4 tlphy.4 tpm.4 tprof.4 tra.4 \
 	trm.4 tsllux.4 tty.4 tun.4 tqphy.4 twa.4 twe.4 txp.4 \
 	uark.4 ubsec.4 udp.4 uep.4 ug.4 uha.4 uk.4 ukphy.4 umb.4 \
 	unix.4 userconf.4 \
 	vald.4 valz.4 veriexec.4 vga.4 vge.4 viaide.4 video.4 \
 	vio9p.4 vioif.4 viomb.4 viornd.4 vioscsi.4 virt.4 virtio.4 \
-	vlan.4 vmmon.4 vmnet.4 vnd.4 voodoofb.4 vr.4 vte.4 \
-	wapbl.4 wb.4 wbsio.4 wd.4 wdc.4 wi.4 wm.4 wpi.4 \
+	vether.4 vlan.4 vmmon.4 vmnet.4 vmt.4 vmx.4 vnd.4 voodoofb.4 vr.4 \
+	vte.4 \
+	wapbl.4 wb.4 wbsio.4 wd.4 wdc.4 wg.4 wi.4 wm.4 wpi.4 \
 	wsbell.4 wscons.4 wsdisplay.4 wsfont.4 wskbd.4 wsmouse.4 wsmux.4 \
 	xbox.4 xge.4 \
 	yds.4 ym.4 \
+	wwanc.4 \
 	zero.4 zstty.4 zyd.4
 
 # USB devices
@@ -85,11 +87,10 @@ MAN+=	atu.4 aubtfwl.4 aue.4 axe.4 axen.4 cdce.4 cue.4 ehci.4 kue.4 \
 	ucom.4 ucycom.4 udav.4 udsbr.4 uftdi.4 ugen.4 ugensa.4 uhci.4 uhid.4 \
 	uhidev.4 uhmodem.4 uhso.4 uipad.4 uipaq.4 uirda.4 ukbd.4 ukyopon.4 \
 	ulpt.4 umass.4 umcs.4 umct.4 umidi.4 umodem.4 ums.4 upgt.4 upl.4 \
-	uplcom.4 ure.4 urio.4 url.4 urndis.4 urtw.4 urtwn.4 \
+	uplcom.4 ure.4 url.4 urndis.4 urtw.4 urtwn.4 \
 	usb.4 usbnet.4 uscanner.4 uslsa.4 usmsc.4 usscanner.4 \
-	ustir.4 uthum.4 utoppy.4 uts.4 uvideo.4 uvisor.4 uvscom.4 uyap.4 \
-	uyurex.4 \
-	xhci.4 \
+	ustir.4 uthum.4 utoppy.4 uts.4 uvideo.4 uvisor.4 uvscom.4 uxrcom.4 \
+	xhci.4
 
 # Ir devices
 MAN+=	irframe.4 cir.4 irframetty.4 oboe.4
@@ -207,7 +208,6 @@ MLINKS+=dbcool.4 adt7475.4
 MLINKS+=dbcool.4 adt7476.4
 MLINKS+=dk.4 wedge.4
 MLINKS+=fd.4 stderr.4 fd.4 stdin.4 fd.4 stdout.4
-MLINKS+=fpa.4 fea.4 fpa.4 fta.4
 MLINKS+=fujbp.4 fujhk.4
 MLINKS+=hdaudio.4 hdafg.4
 MLINKS+=hdaudio.4 hdaudiobus.4
@@ -220,7 +220,6 @@ MLINKS+=midi.4 sequencer.4
 MLINKS+=mii.4 phy.4
 MLINKS+=netintro.4 networking.4
 MLINKS+=nfsmb.4 nfsmbc.4
-MLINKS+=nsmb.4 netsmb.4
 MLINKS+=ntwoc.4 ntwo.4
 MLINKS+=pci.4 pchb.4
 MLINKS+=pci.4 ppb.4
@@ -241,6 +240,7 @@ MLINKS+=tty.4 dty.4
 MLINKS+=url.4 urlphy.4
 MLINKS+=usb.4 uhub.4
 MLINKS+=usb.4 usbtask.4
+MLINKS+=wwanc.4 wwan.4
 MLINKS+=wsmux.4 wsmuxctl.4
 MLINKS+=zstty.4 zs.4 zstty.4 zsc.4
 

@@ -36,7 +36,7 @@ static const struct grid_cell *screen_write_combine(struct screen_write_ctx *,
 		    const struct utf8_data *, u_int *);
 
 static const struct grid_cell screen_write_pad_cell = {
-	GRID_FLAG_PADDING, 0, 8, 8, { { 0 }, 0, 0, 0 }
+	{ { 0 }, 0, 0, 0 }, 0, GRID_FLAG_PADDING, 0, 8, 8
 };
 
 struct screen_write_collect_item {
@@ -100,7 +100,6 @@ void
 screen_write_start(struct screen_write_ctx *ctx, struct window_pane *wp,
     struct screen *s)
 {
-	char	tmp[32];
 	u_int	y;
 
 	memset(ctx, 0, sizeof *ctx);
@@ -119,12 +118,17 @@ screen_write_start(struct screen_write_ctx *ctx, struct window_pane *wp,
 	ctx->scrolled = 0;
 	ctx->bg = 8;
 
-	if (wp != NULL) {
-		snprintf(tmp, sizeof tmp, "pane %%%u (at %u,%u)", wp->id,
-		    wp->xoff, wp->yoff);
+	if (log_get_level() != 0) {
+		if (wp != NULL) {
+			log_debug("%s: size %ux%u, pane %%%u (at %u,%u)",
+			    __func__, screen_size_x(ctx->s),
+			    screen_size_y(ctx->s), wp->id, wp->xoff, wp->yoff);
+		} else {
+			log_debug("%s: size %ux%u, no pane",
+			    __func__, screen_size_x(ctx->s),
+			    screen_size_y(ctx->s));
+		}
 	}
-	log_debug("%s: size %ux%u, %s", __func__, screen_size_x(ctx->s),
-	    screen_size_y(ctx->s), wp == NULL ? "no pane" : tmp);
 }
 
 /* Finish writing. */
@@ -399,6 +403,51 @@ screen_write_vline(struct screen_write_ctx *ctx, u_int ny, int top, int bottom)
 	}
 	screen_write_set_cursor(ctx, cx, cy + ny - 1);
 	screen_write_putc(ctx, &gc, bottom ? 'v' : 'x');
+
+	screen_write_set_cursor(ctx, cx, cy);
+}
+
+/* Draw a menu on screen. */
+void
+screen_write_menu(struct screen_write_ctx *ctx, struct menu *menu, int choice)
+{
+	struct screen		*s = ctx->s;
+	struct grid_cell	 gc;
+	u_int			 cx, cy, i, j;
+	const char		*name;
+
+	cx = s->cx;
+	cy = s->cy;
+
+	memcpy(&gc, &grid_default_cell, sizeof gc);
+
+	screen_write_box(ctx, menu->width + 4, menu->count + 2);
+	screen_write_cursormove(ctx, cx + 2, cy, 0);
+	format_draw(ctx, &gc, menu->width, menu->title, NULL);
+
+	for (i = 0; i < menu->count; i++) {
+		name = menu->items[i].name;
+		if (name == NULL) {
+			screen_write_cursormove(ctx, cx, cy + 1 + i, 0);
+			screen_write_hline(ctx, menu->width + 4, 1, 1);
+		} else {
+			if (choice >= 0 && i == (u_int)choice && *name != '-')
+				gc.attr |= GRID_ATTR_REVERSE;
+			screen_write_cursormove(ctx, cx + 2, cy + 1 + i, 0);
+			for (j = 0; j < menu->width; j++)
+				screen_write_putc(ctx, &gc, ' ');
+			screen_write_cursormove(ctx, cx + 2, cy + 1 + i, 0);
+			if (*name == '-') {
+				name++;
+				gc.attr |= GRID_ATTR_DIM;
+				format_draw(ctx, &gc, menu->width, name, NULL);
+				gc.attr &= ~GRID_ATTR_DIM;
+			} else
+				format_draw(ctx, &gc, menu->width, name, NULL);
+			if (choice >= 0 && i == (u_int)choice)
+				gc.attr &= ~GRID_ATTR_REVERSE;
+		}
+	}
 
 	screen_write_set_cursor(ctx, cx, cy);
 }
@@ -1043,6 +1092,31 @@ screen_write_scrollup(struct screen_write_ctx *ctx, u_int lines, u_int bg)
 	ctx->scrolled += lines;
 }
 
+/* Scroll down. */
+void
+screen_write_scrolldown(struct screen_write_ctx *ctx, u_int lines, u_int bg)
+{
+	struct screen	*s = ctx->s;
+	struct grid	*gd = s->grid;
+	struct tty_ctx	 ttyctx;
+	u_int		 i;
+
+	screen_write_initctx(ctx, &ttyctx);
+	ttyctx.bg = bg;
+
+	if (lines == 0)
+		lines = 1;
+	else if (lines > s->rlower - s->rupper + 1)
+		lines = s->rlower - s->rupper + 1;
+
+	for (i = 0; i < lines; i++)
+		grid_view_scroll_region_down(gd, s->rupper, s->rlower, bg);
+
+	screen_write_collect_flush(ctx, 0);
+	ttyctx.num = lines;
+	tty_write(tty_cmd_scrolldown, &ttyctx);
+}
+
 /* Carriage return (cursor to start of line). */
 void
 screen_write_carriagereturn(struct screen_write_ctx *ctx)
@@ -1124,11 +1198,7 @@ screen_write_clearscreen(struct screen_write_ctx *ctx, u_int bg)
 void
 screen_write_clearhistory(struct screen_write_ctx *ctx)
 {
-	struct screen	*s = ctx->s;
-	struct grid	*gd = s->grid;
-
-	grid_move_lines(gd, 0, gd->hsize, gd->sy, 8);
-	gd->hscrolled = gd->hsize = 0;
+	grid_clear_history(ctx->s->grid);
 }
 
 /* Clear a collected line. */
@@ -1139,7 +1209,7 @@ screen_write_collect_clear(struct screen_write_ctx *ctx, u_int y, u_int n)
 	u_int					 i;
 	size_t					 size;
 
-	for (i = y ; i < y + n; i++) {
+	for (i = y; i < y + n; i++) {
 		if (TAILQ_EMPTY(&ctx->list[i].items))
 			continue;
 		size = 0;
@@ -1168,7 +1238,6 @@ screen_write_collect_scroll(struct screen_write_ctx *ctx)
 	for (y = s->rupper; y < s->rlower; y++) {
 		cl = &ctx->list[y + 1];
 		TAILQ_CONCAT(&ctx->list[y].items, &cl->items, entry);
-		TAILQ_INIT(&cl->items);
 	}
 }
 
@@ -1257,8 +1326,7 @@ screen_write_collect_end(struct screen_write_ctx *ctx)
 		}
 	}
 
-	memcpy(&gc, &ci->gc, sizeof gc);
-	grid_view_set_cells(s->grid, s->cx, s->cy, &gc, ci->data, ci->used);
+	grid_view_set_cells(s->grid, s->cx, s->cy, &ci->gc, ci->data, ci->used);
 	screen_write_set_cursor(ctx, s->cx + ci->used, -1);
 
 	for (xx = s->cx; xx < screen_size_x(s); xx++) {
@@ -1282,8 +1350,7 @@ screen_write_collect_add(struct screen_write_ctx *ctx,
 	/*
 	 * Don't need to check that the attributes and whatnot are still the
 	 * same - input_parse will end the collection when anything that isn't
-	 * a plain character is encountered. Also nothing should make it here
-	 * that isn't a single ASCII character.
+	 * a plain character is encountered.
 	 */
 
 	collect = 1;
@@ -1569,7 +1636,8 @@ screen_write_overwrite(struct screen_write_ctx *ctx, struct grid_cell *gc,
 			grid_view_get_cell(gd, xx, s->cy, &tmp_gc);
 			if (~tmp_gc.flags & GRID_FLAG_PADDING)
 				break;
-			log_debug("%s: overwrite at %u,%u", __func__, xx, s->cy);
+			log_debug("%s: overwrite at %u,%u", __func__, xx,
+			    s->cy);
 			grid_view_set_cell(gd, xx, s->cy, &grid_default_cell);
 			done = 1;
 		}

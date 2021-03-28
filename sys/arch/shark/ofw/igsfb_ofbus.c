@@ -1,4 +1,4 @@
-/*	$NetBSD: igsfb_ofbus.c,v 1.18 2019/11/10 21:16:32 chs Exp $ */
+/*	$NetBSD: igsfb_ofbus.c,v 1.20 2021/01/27 03:10:21 thorpej Exp $ */
 
 /*
  * Copyright (c) 2006 Michael Lorenz
@@ -31,13 +31,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: igsfb_ofbus.c,v 1.18 2019/11/10 21:16:32 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: igsfb_ofbus.c,v 1.20 2021/01/27 03:10:21 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/buf.h>
 #include <sys/bus.h>
 #include <uvm/uvm.h>
@@ -73,7 +73,10 @@ static paddr_t	igsfb_ofbus_mmap(void *, void *, off_t, int);
 CFATTACH_DECL_NEW(igsfb_ofbus, sizeof(struct igsfb_softc),
     igsfb_ofbus_match, igsfb_ofbus_attach, NULL, NULL);
     
-static const char * const compat_strings[] = { "igs,cyperpro2010", NULL };
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "igs,cyperpro2010" },
+	DEVICE_COMPAT_EOL
+};
 
 vaddr_t igsfb_mem_vaddr = 0, igsfb_mmio_vaddr = 0;
 paddr_t igsfb_mem_paddr;
@@ -100,7 +103,7 @@ igsfb_ofbus_cnattach(bus_space_tag_t iot, bus_space_tag_t memt)
 	igs_node = OF_finddevice("/vlbus/display");
 	if (igs_node == -1)
 		return ENXIO;
-	if (of_compatible(igs_node, compat_strings) < 0) 
+	if (!of_compatible_match(igs_node, compat_data)) 
 		return ENXIO;
 
 	/*
@@ -209,10 +212,8 @@ igsfb_ofbus_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct ofbus_attach_args *oba = aux;
 
-	if (of_compatible(oba->oba_phandle, compat_strings) < 0)
-		return 0;
-
-	return 10;	/* beat vga etc. */
+							/* beat vga etc. */
+	return of_compatible_match(oba->oba_phandle, compat_data) * 10;
 }
 
 static void
@@ -229,8 +230,8 @@ igsfb_ofbus_attach(device_t parent, device_t self, void *aux)
 		sc->sc_dc = &igsfb_console_dc;
 	} else {
 		isconsole = 0;
-		sc->sc_dc = malloc(sizeof(struct igsfb_devconfig),
-				   M_DEVBUF, M_WAITOK | M_ZERO);
+		sc->sc_dc = kmem_zalloc(sizeof(struct igsfb_devconfig),
+				   KM_SLEEP);
 		if (OF_getprop(oba->oba_phandle, "reg",
 			       regs, sizeof(regs)) <= 0)
 		{

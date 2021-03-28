@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread_md.h,v 1.7 2011/01/25 19:12:05 christos Exp $	*/
+/*	$NetBSD: pthread_md.h,v 1.9 2020/04/11 09:15:23 rin Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.

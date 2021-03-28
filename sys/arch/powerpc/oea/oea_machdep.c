@@ -1,4 +1,4 @@
-/*	$NetBSD: oea_machdep.c,v 1.76 2019/02/06 07:32:50 mrg Exp $	*/
+/*	$NetBSD: oea_machdep.c,v 1.82 2021/02/27 01:16:52 thorpej Exp $	*/
 
 /*
  * Copyright (C) 2002 Matt Thomas
@@ -33,14 +33,15 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: oea_machdep.c,v 1.76 2019/02/06 07:32:50 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: oea_machdep.c,v 1.82 2021/02/27 01:16:52 thorpej Exp $");
 
-#include "opt_ppcarch.h"
-#include "opt_compat_netbsd.h"
+#ifdef _KERNEL_OPT
+#include "opt_altivec.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_multiprocessor.h"
-#include "opt_altivec.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -479,7 +480,7 @@ oea_init(void (*handler)(void))
 }
 
 #ifdef PPC_OEA601
-void
+static void
 mpc601_ioseg_add(paddr_t pa, register_t len)
 {
 	const u_int i = pa >> ADDR_SR_SHFT;
@@ -529,6 +530,14 @@ oea_iobat_add(paddr_t pa, register_t len)
 	const int after_bat3 = (oeacpufeat & OEACPU_HIGHBAT) ? 4 : 8;
 
 	KASSERT(len >= BAT_BL_8M);
+
+#ifdef PPC_OEA601
+	if (mfpvr() >> 16 == MPC601) {
+		/* Use I/O segments on the BAT-starved 601. */
+		mpc601_ioseg_add(pa, len);
+		return;
+	}
+#endif /* PPC_OEA601 */
 
 	/*
 	 * If the caller wanted a bigger BAT than the hardware supports,
@@ -777,29 +786,15 @@ oea_batinit(paddr_t pa, ...)
 	 * registers were cleared above.
 	 */
 
-	va_start(ap, pa);
-
 	/*
 	 * Add any I/O BATs specificed;
-	 * use I/O segments on the BAT-starved 601.
 	 */
-#ifdef PPC_OEA601
-	if (cpuvers == MPC601) {
-		while (pa != 0) {
-			register_t len = va_arg(ap, register_t);
-			mpc601_ioseg_add(pa, len);
-			pa = va_arg(ap, paddr_t);
-		}
-	} else
-#endif
-	{
-		while (pa != 0) {
-			register_t len = va_arg(ap, register_t);
-			oea_iobat_add(pa, len);
-			pa = va_arg(ap, paddr_t);
-		}
+	va_start(ap, pa);
+	while (pa != 0) {
+		register_t len = va_arg(ap, register_t);
+		oea_iobat_add(pa, len);
+		pa = va_arg(ap, paddr_t);
 	}
-
 	va_end(ap);
 
 	/*
@@ -1000,7 +995,7 @@ oea_startup(const char *model)
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 				 VM_PHYS_SIZE, 0, false, NULL);
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 #ifdef MULTIPROCESSOR

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.38 2017/04/08 19:53:23 christos Exp $
+#	$NetBSD: Makefile,v 1.40 2020/09/06 07:20:29 mrg Exp $
 
 .include <bsd.init.mk>
 
@@ -37,6 +37,12 @@ CPPFLAGS+=	-DNETBOOT
 CPPFLAGS+=	-DSUPPORT_DHCP
 #CPPFLAGS+=	-DNETIF_DEBUG 
 #CPPFLAGS+=	-D_DEBUG
+
+# Follow the suit of Makefile.kern.inc; needed for the lfs64 union
+# accessors -- they don't actually dereference the resulting pointer,
+# just use it for type-checking.
+CWARNFLAGS.clang+=	-Wno-error=address-of-packed-member
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 LINKS+=		${BINDIR}/ofwboot ${BINDIR}/ofwboot.net
 

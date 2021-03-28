@@ -313,9 +313,8 @@ bn_sqr_words_internal:
 	sd	$11,-2*8($4)
 
 	.set	noreorder
-	sd	$10,-8($4)
 	bgtz	$8,.L_bn_sqr_words_loop
-	nop
+	sd	$10,-8($4)
 
 	beqz	$6,.L_bn_sqr_words_return
 	nop
@@ -568,6 +567,11 @@ bn_sub_words_internal:
 	move	$4,$2
 .end	bn_sub_words_internal
 
+#if 0
+/*
+ * The bn_div_3_words entry point is re-used for constant-time interface.
+ * Implementation is retained as historical reference.
+ */
 .align 5
 .globl	bn_div_3_words
 .ent	bn_div_3_words
@@ -581,9 +585,8 @@ bn_div_3_words:
 
 	ld	$4,($7)
 	move	$10,$5
-	ld	$5,-8($7)
 	bne	$4,$6,bn_div_3_words_internal
-	 nop
+	 ld	$5,-8($7)
 	li	$2,-1
 	jr	$31
 	move	$4,$2
@@ -624,6 +627,7 @@ bn_div_3_words_internal:
 	jr	$31
 	move	$4,$2
 .end	bn_div_3_words_internal
+#endif
 
 .align	5
 .globl	bn_div_words

@@ -1,4 +1,4 @@
-/* $NetBSD: emit1.c,v 1.20 2017/12/26 17:02:19 christos Exp $ */
+/* $NetBSD: emit1.c,v 1.42 2021/02/19 22:27:49 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: emit1.c,v 1.20 2017/12/26 17:02:19 christos Exp $");
+__RCSID("$NetBSD: emit1.c,v 1.42 2021/02/19 22:27:49 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -52,11 +52,11 @@ static	void	outfstrg(strg_t *);
  * Write type into the output buffer.
  * The type is written as a sequence of substrings, each of which describes a
  * node of type type_t
- * a node is coded as follows:
+ * a node is encoded as follows:
  *	_Bool			B
  *	_Complex float		s X
- *	_Complex double		X 
- *	_Complex long double	l X 
+ *	_Complex double		X
+ *	_Complex long double	l X
  *	char			C
  *	signed char		s C
  *	unsigned char		u C
@@ -88,18 +88,18 @@ static	void	outfstrg(strg_t *);
  *				2 n typename		only type name
  *
  * spaces are only for better readability
- * additionaly it is possible to prepend the characters 'c' (for const)
+ * additionally it is possible to prepend the characters 'c' (for const)
  * and 'v' (for volatile)
  */
 void
-outtype(type_t *tp)
+outtype(const type_t *tp)
 {
 	int	t, s, na;
 	sym_t	*arg;
 	tspec_t	ts;
 
 	while (tp != NULL) {
-		if ((ts = tp->t_tspec) == INT && tp->t_isenum)
+		if ((ts = tp->t_tspec) == INT && tp->t_is_enum)
 			ts = ENUM;
 		switch (ts) {
 		case BOOL:	t = 'B';	s = '\0';	break;
@@ -128,7 +128,7 @@ outtype(type_t *tp)
 		case DCOMPLEX:	t = 'X';	s = '\0';	break;
 		case LCOMPLEX:	t = 'X';	s = 'l';	break;
 		default:
-			LERROR("outtyp()");
+			lint_assert(/*CONSTCOND*/false);
 		}
 		if (tp->t_const)
 			outchar('c');
@@ -140,17 +140,17 @@ outtype(type_t *tp)
 		if (ts == ARRAY) {
 			outint(tp->t_dim);
 		} else if (ts == ENUM) {
-			outtt(tp->t_enum->etag, tp->t_enum->etdef);
+			outtt(tp->t_enum->en_tag, tp->t_enum->en_first_typedef);
 		} else if (ts == STRUCT || ts == UNION) {
-			outtt(tp->t_str->stag, tp->t_str->stdef);
+			outtt(tp->t_str->sou_tag, tp->t_str->sou_first_typedef);
 		} else if (ts == FUNC && tp->t_proto) {
 			na = 0;
-			for (arg = tp->t_args; arg != NULL; arg = arg->s_nxt)
+			for (arg = tp->t_args; arg != NULL; arg = arg->s_next)
 					na++;
 			if (tp->t_vararg)
 				na++;
 			outint(na);
-			for (arg = tp->t_args; arg != NULL; arg = arg->s_nxt)
+			for (arg = tp->t_args; arg != NULL; arg = arg->s_next)
 				outtype(arg->s_type);
 			if (tp->t_vararg)
 				outchar('E');
@@ -166,26 +166,26 @@ outtype(type_t *tp)
  * it uses its own output buffer for conversion
  */
 const char *
-ttos(type_t *tp)
+ttos(const type_t *tp)
 {
 	static	ob_t	tob;
 	ob_t	tmp;
 
 	if (tob.o_buf == NULL) {
 		tob.o_len = 64;
-		tob.o_buf = tob.o_nxt = xmalloc(tob.o_len);
+		tob.o_buf = tob.o_next = xmalloc(tob.o_len);
 		tob.o_end = tob.o_buf + tob.o_len;
 	}
 
 	tmp = ob;
 	ob = tob;
-	ob.o_nxt = ob.o_buf;
+	ob.o_next = ob.o_buf;
 	outtype(tp);
 	outchar('\0');
 	tob = ob;
 	ob = tmp;
 
-	return (tob.o_buf);
+	return tob.o_buf;
 }
 
 /*
@@ -210,30 +210,30 @@ outtt(sym_t *tag, sym_t *tdef)
 		outname(tdef->s_name);
 	} else {
 		outint(3);
-		outint(tag->s_dpos.p_line);
+		outint(tag->s_def_pos.p_line);
 		outchar('.');
-		outint(getfnid(tag->s_dpos.p_file));
+		outint(getfnid(tag->s_def_pos.p_file));
 		outchar('.');
-		outint(tag->s_dpos.p_uniq);
+		outint(tag->s_def_pos.p_uniq);
 	}
 }
 
 /*
- * write information about an global declared/defined symbol
+ * write information about a globally declared/defined symbol
  * with storage class extern
  *
- * informations about function definitions are written in outfdef(),
+ * information about function definitions are written in outfdef(),
  * not here
  */
 void
-outsym(sym_t *sym, scl_t sc, def_t def)
+outsym(const sym_t *sym, scl_t sc, def_t def)
 {
 
 	/*
 	 * Static function declarations must also be written to the output
 	 * file. Compatibility of function declarations (for both static
 	 * and extern functions) must be checked in lint2. Lint1 can't do
-	 * this, especially not, if functions are declared at block level
+	 * this, especially not if functions are declared at block level
 	 * before their first declaration at level 0.
 	 */
 	if (sc != EXTERN && !(sc == STATIC && sym->s_type->t_tspec == FUNC))
@@ -248,9 +248,9 @@ outsym(sym_t *sym, scl_t sc, def_t def)
 	 */
 	outint(csrc_pos.p_line);
 	outchar('d');
-	outint(getfnid(sym->s_dpos.p_file));
+	outint(getfnid(sym->s_def_pos.p_file));
 	outchar('.');
-	outint(sym->s_dpos.p_line);
+	outint(sym->s_def_pos.p_line);
 
 	/* flags */
 
@@ -268,7 +268,7 @@ outsym(sym_t *sym, scl_t sc, def_t def)
 		outchar('e');
 		break;
 	default:
-		LERROR("outsym()");
+		lint_assert(/*CONSTCOND*/false);
 	}
 	if (llibflg && def != DECL) {
 		/*
@@ -285,7 +285,7 @@ outsym(sym_t *sym, scl_t sc, def_t def)
 	outname(sym->s_name);
 
 	/* renamed name of symbol, if necessary */
-	if (sym->s_rename) {
+	if (sym->s_rename != NULL) {
 		outchar('r');
 		outname(sym->s_rename);
 	}
@@ -301,10 +301,11 @@ outsym(sym_t *sym, scl_t sc, def_t def)
  * they are called with proper argument types
  */
 void
-outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
+outfdef(const sym_t *fsym, const pos_t *posp, bool rval, bool osdef,
+	const sym_t *args)
 {
-	int	narg;
-	sym_t	*arg;
+	int narg;
+	const sym_t *arg;
 
 	/* reset the buffer */
 	outclr();
@@ -330,25 +331,25 @@ outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
 	/* flags */
 
 	/* both SCANFLIKE and PRINTFLIKE imply VARARGS */
-	if (prflstrg != -1) {
-		nvararg = prflstrg;
-	} else if (scflstrg != -1) {
-		nvararg = scflstrg;
+	if (printflike_argnum != -1) {
+		nvararg = printflike_argnum;
+	} else if (scanflike_argnum != -1) {
+		nvararg = scanflike_argnum;
 	}
 
 	if (nvararg != -1) {
 		outchar('v');
 		outint(nvararg);
 	}
-	if (scflstrg != -1) {
+	if (scanflike_argnum != -1) {
 		outchar('S');
-		outint(scflstrg);
+		outint(scanflike_argnum);
 	}
-	if (prflstrg != -1) {
+	if (printflike_argnum != -1) {
 		outchar('P');
-		outint(prflstrg);
+		outint(printflike_argnum);
 	}
-	nvararg = prflstrg = scflstrg = -1;
+	nvararg = printflike_argnum = scanflike_argnum = -1;
 
 	outchar('d');
 
@@ -377,7 +378,7 @@ outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
 	outname(fsym->s_name);
 
 	/* renamed name of function, if necessary */
-	if (fsym->s_rename) {
+	if (fsym->s_rename != NULL) {
 		outchar('r');
 		outname(fsym->s_rename);
 	}
@@ -385,11 +386,11 @@ outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
 	/* argument types and return value */
 	if (osdef) {
 		narg = 0;
-		for (arg = args; arg != NULL; arg = arg->s_nxt)
+		for (arg = args; arg != NULL; arg = arg->s_next)
 			narg++;
 		outchar('f');
 		outint(narg);
-		for (arg = args; arg != NULL; arg = arg->s_nxt)
+		for (arg = args; arg != NULL; arg = arg->s_next)
 			outtype(arg->s_type);
 		outtype(fsym->s_type->t_subt);
 	} else {
@@ -401,12 +402,12 @@ outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
  * write out all information necessary for lint2 to check function
  * calls
  *
- * rvused is set if the return value is used (asigned to a variable)
+ * rvused is set if the return value is used (assigned to a variable)
  * rvdisc is set if the return value is not used and not ignored
  * (casted to void)
  */
 void
-outcall(tnode_t *tn, int rvused, int rvdisc)
+outcall(const tnode_t *tn, bool rvused, bool rvdisc)
 {
 	tnode_t	*args, *arg;
 	int	narg, n, i;
@@ -435,14 +436,14 @@ outcall(tnode_t *tn, int rvused, int rvdisc)
 	args = tn->tn_right;
 	for (arg = args; arg != NULL; arg = arg->tn_right)
 		narg++;
-	/* informations about arguments */
+	/* information about arguments */
 	for (n = 1; n <= narg; n++) {
 		/* the last argument is the top one in the tree */
 		for (i = narg, arg = args; i > n; i--, arg = arg->tn_right)
 			continue;
 		arg = arg->tn_left;
 		if (arg->tn_op == CON) {
-			if (isityp(t = arg->tn_type->t_tspec)) {
+			if (is_integer(t = arg->tn_type->t_tspec)) {
 				/*
 				 * XXX it would probably be better to
 				 * explicitly test the sign
@@ -459,13 +460,13 @@ outcall(tnode_t *tn, int rvused, int rvdisc)
 				}
 				outint(n);
 			}
-		} else if (arg->tn_op == AMPER &&
+		} else if (arg->tn_op == ADDR &&
 			   arg->tn_left->tn_op == STRING &&
-			   arg->tn_left->tn_strg->st_tspec == CHAR) {
+			   arg->tn_left->tn_string->st_tspec == CHAR) {
 			/* constant string, write all format specifiers */
 			outchar('s');
 			outint(n);
-			outfstrg(arg->tn_left->tn_strg);
+			outfstrg(arg->tn_left->tn_string);
 		}
 
 	}
@@ -490,16 +491,16 @@ outcall(tnode_t *tn, int rvused, int rvdisc)
 
 /*
  * extracts potential format specifiers for printf() and scanf() and
- * writes them, enclosed in "" and qouted if necessary, to the output buffer
+ * writes them, enclosed in "" and quoted if necessary, to the output buffer
  */
 static void
 outfstrg(strg_t *strg)
 {
-	int	c, oc, first;
+	int	c, oc;
+	bool	first;
 	u_char	*cp;
 
-	if (strg->st_tspec != CHAR)
-		LERROR("outfstrg()");
+	lint_assert(strg->st_tspec == CHAR);
 
 	cp = strg->st_cp;
 
@@ -525,7 +526,7 @@ outfstrg(strg_t *strg)
 		}
 
 		/* numeric field width */
-		while (c != '\0' && isdigit(c)) {
+		while (c != '\0' && ch_isdigit(c)) {
 			outqchar(c);
 			c = *cp++;
 		}
@@ -537,7 +538,7 @@ outfstrg(strg_t *strg)
 				outqchar(c);
 				c = *cp++;
 			} else {
-				while (c != '\0' && isdigit(c)) {
+				while (c != '\0' && ch_isdigit(c)) {
 					outqchar(c);
 					c = *cp++;
 				}
@@ -567,13 +568,13 @@ outfstrg(strg_t *strg)
 					c = *cp++;
 				if (c == ']')
 					c = *cp++;
-				first = 1;
+				first = true;
 				while (c != '\0' && c != ']') {
 					if (c == '-') {
 						if (!first && *cp != ']')
 							outqchar(c);
 					}
-					first = 0;
+					first = false;
 					c = *cp++;
 				}
 				if (c == ']') {
@@ -592,7 +593,7 @@ outfstrg(strg_t *strg)
  * writes a record if sym was used
  */
 void
-outusg(sym_t *sym)
+outusg(const sym_t *sym)
 {
 	/* reset buffer */
 	outclr();
@@ -610,6 +611,5 @@ outusg(sym_t *sym)
 	/* necessary to delimit both numbers */
 	outchar('x');
 
-	/* Den Namen des Symbols ausgeben */
 	outname(sym->s_name);
 }

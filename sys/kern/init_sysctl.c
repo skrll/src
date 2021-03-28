@@ -1,4 +1,4 @@
-/*	$NetBSD: init_sysctl.c,v 1.222 2019/01/15 07:11:23 mrg Exp $ */
+/*	$NetBSD: init_sysctl.c,v 1.227 2020/09/20 12:51:57 skrll Exp $ */
 
 /*-
  * Copyright (c) 2003, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_sysctl.c,v 1.222 2019/01/15 07:11:23 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_sysctl.c,v 1.227 2020/09/20 12:51:57 skrll Exp $");
 
 #include "opt_sysv.h"
 #include "opt_compat_netbsd.h"
@@ -38,36 +38,35 @@ __KERNEL_RCSID(0, "$NetBSD: init_sysctl.c,v 1.222 2019/01/15 07:11:23 mrg Exp $"
 #include "opt_gprof.h"
 #include "pty.h"
 
-#include <sys/types.h>
 #include <sys/param.h>
-#include <sys/sysctl.h>
-#include <sys/cpu.h>
-#include <sys/errno.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/unistd.h>
-#include <sys/disklabel.h>
+#include <sys/types.h>
+
+#include <dev/cons.h>
+#include <sys/conf.h>
 #include <sys/cprng.h>
-#include <sys/vnode_impl.h>	/* For vfs_drainvnodes(). */
+#include <sys/cpu.h>
+#include <sys/device.h>
+#include <sys/disklabel.h>
+#include <sys/errno.h>
+#include <sys/exec.h>
+#include <sys/filedesc.h>
+#include <sys/file.h>
+#include <sys/kauth.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
+#include <sys/ktrace.h>
 #include <sys/mount.h>
 #include <sys/namei.h>
-#include <dev/cons.h>
-#include <sys/socketvar.h>
-#include <sys/file.h>
-#include <sys/filedesc.h>
-#include <sys/tty.h>
-#include <sys/kmem.h>
 #include <sys/reboot.h>
 #include <sys/resource.h>
 #include <sys/resourcevar.h>
-#include <sys/exec.h>
-#include <sys/conf.h>
-#include <sys/device.h>
+#include <sys/socketvar.h>
 #include <sys/stat.h>
-#include <sys/kauth.h>
-#include <sys/ktrace.h>
-
-#include <sys/cpu.h>
+#include <sys/sysctl.h>
+#include <sys/systm.h>
+#include <sys/tty.h>
+#include <sys/unistd.h>
+#include <sys/vnode_impl.h>     /* For vfs_drainvnodes(). */
 
 int security_setidcore_dump;
 char security_setidcore_path[MAXPATHLEN] = "/var/crash/%n.core";
@@ -110,6 +109,7 @@ dcopyout(struct lwp *l, const void *kaddr, void *uaddr, size_t len)
 
 static int sysctl_kern_maxvnodes(SYSCTLFN_PROTO);
 static int sysctl_kern_messages(SYSCTLFN_PROTO);
+static int sysctl_kern_boottime(SYSCTLFN_PROTO);
 static int sysctl_kern_rtc_offset(SYSCTLFN_PROTO);
 static int sysctl_kern_maxproc(SYSCTLFN_PROTO);
 static int sysctl_kern_hostid(SYSCTLFN_PROTO);
@@ -235,7 +235,7 @@ SYSCTL_SETUP(sysctl_kern_setup, "sysctl kern subtree setup")
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_STRUCT, "boottime",
 		       SYSCTL_DESCR("System boot time"),
-		       NULL, 0, &boottime, sizeof(boottime),
+		       sysctl_kern_boottime, 0, NULL, sizeof(struct timespec),
 		       CTL_KERN, KERN_BOOTTIME, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_IMMEDIATE,
@@ -731,7 +731,6 @@ sysctl_kern_maxvnodes(SYSCTLFN_ARGS)
 		return (error);
 	}
 	vfs_reinit();
-	nchreinit();
 
 	return (0);
 }
@@ -803,6 +802,21 @@ sysctl_kern_messages(SYSCTLFN_ARGS)
 }
 
 /*
+ * sysctl helper routine for the kern.boottime node
+ */
+static int
+sysctl_kern_boottime(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	struct timespec ts;
+
+	getnanoboottime(&ts);
+	node = *rnode;
+	node.sysctl_data = &ts;
+	return (sysctl_lookup(SYSCTLFN_CALL(&node)));
+}
+
+/*
  * sysctl helper routine for rtc_offset - set time after changes
  */
 static int
@@ -858,6 +872,13 @@ sysctl_kern_maxproc(SYSCTLFN_ARGS)
 	if (nmaxproc > cpu_maxproc())
 		return (EINVAL);
 #endif
+	error = 0;
+#ifdef __HAVE_MAXPROC_HOOK
+	error = cpu_maxproc_hook(nmaxproc);
+#endif
+	if (error)
+		return error;
+
 	maxproc = nmaxproc;
 
 	return (0);
@@ -1059,13 +1080,13 @@ sysctl_kern_lwp(SYSCTLFN_ARGS)
 
 	sysctl_unlock();
 	if (pid == -1) {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		PROCLIST_FOREACH(p, &allproc) {
 			/* Grab a hold on the process. */
 			if (!rw_tryenter(&p->p_reflock, RW_READER)) {
 				continue;
 			}
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 
 			mutex_enter(p->p_lock);
 			LIST_FOREACH(l2, &p->p_lwps, l_sibling) {
@@ -1107,21 +1128,21 @@ sysctl_kern_lwp(SYSCTLFN_ARGS)
 			mutex_exit(p->p_lock);
 
 			/* Drop reference to process. */
-			mutex_enter(proc_lock);
+			mutex_enter(&proc_lock);
 			rw_exit(&p->p_reflock);
 		}
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	} else {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		p = proc_find(pid);
 		if (p == NULL) {
 			error = ESRCH;
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			goto cleanup;
 		}
 		/* Grab a hold on the process. */
 		gotit = rw_tryenter(&p->p_reflock, RW_READER);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		if (!gotit) {
 			error = ESRCH;
 			goto cleanup;

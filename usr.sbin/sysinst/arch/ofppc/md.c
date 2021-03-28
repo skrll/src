@@ -1,4 +1,4 @@
-/*	$NetBSD: md.c,v 1.8 2019/08/14 12:55:37 martin Exp $	*/
+/*	$NetBSD: md.c,v 1.12 2020/10/14 08:49:04 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -75,6 +75,7 @@ md_init_set_status(int flags)
 bool
 md_get_info(struct install_partition_desc *install)
 {
+	int res;
 
 	if (check_rdb())
 		return true;
@@ -83,6 +84,7 @@ md_get_info(struct install_partition_desc *install)
 	if (pm->no_mbr || pm->no_part)
 		return true;
 
+again:
 	if (pm->parts == NULL) {
 
 		const struct disk_partitioning_scheme *ps =
@@ -93,7 +95,7 @@ md_get_info(struct install_partition_desc *install)
 
 		struct disk_partitions *parts =
 		   (*ps->create_new_for_disk)(pm->diskdev,
-		   0, pm->dlsize, pm->dlsize, true);
+		   0, pm->dlsize, true, NULL);
 		if (!parts)
 			return false;
 
@@ -102,13 +104,21 @@ md_get_info(struct install_partition_desc *install)
 			pm->dlsize = ps->size_limit;
 	}
 
-	return set_bios_geom_with_mbr_guess(pm->parts);
+	res = set_bios_geom_with_mbr_guess(pm->parts);
+	if (res == 0)
+		return false;
+	else if (res == 1)
+		return true;
+
+	pm->parts->pscheme->destroy_part_scheme(pm->parts);
+	pm->parts = NULL;
+	goto again;
 }
 
 /*
  * md back-end code for menu-driven BSD disklabel editor.
  */
-bool
+int
 md_make_bsd_partitions(struct install_partition_desc *install)
 {
 #if 0
@@ -447,18 +457,18 @@ md_post_extract(struct install_partition_desc *install)
 			parts = parts->parent;		/* MBR */
 
 		parts->pscheme->get_part_device(parts, bootpart_prep,
-		    bootdev, sizeof bootdev, NULL, raw_dev_name, true);
+		    bootdev, sizeof bootdev, NULL, raw_dev_name, true, true);
 		parts->pscheme->get_part_device(parts, bootpart_prep,
-		    bootbdev, sizeof bootbdev, NULL, plain_name, true);
+		    bootbdev, sizeof bootbdev, NULL, plain_name, true, true);
 		run_program(RUN_DISPLAY, "/bin/dd if=/dev/zero of=%s bs=512",
 		    bootdev);
 		run_program(RUN_DISPLAY, "/bin/dd if=/usr/mdec/ofwboot "
 		    "of=%s bs=512", bootbdev);
 
 		parts->pscheme->get_part_device(parts, bootpart_binfo,
-		    bootdev, sizeof bootdev, NULL, raw_dev_name, true);
+		    bootdev, sizeof bootdev, NULL, raw_dev_name, true, true);
 		parts->pscheme->get_part_device(parts, bootpart_binfo,
-		    bootbdev, sizeof bootbdev, NULL, plain_name, true);
+		    bootbdev, sizeof bootbdev, NULL, plain_name, true, true);
 		run_program(RUN_DISPLAY, "/bin/dd if=/dev/zero of=%s bs=512",
 		    bootdev);
 		run_program(RUN_DISPLAY, "/bin/dd if=/tmp/bootinfo.txt "

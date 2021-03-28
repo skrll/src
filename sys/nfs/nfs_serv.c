@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_serv.c,v 1.177 2019/02/20 10:05:20 hannken Exp $	*/
+/*	$NetBSD: nfs_serv.c,v 1.181 2020/09/05 16:30:12 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -55,7 +55,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_serv.c,v 1.177 2019/02/20 10:05:20 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_serv.c,v 1.181 2020/09/05 16:30:12 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -78,7 +78,9 @@ __KERNEL_RCSID(0, "$NetBSD: nfs_serv.c,v 1.177 2019/02/20 10:05:20 hannken Exp $
 #include <sys/syscallargs.h>
 #include <sys/syscallvar.h>
 
-#include <uvm/uvm.h>
+#include <uvm/uvm_extern.h>
+#include <uvm/uvm_loan.h>
+#include <uvm/uvm_page.h>
 
 #include <nfs/nfsproto.h>
 #include <nfs/rpcv2.h>
@@ -1003,8 +1005,10 @@ nfsrv_write(struct nfsrv_descript *nfsd, struct nfssvc_sock *slp, struct lwp *lw
 		 * but it may make the values more human readable,
 		 * for debugging purposes.
 		 */
-		*tl++ = txdr_unsigned(boottime.tv_sec);
-		*tl = txdr_unsigned(boottime.tv_nsec / 1000);
+		struct timeval btv;
+		getmicroboottime(&btv);
+		*tl++ = txdr_unsigned(btv.tv_sec);
+		*tl = txdr_unsigned(btv.tv_usec);
 	} else {
 		nfsm_build(fp, struct nfs_fattr *, NFSX_V2FATTR);
 		nfsm_srvfillattr(&va, fp);
@@ -1304,8 +1308,10 @@ loop1:
 			     * but it may make the values more human readable,
 			     * for debugging purposes.
 			     */
-			    *tl++ = txdr_unsigned(boottime.tv_sec);
-			    *tl = txdr_unsigned(boottime.tv_nsec / 1000);
+			    struct timeval btv;
+			    getmicroboottime(&btv);
+			    *tl++ = txdr_unsigned(btv.tv_sec);
+			    *tl = txdr_unsigned(btv.tv_usec);
 			} else {
 			    nfsm_build(fp, struct nfs_fattr *, NFSX_V2FATTR);
 			    nfsm_srvfillattr(&va, fp);
@@ -3052,7 +3058,8 @@ again:
 	 * even be here otherwise.
 	 */
 	if (!getret) {
-		if ((getret = VFS_VGET(vp->v_mount, at.va_fileid, &nvp)))
+		if ((getret = VFS_VGET(vp->v_mount, at.va_fileid,
+		    LK_EXCLUSIVE, &nvp)))
 			getret = (getret == EOPNOTSUPP) ?
 				NFSERR_NOTSUPP : NFSERR_IO;
 		else
@@ -3140,7 +3147,8 @@ again:
 			 * For readdir_and_lookup get the vnode using
 			 * the file number.
 			 */
-			if (VFS_VGET(vp->v_mount, dp->d_fileno, &nvp))
+			if (VFS_VGET(vp->v_mount, dp->d_fileno, LK_EXCLUSIVE,
+			    &nvp))
 				goto invalid;
 			if (nfsrv_composefh(nvp, &nnsfh, true)) {
 				vput(nvp);
@@ -3319,8 +3327,10 @@ nfsrv_commit(struct nfsrv_descript *nfsd, struct nfssvc_sock *slp, struct lwp *l
 	nfsm_srvwcc_data(for_ret, &bfor, aft_ret, &aft);
 	if (!error) {
 		nfsm_build(tl, u_int32_t *, NFSX_V3WRITEVERF);
-		*tl++ = txdr_unsigned(boottime.tv_sec);
-		*tl = txdr_unsigned(boottime.tv_nsec / 1000);
+		struct timeval btv;
+		getmicroboottime(&btv);
+		*tl++ = txdr_unsigned(btv.tv_sec);
+		*tl = txdr_unsigned(btv.tv_usec);
 	} else {
 		return (0);
 	}
@@ -3386,10 +3396,10 @@ nfsrv_statfs(struct nfsrv_descript *nfsd, struct nfssvc_sock *slp, struct lwp *l
 		sfp->sf_invarsec = 0;
 	} else {
 		sfp->sf_tsize = txdr_unsigned(NFS_MAXDGRAMDATA);
-		sfp->sf_bsize = txdr_unsigned(sf->f_frsize);
-		sfp->sf_blocks = txdr_unsigned(sf->f_blocks);
-		sfp->sf_bfree = txdr_unsigned(sf->f_bfree);
-		sfp->sf_bavail = txdr_unsigned(sf->f_bavail);
+		sfp->sf_bsize = txdr_unsigned(NFS_V2CLAMP16(sf->f_frsize));
+		sfp->sf_blocks = txdr_unsigned(NFS_V2CLAMP32(sf->f_blocks));
+		sfp->sf_bfree = txdr_unsigned(NFS_V2CLAMP32(sf->f_bfree));
+		sfp->sf_bavail = txdr_unsigned(NFS_V2CLAMP32(sf->f_bavail));
 	}
 nfsmout:
 	if (sf)

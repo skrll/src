@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_platform.c,v 1.38 2019/11/24 10:27:37 jmcneill Exp $ */
+/* $NetBSD: sunxi_platform.c,v 1.42 2021/02/04 22:36:53 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_console.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_platform.c,v 1.38 2019/11/24 10:27:37 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_platform.c,v 1.42 2021/02/04 22:36:53 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -108,11 +108,9 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_platform.c,v 1.38 2019/11/24 10:27:37 jmcneill
 
 extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 extern struct bus_space arm_generic_bs_tag;
-extern struct bus_space arm_generic_a4x_bs_tag;
 
 #define	sunxi_dma_tag		arm_generic_dma_tag
 #define	sunxi_bs_tag		arm_generic_bs_tag
-#define	sunxi_a4x_bs_tag	arm_generic_a4x_bs_tag
 
 static bus_space_handle_t reset_bsh;
 
@@ -177,13 +175,12 @@ static void
 sunxi_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &sunxi_bs_tag;
-	faa->faa_a4x_bst = &sunxi_a4x_bs_tag;
 	faa->faa_dmat = &sunxi_dma_tag;
 }
 
 void sunxi_platform_early_putchar(char);
 
-void
+void __noasan
 sunxi_platform_early_putchar(char c)
 {
 #ifdef CONSADDR
@@ -205,27 +202,29 @@ sunxi_platform_device_register(device_t self, void *aux)
 	prop_dictionary_t prop = device_properties(self);
 	int val;
 
+	fdtbus_device_register(self, aux);
+
 	if (device_is_a(self, "rgephy")) {
 		/* Pine64+ and NanoPi NEO Plus2 gigabit ethernet workaround */
-		const char * compat[] = {
-			"pine64,pine64-plus",
-			"friendlyarm,nanopi-neo-plus2",
-			NULL
+		static const struct device_compatible_entry compat_data[] = {
+			{ .compat = "pine64,pine64-plus" },
+			{ .compat = "friendlyarm,nanopi-neo-plus2" },
+			DEVICE_COMPAT_EOL
 		};
-		if (of_match_compatible(OF_finddevice("/"), compat)) {
+		if (of_compatible_match(OF_finddevice("/"), compat_data)) {
 			prop_dictionary_set_bool(prop, "no-rx-delay", true);
 		}
 	}
 
 	if (device_is_a(self, "armgtmr")) {
 		/* Allwinner A64 has an unstable architectural timer */
-		const char * compat[] = {
-			"allwinner,sun50i-a64",
+		static const struct device_compatible_entry compat_data[] = {
+			{ .compat = "allwinner,sun50i-a64" },
 			/* Cubietruck Plus triggers this problem as well. */
-			"allwinner,sun8i-a83t",
-			NULL
+			{ .compat = "allwinner,sun8i-a83t" },
+			DEVICE_COMPAT_EOL
 		};
-		if (of_match_compatible(OF_finddevice("/"), compat)) {
+		if (of_compatible_match(OF_finddevice("/"), compat_data)) {
 			prop_dictionary_set_bool(prop, "sun50i-a64-unstable-timer", true);
 		}
 	}

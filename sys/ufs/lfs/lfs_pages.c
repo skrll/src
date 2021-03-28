@@ -1,4 +1,4 @@
-/*	$NetBSD: lfs_pages.c,v 1.18 2019/12/20 20:54:48 ad Exp $	*/
+/*	$NetBSD: lfs_pages.c,v 1.26 2020/09/05 16:30:13 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2002, 2003, 2019 The NetBSD Foundation, Inc.
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lfs_pages.c,v 1.18 2019/12/20 20:54:48 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lfs_pages.c,v 1.26 2020/09/05 16:30:13 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -94,9 +94,10 @@ __KERNEL_RCSID(0, "$NetBSD: lfs_pages.c,v 1.18 2019/12/20 20:54:48 ad Exp $");
 #include <ufs/lfs/ulfs_extern.h>
 
 #include <uvm/uvm.h>
+#include <uvm/uvm_page.h>
+#include <uvm/uvm_pager.h>
 #include <uvm/uvm_pmap.h>
 #include <uvm/uvm_stat.h>
-#include <uvm/uvm_pager.h>
 
 #include <ufs/lfs/lfs.h>
 #include <ufs/lfs/lfs_accessors.h>
@@ -142,12 +143,12 @@ lfs_getpages(void *v)
  * Wait for a page to become unbusy, possibly printing diagnostic messages
  * as well.
  *
- * Called with vp->v_interlock held; return with it held.
+ * Called with vp->v_uobj.vmobjlock held; return with it held.
  */
 static void
 wait_for_page(struct vnode *vp, struct vm_page *pg, const char *label)
 {
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 	if ((pg->flags & PG_BUSY) == 0)
 		return;		/* Nothing to wait for! */
 
@@ -167,9 +168,8 @@ wait_for_page(struct vnode *vp, struct vm_page *pg, const char *label)
 	lastpg = pg;
 #endif
 
-	pg->flags |= PG_WANTED;
-	UVM_UNLOCK_AND_WAIT(pg, vp->v_interlock, 0, "lfsput", 0);
-	mutex_enter(vp->v_interlock);
+	uvm_pagewait(pg, vp->v_uobj.vmobjlock, "lfsput");
+	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 }
 
 /*
@@ -181,14 +181,14 @@ wait_for_page(struct vnode *vp, struct vm_page *pg, const char *label)
  * disk).  We don't need to give up the segment lock, but we might need
  * to call lfs_writeseg() to expedite the page's journey to disk.
  *
- * Called with vp->v_interlock held; return with it held.
+ * Called with vp->v_uobj.vmobjlock held; return with it held.
  */
 /* #define BUSYWAIT */
 static void
 write_and_wait(struct lfs *fs, struct vnode *vp, struct vm_page *pg,
 	       int seglocked, const char *label)
 {
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 #ifndef BUSYWAIT
 	struct inode *ip = VTOI(vp);
 	struct segment *sp = fs->lfs_sp;
@@ -199,7 +199,7 @@ write_and_wait(struct lfs *fs, struct vnode *vp, struct vm_page *pg,
 
 	while (pg->flags & PG_BUSY &&
 	    pg->uobject == &vp->v_uobj) {
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		if (sp->cbpp - sp->bpp > 1) {
 			/* Write gathered pages */
 			lfs_updatemeta(sp);
@@ -214,7 +214,7 @@ write_and_wait(struct lfs *fs, struct vnode *vp, struct vm_page *pg,
 					  ip->i_gen);
 		}
 		++count;
-		mutex_enter(vp->v_interlock);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		wait_for_page(vp, pg, label);
 	}
 	if (label != NULL && count > 1) {
@@ -225,7 +225,7 @@ write_and_wait(struct lfs *fs, struct vnode *vp, struct vm_page *pg,
 #else
 	preempt(1);
 #endif
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 }
 
 /*
@@ -253,7 +253,7 @@ check_dirty(struct lfs *fs, struct vnode *vp,
 	int pages_per_block = lfs_sb_getbsize(fs) >> PAGE_SHIFT;
 	int pagedaemon = (curlwp == uvm.pagedaemon_lwp);
 
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 	ASSERT_MAYBE_SEGLOCK(fs);
   top:
 	any_dirty = 0;
@@ -268,7 +268,7 @@ check_dirty(struct lfs *fs, struct vnode *vp,
 		 */
 		nonexistent = dirty = 0;
 		for (i = 0; i == 0 || i < pages_per_block; i++) {
-			KASSERT(mutex_owned(vp->v_interlock));
+			KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 			off = soff + (i << PAGE_SHIFT);
 			pgs[i] = pg = uvm_pagelookup(&vp->v_uobj, off);
 			if (pg == NULL) {
@@ -290,24 +290,26 @@ check_dirty(struct lfs *fs, struct vnode *vp,
 				DLOG((DLOG_PAGE, "lfs_putpages: avoiding 3-way or pagedaemon deadlock\n"));
 				if (pgp)
 					*pgp = pg;
-				KASSERT(mutex_owned(vp->v_interlock));
+				KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 				return -1;
 			}
 
 			while (pg->flags & PG_BUSY) {
 				wait_for_page(vp, pg, NULL);
-				KASSERT(mutex_owned(vp->v_interlock));
+				KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 				if (i > 0)
 					uvm_page_unbusy(pgs, i);
-				KASSERT(mutex_owned(vp->v_interlock));
+				KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 				goto top;
 			}
 			pg->flags |= PG_BUSY;
 			UVM_PAGE_OWN(pg, "lfs_putpages");
 
 			pmap_page_protect(pg, VM_PROT_NONE);
-			tdirty = (pmap_clear_modify(pg) ||
-				  (pg->flags & PG_CLEAN) == 0);
+			tdirty =
+			    uvm_pagegetdirty(pg) != UVM_PAGE_STATUS_CLEAN &&
+			    (uvm_pagegetdirty(pg) == UVM_PAGE_STATUS_DIRTY ||
+			    pmap_clear_modify(pg));
 			dirty += tdirty;
 		}
 		if ((pages_per_block > 0 && nonexistent >= pages_per_block) ||
@@ -318,7 +320,7 @@ check_dirty(struct lfs *fs, struct vnode *vp,
 
 		any_dirty += dirty;
 		KASSERT(nonexistent == 0);
-		KASSERT(mutex_owned(vp->v_interlock));
+		KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 
 		/*
 		 * If any are dirty make all dirty; unbusy them,
@@ -327,26 +329,30 @@ check_dirty(struct lfs *fs, struct vnode *vp,
 		 * they're on their way to disk.
 		 */
 		for (i = 0; i == 0 || i < pages_per_block; i++) {
-			KASSERT(mutex_owned(vp->v_interlock));
+			KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 			pg = pgs[i];
-			KASSERT(!((pg->flags & PG_CLEAN) && (pg->flags & PG_DELWRI)));
+			KASSERT(!(uvm_pagegetdirty(pg) != UVM_PAGE_STATUS_DIRTY
+			    && (pg->flags & PG_DELWRI)));
 			KASSERT(pg->flags & PG_BUSY);
 			if (dirty) {
-				pg->flags &= ~PG_CLEAN;
+				uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_DIRTY);
 				if (flags & PGO_FREE) {
 					/*
 					 * Wire the page so that
 					 * pdaemon doesn't see it again.
 					 */
+					uvm_pagelock(pg);
 					uvm_pagewire(pg);
+					uvm_pageunlock(pg);
 
 					/* Suspended write flag */
 					pg->flags |= PG_DELWRI;
 				}
 			}
-			if (pg->flags & PG_WANTED)
-				wakeup(pg);
-			pg->flags &= ~(PG_WANTED|PG_BUSY);
+			pg->flags &= ~PG_BUSY;
+			uvm_pagelock(pg);
+			uvm_pagewakeup(pg);
+			uvm_pageunlock(pg);
 			UVM_PAGE_OWN(pg, NULL);
 		}
 
@@ -356,7 +362,7 @@ check_dirty(struct lfs *fs, struct vnode *vp,
 		soff += MAX(PAGE_SIZE, lfs_sb_getbsize(fs));
 	}
 
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 	return any_dirty;
 }
 
@@ -381,7 +387,7 @@ check_dirty(struct lfs *fs, struct vnode *vp,
  *     there is a danger that when we expand the page range and busy the
  *     pages we will deadlock.
  *
- * (2) We are called with vp->v_interlock held; we must return with it
+ * (2) We are called with vp->v_uobj.vmobjlock held; we must return with it
  *     released.
  *
  * (3) We don't absolutely have to free pages right away, provided that
@@ -438,11 +444,11 @@ lfs_putpages(void *v)
 	pagedaemon = (curlwp == uvm.pagedaemon_lwp);
 	trans_mp = NULL;
 
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 
 	/* Putpages does nothing for metadata. */
 	if (vp == fs->lfs_ivnode || vp->v_type != VREG) {
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		return 0;
 	}
 
@@ -451,14 +457,15 @@ retry:
 	 * If there are no pages, don't do anything.
 	 */
 	if (vp->v_uobj.uo_npages == 0) {
+		mutex_enter(vp->v_interlock);
 		if ((vp->v_iflag & VI_ONWORKLST) &&
 		    LIST_FIRST(&vp->v_dirtyblkhd) == NULL) {
-			vp->v_iflag &= ~VI_WRMAPDIRTY;
 			vn_syncer_remove_from_worklist(vp);
 		}
+		mutex_exit(vp->v_interlock);
 		if (trans_mp)
 			fstrans_done(trans_mp);
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		
 		/* Remove us from paging queue, if we were on it */
 		mutex_enter(&lfs_lock);
@@ -468,7 +475,7 @@ retry:
 		}
 		mutex_exit(&lfs_lock);
 
-		KASSERT(!mutex_owned(vp->v_interlock));
+		KASSERT(!rw_write_held(vp->v_uobj.vmobjlock));
 		return 0;
 	}
 
@@ -490,16 +497,16 @@ retry:
 			pg = uvm_pagelookup(&vp->v_uobj, off);
 			KASSERT(pg != NULL);
 			while (pg->flags & PG_BUSY) {
-				pg->flags |= PG_WANTED;
-				UVM_UNLOCK_AND_WAIT(pg, vp->v_interlock, 0,
-						    "lfsput2", 0);
-				mutex_enter(vp->v_interlock);
+				uvm_pagewait(pg, vp->v_uobj.vmobjlock, "lfsput2");
+				rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 			}
+			uvm_pagelock(pg);
 			uvm_pageactivate(pg);
+			uvm_pageunlock(pg);
 		}
 		ap->a_offlo = blkeof;
 		if (ap->a_offhi > 0 && ap->a_offhi <= ap->a_offlo) {
-			mutex_exit(vp->v_interlock);
+			rw_exit(vp->v_uobj.vmobjlock);
 			return 0;
 		}
 	}
@@ -525,7 +532,7 @@ retry:
 	KASSERT(startoffset > 0 || endoffset >= startoffset);
 	if (startoffset == endoffset) {
 		/* Nothing to do, why were we called? */
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		DLOG((DLOG_PAGE, "lfs_putpages: startoffset = endoffset = %"
 		      PRId64 "\n", startoffset));
 		return 0;
@@ -542,7 +549,7 @@ retry:
 		DLOG((DLOG_PAGE, "lfs_putpages: no cleanit vn %p ino %d (flags %x)\n",
 		      vp, (int)ip->i_number, ap->a_flags));
 		int r = genfs_putpages(v);
-		KASSERT(!mutex_owned(vp->v_interlock));
+		KASSERT(!rw_write_held(vp->v_uobj.vmobjlock));
 		return r;
 	}
 
@@ -552,7 +559,7 @@ retry:
 			trans_mp = vp->v_mount;
 			error = fstrans_start_nowait(trans_mp);
 			if (error) {
-				mutex_exit(vp->v_interlock);
+				rw_exit(vp->v_uobj.vmobjlock);
 				return error;
 			}
 		} else {
@@ -561,7 +568,7 @@ retry:
 			 * usually gets used from VOP_RECLAIM().  Test for
 			 * change of v_mount instead and retry on change.
 			 */
-			mutex_exit(vp->v_interlock);
+			rw_exit(vp->v_uobj.vmobjlock);
 			trans_mp = vp->v_mount;
 			fstrans_start(trans_mp);
 			if (vp->v_mount != trans_mp) {
@@ -569,7 +576,7 @@ retry:
 				trans_mp = NULL;
 			}
 		}
-		mutex_enter(vp->v_interlock);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		goto retry;
 	}
 
@@ -585,14 +592,14 @@ retry:
 #endif
 	do {
 		int r;
-		KASSERT(mutex_owned(vp->v_interlock));
+		KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 
 		/* Count the number of dirty pages */
 		r = check_dirty(fs, vp, startoffset, endoffset, blkeof,
 				ap->a_flags, 1, NULL);
 		if (r < 0) {
 			/* Pages are busy with another process */
-			mutex_exit(vp->v_interlock);
+			rw_exit(vp->v_uobj.vmobjlock);
 			error = EDEADLK;
 			goto out;
 		}
@@ -610,13 +617,13 @@ retry:
 				       ap->a_flags & ~PGO_SYNCIO, &busypg);
 		ip->i_lfs_iflags &= ~LFSI_NO_GOP_WRITE;
 		if (r != EDEADLK) {
-			KASSERT(!mutex_owned(vp->v_interlock));
+			KASSERT(!rw_write_held(vp->v_uobj.vmobjlock));
  			error = r;
 			goto out;
 		}
 
 		/* One of the pages was busy.  Start over. */
-		mutex_enter(vp->v_interlock);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		wait_for_page(vp, busypg, "dirtyclean");
 #ifdef DEBUG
 		++debug_n_dirtyclean;
@@ -640,7 +647,7 @@ retry:
 	 * get a nasty deadlock with lfs_flush_pchain().
 	 */
 	if (pagedaemon) {
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		mutex_enter(&lfs_lock);
 		if (!(ip->i_state & IN_PAGING)) {
 			ip->i_state |= IN_PAGING;
@@ -649,7 +656,7 @@ retry:
 		cv_broadcast(&lfs_writerd_cv);
 		mutex_exit(&lfs_lock);
 		preempt();
-		KASSERT(!mutex_owned(vp->v_interlock));
+		KASSERT(!rw_write_held(vp->v_uobj.vmobjlock));
 		error = EWOULDBLOCK;
 		goto out;
 	}
@@ -664,29 +671,30 @@ retry:
 	    (vp->v_uflag & VU_DIROP)) {
 		DLOG((DLOG_PAGE, "lfs_putpages: flushing VU_DIROP\n"));
 
- 		lfs_writer_enter(fs, "ppdirop");
+		/*
+		 * NB: lfs_flush_fs can recursively call lfs_putpages,
+		 * but it won't reach this branch because it passes
+		 * PGO_LOCKED.
+		 */
 
-		/* Note if we hold the vnode locked */
-		if (VOP_ISLOCKED(vp) == LK_EXCLUSIVE)
-		{
-		    DLOG((DLOG_PAGE, "lfs_putpages: dirop inode already locked\n"));
-		} else {
-		    DLOG((DLOG_PAGE, "lfs_putpages: dirop inode not locked\n"));
-		}
-		mutex_exit(vp->v_interlock);
-
+		rw_exit(vp->v_uobj.vmobjlock);
 		mutex_enter(&lfs_lock);
 		lfs_flush_fs(fs, sync ? SEGM_SYNC : 0);
 		mutex_exit(&lfs_lock);
-
-		mutex_enter(vp->v_interlock);
-		lfs_writer_leave(fs);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 
 		/*
 		 * The flush will have cleaned out this vnode as well,
 		 *  no need to do more to it.
 		 *  XXX then why are we falling through and continuing?
 		 */
+
+		/*
+		 * XXX State may have changed while we dropped the
+		 * lock; start over just in case.  The above comment
+		 * suggests this should maybe instead be goto out.
+		 */
+		goto retry;
 	}
 
 	/*
@@ -712,13 +720,13 @@ retry:
 	 */
 	seglocked = (ap->a_flags & PGO_LOCKED) != 0;
 	if (!seglocked) {
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		error = lfs_seglock(fs, SEGM_PROT | (sync ? SEGM_SYNC : 0));
 		if (error != 0) {
-			KASSERT(!mutex_owned(vp->v_interlock));
+			KASSERT(!rw_write_held(vp->v_uobj.vmobjlock));
  			goto out;
 		}
-		mutex_enter(vp->v_interlock);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		lfs_acquire_finfo(fs, ip->i_number, ip->i_gen);
 	}
 	sp = fs->lfs_sp;
@@ -726,10 +734,12 @@ retry:
 	sp->vp = vp;
 
 	/* Note segments written by reclaim; only for debugging */
+	mutex_enter(vp->v_interlock);
 	if (vdead_check(vp, VDEAD_NOWAIT) != 0) {
 		sp->seg_flags |= SEGM_RECLAIM;
 		fs->lfs_reclino = ip->i_number;
 	}
+	mutex_exit(vp->v_interlock);
 
 	/*
 	 * Ensure that the partial segment is marked SS_DIROP if this
@@ -753,15 +763,15 @@ retry:
 #endif
 	do {
 		busypg = NULL;
-		KASSERT(mutex_owned(vp->v_interlock));
+		KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 		if (check_dirty(fs, vp, startoffset, endoffset, blkeof,
 				ap->a_flags, 0, &busypg) < 0) {
 			write_and_wait(fs, vp, busypg, seglocked, NULL);
 			if (!seglocked) {
-				mutex_exit(vp->v_interlock);
+				rw_exit(vp->v_uobj.vmobjlock);
 				lfs_release_finfo(fs);
 				lfs_segunlock(fs);
-				mutex_enter(vp->v_interlock);
+				rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 			}
 			sp->vp = NULL;
 			goto get_seglock;
@@ -781,9 +791,9 @@ retry:
 			      lfs_dtosn(fs, lfs_sb_getoffset(fs))));
 
 			if (oreclaim) {
-				mutex_enter(vp->v_interlock);
+				rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 				write_and_wait(fs, vp, busypg, seglocked, "again");
-				mutex_exit(vp->v_interlock);
+				rw_exit(vp->v_uobj.vmobjlock);
 			} else {
 				if ((sp->seg_flags & SEGM_SINGLE) &&
 				    lfs_sb_getcurseg(fs) != fs->lfs_startseg)
@@ -802,10 +812,10 @@ retry:
 		if (oreclaim && error == EAGAIN) {
 			DLOG((DLOG_PAGE, "vp %p ino %d vi_flags %x a_flags %x avoiding vclean panic\n",
 			      vp, (int)ip->i_number, vp->v_iflag, ap->a_flags));
-			mutex_enter(vp->v_interlock);
+			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		}
 		if (error == EDEADLK)
-			mutex_enter(vp->v_interlock);
+			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 	} while (error == EDEADLK || (oreclaim && error == EAGAIN));
 #ifdef DEBUG
 	if (debug_n_again > TOOMANY)
@@ -838,7 +848,7 @@ retry:
 	 * the FIP or unlock the segment lock.	We're done.
 	 */
 	if (seglocked) {
-		KASSERT(!mutex_owned(vp->v_interlock));
+		KASSERT(!rw_write_held(vp->v_uobj.vmobjlock));
 		goto out;
 	}
 
@@ -884,7 +894,7 @@ retry:
 out:;
 	if (trans_mp)
 		fstrans_done(trans_mp);
-	KASSERT(!mutex_owned(vp->v_interlock));
+	KASSERT(!rw_write_held(vp->v_uobj.vmobjlock));
 	return error;
 }
 

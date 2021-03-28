@@ -1,22 +1,26 @@
-#	$NetBSD: Makefile,v 1.20 2019/10/29 21:14:37 christos Exp $
+#	$NetBSD: Makefile,v 1.25 2021/02/26 02:54:21 rin Exp $
 
 .include <bsd.own.mk>
 
 USE_WIDECHAR?=yes
 
+.if ${USE_WIDECHAR} == "yes"
+USE_BUILTIN_REGEX?=yes	# Although our regex supports widechar nvi requires
+			# a non-standard API
+.else
+USE_BUILTIN_REGEX?=no
+.endif
+
 WARNS=	5
 
 COPTS.exf.c+=		-Wno-format-nonliteral
 COPTS.msg.c+=		-Wno-format-nonliteral
-.if ${USE_WIDECHAR} == "yes"
-.if ${ACTIVE_CC} == "gcc"
-COPTS.regexec.c+=	-Wno-old-style-definition
-.endif
-.else
+.if ${USE_WIDECHAR} != "yes"
 COPTS.v_increment.c+=	-Wno-format-nonliteral
 CWARNFLAGS.gcc+=	-Wno-unused
 CWARNFLAGS.clang+=	-Wno-unsequenced
 .endif
+CWARNFLAGS.clang+=	-Wno-error=string-compare
 
 CPPFLAGS+=-I${DIST}/include -I${.CURDIR} -I.
 CPPFLAGS+=-DGTAGS -DIMCTRL
@@ -57,8 +61,12 @@ NOTUSED=ip_funcs.c ip_read.c ip_screen.c ip_term.c \
 
 # For wide char support
 .if ${USE_WIDECHAR} == "yes"
+CPPFLAGS+=-DUSE_WIDECHAR
+.endif
+.if ${USE_BUILTIN_REGEX} == "yes"
 SRCS+=	regcomp.c regerror.c regexec.c regfree.c
-CPPFLAGS+=-I${DIST}/regex -D__REGEX_PRIVATE -DUSE_WIDECHAR
+CPPFLAGS+=-I${DIST}/regex -D__REGEX_PRIVATE
+COPTS.regexec.c+= ${${ACTIVE_CC} == "gcc":? -Wno-old-style-definition :}
 .endif
 
 # For db3 db1 emulation
@@ -113,10 +121,6 @@ version.h:	../../Makefile.inc
 #ipc_gen.c: vipc.pl ip_read.c
 #	${_MKTARGET_CREATE}
 #	${TOOL_PERL} -n ${.ALLSRC} > ${.TARGET}
-
-.if ${MACHINE_ARCH} == "aarch64"
-COPTS.ex_filter.c+=-O0
-.endif
 
 
 .include "${.CURDIR}/../../Makefile.inc"

@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2020, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -91,6 +91,7 @@ AcpiOsCreateCache (
     }
 
     /* Populate the cache object and return it */
+
     memset (Cache, 0, sizeof (ACPI_MEMORY_LIST));
     Cache->ListName   = __UNCONST(CacheName);
     Cache->ObjectSize = ObjectSize;

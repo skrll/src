@@ -1,4 +1,4 @@
-#	$NetBSD: GENERIC32_IP3x,v 1.126 2019/05/06 02:24:37 sevan Exp $
+#	$NetBSD: GENERIC32_IP3x,v 1.133 2020/09/27 13:48:54 roy Exp $
 #
 # GENERIC32_IP3x machine description file
 # 
@@ -28,7 +28,7 @@ makeoptions	TEXTADDR="0x80069000"	# entry point
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC32_IP3x-$Revision: 1.126 $"
+#ident		"GENERIC32_IP3x-$Revision: 1.133 $"
 
 maxusers	32
 
@@ -69,9 +69,6 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 
 # Compatibility options
 include 	"conf/compat_netbsd15.config"
-
-options 	COMPAT_LINUX	# binary compatibility with Linux
-#options 	COMPAT_ULTRIX	# binary compatibility with Ultrix 
 
 # File systems
 include "conf/filesystems.config"
@@ -180,13 +177,10 @@ ubsec*	at pci? dev ? function ?	# Broadcom 5501/5601/580x/582x
 #bge*    at pci? dev ? function ?        # Broadcom 570x gigabit Ethernet
 ep*     at pci? dev ? function ?        # 3Com 3c59x
 epic*   at pci? dev ? function ?        # SMC EPIC/100 Ethernet
-esh*    at pci? dev ? function ?        # Essential HIPPI card
 ex*     at pci? dev ? function ?        # 3Com 90x[BC]
-fpa*    at pci? dev ? function ?        # DEC DEFPA FDDI
 fxp*    at pci? dev ? function ?        # Intel EtherExpress PRO 10+/100B
 gsip*   at pci? dev ? function ?        # NS83820 Gigabit Ethernet
 #hme*   at pci? dev ? function ?        # Sun Microelectronics STP2002-STQ
-le*     at pci? dev ? function ?        # PCnet-PCI Ethernet
 mtd*    at pci? dev ? function ?        # Myson MTD803 3-in-1 Ethernet
 ne*     at pci? dev ? function ?        # NE2000-compatible Ethernet
 ntwoc*  at pci? dev ? function ?        # Riscom/N2 PCI Sync Serial
@@ -309,7 +303,6 @@ pseudo-device	npf			# NPF packet filter
 pseudo-device	loop			# network loopback
 pseudo-device	ppp			# Point-to-Point Protocol
 pseudo-device	sl			# Serial Line IP
-pseudo-device	strip			# Starmode Radio IP (Metricom)
 pseudo-device	tun			# network tunneling over tty
 pseudo-device	tap			# virtual Ethernet
 pseudo-device	gre			# generic L3 over IP tunnel
@@ -318,7 +311,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device   accf_data		# "dataready" accept filter
 pseudo-device   accf_http		# "httpready" accept filter

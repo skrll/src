@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.218 2019/11/05 12:59:54 martin Exp $
+# $NetBSD: GENERIC,v 1.234 2021/01/31 08:07:25 martin Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/sparc64/conf/std.sparc64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.218 $"
+#ident		"GENERIC-$Revision: 1.234 $"
 
 maxusers	64
 
@@ -281,6 +281,11 @@ options 	PMS_SYNAPTICS_TOUCHPAD	# Enable support for Synaptics Touchpads
 wskbd*		at pckbd? console ?
 wsmouse*	at pms? mux 0
 
+## Tadpole SPARCle SD card
+wb* 		at ebus?		# Winbond W83L518D SD/MMC reader
+sdmmc* 		at wb?
+ld* 		at sdmmc?
+
 ## Magma Serial/Parallel driver (not tested)
 #magma*	at sbus? slot ? offset ?
 #mtty*	at magma?
@@ -414,6 +419,9 @@ fdc0	at sbus? slot ? offset ?		# SUNW,fdtwo
 #fdc0	at ebus?				# fdthree, EXPERIMENTAL
 fd*	at fdc0					# the drive itself
 
+# Pull in optional local configuration
+cinclude "arch/sparc64/conf/GENERIC.local"
+
 #
 # accept filters
 pseudo-device	accf_data		# "dataready" accept filter
@@ -490,16 +498,12 @@ cas*	at pci? dev ? function ?	# Sun Cassini/Cassini+ Ethernet
 # XXX causes ICE
 #ep*	at pci? dev ? function ?	# 3Com 3c59x
 epic*	at pci? dev ? function ?	# SMC EPIC/100 Ethernet
-esh*	at pci? dev ? function ?	# Essential HIPPI card UT
 ex*	at pci? dev ? function ?	# 3Com 90x[B]
-fpa*	at pci? dev ? function ?	# DEC DEFPA FDDI UT
 fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
 gem*	at pci? dev ? function ?	# Apple GMAC and Sun ERI gigabit enet
 gem*	at sbus? slot ? offset ?
 gsip*	at pci? dev ? function ?	# National Semiconductor DP83820 GigE
 ixg*	at pci? dev ? function ?	# Intel 8259x 10 gigabit
-# XXX lacks bus_dmamap_sync()
-#le*	at pci? dev ? function ?	# PCnet-PCI Ethernet
 mskc*	at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*	at mskc?			# Marvell Yukon 2 Gigabit Ethernet
 ne*	at pci? dev ? function ?	# NE2000-compatible Ethernet UT
@@ -557,123 +561,8 @@ usb*	at ohci?
 usb*	at uhci?
 #usb*	at slhci?
 
-# USB Hubs
-uhub*	at usb?
-uhub*	at uhub? port ?
-
-# USB HID device
-uhidev* at uhub? port ? configuration ? interface ?
-
-# USB Mice
-ums*	at uhidev? reportid ?
-wsmouse* at ums? mux 0
-
-# USB eGalax touch-panel
-uep*	at uhub? port ?
-wsmouse* at uep? mux 0
-
-# USB Keyboards
-ukbd*	at uhidev? reportid ?
-wskbd*	at ukbd? console ? mux 1
-
-# USB TEMPer and TEMPerHUM
-uthum*	at uhidev? reportid ?
-
-# USB serial adapter
-ucycom* at uhidev? reportid ?
-
-# USB Generic HID devices
-uhid*	at uhidev? reportid ?
-
-# USB Printer
-ulpt*	at uhub? port ? configuration ? interface ?
-
-# USB Modem
-umodem* at uhub? port ? configuration ?
-ucom*	at umodem?
-
-# Option N.V. Wireless WAN modems
-uhso*	at uhub? port ? configuration ?
-
-# USB Mass Storage
-umass*	at uhub? port ? configuration ? interface ?
-
-# USB audio
-uaudio* at uhub? port ? configuration ?
-
-# USB MIDI
-umidi* at uhub? port ? configuration ?
-
-# USB IrDA
-# USB-IrDA bridge spec
-uirda* at uhub? port ? configuration ? interface ?
-irframe* at uirda?
-
-# SigmaTel STIr4200 USB/IrDA Bridge
-ustir* at uhub? port ?
-irframe* at ustir?
-
-# USB Ethernet adapters
-aue*	at uhub? port ?		# ADMtek AN986 Pegasus based adapters
-axe*	at uhub? port ?		# ASIX AX88172 based adapters
-cdce*	at uhub? port ?		# CDC, Ethernet Networking Control Model
-cue*	at uhub? port ?		# CATC USB-EL1201A based adapters
-kue*	at uhub? port ?		# Kawasaki LSI KL5KUSB101B based adapters
-mue*	at uhub? port ?		# Microchip LAN75xx/LAN78xx based adapters
-udav*	at uhub? port ?		# Davicom DM9601 based adapters
-ure*	at uhub? port ?		# Realtek RTL8152/RTL8153 based adapters
-url*	at uhub? port ?		# Realtek RTL8150L based adapters
-
-# USB 802.11 adapters
-atu*	at uhub? port ?		# Atmel AT76C50XX based adapters
-ural*	at uhub? port ?		# Ralink Technology RT2500USB 802.11a/b/g
-#zyd*	at uhub? port ?		# Zydas ZD1211
-
-# Prolific PL2301/PL2302 host-to-host adapter
-upl*	at uhub? port ?
-
-# Serial adapters
-ubsa*	at uhub? port ?		# Belkin serial adapter
-ucom*	at ubsa? portno ?
-
-uftdi*	at uhub? port ?		# FTDI FT8U100AX serial adapter
-ucom*	at uftdi? portno ?
-
-umct*	at uhub? port ?		# MCT USB-RS232 serial adapter
-ucom*	at umct? portno ?
-
-uplcom* at uhub? port ? 	# I/O DATA USB-RSAQ2 serial adapter
-ucom*	at uplcom? portno ?
-
-uvscom* at uhub? port ? 	# SUNTAC Slipper U VS-10U serial adapter
-ucom*	at uvscom? portno ?
-
-# Diamond Multimedia Rio 500
-urio*	at uhub? port ?
-
-# USB Handspring Visor
-uvisor* at uhub? port ?
-ucom*	at uvisor?
-
-# Kyocera AIR-EDGE PHONE
-ukyopon* at uhub? port ?
-ucom*	at ukyopon? portno ?
-
-# USB scanners
-#uscanner* at uhub? port ?
-
-# USB scanners that use SCSI emulation, e.g., HP5300
-usscanner* at uhub? port ?
-
-# Y@P firmware loader
-uyap* at uhub? port ?
-
-# D-Link DSB-R100 USB radio
-udsbr*	at uhub? port ?
-radio*	at udsbr?
-
-# USB Generic driver
-ugen*	at uhub? port ?
+# USB device drivers
+include "dev/usb/usbdevices.config"
 
 # Firewire support
 fwohci* at pci? dev ? function ?	# IEEE1394 Open Host Controller
@@ -692,9 +581,6 @@ pseudo-device	ppp
 
 ## PPP over Ethernet (RFC 2516)
 pseudo-device	pppoe
-
-## Starmode Radio IP, a special hardware network device.
-pseudo-device	strip
 
 ## Network "tunnel" device, allowing protocol stacks to run in the userland.
 ## This is used by the third-party user-mode "ppp" program, and others.
@@ -715,7 +601,7 @@ pseudo-device	vlan
 
 ## Simple inter-network traffic bridging
 pseudo-device	bridge
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 pseudo-device	npf			# NPF packet filter
@@ -800,8 +686,6 @@ pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #ne*	at pcmcia? function ?		# NE2000-compatible Ethernet
 #ray*	at pcmcia? function ?		# Raytheon Raylink (802.11) UT
 #sm*	at pcmcia? function ?		# Megahertz Ethernet UT
-# tr at pcmcia has problems with Cardbus bridges
-#tr*	at pcmcia? function ?		# TROPIC based Token-Ring UT
 #wi*	at pcmcia? function ?		# Lucent/Intersil WaveLan IEEE (802.11)
 #xirc*	at pcmcia? function ?		# Xircom CreditCard Ethernet UT
 #com*	at xirc?
@@ -945,6 +829,8 @@ lmtemp* 	at iic? addr?
 tda*		at iic? addr?	# fan control on SB1000/2000
 dbcool* 	at iic? addr?	# SB25000
 seeprom*	at iic? addr?	# i2c-at24c64 fru's
+pcagpio* 	at iic? addr?	# V210/V240 GPIO's
+pcf8574io* 	at iic? addr?	# E250 GPIO's
 
 ### Other pseudo-devices
 

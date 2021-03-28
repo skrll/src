@@ -1,11 +1,11 @@
-/*	$NetBSD: types.h,v 1.3 2019/01/09 16:55:18 christos Exp $	*/
+/*	$NetBSD: types.h,v 1.5 2021/02/19 16:42:21 christos Exp $	*/
 
 /*
  * Portions Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -24,7 +24,6 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
 
 #ifndef ISCCC_TYPES_H
 #define ISCCC_TYPES_H 1
@@ -47,8 +46,8 @@ typedef struct isccc_symtab isccc_symtab_t;
 
 /*% iscc region structure */
 typedef struct isccc_region {
-	unsigned char *		rstart;
-	unsigned char *		rend;
+	unsigned char *rstart;
+	unsigned char *rend;
 } isccc_region_t;
 
 #endif /* ISCCC_TYPES_H */

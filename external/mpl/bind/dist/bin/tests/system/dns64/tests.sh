@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -34,19 +34,6 @@ do
         echo_i "checking that $conf is rejected ($n)"
         ret=0
         $CHECKCONF "$conf" >/dev/null && ret=1
-	n=`expr $n + 1`
-        if [ $ret != 0 ]; then echo_i "failed"; fi
-        status=`expr $status + $ret`
-done
-
-for conf in conf/warn*.conf
-do
-        echo_i "checking that $conf produces a warning ($n)"
-        ret=0
-        $CHECKCONF "$conf" > checkconf.out$n || ret=1
-	l=`wc -l < checkconf.out$n`
-	grep "warning" checkconf.out$n > /dev/null || ret=1
-	test $l -ne 0 || ret=1
 	n=`expr $n + 1`
         if [ $ret != 0 ]; then echo_i "failed"; fi
         status=`expr $status + $ret`

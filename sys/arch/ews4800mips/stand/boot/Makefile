@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.23 2019/01/01 19:41:04 christos Exp $
+#	$NetBSD: Makefile,v 1.25 2020/06/07 03:02:42 tsutsui Exp $
 
 WARNS		?= 1
 NOMAN		=
@@ -38,7 +38,7 @@ SRCS		+= boot_device.c floppy_2d.c floppy_2hd_ibmpc.c
 #SRCS		+= floppy_2hc.c
 SRCS		+= console.c cons_rom.c cons_fb.c cons_zskbd.c cons_zs.c
 BINKERNEL_C	= ${COMMON}/binkernel.c
-BINKERNEL_SIZE	= '2 * 1024 * 1024 + 32 * 1024'
+BINKERNEL_SIZE	= 2143232	# '2 * 1024 * 1024 + 45 * 1024'
 BINKERNEL_O	= binkernel.o
 BINKERNEL_DUMMY_O= binkernel_dummy.o
 
@@ -62,7 +62,7 @@ MIPSFLAGS	= -mips1 -G 0 -mno-abicalls
 DEBUGFLAGS	= -Wall -Werror
 DEBUGFLAGS	+= -Wmissing-prototypes -Wstrict-prototypes -Wpointer-arith
 DEBUGFLAGS	+= -Wno-format-zero-length -Wno-sign-compare
-OPTFLAGS	= -Os -mmemcpy
+OPTFLAGS	= -Os -mmemcpy -fno-unwind-tables
 FLAGS		= ${MIPSFLAGS} ${DEBUGFLAGS} ${OPTFLAGS}
 AFLAGS		= -xassembler-with-cpp -D_LOCORE ${FLAGS}
 CFLAGS		= ${FLAGS} -ffreestanding

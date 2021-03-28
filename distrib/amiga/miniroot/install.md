@@ -1,4 +1,4 @@
-#	$NetBSD: install.md,v 1.30 2019/04/10 14:52:53 christos Exp $
+#	$NetBSD: install.md,v 1.32 2021/02/25 21:46:55 rin Exp $
 #
 #
 # Copyright (c) 1996,2006 The NetBSD Foundation, Inc.
@@ -81,7 +81,7 @@ md_installboot() {
 				echo -n "Boot command? [netbsd -ASn2] "
 				getresp "netbsd -ASn2"
 				echo "Installing boot block..."
-				chroot /mnt /usr/sbin/installboot -o command="$resp" /dev/r${1}a /usr/mdec/bootxx_ffs
+				chroot /mnt /usr/sbin/installboot -o command="$resp" /dev/r${1}a /usr/mdec/bootxx_ffsv1
 				cp -p /mnt/usr/mdec/boot.amiga /mnt/
 				;;
 			*)
@@ -140,7 +140,7 @@ md_labeldisk() {
 md_welcome_banner() {
 	if [ "$MODE" = "install" ]; then
 		echo ""
-		echo "Welcome to the NetBSD/amiga ${VERSION} installation program."
+		echo "Welcome to the NetBSD/${MACHINE} ${RELEASE} installation program."
 		cat << \__welcome_banner_1
 
 This program is designed to help you put NetBSD on your disk,
@@ -151,7 +151,7 @@ __welcome_banner_1
 
 	else
 		echo ""
-		echo "Welcome to the NetBSD/amiga ${VERSION} upgrade program."
+		echo "Welcome to the NetBSD/${MACHINE} ${RELEASE} upgrade program."
 		cat << \__welcome_banner_2
 
 This program is designed to help you upgrade your NetBSD system in a

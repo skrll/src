@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.60 2019/12/06 06:38:39 mrg Exp $	*/
+/*	$NetBSD: types.h,v 1.65 2021/01/23 19:38:53 christos Exp $	*/
 
 /*-
  * Copyright (C) 1995 Wolfgang Solfrank.
@@ -33,6 +33,10 @@
 
 #ifndef	_POWERPC_TYPES_H_
 #define	_POWERPC_TYPES_H_
+
+#ifdef _KERNEL_OPT
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/cdefs.h>
 #include <sys/featuretest.h>
@@ -87,6 +91,7 @@ typedef __uint32_t tlb_asid_t;		/* for booke */
 #define	__HAVE___LWP_GETTCB_FAST
 #define	__HAVE___LWP_SETTCB
 #define	__HAVE_TLS_VARIANT_I
+#define	__HAVE_BUS_SPACE_8
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #define	PCU_FPU		0	/* FPU */
@@ -101,6 +106,11 @@ typedef __uint32_t tlb_asid_t;		/* for booke */
 #endif
 #if defined(_KERNEL)
 #define	__HAVE_RAS
+#endif
+
+#ifndef PPC_IBM4XX
+/* XXX temporary */
+#define	__HAVE_UNLOCKED_PMAP
 #endif
 
 #endif	/* _POWERPC_TYPES_H_ */

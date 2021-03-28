@@ -1,4 +1,4 @@
-/*	$NetBSD: am7990.c,v 1.80 2019/11/28 05:07:27 isaki Exp $	*/
+/*	$NetBSD: am7990.c,v 1.83 2020/10/20 18:17:58 roy Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: am7990.c,v 1.80 2019/11/28 05:07:27 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: am7990.c,v 1.83 2020/10/20 18:17:58 roy Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -242,12 +242,12 @@ am7990_rint(struct lance_softc *sc)
 			if (rmd.rmd1_bits & LE_R1_BUFF)
 				printf("%s: receive buffer error\n",
 				    device_xname(sc->sc_dev));
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 		} else if ((rmd.rmd1_bits & (LE_R1_STP | LE_R1_ENP)) !=
 		    (LE_R1_STP | LE_R1_ENP)) {
 			printf("%s: dropping chained buffer\n",
 			    device_xname(sc->sc_dev));
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 		} else {
 #ifdef LEDEBUG
 			if (sc->sc_debug > 1)
@@ -306,8 +306,6 @@ am7990_tint(struct lance_softc *sc)
 		if (tmd.tmd1_bits & LE_T1_OWN)
 			break;
 
-		ifp->if_flags &= ~IFF_OACTIVE;
-
 		if (tmd.tmd1_bits & LE_T1_ERR) {
 			if (tmd.tmd3 & LE_T3_BUFF)
 				printf("%s: transmit buffer error\n",
@@ -328,23 +326,23 @@ am7990_tint(struct lance_softc *sc)
 					    device_xname(sc->sc_dev));
 			}
 			if (tmd.tmd3 & LE_T3_LCOL)
-				ifp->if_collisions++;
+				if_statinc(ifp, if_collisions);
 			if (tmd.tmd3 & LE_T3_RTRY) {
 #ifdef LEDEBUG
 				printf("%s: excessive collisions, tdr %d\n",
 				    device_xname(sc->sc_dev),
 				    tmd.tmd3 & LE_T3_TDR_MASK);
 #endif
-				ifp->if_collisions += 16;
+				if_statadd(ifp, if_collisions, 16);
 			}
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 		} else {
 			if (tmd.tmd1_bits & LE_T1_ONE)
-				ifp->if_collisions++;
+				if_statinc(ifp, if_collisions);
 			else if (tmd.tmd1_bits & LE_T1_MORE)
 				/* Real number is unknown. */
-				ifp->if_collisions += 2;
-			ifp->if_opackets++;
+				if_statadd(ifp, if_collisions, 2);
+			if_statinc(ifp, if_opackets);
 		}
 
 		if (++bix == sc->sc_ntbuf)
@@ -398,20 +396,20 @@ am7990_intr(void *arg)
 #ifdef LEDEBUG
 			printf("%s: babble\n", device_xname(sc->sc_dev));
 #endif
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 		}
 #if 0
 		if (isr & LE_C0_CERR) {
 			printf("%s: collision error\n",
 			    device_xname(sc->sc_dev));
-			ifp->if_collisions++;
+			if_statinc(ifp, if_collisions);
 		}
 #endif
 		if (isr & LE_C0_MISS) {
 #ifdef LEDEBUG
 			printf("%s: missed packet\n", device_xname(sc->sc_dev));
 #endif
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 		}
 		if (isr & LE_C0_MERR) {
 			printf("%s: memory error\n", device_xname(sc->sc_dev));
@@ -422,13 +420,13 @@ am7990_intr(void *arg)
 
 	if ((isr & LE_C0_RXON) == 0) {
 		printf("%s: receiver disabled\n", device_xname(sc->sc_dev));
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		lance_reset(sc);
 		return (1);
 	}
 	if ((isr & LE_C0_TXON) == 0) {
 		printf("%s: transmitter disabled\n", device_xname(sc->sc_dev));
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		lance_reset(sc);
 		return (1);
 	}
@@ -437,12 +435,17 @@ am7990_intr(void *arg)
 	 * Pretend we have carrier; if we don't this will be cleared
 	 * shortly.
 	 */
+	const int ocarrier = sc->sc_havecarrier;
 	sc->sc_havecarrier = 1;
 
 	if (isr & LE_C0_RINT)
 		am7990_rint(sc);
 	if (isr & LE_C0_TINT)
 		am7990_tint(sc);
+
+	if (sc->sc_havecarrier != ocarrier)
+		if_link_state_change(ifp,
+		    sc->sc_havecarrier ? LINK_STATE_UP : LINK_STATE_DOWN);
 
 	rnd_add_uint32(&sc->rnd_source, isr);
 
@@ -467,19 +470,20 @@ am7990_start(struct ifnet *ifp)
 	int rp;
 	int len;
 
-	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
+	if ((ifp->if_flags & IFF_RUNNING) != IFF_RUNNING)
 		return;
 
 	bix = sc->sc_last_td;
 
-	for (;;) {
+	while (sc->sc_no_td < sc->sc_ntbuf) {
 		rp = LE_TMDADDR(sc, bix);
 		(*sc->sc_copyfromdesc)(sc, &tmd, rp, sizeof(tmd));
 
 		if (tmd.tmd1_bits & LE_T1_OWN) {
-			ifp->if_flags |= IFF_OACTIVE;
-			printf("missing buffer, no_td = %d, last_td = %d\n",
-			    sc->sc_no_td, sc->sc_last_td);
+			printf("%s: missing buffer, no_td = %d, last_td = %d\n",
+			    device_xname(sc->sc_dev), sc->sc_no_td,
+			    sc->sc_last_td);
+			break;
 		}
 
 		IFQ_DEQUEUE(&ifp->if_snd, m);
@@ -523,11 +527,7 @@ am7990_start(struct ifnet *ifp)
 		if (++bix == sc->sc_ntbuf)
 			bix = 0;
 
-		if (++sc->sc_no_td == sc->sc_ntbuf) {
-			ifp->if_flags |= IFF_OACTIVE;
-			break;
-		}
-
+		sc->sc_no_td++;
 	}
 
 	sc->sc_last_td = bix;

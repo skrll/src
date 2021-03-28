@@ -1,6 +1,6 @@
 .\" SPDX-License-Identifier: BSD-2-Clause
 .\"
-.\" Copyright (c) 2006-2019 Roy Marples
+.\" Copyright (c) 2006-2020 Roy Marples
 .\" All rights reserved
 .\"
 .\" Redistribution and use in source and binary forms, with or without
@@ -24,7 +24,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd October 9, 2019
+.Dd November 25, 2020
 .Dt DHCPCD 8
 .Os
 .Sh NAME
@@ -62,6 +62,8 @@
 .Op Fl Z , Fl Fl denyinterfaces Ar pattern
 .Op Fl z , Fl Fl allowinterfaces Ar pattern
 .Op Fl Fl inactive
+.Op Fl Fl configure
+.Op Fl Fl noconfigure
 .Op interface
 .Op ...
 .Nm
@@ -72,7 +74,7 @@
 .Op interface
 .Nm
 .Fl U , Fl Fl dumplease
-.Ar interface
+.Op Ar interface
 .Nm
 .Fl Fl version
 .Nm
@@ -109,7 +111,7 @@ to renew early.
 .Pp
 If any interface reports a working carrier then
 .Nm
-will try and obtain a lease before forking to the background,
+will try to obtain a lease before forking to the background,
 otherwise it will fork right away.
 This behaviour can be modified with the
 .Fl b , Fl Fl background
@@ -262,18 +264,29 @@ Use this
 .Ar script
 instead of the default
 .Pa @SCRIPT@ .
-.It Fl D , Fl Fl duid
+.It Fl D , Fl Fl duid Op Ar ll | lt | uuid | value
 Use a DHCP Unique Identifier.
 If a system UUID is available, that will be used to create a DUID-UUID,
 otheriwse if persistent storage is available then a DUID-LLT
 (link local address + time) is generated,
 otherwise DUID-LL is generated (link local address).
+The DUID type can be hinted as an optional parameter if the file
+.Pa @DBDIR@/duid
+does not exist.
+If not
+.Va ll ,
+.Va lt
+or
+.Va uuid
+then
+.Va value
+will be converted from 00:11:22:33 format.
 This, plus the IAID will be used as the
 .Fl I , Fl Fl clientid .
 The DUID generated will be held in
 .Pa @DBDIR@/duid
 and should not be copied to other hosts.
-This file also takes precedence over the above rules.
+This file also takes precedence over the above rules except for setting a value.
 .It Fl d , Fl Fl debug
 Echo debug messages to the stderr and syslog.
 .It Fl E , Fl Fl lastlease
@@ -357,8 +370,9 @@ Some badly configured DHCP servers reject unknown vendorclassids.
 To work around it, try and impersonate Windows by using the MSFT vendorclassid.
 .It Fl j , Fl Fl logfile Ar logfile
 Writes to the specified
-.Ar logfile
-rather than
+.Ar logfile .
+.Nm
+still writes to
 .Xr syslog 3 .
 The
 .Ar logfile
@@ -384,8 +398,10 @@ If no interfaces are left running,
 .Nm
 will exit.
 .It Fl l , Fl Fl leasetime Ar seconds
-Request a specific lease time in
+Request a lease time of
 .Ar seconds .
+.Ar -1
+represents an infinite lease time.
 By default
 .Nm
 does not request any lease time and leaves it in the hands of the
@@ -668,7 +684,9 @@ only responds to DHCP servers and not BOOTP servers, you can
 Quiet
 .Nm
 on the command line, only warnings and errors will be displayed.
-The messages are still logged though.
+If this option is used another time then all console output is disabled.
+These messages are still logged via
+.Xr syslog 3 .
 .It Fl T , Fl Fl test
 On receipt of DHCP messages just call
 .Pa @SCRIPT@
@@ -682,16 +700,20 @@ option is not sent in TEST mode so that the server does not lease an address.
 To test INFORM the interface needs to be configured with the desired address
 before starting
 .Nm .
-.It Fl U , Fl Fl dumplease Ar interface
-Dumps the last lease for the
+.It Fl U , Fl Fl dumplease Op Ar interface
+Dumps the current lease for the
 .Ar interface
 to stdout.
-If omitted, standard input is used to read a DHCP wire formatted message.
+If no
+.Ar interface
+is given then all interfaces are dumped.
 Use the
 .Fl 4
 or
 .Fl 6
 flags to specify an address family.
+If a lease is piped in via standard input then that is dumped.
+In this case, specifying an address family is mandatory.
 .It Fl V , Fl Fl variables
 Display a list of option codes, the associated variable and encoding for use in
 .Xr dhcpcd-run-hooks 8 .
@@ -728,6 +750,25 @@ This allows
 to be started in Master mode and then wait for subsequent
 .Nm
 commands to start each interface as required.
+.It Fl Fl configure
+Allows
+.Nm
+to configure the system.
+This is the default behaviour and sets
+.Ev if_configured=true .
+.It Fl Fl noconfigure
+.Nm
+will not configure the system at all.
+This is only of use if the
+.Fl Fl script
+that
+.Nm
+calls at each network event configures the system instead.
+This is different from
+.Fl T , Fl Fl test
+mode in that it's not one shot and the only change to the environment is the
+addition of
+.Ev if_configured=false .
 .It Fl Fl nodev
 Don't load any
 .Pa /dev
@@ -804,20 +845,20 @@ lease and use the file's mtime as when it was issued.
 Stores the monotonic counter used in the
 .Ar replay
 field in Authentication Options.
-.It Pa @RUNDIR@/dhcpcd.pid
+.It Pa @RUNDIR@/pid
 Stores the PID of
 .Nm
 running on all interfaces.
-.It Pa @RUNDIR@/dhcpcd\- Ns Ar interface Ns .pid
+.It Pa @RUNDIR@/ Ns Ar interface Ns .pid
 Stores the PID of
 .Nm
 running on the
 .Ar interface .
-.It Pa @RUNDIR@/dhcpcd.sock
+.It Pa @RUNDIR@/sock
 Control socket to the master daemon.
-.It Pa @RUNDIR@/dhcpcd.unpriv.sock
+.It Pa @RUNDIR@/unpriv.sock
 Unprivileged socket to the master daemon, only allows state retrieval.
-.It Pa @RUNDIR@/dhcpcd\- Ns Ar interface Ns .sock
+.It Pa @RUNDIR@/ Ns Ar interface Ns .sock
 Control socket to per interface daemon.
 .El
 .Sh SEE ALSO
@@ -833,7 +874,7 @@ RFC\ 3004, RFC\ 3118, RFC\ 3203, RFC\ 3315, RFC\ 3361, RFC\ 3633, RFC\ 3396,
 RFC\ 3397, RFC\ 3442, RFC\ 3495, RFC\ 3925, RFC\ 3927, RFC\ 4039, RFC\ 4075,
 RFC\ 4242, RFC\ 4361, RFC\ 4390, RFC\ 4702, RFC\ 4074, RFC\ 4861, RFC\ 4833,
 RFC\ 4941, RFC\ 5227, RFC\ 5942, RFC\ 5969, RFC\ 6106, RFC\ 6334, RFC\ 6355,
-RFC\ 6603, RFC\ 6704, RFC\ 7217, RFC\ 7550.
+RFC\ 6603, RFC\ 6704, RFC\ 7217, RFC\ 7550, RFC\ 7844.
 .Sh AUTHORS
 .An Roy Marples Aq Mt roy@marples.name
 .Sh BUGS
