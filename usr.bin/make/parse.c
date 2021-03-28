@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.549 2021/02/05 05:46:27 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.552 2021/03/15 12:15:03 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -109,7 +109,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.549 2021/02/05 05:46:27 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.552 2021/03/15 12:15:03 rillig Exp $");
 
 /* types and constants */
 
@@ -1042,8 +1042,8 @@ ParseDependencyTargetWord(const char **pp, const char *lstart)
 			const char *nested_p = cp;
 			FStr nested_val;
 
-			(void)Var_Parse(&nested_p, SCOPE_CMDLINE, VARE_NONE,
-			    &nested_val);
+			(void)Var_Parse(&nested_p, SCOPE_CMDLINE,
+			    VARE_PARSE_ONLY, &nested_val);
 			/* TODO: handle errors */
 			FStr_Done(&nested_val);
 			cp += nested_p - cp;
@@ -1874,7 +1874,7 @@ VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *scope)
 		if (type != VAR_SUBST && strchr(uvalue, '$') != NULL) {
 			char *expandedValue;
 
-			(void)Var_Subst(uvalue, scope, VARE_NONE,
+			(void)Var_Subst(uvalue, scope, VARE_PARSE_ONLY,
 			    &expandedValue);
 			/* TODO: handle errors */
 			free(expandedValue);
@@ -1898,8 +1898,7 @@ VarAssign_EvalSubst(GNode *scope, const char *name, const char *uvalue,
 	if (!Var_ExistsExpand(scope, name))
 		Var_SetExpand(scope, name, "");
 
-	(void)Var_Subst(uvalue, scope,
-	    VARE_WANTRES | VARE_KEEP_DOLLAR | VARE_KEEP_UNDEF, &evalue);
+	(void)Var_Subst(uvalue, scope, VARE_KEEP_DOLLAR_UNDEF, &evalue);
 	/* TODO: handle errors */
 
 	Var_SetExpand(scope, name, evalue);
@@ -1918,8 +1917,8 @@ VarAssign_EvalShell(const char *name, const char *uvalue, GNode *scope,
 	cmd = FStr_InitRefer(uvalue);
 	if (strchr(cmd.str, '$') != NULL) {
 		char *expanded;
-		(void)Var_Subst(cmd.str, SCOPE_CMDLINE,
-		    VARE_WANTRES | VARE_UNDEFERR, &expanded);
+		(void)Var_Subst(cmd.str, SCOPE_CMDLINE, VARE_UNDEFERR,
+		    &expanded);
 		/* TODO: handle errors */
 		cmd = FStr_InitOwn(expanded);
 	}
@@ -2266,25 +2265,24 @@ ParseDoInclude(char *directive)
 static void
 SetFilenameVars(const char *filename, const char *dirvar, const char *filevar)
 {
-	const char *slash, *dirname, *basename;
-	void *freeIt;
+	const char *slash, *basename;
+	FStr dirname;
 
 	slash = strrchr(filename, '/');
 	if (slash == NULL) {
-		dirname = curdir;
+		dirname = FStr_InitRefer(curdir);
 		basename = filename;
-		freeIt = NULL;
 	} else {
-		dirname = freeIt = bmake_strsedup(filename, slash);
+		dirname = FStr_InitOwn(bmake_strsedup(filename, slash));
 		basename = slash + 1;
 	}
 
-	Global_SetExpand(dirvar, dirname);
+	Global_SetExpand(dirvar, dirname.str);
 	Global_SetExpand(filevar, basename);
 
 	DEBUG5(PARSE, "%s: ${%s} = `%s' ${%s} = `%s'\n",
-	    __func__, dirvar, dirname, filevar, basename);
-	free(freeIt);
+	    __func__, dirvar, dirname.str, filevar, basename);
+	FStr_Done(&dirname);
 }
 
 /*
@@ -3132,7 +3130,7 @@ ParseDependency(char *line)
 	 * Var_Parse does not print any parse errors in such a case.
 	 * It simply returns the special empty string var_Error,
 	 * which cannot be detected in the result of Var_Subst. */
-	eflags = opts.strict ? VARE_WANTRES : VARE_WANTRES | VARE_UNDEFERR;
+	eflags = opts.strict ? VARE_WANTRES : VARE_UNDEFERR;
 	(void)Var_Subst(line, SCOPE_CMDLINE, eflags, &expanded_line);
 	/* TODO: handle errors */
 

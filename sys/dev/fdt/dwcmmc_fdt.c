@@ -1,4 +1,4 @@
-/* $NetBSD: dwcmmc_fdt.c,v 1.16 2021/01/27 03:10:21 thorpej Exp $ */
+/* $NetBSD: dwcmmc_fdt.c,v 1.18 2021/03/24 18:19:31 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015-2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dwcmmc_fdt.c,v 1.16 2021/01/27 03:10:21 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dwcmmc_fdt.c,v 1.18 2021/03/24 18:19:31 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -66,8 +66,14 @@ static const struct dwcmmc_fdt_config dwcmmc_rk3288_config = {
 	.intr_cardmask = __BIT(24),
 };
 
+static const struct dwcmmc_fdt_config dwmmc_default_config = {
+	.flags = DWC_MMC_F_USE_HOLD_REG |
+		 DWC_MMC_F_DMA,
+};
+
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "rockchip,rk3288-dw-mshc",	.data = &dwcmmc_rk3288_config },
+	{ .compat = "snps,dw-mshc",		.data = &dwmmc_default_config },
 	DEVICE_COMPAT_EOL
 };
 

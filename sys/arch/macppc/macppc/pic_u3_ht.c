@@ -1,4 +1,4 @@
-/*	$NetBSD: pic_u3_ht.c,v 1.10 2021/01/26 14:49:41 thorpej Exp $	*/
+/*	$NetBSD: pic_u3_ht.c,v 1.12 2021/03/06 07:29:05 rin Exp $	*/
 /*-
  * Copyright (c) 2013 Phileas Fogg
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic_u3_ht.c,v 1.10 2021/01/26 14:49:41 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic_u3_ht.c,v 1.12 2021/03/06 07:29:05 rin Exp $");
 
 #include "opt_openpic.h"
 #include "opt_interrupt.h"
@@ -229,7 +229,7 @@ setup_u3_ht(uint32_t addr, uint32_t len, int bigendian)
 	pic->pic_ack_irq = u3_ht_ack_irq;
 	pic->pic_establish_irq = u3_ht_establish_irq;
 	pic->pic_finish_setup = u3_ht_finish_setup;
-	strcpy(pic->pic_name, "openpic");
+	strcpy(pic->pic_name, "u3_ht");
 	pic_add(pic);
 
 	u3_ht_set_priority(u3_ht, 0, 15);
@@ -632,7 +632,8 @@ u3_ht_send_ipi(cpuid_t target, uint32_t mesg)
 static void
 u3_ht_establish_ipi(int type, int level, void *ih_args)
 {
-	intr_establish(ipiops.ppc_ipi_vector, type, level, ipi_intr, ih_args);
+	intr_establish_xname(ipiops.ppc_ipi_vector, type, level, ipi_intr,
+	    ih_args, "u3_ht ipi");
 }
 
 #endif /*MULTIPROCESSOR*/

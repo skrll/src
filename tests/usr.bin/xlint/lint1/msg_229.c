@@ -1,7 +1,18 @@
-/*	$NetBSD: msg_229.c,v 1.1 2021/01/02 10:22:44 rillig Exp $	*/
+/*	$NetBSD: msg_229.c,v 1.5 2021/02/28 01:20:54 rillig Exp $	*/
 # 3 "msg_229.c"
 
-// Test for message: questionable conversion of function pointer [229]
+// Test for message: converting '%s' to '%s' is questionable [229]
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+typedef double (*unary_operator)(double);
+
+int *
+to_int_pointer(unary_operator op)
+{
+	return (int *)op;		/* expect: 229 */
+}
+
+unary_operator
+to_function_pointer(int *p)
+{
+	return (unary_operator)p;	/* expect: 229 */
+}

@@ -1,4 +1,4 @@
-/*	$NetBSD: lexi.c,v 1.17 2019/10/19 15:44:31 christos Exp $	*/
+/*	$NetBSD: lexi.c,v 1.41 2021/03/14 00:22:16 rillig Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-4-Clause
@@ -46,7 +46,7 @@ static char sccsid[] = "@(#)lexi.c	8.1 (Berkeley) 6/6/93";
 #include <sys/cdefs.h>
 #ifndef lint
 #if defined(__NetBSD__)
-__RCSID("$NetBSD: lexi.c,v 1.17 2019/10/19 15:44:31 christos Exp $");
+__RCSID("$NetBSD: lexi.c,v 1.41 2021/03/14 00:22:16 rillig Exp $");
 #elif defined(__FreeBSD__)
 __FBSDID("$FreeBSD: head/usr.bin/indent/lexi.c 337862 2018-08-15 18:19:45Z pstef $");
 #endif
@@ -58,6 +58,7 @@ __FBSDID("$FreeBSD: head/usr.bin/indent/lexi.c 337862 2018-08-15 18:19:45Z pstef
  * of token scanned.
  */
 
+#include <assert.h>
 #include <err.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -65,63 +66,61 @@ __FBSDID("$FreeBSD: head/usr.bin/indent/lexi.c 337862 2018-08-15 18:19:45Z pstef
 #include <string.h>
 #include <sys/param.h>
 
-#include "indent_globs.h"
-#include "indent_codes.h"
 #include "indent.h"
 
 struct templ {
     const char *rwd;
-    int         rwcode;
+    enum rwcode rwcode;
 };
 
 /*
  * This table has to be sorted alphabetically, because it'll be used in binary
- * search. For the same reason, string must be the first thing in struct templ.
+ * search.
  */
-struct templ specials[] =
+const struct templ specials[] =
 {
-    {"_Bool", 4},
-    {"_Complex", 4},
-    {"_Imaginary", 4},
-    {"auto", 10},
-    {"bool", 4},
-    {"break", 9},
-    {"case", 8},
-    {"char", 4},
-    {"complex", 4},
-    {"const", 4},
-    {"continue", 12},
-    {"default", 8},
-    {"do", 6},
-    {"double", 4},
-    {"else", 6},
-    {"enum", 3},
-    {"extern", 10},
-    {"float", 4},
-    {"for", 5},
-    {"global", 4},
-    {"goto", 9},
-    {"if", 5},
-    {"imaginary", 4},
-    {"inline", 12},
-    {"int", 4},
-    {"long", 4},
-    {"offsetof", 1},
-    {"register", 10},
-    {"restrict", 12},
-    {"return", 9},
-    {"short", 4},
-    {"signed", 4},
-    {"sizeof", 2},
-    {"static", 10},
-    {"struct", 3},
-    {"switch", 7},
-    {"typedef", 11},
-    {"union", 3},
-    {"unsigned", 4},
-    {"void", 4},
-    {"volatile", 4},
-    {"while", 5}
+    {"_Bool", rw_type},
+    {"_Complex", rw_type},
+    {"_Imaginary", rw_type},
+    {"auto", rw_storage_class},
+    {"bool", rw_type},
+    {"break", rw_jump},
+    {"case", rw_case_or_default},
+    {"char", rw_type},
+    {"complex", rw_type},
+    {"const", rw_type},
+    {"continue", rw_jump},
+    {"default", rw_case_or_default},
+    {"do", rw_do_or_else},
+    {"double", rw_type},
+    {"else", rw_do_or_else},
+    {"enum", rw_struct_or_union_or_enum},
+    {"extern", rw_storage_class},
+    {"float", rw_type},
+    {"for", rw_for_or_if_or_while},
+    {"global", rw_type},
+    {"goto", rw_jump},
+    {"if", rw_for_or_if_or_while},
+    {"imaginary", rw_type},
+    {"inline", rw_inline_or_restrict},
+    {"int", rw_type},
+    {"long", rw_type},
+    {"offsetof", rw_offsetof},
+    {"register", rw_storage_class},
+    {"restrict", rw_inline_or_restrict},
+    {"return", rw_jump},
+    {"short", rw_type},
+    {"signed", rw_type},
+    {"sizeof", rw_sizeof},
+    {"static", rw_storage_class},
+    {"struct", rw_struct_or_union_or_enum},
+    {"switch", rw_switch},
+    {"typedef", rw_typedef},
+    {"union", rw_struct_or_union_or_enum},
+    {"unsigned", rw_type},
+    {"void", rw_type},
+    {"volatile", rw_type},
+    {"while", rw_for_or_if_or_while}
 };
 
 const char **typenames;
@@ -172,18 +171,125 @@ static char const *table[] = {
     [0]   = "uuiifuufiuuiiuiiiiiuiuuuuu",
 };
 
-static int
-strcmp_type(const void *e1, const void *e2)
+/* Initialize constant transition table */
+void
+init_constant_tt(void)
 {
-    return (strcmp(e1, *(const char * const *)e2));
+    table['-'] = table['+'];
+    table['8'] = table['9'];
+    table['2'] = table['3'] = table['4'] = table['5'] = table['6'] = table['7'];
+    table['A'] = table['C'] = table['D'] = table['c'] = table['d'] = table['a'];
+    table['B'] = table['b'];
+    table['E'] = table['e'];
+    table['U'] = table['u'];
+    table['X'] = table['x'];
+    table['P'] = table['p'];
+    table['F'] = table['f'];
 }
 
-int
+static char
+inbuf_peek(void)
+{
+    return *buf_ptr;
+}
+
+static void
+inbuf_skip(void)
+{
+    buf_ptr++;
+    if (buf_ptr >= buf_end)
+	fill_buffer();
+}
+
+static char
+inbuf_next(void)
+{
+    char ch = inbuf_peek();
+    inbuf_skip();
+    return ch;
+}
+
+static void
+check_size_token(size_t desired_size)
+{
+    if (e_token + (desired_size) < l_token)
+        return;
+
+    size_t nsize = l_token - s_token + 400 + desired_size;
+    size_t token_len = e_token - s_token;
+    tokenbuf = realloc(tokenbuf, nsize);
+    if (tokenbuf == NULL)
+	err(1, NULL);
+    e_token = tokenbuf + token_len + 1;
+    l_token = tokenbuf + nsize - 5;
+    s_token = tokenbuf + 1;
+}
+
+static int
+compare_templ_array(const void *key, const void *elem)
+{
+    return strcmp(key, ((const struct templ *)elem)->rwd);
+}
+
+static int
+compare_string_array(const void *key, const void *elem)
+{
+    return strcmp(key, *((const char *const *)elem));
+}
+
+#ifdef debug
+const char *
+token_type_name(token_type tk)
+{
+    static const char *const name[] = {
+	"end_of_file", "newline", "lparen", "rparen", "unary_op",
+	"binary_op", "postfix_op", "question", "case_label", "colon",
+	"semicolon", "lbrace", "rbrace", "ident", "comma",
+	"comment", "switch_expr", "preprocessing", "form_feed", "decl",
+	"keyword_for_if_while", "keyword_do_else",
+	"if_expr", "while_expr", "for_exprs",
+	"stmt", "stmt_list", "keyword_else", "keyword_do", "do_stmt",
+	"if_expr_stmt", "if_expr_stmt_else", "period", "string_prefix",
+	"storage_class", "funcname", "type_def", "keyword_struct_union_enum"
+    };
+
+    assert(0 <= tk && tk < sizeof name / sizeof name[0]);
+
+    return name[tk];
+}
+
+static void
+print_buf(const char *name, const char *s, const char *e)
+{
+    if (s < e) {
+	debug_printf(" %s ", name);
+	debug_vis_range("\"", s, e, "\"");
+    }
+}
+
+static token_type
+lexi_end(token_type code)
+{
+    debug_printf("in line %d, lexi returns '%s'",
+	line_no, token_type_name(code));
+    print_buf("token", s_token, e_token);
+    print_buf("label", s_lab, e_lab);
+    print_buf("code", s_code, e_code);
+    print_buf("comment", s_com, e_com);
+    debug_printf("\n");
+
+    return code;
+}
+#else
+#  define lexi_end(tk) (tk)
+#endif
+
+token_type
 lexi(struct parser_state *state)
 {
     int         unary_delim;	/* this is set to 1 if the current token
 				 * forces a following operator to be unary */
-    int         code;		/* internal code to be returned */
+    token_type  code;		/* internal code to be returned */
     char        qchar;		/* the delimiter character for a string */
 
     e_token = s_token;		/* point to start of place to save token */
@@ -196,8 +302,7 @@ lexi(struct parser_state *state)
     while (*buf_ptr == ' ' || *buf_ptr == '\t') {	/* get rid of blanks */
 	state->col_1 = false;	/* leading blanks imply token is not in column
 				 * 1 */
-	if (++buf_ptr >= buf_end)
-	    fill_buffer();
+	inbuf_skip();
     }
 
     /* Scan an alphanumeric token */
@@ -222,60 +327,50 @@ lexi(struct parser_state *state)
 		    break;
 		}
 		s = table[i][s - 'A'];
-		CHECK_SIZE_TOKEN(1);
-		*e_token++ = *buf_ptr++;
-		if (buf_ptr >= buf_end)
-		    fill_buffer();
+		check_size_token(1);
+		*e_token++ = inbuf_next();
 	    }
 	    /* s now indicates the type: f(loating), i(integer), u(nknown) */
-	}
-	else
+	} else {
 	    while (isalnum((unsigned char)*buf_ptr) ||
-	        *buf_ptr == BACKSLASH ||
-		*buf_ptr == '_' || *buf_ptr == '$') {
+		   *buf_ptr == '\\' ||
+		   *buf_ptr == '_' || *buf_ptr == '$') {
 		/* fill_buffer() terminates buffer with newline */
-		if (*buf_ptr == BACKSLASH) {
-		    if (*(buf_ptr + 1) == '\n') {
+		if (*buf_ptr == '\\') {
+		    if (buf_ptr[1] == '\n') {
 			buf_ptr += 2;
 			if (buf_ptr >= buf_end)
 			    fill_buffer();
-			} else
-			    break;
+		    } else
+			break;
 		}
-		CHECK_SIZE_TOKEN(1);
-		/* copy it over */
-		*e_token++ = *buf_ptr++;
-		if (buf_ptr >= buf_end)
-		    fill_buffer();
+		check_size_token(1);
+		*e_token++ = inbuf_next();
 	    }
+	}
 	*e_token = '\0';
 
 	if (s_token[0] == 'L' && s_token[1] == '\0' &&
 	      (*buf_ptr == '"' || *buf_ptr == '\''))
-	    return (strpfx);
+	    return lexi_end(string_prefix);
 
-	while (*buf_ptr == ' ' || *buf_ptr == '\t') {	/* get rid of blanks */
-	    if (++buf_ptr >= buf_end)
-		fill_buffer();
-	}
-	state->keyword = 0;
-	if (state->last_token == structure && !state->p_l_follow) {
-				/* if last token was 'struct' and we're not
-				 * in parentheses, then this token
-				 * should be treated as a declaration */
+	while (*buf_ptr == ' ' || *buf_ptr == '\t')	/* get rid of blanks */
+	    inbuf_next();
+	state->keyword = rw_0;
+	if (state->last_token == keyword_struct_union_enum &&
+	    !state->p_l_follow) {
+	    /* if last token was 'struct' and we're not in parentheses, then
+	     * this token should be treated as a declaration */
 	    state->last_u_d = true;
-	    return (decl);
+	    return lexi_end(decl);
 	}
 	/*
 	 * Operator after identifier is binary unless last token was 'struct'
 	 */
-	state->last_u_d = (state->last_token == structure);
+	state->last_u_d = (state->last_token == keyword_struct_union_enum);
 
-	p = bsearch(s_token,
-	    specials,
-	    sizeof(specials) / sizeof(specials[0]),
-	    sizeof(specials[0]),
-	    strcmp_type);
+	p = bsearch(s_token, specials, sizeof specials / sizeof specials[0],
+	    sizeof specials[0], compare_templ_array);
 	if (p == NULL) {	/* not a special keyword... */
 	    char *u;
 
@@ -283,8 +378,8 @@ lexi(struct parser_state *state)
 	    if ((opt.auto_typedefs && ((u = strrchr(s_token, '_')) != NULL) &&
 	        strcmp(u, "_t") == 0) || (typename_top >= 0 &&
 		  bsearch(s_token, typenames, typename_top + 1,
-		    sizeof(typenames[0]), strcmp_type))) {
-		state->keyword = 4;	/* a type name */
+		    sizeof typenames[0], compare_string_array))) {
+		state->keyword = rw_type;
 		state->last_u_d = true;
 	        goto found_typename;
 	    }
@@ -292,44 +387,42 @@ lexi(struct parser_state *state)
 	    state->keyword = p->rwcode;
 	    state->last_u_d = true;
 	    switch (p->rwcode) {
-	    case 7:		/* it is a switch */
-		return (swstmt);
-	    case 8:		/* a case or default */
-		return (casestmt);
-
-	    case 3:		/* a "struct" */
-		/* FALLTHROUGH */
-	    case 4:		/* one of the declaration keywords */
+	    case rw_switch:
+		return lexi_end(switch_expr);
+	    case rw_case_or_default:
+		return lexi_end(case_label);
+	    case rw_struct_or_union_or_enum:
+	    case rw_type:
 	    found_typename:
 		if (state->p_l_follow) {
 		    /* inside parens: cast, param list, offsetof or sizeof */
 		    state->cast_mask |= (1 << state->p_l_follow) & ~state->not_cast_mask;
 		}
 		if (state->last_token == period || state->last_token == unary_op) {
-		    state->keyword = 0;
+		    state->keyword = rw_0;
 		    break;
 		}
-		if (p != NULL && p->rwcode == 3)
-		    return (structure);
+		if (p != NULL && p->rwcode == rw_struct_or_union_or_enum)
+		    return lexi_end(keyword_struct_union_enum);
 		if (state->p_l_follow)
 		    break;
-		return (decl);
+		return lexi_end(decl);
 
-	    case 5:		/* if, while, for */
-		return (sp_paren);
+	    case rw_for_or_if_or_while:
+		return lexi_end(keyword_for_if_while);
 
-	    case 6:		/* do, else */
-		return (sp_nparen);
+	    case rw_do_or_else:
+		return lexi_end(keyword_do_else);
 
-	    case 10:		/* storage class specifier */
-		return (storage);
+	    case rw_storage_class:
+		return lexi_end(storage_class);
 
-	    case 11:		/* typedef */
-		return (type_def);
+	    case rw_typedef:
+		return lexi_end(type_def);
 
 	    default:		/* all others are treated like any other
 				 * identifier */
-		return (ident);
+		return lexi_end(ident);
 	    }			/* end of switch */
 	}			/* end of if (found_it) */
 	if (*buf_ptr == '(' && state->tos <= 1 && state->ind_level == 0 &&
@@ -341,7 +434,7 @@ lexi(struct parser_state *state)
 	    strncpy(state->procname, token, sizeof state->procname - 1);
 	    if (state->in_decl)
 		state->in_parameter_declaration = 1;
-	    return (funcname);
+	    return lexi_end(funcname);
     not_proc:;
 	}
 	/*
@@ -355,30 +448,28 @@ lexi(struct parser_state *state)
 		isalpha((unsigned char)*buf_ptr)) &&
 	    (state->last_token == semicolon || state->last_token == lbrace ||
 		state->last_token == rbrace)) {
-	    state->keyword = 4;	/* a type name */
+	    state->keyword = rw_type;
 	    state->last_u_d = true;
-	    return decl;
+	    return lexi_end(decl);
 	}
 	if (state->last_token == decl)	/* if this is a declared variable,
 					 * then following sign is unary */
 	    state->last_u_d = true;	/* will make "int a -1" work */
-	return (ident);		/* the ident is not in the list */
+	return lexi_end(ident);		/* the ident is not in the list */
     }				/* end of procesing for alpanum character */
 
     /* Scan a non-alphanumeric token */
 
-    CHECK_SIZE_TOKEN(3);		/* things like "<<=" */
-    *e_token++ = *buf_ptr;		/* if it is only a one-character token, it is
+    check_size_token(3);	/* things like "<<=" */
+    *e_token++ = inbuf_next();	/* if it is only a one-character token, it is
 				 * moved here */
     *e_token = '\0';
-    if (++buf_ptr >= buf_end)
-	fill_buffer();
 
     switch (*token) {
     case '\n':
 	unary_delim = state->last_u_d;
 	state->last_nl = true;	/* remember that we just had a newline */
-	code = (had_eof ? 0 : newline);
+	code = (had_eof ? end_of_file : newline);
 
 	/*
 	 * if data has been exhausted, the newline is a dummy, and we should
@@ -390,25 +481,20 @@ lexi(struct parser_state *state)
     case '"':			/* start of string */
 	qchar = *token;
 	do {			/* copy the string */
-	    while (1) {		/* move one character or [/<char>]<char> */
+	    for (;;) {		/* move one character or [/<char>]<char> */
 		if (*buf_ptr == '\n') {
 		    diag(1, "Unterminated literal");
 		    goto stop_lit;
 		}
-		CHECK_SIZE_TOKEN(2);
-		*e_token = *buf_ptr++;
-		if (buf_ptr >= buf_end)
-		    fill_buffer();
-		if (*e_token == BACKSLASH) {	/* if escape, copy extra char */
+		check_size_token(2);
+		*e_token = inbuf_next();
+		if (*e_token == '\\') {		/* if escape, copy extra char */
 		    if (*buf_ptr == '\n')	/* check for escaped newline */
 			++line_no;
-		    *++e_token = *buf_ptr++;
+		    *++e_token = inbuf_next();
 		    ++e_token;	/* we must increment this again because we
 				 * copied two chars */
-		    if (buf_ptr >= buf_end)
-			fill_buffer();
-		}
-		else
+		} else
 		    break;	/* we copied one character */
 	    }			/* end of while (1) */
 	} while (*e_token++ != qchar);
@@ -416,20 +502,20 @@ stop_lit:
 	code = ident;
 	break;
 
-    case ('('):
-    case ('['):
+    case '(':
+    case '[':
 	unary_delim = true;
 	code = lparen;
 	break;
 
-    case (')'):
-    case (']'):
+    case ')':
+    case ']':
 	code = rparen;
 	break;
 
     case '#':
 	unary_delim = state->last_u_d;
-	code = preesc;
+	code = preprocessing;
 	break;
 
     case '?':
@@ -437,17 +523,17 @@ stop_lit:
 	code = question;
 	break;
 
-    case (':'):
+    case ':':
 	code = colon;
 	unary_delim = true;
 	break;
 
-    case (';'):
+    case ';':
 	unary_delim = true;
 	code = semicolon;
 	break;
 
-    case ('{'):
+    case '{':
 	unary_delim = true;
 
 	/*
@@ -457,7 +543,7 @@ stop_lit:
 	code = lbrace;
 	break;
 
-    case ('}'):
+    case '}':
 	unary_delim = true;
 	/* ?	code = state->block_init ? rparen : rbrace; */
 	code = rbrace;
@@ -470,7 +556,7 @@ stop_lit:
 	code = form_feed;
 	break;
 
-    case (','):
+    case ',':
 	unary_delim = true;
 	code = comma;
 	break;
@@ -490,12 +576,11 @@ stop_lit:
 	    *e_token++ = *buf_ptr++;
 	    /* buffer overflow will be checked at end of loop */
 	    if (state->last_token == ident || state->last_token == rparen) {
-		code = (state->last_u_d ? unary_op : postop);
+		code = (state->last_u_d ? unary_op : postfix_op);
 		/* check for following ++ or -- */
 		unary_delim = false;
 	    }
-	}
-	else if (*buf_ptr == '=')
+	} else if (*buf_ptr == '=')
 	    /* check for operator += */
 	    *e_token++ = *buf_ptr++;
 	else if (*buf_ptr == '>') {
@@ -511,7 +596,7 @@ stop_lit:
     case '=':
 	if (state->in_or_st)
 	    state->block_init = 1;
-	if (*buf_ptr == '=') {/* == */
+	if (*buf_ptr == '=') {	/* == */
 	    *e_token++ = '=';	/* Flip =+ to += */
 	    buf_ptr++;
 	    *e_token = 0;
@@ -524,11 +609,8 @@ stop_lit:
     case '>':
     case '<':
     case '!':			/* ops like <, <<, <=, !=, etc */
-	if (*buf_ptr == '>' || *buf_ptr == '<' || *buf_ptr == '=') {
-	    *e_token++ = *buf_ptr;
-	    if (++buf_ptr >= buf_end)
-		fill_buffer();
-	}
+	if (*buf_ptr == '>' || *buf_ptr == '<' || *buf_ptr == '=')
+	    *e_token++ = inbuf_next();
 	if (*buf_ptr == '=')
 	    *e_token++ = *buf_ptr++;
 	code = (state->last_u_d ? unary_op : binary_op);
@@ -545,11 +627,10 @@ stop_lit:
 	}
 	while (*buf_ptr == '*' || isspace((unsigned char)*buf_ptr)) {
 	    if (*buf_ptr == '*') {
-		CHECK_SIZE_TOKEN(1);
+		check_size_token(1);
 		*e_token++ = *buf_ptr;
 	    }
-	    if (++buf_ptr >= buf_end)
-		fill_buffer();
+	    inbuf_skip();
 	}
 	if (ps.in_decl) {
 	    char *tp = buf_ptr;
@@ -566,25 +647,20 @@ stop_lit:
 	break;
 
     default:
-	if (token[0] == '/' && *buf_ptr == '*') {
+	if (token[0] == '/' && (*buf_ptr == '*' || *buf_ptr == '/')) {
 	    /* it is start of comment */
-	    *e_token++ = '*';
-
-	    if (++buf_ptr >= buf_end)
-		fill_buffer();
+	    *e_token++ = inbuf_next();
 
 	    code = comment;
 	    unary_delim = state->last_u_d;
 	    break;
 	}
-	while (*(e_token - 1) == *buf_ptr || *buf_ptr == '=') {
+	while (e_token[-1] == *buf_ptr || *buf_ptr == '=') {
 	    /*
 	     * handle ||, &&, etc, and also things as in int *****i
 	     */
-	    CHECK_SIZE_TOKEN(1);
-	    *e_token++ = *buf_ptr;
-	    if (++buf_ptr >= buf_end)
-		fill_buffer();
+	    check_size_token(1);
+	    *e_token++ = inbuf_next();
 	}
 	code = (state->last_u_d ? unary_op : binary_op);
 	unary_delim = true;
@@ -594,33 +670,16 @@ stop_lit:
     if (buf_ptr >= buf_end)	/* check for input buffer empty */
 	fill_buffer();
     state->last_u_d = unary_delim;
-    CHECK_SIZE_TOKEN(1);
+    check_size_token(1);
     *e_token = '\0';		/* null terminate the token */
-    return (code);
-}
-
-/* Initialize constant transition table */
-void
-init_constant_tt(void)
-{
-    table['-'] = table['+'];
-    table['8'] = table['9'];
-    table['2'] = table['3'] = table['4'] = table['5'] = table['6'] = table['7'];
-    table['A'] = table['C'] = table['D'] = table['c'] = table['d'] = table['a'];
-    table['B'] = table['b'];
-    table['E'] = table['e'];
-    table['U'] = table['u'];
-    table['X'] = table['x'];
-    table['P'] = table['p'];
-    table['F'] = table['f'];
+    return lexi_end(code);
 }
 
 void
 alloc_typenames(void)
 {
 
-    typenames = (const char **)malloc(sizeof(typenames[0]) *
-        (typename_count = 16));
+    typenames = malloc(sizeof(typenames[0]) * (typename_count = 16));
     if (typenames == NULL)
 	err(1, NULL);
 }
@@ -644,8 +703,7 @@ add_typename(const char *key)
 	if (comparison == 0)	/* remove duplicates */
 	    return;
 	typenames[++typename_top] = copy = strdup(key);
-    }
-    else {
+    } else {
 	int p;
 
 	for (p = 0; (comparison = strcmp(key, typenames[p])) > 0; p++)
