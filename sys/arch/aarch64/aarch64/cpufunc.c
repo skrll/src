@@ -385,6 +385,7 @@ aarch64_dcache_wbinv_all(void)
 	struct aarch64_cache_info *cinfo;
 	int level;
 
+	kpreempt_disable();
 	cinfo = curcpu()->ci_cacheinfo;
 
 	for (level = 0; level < MAX_CACHE_LEVEL; level++) {
@@ -395,6 +396,7 @@ aarch64_dcache_wbinv_all(void)
 		ln_dcache_wbinv_all(level, &cinfo[level].dcache);
 	}
 	dsb(ish);
+	kpreempt_enable();
 }
 
 void
@@ -403,6 +405,7 @@ aarch64_dcache_inv_all(void)
 	struct aarch64_cache_info *cinfo;
 	int level;
 
+	kpreempt_disable();
 	cinfo = curcpu()->ci_cacheinfo;
 
 	for (level = 0; level < MAX_CACHE_LEVEL; level++) {
@@ -413,6 +416,7 @@ aarch64_dcache_inv_all(void)
 		ln_dcache_inv_all(level, &cinfo[level].dcache);
 	}
 	dsb(ish);
+	kpreempt_enable();
 }
 
 void
@@ -421,6 +425,7 @@ aarch64_dcache_wb_all(void)
 	struct aarch64_cache_info *cinfo;
 	int level;
 
+	kpreempt_disable();
 	cinfo = curcpu()->ci_cacheinfo;
 
 	for (level = 0; level < MAX_CACHE_LEVEL; level++) {
@@ -431,6 +436,7 @@ aarch64_dcache_wb_all(void)
 		ln_dcache_wb_all(level, &cinfo[level].dcache);
 	}
 	dsb(ish);
+	kpreempt_enable();
 }
 
 int
