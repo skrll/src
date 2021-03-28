@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.116 2021/02/03 10:37:05 rin Exp $	*/
+/*	$NetBSD: cpu.h,v 1.118 2021/03/07 14:42:53 rin Exp $	*/
 
 /*
  * Copyright (C) 1999 Wolfgang Solfrank.
@@ -94,6 +94,10 @@ struct cpu_info {
 	struct lwp *ci_onproc;		/* current user LWP / kthread */
 	struct pcb *ci_curpcb;
 	struct pmap *ci_curpm;
+#if defined(PPC_OEA) || defined(PPC_OEA601) || defined(PPC_OEA64) || \
+    defined(PPC_OEA64_BRIDGE) || defined(MODULAR) || defined(_MODULE)
+	void *ci_battable;		/* BAT table in use by this CPU */
+#endif
 	struct lwp *ci_softlwps[SOFTINT_COUNT];
 	int ci_cpuid;			/* from SPR_PIR */
 
@@ -114,18 +118,20 @@ struct cpu_info {
 	volatile uint32_t ci_pending_ipis;
 	int ci_mtx_oldspl;
 	int ci_mtx_count;
-#if defined(PPC_IBM4XX) || defined(MODULAR) || defined(_MODULE)
+#if defined(PPC_IBM4XX) || \
+    ((defined(MODULAR) || defined(_MODULE)) && !defined(_LP64))
 	char *ci_intstk;
 #endif
 
 	register_t ci_savearea[CPUSAVE_SIZE];
-#if defined(PPC_BOOKE) || defined(MODULAR) || defined(_MODULE)
+#if defined(PPC_BOOKE) || \
+    ((defined(MODULAR) || defined(_MODULE)) && !defined(_LP64))
 	uint32_t ci_pmap_asid_cur;
 	union pmap_segtab *ci_pmap_segtabs[2];
 #define	ci_pmap_kern_segtab	ci_pmap_segtabs[0]
 #define	ci_pmap_user_segtab	ci_pmap_segtabs[1]
 	struct pmap_tlb_info *ci_tlb_info;
-#endif /* PPC_BOOKE || MODULAR || _MODULE */
+#endif /* PPC_BOOKE || ((MODULAR || _MODULE) && !_LP64) */
 	struct cache_info ci_ci;		
 	void *ci_sysmon_cookie;
 	void (*ci_idlespin)(void);

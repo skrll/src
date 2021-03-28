@@ -1,4 +1,4 @@
-/*	$NetBSD: msg_161.c,v 1.4 2021/01/31 12:44:34 rillig Exp $	*/
+/*	$NetBSD: msg_161.c,v 1.7 2021/03/21 15:44:57 rillig Exp $	*/
 # 3 "msg_161.c"
 
 // Test for message: constant in conditional context [161]
@@ -16,7 +16,7 @@ void
 while_0(void)
 {
 	while (0)		/* expect: 161 */
-		continue;
+		continue;	/* expect: statement not reached */
 }
 
 /*
@@ -39,4 +39,19 @@ do_while_1(void)
 	do {
 
 	} while (1);		/* expect: 161 */
+}
+
+extern void println(const char *);
+
+/*
+ * Since 2021-02-28, lint no longer warns about constant controlling
+ * expressions involving sizeof since these are completely legitimate.
+ */
+void
+test_sizeof(void)
+{
+	if (sizeof(int) > sizeof(char))
+		println("very probable");
+	if (sizeof(int) < sizeof(char))
+		println("impossible");
 }

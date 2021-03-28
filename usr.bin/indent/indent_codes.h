@@ -1,4 +1,4 @@
-/*	$NetBSD: indent_codes.h,v 1.6 2019/04/04 15:22:13 kamil Exp $	*/
+/*	$NetBSD: indent_codes.h,v 1.11 2021/03/09 19:23:08 rillig Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-4-Clause
@@ -40,40 +40,43 @@
  * $FreeBSD: head/usr.bin/indent/indent_codes.h 334564 2018-06-03 16:21:15Z pstef $
  */
 
-#define newline		1
-#define lparen		2
-#define rparen		3
-#define unary_op	4
-#define binary_op	5
-#define postop		6
-#define question	7
-#define casestmt	8
-#define colon		9
-#define semicolon	10
-#define lbrace		11
-#define rbrace		12
-#define ident		13
-#define comma		14
-#define comment		15
-#define swstmt		16
-#define preesc		17
-#define form_feed	18
-#define decl		19
-#define sp_paren	20
-#define sp_nparen	21
-#define ifstmt		22
-#define whilestmt	23
-#define forstmt		24
-#define stmt		25
-#define stmtl		26
-#define elselit		27
-#define dolit		28
-#define dohead		29
-#define ifhead		30
-#define elsehead	31
-#define period		32
-#define strpfx		33
-#define storage		34
-#define funcname	35
-#define type_def	36
-#define structure	37
+typedef enum token_type {
+    end_of_file,
+    newline,
+    lparen,			/* '(' or '[' */
+    rparen,			/* ')' or ']' */
+    unary_op,			/* e.g. '+' or '&' */
+    binary_op,			/* e.g. '<<' or '+' or '&&' or '/=' */
+    postfix_op,			/* trailing '++' or '--' */
+    question,			/* the '?' from a '?:' expression */
+    case_label,
+    colon,
+    semicolon,
+    lbrace,
+    rbrace,
+    ident,
+    comma,
+    comment,
+    switch_expr,		/* 'switch' '(' <expr> ')' */
+    preprocessing,		/* '#' */
+    form_feed,
+    decl,
+    keyword_for_if_while,	/* 'for', 'if' or 'while' */
+    keyword_do_else,		/* 'do' or 'else' */
+    if_expr,			/* 'if' '(' <expr> ')' */
+    while_expr,			/* 'while' '(' <expr> ')' */
+    for_exprs,			/* 'for' '(' ... ')' */
+    stmt,
+    stmt_list,
+    keyword_else,		/* 'else' */
+    keyword_do,			/* 'do' */
+    do_stmt,			/* 'do' <stmt> */
+    if_expr_stmt,		/* 'if' '(' <expr> ')' <stmt> */
+    if_expr_stmt_else,		/* 'if' '(' <expr> ')' <stmt> 'else' */
+    period,
+    string_prefix,		/* 'L' */
+    storage_class,
+    funcname,
+    type_def,
+    keyword_struct_union_enum
+} token_type;

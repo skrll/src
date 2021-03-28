@@ -1,4 +1,4 @@
-/*	$NetBSD: obs600_autoconf.c,v 1.8 2019/02/18 06:27:10 msaitoh Exp $	*/
+/*	$NetBSD: obs600_autoconf.c,v 1.10 2021/03/02 07:27:24 rin Exp $	*/
 
 /*
  * Copyright 2004 Shigeyuki Fukushima.
@@ -33,7 +33,7 @@
  * DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: obs600_autoconf.c,v 1.8 2019/02/18 06:27:10 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: obs600_autoconf.c,v 1.10 2021/03/02 07:27:24 rin Exp $");
 
 #include "dwctwo.h"
 
@@ -101,8 +101,6 @@ cpu_configure(void)
 	pic_add(&pic_uic1);
 	pic_add(&pic_uic2);
 
-	calc_delayconst();
-
 	/* Make sure that timers run at CPU frequency */
 	mtdcr(DCR_CPC0_CR1, mfdcr(DCR_CPC0_CR1) & ~CPC0_CR1_CETE);
 
@@ -111,10 +109,7 @@ cpu_configure(void)
 
 	pic_finish_setup();
 
-	printf("biomask %x netmask %x ttymask %x\n",
-	    imask[IPL_BIO], imask[IPL_NET], imask[IPL_TTY]);
-
-	(void)spl0();
+	genppc_cpu_configure();
 }
 
 void

@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.65 2021/02/19 22:35:42 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.90 2021/03/27 12:42:22 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -126,8 +126,8 @@ typedef struct {
  * the structure type in pass 2.
  */
 typedef	struct {
-	u_int	sou_size_in_bit;
-	u_int	sou_align_in_bit : 15;
+	u_int	sou_size_in_bits;
+	u_int	sou_align_in_bits : 15;
 	bool	sou_incomplete : 1;
 	struct	sym *sou_first_member;
 	struct	sym *sou_tag;
@@ -160,7 +160,7 @@ struct type {
 	bool	t_is_enum : 1;	/* type is (or was) enum (t_enum valid) */
 	bool	t_packed : 1;
 	union {
-		int	_t_dim;		/* dimension */
+		int	_t_dim;		/* dimension (if ARRAY) */
 		struct_or_union	*_t_str;
 		enumeration	*_t_enum;
 		struct	sym *_t_args;	/* arguments (if t_proto) */
@@ -223,7 +223,7 @@ typedef	struct sym {
 				   prototype declaration, no-prototype-def.,
 				   tentative definition or declaration,
 				   in this order */
-	pos_t	s_set_pos;	/* position of first initialisation */
+	pos_t	s_set_pos;	/* position of first initialization */
 	pos_t	s_use_pos;	/* position of first use */
 	symt_t	s_kind;		/* type of symbol */
 	void   *s_keyword;
@@ -241,7 +241,7 @@ typedef	struct sym {
 				   to external symbol with same name */
 	def_t	s_def;		/* declared, tentative defined, defined */
 	scl_t	s_scl;		/* storage class */
-	int	s_blklev;	/* level of declaration, -1 if not in symbol
+	int	s_block_level;	/* level of declaration, -1 if not in symbol
 				   table */
 	type_t	*s_type;
 	val_t	s_value;	/* value (if enum or bool constant) */
@@ -289,6 +289,7 @@ typedef	struct tnode {
 	bool	tn_cast : 1;	/* if tn_op == CVT, it's an explicit cast */
 	bool	tn_parenthesized : 1;
 	bool	tn_from_system_header : 1;
+	bool	tn_system_dependent : 1; /* depends on sizeof or offsetof */
 	union {
 		struct {
 			struct	tnode *_tn_left;	/* (left) operand */
@@ -308,15 +309,15 @@ typedef	struct tnode {
 
 /*
  * For nested declarations a stack exists, which holds all information
- * needed for the current level. dcs points to the top element of this
+ * needed for the current level. dcs points to the innermost element of this
  * stack.
  *
- * ctx describes the context of the current declaration. Its value is
+ * d_ctx describes the context of the current declaration. Its value is
  * one of
  *	EXTERN		global declarations
  *	MOS or MOU	declarations of struct or union members
- *	CTCONST		declarations of enums
- *	ARG		declaration of arguments in old style function
+ *	CTCONST		declarations of enums or boolean constants
+ *	ARG		declaration of arguments in old-style function
  *			definitions
  *	PROTO_ARG	declaration of arguments in function prototypes
  *	AUTO		declaration of local symbols
@@ -324,14 +325,14 @@ typedef	struct tnode {
  *
  */
 typedef	struct dinfo {
-	tspec_t	d_atyp;		/* VOID, CHAR, INT, or COMPLEX */
-	tspec_t	d_cmod;		/* FLOAT, or DOUBLE */
-	tspec_t	d_smod;		/* SIGNED or UNSIGN */
-	tspec_t	d_lmod;		/* SHORT, LONG or QUAD */
+	tspec_t	d_abstract_type;/* VOID, BOOL, CHAR, INT or COMPLEX */
+	tspec_t	d_complex_mod;	/* FLOAT or DOUBLE */
+	tspec_t	d_sign_mod;	/* SIGNED or UNSIGN */
+	tspec_t	d_rank_mod;	/* SHORT, LONG or QUAD */
 	scl_t	d_scl;		/* storage class */
 	type_t	*d_type;	/* after deftyp() pointer to the type used
 				   for all declarators */
-	sym_t	*d_rdcsym;	/* redeclared symbol */
+	sym_t	*d_redeclared_symbol;
 	int	d_offset;	/* offset of next structure member */
 	int	d_stralign;	/* alignment required for current structure */
 	scl_t	d_ctx;		/* context of declaration */
@@ -340,20 +341,21 @@ typedef	struct dinfo {
 	bool	d_inline : 1;	/* inline in declaration specifiers */
 	bool	d_mscl : 1;	/* multiple storage classes */
 	bool	d_terr : 1;	/* invalid type combination */
-	bool	d_nedecl : 1;	/* if at least one tag is declared */
-	bool	d_vararg : 1;	/* ... in in current function decl. */
+	bool	d_nonempty_decl : 1; /* if at least one tag is declared
+				 * ... in the current function decl. */
+	bool	d_vararg : 1;
 	bool	d_proto : 1;	/* current function decl. is prototype */
 	bool	d_notyp : 1;	/* set if no type specifier was present */
 	bool	d_asm : 1;	/* set if d_ctx == AUTO and asm() present */
 	bool	d_packed : 1;
 	bool	d_used : 1;
 	type_t	*d_tagtyp;	/* tag during member declaration */
-	sym_t	*d_fargs;	/* list of arguments during function def. */
-	pos_t	d_fdpos;	/* position of function definition */
+	sym_t	*d_func_args;	/* list of arguments during function def. */
+	pos_t	d_func_def_pos;	/* position of function definition */
 	sym_t	*d_dlsyms;	/* first symbol declared at this level */
 	sym_t	**d_ldlsym;	/* points to s_dlnxt in last symbol decl.
 				   at this level */
-	sym_t	*d_fpsyms;	/* symbols defined in prototype */
+	sym_t	*d_func_proto_syms; /* symbols defined in prototype */
 	struct	dinfo *d_next;	/* next level */
 } dinfo_t;
 
@@ -369,41 +371,58 @@ typedef	struct pqinf {
 } pqinf_t;
 
 /*
- * Case values are stored in a list of type clst_t.
+ * Case values are stored in a list of type case_label_t.
  */
-typedef	struct clst {
+typedef	struct case_label {
 	val_t	cl_val;
-	struct	clst *cl_next;
-} clst_t;
+	struct case_label *cl_next;
+} case_label_t;
+
+typedef enum {
+	CS_DO_WHILE,
+	CS_FOR,
+	CS_FUNCTION_BODY,
+	CS_IF,
+	CS_SWITCH,
+	CS_WHILE
+} control_statement_kind;
 
 /*
  * Used to keep information about nested control statements.
  */
 typedef struct control_statement {
-	int	c_env;			/* type of statement (T_IF, ...) */
-	bool	c_loop : 1;		/* continue && break are valid */
-	bool	c_switch : 1;		/* case && break are valid */
-	bool	c_break : 1;		/* loop/switch has break */
-	bool	c_cont : 1;		/* loop has continue */
-	bool	c_default : 1;		/* switch has default */
-	bool	c_infinite : 1;		/* break condition always false
-					   (for (;;), while (1)) */
-	bool	c_rchif : 1;		/* end of if-branch reached */
+	control_statement_kind c_kind;	/* to ensure proper nesting */
+	bool	c_loop : 1;		/* 'continue' and 'break' are valid */
+	bool	c_switch : 1;		/* 'case' and 'break' are valid */
+	bool	c_break : 1;		/* the loop/switch has a reachable
+					 * 'break' statement */
+	bool	c_continue : 1;		/* the loop has a reachable 'continue'
+					 * statement */
+	bool	c_default : 1;		/* the switch has a 'default' label */
+	bool	c_maybe_endless : 1;	/* the controlling expression is
+					 * always true (as in 'for (;;)' or
+					 * 'while (1)'), there may be break
+					 * statements though */
+	bool	c_always_then : 1;
+	bool	c_reached_end_of_then : 1;
 	bool	c_had_return_noval : 1;	/* had "return;" */
-	bool	c_had_return_value : 1;	/* had "return (e);" */
-	type_t	*c_swtype;		/* type of switch expression */
-	clst_t	*c_clst;		/* list of case values */
-	struct	mbl *c_fexprm;		/* saved memory for end of loop
-					   expression in for() */
-	tnode_t	*c_f3expr;		/* end of loop expr in for() */
-	pos_t	c_fpos;			/* position of end of loop expr */
-	pos_t	c_cfpos;	        /* same for csrc_pos */
+	bool	c_had_return_value : 1;	/* had "return expr;" */
+
+	type_t	*c_switch_type;		/* type of switch expression */
+	case_label_t *c_case_labels;	/* list of case values */
+
+	struct	mbl *c_for_expr3_mem;	/* saved memory for end of loop
+					 * expression in for() */
+	tnode_t	*c_for_expr3;		/* end of loop expr in for() */
+	pos_t	c_for_expr3_pos;	/* position of end of loop expr */
+	pos_t	c_for_expr3_csrc_pos;	/* same for csrc_pos */
+
 	struct	control_statement *c_surrounding;
 } cstk_t;
 
 typedef struct {
-	size_t lo;
-	size_t hi;
+	size_t lo;			/* inclusive */
+	size_t hi;			/* inclusive */
 } range_t;
 
 #include "externs1.h"
@@ -423,7 +442,8 @@ typedef	struct err_set {
 	(((p)->errs_bits[(n)/__NERRBITS] & (1 << ((n) % __NERRBITS))) != 0)
 #define	ERR_ZERO(p)	(void)memset((p), 0, sizeof(*(p)))
 
-#define LERROR(fmt, args...)	lerror(__FILE__, __LINE__, fmt, ##args)
+#define INTERNAL_ERROR(fmt, args...) \
+	internal_error(__FILE__, __LINE__, fmt, ##args)
 
 #define lint_assert(cond)						\
 	do {								\
@@ -463,18 +483,29 @@ check_printf(const char *fmt, ...)
 #endif
 
 static inline bool
-is_nonzero_val(tspec_t t, const val_t *val)
+is_nonzero_val(const val_t *val)
 {
-	return is_floating(t) ? val->v_ldbl != 0.0 : val->v_quad != 0;
+	return is_floating(val->v_tspec)
+	    ? val->v_ldbl != 0.0
+	    : val->v_quad != 0;
+}
+
+static inline bool
+constant_is_nonzero(const tnode_t *tn)
+{
+	lint_assert(tn->tn_op == CON);
+	lint_assert(tn->tn_type->t_tspec == tn->tn_val->v_tspec);
+	return is_nonzero_val(tn->tn_val);
+}
+
+static inline bool
+is_zero(const tnode_t *tn)
+{
+	return tn != NULL && tn->tn_op == CON && !is_nonzero_val(tn->tn_val);
 }
 
 static inline bool
 is_nonzero(const tnode_t *tn)
 {
-	/*
-	 * XXX: It's strange that val_t doesn't know itself whether it
-	 * holds a floating-point or an integer value.
-	 */
-	lint_assert(tn->tn_op == CON);
-	return is_nonzero_val(tn->tn_type->t_tspec, tn->tn_val);
+	return tn != NULL && tn->tn_op == CON && is_nonzero_val(tn->tn_val);
 }

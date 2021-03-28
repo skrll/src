@@ -1,7 +1,15 @@
-/*	$NetBSD: msg_152.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_152.c,v 1.3 2021/03/16 23:39:41 rillig Exp $	*/
 # 3 "msg_152.c"
 
 // Test for message: argument cannot have unknown size, arg #%d [152]
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+struct incomplete;			/* expect: 233 */
+
+void callee(struct incomplete);		/* expect: 31 */
+
+void
+caller(void)
+{
+	struct incomplete local_var;	/* expect: 31 */
+	callee(local_var);		/* expect: 152 */
+}

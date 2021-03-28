@@ -1,4 +1,4 @@
-/*	$NetBSD: msg_168.c,v 1.2 2021/01/24 16:12:45 rillig Exp $	*/
+/*	$NetBSD: msg_168.c,v 1.5 2021/03/25 22:53:05 rillig Exp $	*/
 # 3 "msg_168.c"
 
 // Test for message: array subscript cannot be > %d: %ld [168]
@@ -9,7 +9,7 @@ void print_char(char);
 void
 example(void)
 {
-	char buf[20] = {};
+	char buf[20] = {};	/* empty initializer is a GCC extension */
 
 	print_string(buf + 19);	/* inside the array */
 
@@ -26,4 +26,17 @@ example(void)
 
 	print_char(buf[19]);
 	print_char(buf[20]);	/* expect: 168 */
+}
+
+void
+array_with_c99_initializer(void)
+{
+	static const char *const to_roman[] = {
+	    ['0'] = "undefined",
+	    ['5'] = "V",
+	    ['9'] = "IX"
+	};
+
+	print_string(to_roman['9']);
+	print_string(to_roman[':']);	/* expect: 168 */
 }
