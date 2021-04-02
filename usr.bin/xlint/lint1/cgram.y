@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.204 2021/03/26 20:31:07 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.207 2021/03/30 14:25:28 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.204 2021/03/26 20:31:07 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.207 2021/03/30 14:25:28 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -1345,7 +1345,7 @@ opt_asm_or_symbolrename:		/* expect only one */
 
 initializer:			/* C99 6.7.8 "Initialization" */
 	  expr				%prec T_COMMA {
-		init_using_expr($1);
+		init_expr($1);
 	  }
 	| init_lbrace init_rbrace {
 		/* XXX: Empty braces are not covered by C99 6.7.8. */
@@ -1379,7 +1379,7 @@ range:
 
 designator:			/* C99 6.7.8 "Initialization" */
 	  T_LBRACK range T_RBRACK {
-		designation_add_subscript($2);
+		add_designator_subscript($2);
 		if (!Sflag)
 			/* array initializer with des.s is a C9X feature */
 			warning(321);
@@ -1388,7 +1388,7 @@ designator:			/* C99 6.7.8 "Initialization" */
 		if (!Sflag)
 			/* struct or union member name in initializer is ... */
 			warning(313);
-		designation_add_name($2);
+		add_designator_member($2);
 	  }
 	;
 
@@ -1402,7 +1402,7 @@ designation:			/* C99 6.7.8 "Initialization" */
 	| identifier T_COLON {
 		/* GCC style struct or union member name in initializer */
 		gnuism(315);
-		designation_add_name($1);
+		add_designator_member($1);
 	  }
 	;
 
@@ -1889,7 +1889,6 @@ term:
 	    expr_statement_list {
 		block_level--;
 		mem_block_level--;
-		/* XXX: probably does not need the full initialization code */
 		begin_initialization(mktempsym(duptyp($4->tn_type)));
 		mem_block_level++;
 		block_level++;
@@ -1902,7 +1901,6 @@ term:
 	| T_LPAREN compound_statement_lbrace expr_statement_list {
 		block_level--;
 		mem_block_level--;
-		/* XXX: probably does not need the full initialization code */
 		begin_initialization(mktempsym($3->tn_type));
 		mem_block_level++;
 		block_level++;
