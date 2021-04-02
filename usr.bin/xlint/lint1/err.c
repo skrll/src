@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.91 2021/03/21 20:44:59 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.99 2021/03/30 15:18:19 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.91 2021/03/21 20:44:59 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.99 2021/03/30 15:18:19 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -153,9 +153,9 @@ const	char *msgs[] = {
 	"cannot dereference non-pointer type",			      /* 96 */
 	"suffix U is illegal in traditional C",			      /* 97 */
 	"suffixes F and L are illegal in traditional C",	      /* 98 */
-	"%s undefined",						      /* 99 */
+	"'%s' undefined",					      /* 99 */
 	"unary + is illegal in traditional C",			      /* 100 */
-	"undefined struct/union member: %s",			      /* 101 */
+	"type '%s' does not have member '%s'",			      /* 101 */
 	"illegal member use: %s",				      /* 102 */
 	"left operand of '.' must be struct/union object",	      /* 103 */
 	"left operand of '->' must be pointer to struct/union not %s",/* 104 */
@@ -225,12 +225,12 @@ const	char *msgs[] = {
 	"array subscript cannot be > %d: %ld",			      /* 168 */
 	"precedence confusion possible: parenthesize!",		      /* 169 */
 	"first operand must have scalar type, op ? :",		      /* 170 */
-	"assignment type mismatch (%s != %s)",			      /* 171 */
+	"cannot assign to '%s' from '%s'",			      /* 171 */
 	"too many struct/union initializers",			      /* 172 */
 	"too many array initializers, expected %d",		      /* 173 */
 	"too many initializers",				      /* 174 */
-	"initialization of an incomplete type",			      /* 175 */
-	"invalid initializer type %s",				      /* 176 */
+	"initialization of incomplete type '%s'",		      /* 175 */
+	"",			/* no longer used */		      /* 176 */
 	"non-constant initializer",				      /* 177 */
 	"initializer does not fit",				      /* 178 */
 	"cannot initialize struct/union with no named member",	      /* 179 */
@@ -405,7 +405,7 @@ msglist(void)
 {
 	size_t i;
 
-	for (i = 0; i < sizeof(msgs) / sizeof(msgs[0]); i++)
+	for (i = 0; i < sizeof msgs / sizeof msgs[0]; i++)
 		printf("%zu\t%s\n", i, msgs[i]);
 }
 
@@ -480,18 +480,18 @@ void
 }
 
 void
-lerror(const char *file, int line, const char *msg, ...)
+internal_error(const char *file, int line, const char *msg, ...)
 {
 	va_list	ap;
 	const	char *fn;
 
-	va_start(ap, msg);
 	fn = lbasename(curr_pos.p_file);
-	(void)fprintf(stderr, "%s(%d): lint error: %s, %d: ",
-	    fn, curr_pos.p_line, file, line);
+	(void)fprintf(stderr, "lint: internal error in %s:%d near %s:%d: ",
+	    file, line, fn, curr_pos.p_line);
+	va_start(ap, msg);
 	(void)vfprintf(stderr, msg, ap);
-	(void)fprintf(stderr, "\n");
 	va_end(ap);
+	(void)fprintf(stderr, "\n");
 	abort();
 }
 

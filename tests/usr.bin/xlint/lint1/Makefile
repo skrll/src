@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.35 2021/03/07 19:42:54 rillig Exp $
+# $NetBSD: Makefile,v 1.37 2021/03/28 14:01:50 rillig Exp $
 
 NOMAN=		# defined
 
@@ -70,6 +70,8 @@ FILES+=		d_gcc_func.c
 FILES+=		d_gcc_variable_array_init.c
 FILES+=		d_incorrect_array_size.c
 FILES+=		d_incorrect_array_size.exp
+FILES+=		d_init_array_using_string.c
+FILES+=		d_init_array_using_string.exp
 FILES+=		d_init_pop_member.c
 FILES+=		d_init_pop_member.exp
 FILES+=		d_lint_assert.c
@@ -96,7 +98,7 @@ FILES+=		d_type_question_colon.c
 FILES+=		d_typefun.c
 FILES+=		d_typename_as_var.c
 FILES+=		d_zero_sized_arrays.c
-FILES+=		${:U0 ${:U:range=340}:C,^.$,0&,:C,^..$,0&,:@msg@msg_${msg}.c msg_${msg}.exp@}
+FILES+=		${:U0 ${:U:range=340}:C,^.$,0&,:C,^..$,0&,:@msg@msg_${msg}.c msg_${msg}.exp@:Nmsg_176.exp}
 
 # Note: only works for adding tests.
 # To remove a test, the $$mi file must be edited manually.

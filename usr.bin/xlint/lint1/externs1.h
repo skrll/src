@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.82 2021/03/21 19:08:10 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.95 2021/03/30 14:25:28 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -82,7 +82,7 @@ extern	int64_t	xsign(int64_t, tspec_t, int);
 extern	void	clear_warn_flags(void);
 extern	sym_t	*getsym(sbuf_t *);
 extern	void	cleanup(void);
-extern	sym_t	*pushdown(sym_t *);
+extern	sym_t	*pushdown(const sym_t *);
 extern	sym_t	*mktempsym(type_t *);
 extern	void	rmsym(sym_t *);
 extern	void	rmsyms(sym_t *);
@@ -93,11 +93,10 @@ extern	int	yylex(void);
 /*
  * mem1.c
  */
-extern	const	char *fnalloc(const char *);
-extern	const	char *fnnalloc(const char *, size_t);
-extern	int	getfnid(const char *);
-extern	void	fnaddreplsrcdir(char *);
-extern	const char *fnxform(const char *, size_t);
+extern	const	char *record_filename(const char *, size_t);
+extern	int	get_filename_id(const char *);
+extern	void	add_directory_replacement(char *);
+extern	const char *transform_filename(const char *, size_t);
 
 extern	void	initmem(void);
 
@@ -125,7 +124,7 @@ extern	void	warning(int, ...);
 extern	void	message(int, ...);
 extern	void	gnuism(int, ...);
 extern	void	c99ism(int, ...);
-extern	void	lerror(const char *, int, const char *, ...)
+extern	void	internal_error(const char *, int, const char *, ...)
      __attribute__((__noreturn__,__format__(__printf__, 3, 4)));
 extern	void	assert_failed(const char *, int, const char *, const char *)
 		__attribute__((__noreturn__));
@@ -148,8 +147,8 @@ extern	void	add_type(type_t *);
 extern	void	add_qualifier(tqual_t);
 extern	void	addpacked(void);
 extern	void	add_attr_used(void);
-extern	void	pushdecl(scl_t);
-extern	void	popdecl(void);
+extern	void	begin_declaration_level(scl_t);
+extern	void	end_declaration_level(void);
 extern	void	setasm(void);
 extern	void	clrtyp(void);
 extern	void	deftyp(void);
@@ -172,7 +171,6 @@ extern	type_t	*complete_tag_struct_or_union(type_t *, sym_t *);
 extern	type_t	*complete_tag_enum(type_t *, sym_t *);
 extern	sym_t	*enumeration_constant(sym_t *, int, bool);
 extern	void	declare(sym_t *, bool, sbuf_t *);
-extern	void	decl1ext(sym_t *, bool);
 extern	void	copy_usage_info(sym_t *, sym_t *);
 extern	bool	check_redeclaration(sym_t *, bool *);
 extern	bool	eqptrtype(const type_t *, const type_t *, bool);
@@ -210,10 +208,10 @@ extern	bool	is_typeok_bool_operand(const tnode_t *);
 extern	bool	typeok(op_t, int, const tnode_t *, const tnode_t *);
 extern	tnode_t	*promote(op_t, bool, tnode_t *);
 extern	tnode_t	*convert(op_t, int, type_t *, tnode_t *);
-extern	void	convert_constant(op_t, int, type_t *, val_t *, val_t *);
-extern	tnode_t	*build_sizeof(type_t *);
-extern	tnode_t	*build_offsetof(type_t *, sym_t *);
-extern	tnode_t	*build_alignof(type_t *);
+extern	void	convert_constant(op_t, int, const type_t *, val_t *, val_t *);
+extern	tnode_t	*build_sizeof(const type_t *);
+extern	tnode_t	*build_offsetof(const type_t *, const sym_t *);
+extern	tnode_t	*build_alignof(const type_t *);
 extern	tnode_t	*cast(tnode_t *, type_t *);
 extern	tnode_t	*new_function_argument_node(tnode_t *, tnode_t *);
 extern	tnode_t	*new_function_call_node(tnode_t *, tnode_t *);
@@ -221,9 +219,9 @@ extern	val_t	*constant(tnode_t *, bool);
 extern	void	expr(tnode_t *, bool, bool, bool, bool);
 extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
 		    bool, bool, bool);
-extern	bool	constant_addr(const tnode_t *, sym_t **, ptrdiff_t *);
+extern	bool	constant_addr(const tnode_t *, const sym_t **, ptrdiff_t *);
 extern	strg_t	*cat_strings(strg_t *, strg_t *);
-extern  int64_t type_size_in_bits(type_t *);
+extern  int64_t type_size_in_bits(const type_t *);
 #ifdef DEBUG
 extern	void	debug_node(const tnode_t *, int);
 #else
@@ -252,8 +250,8 @@ extern	bool	bitfieldtype_ok;
 extern	bool	plibflg;
 extern	bool	quadflg;
 
-extern	void	pushctrl(int);
-extern	void	popctrl(int);
+extern	void	begin_control_statement(control_statement_kind);
+extern	void	end_control_statement(control_statement_kind);
 extern	void	check_statement_reachable(void);
 extern	void	funcdef(sym_t *);
 extern	void	funcend(void);
@@ -292,15 +290,15 @@ extern	void	bitfieldtype(int);
 /*
  * init.c
  */
-extern	bool	initerr;
-extern	sym_t	*initsym;
+extern	void	begin_initialization(sym_t *);
+extern	void	end_initialization(void);
+extern	sym_t	**current_initsym(void);
 
-extern	void	initstack_init(void);
 extern	void	init_rbrace(void);
 extern	void	init_lbrace(void);
-extern	void	init_using_expr(tnode_t *);
-extern	void	designator_push_name(sbuf_t *);
-extern	void	designator_push_subscript(range_t);
+extern	void	init_expr(tnode_t *);
+extern	void	add_designator_member(sbuf_t *);
+extern	void	add_designator_subscript(range_t);
 
 /*
  * emit.c
