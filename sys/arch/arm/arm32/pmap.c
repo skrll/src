@@ -2906,16 +2906,6 @@ pmap_page_remove(struct vm_page_md *md, paddr_t pa)
 		}
 
 		if (pm == pmap_kernel()) {
-			/*
-			 * If this was unmanaged mapping, it must be preserved.
-			 * Move it back on the list and advance the end-of-list
-			 * pointer.
-			 */
-			if (PV_IS_KENTRY_P(pv->pv_flags)) {
-				*pvp = pv;
-				pvp = &SLIST_NEXT(pv, pv_link);
-				continue;
-			}
 			if (pv->pv_flags & PVF_WRITE)
 				md->krw_mappings--;
 			else
