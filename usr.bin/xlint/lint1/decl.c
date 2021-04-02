@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.164 2021/03/27 12:42:22 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.167 2021/03/30 14:25:28 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.164 2021/03/27 12:42:22 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.167 2021/03/30 14:25:28 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -1891,59 +1891,29 @@ enumeration_constant(sym_t *sym, int val, bool impl)
 	return sym;
 }
 
-void
-declare(sym_t *decl, bool initflg, sbuf_t *renaming)
-{
-	char *s;
-
-	switch (dcs->d_ctx) {
-	case EXTERN:
-		if (renaming != NULL) {
-			lint_assert(decl->s_rename == NULL);
-
-			s = getlblk(1, renaming->sb_len + 1);
-			(void)memcpy(s, renaming->sb_name, renaming->sb_len + 1);
-			decl->s_rename = s;
-		}
-		decl1ext(decl, initflg);
-		break;
-	case ARG:
-		if (renaming != NULL) {
-			/* symbol renaming can't be used on function arguments */
-			error(310);
-			break;
-		}
-		(void)declare_argument(decl, initflg);
-		break;
-	default:
-		lint_assert(dcs->d_ctx == AUTO);
-		if (renaming != NULL) {
-			/* symbol renaming can't be used on automatic variables */
-			error(311);
-			break;
-		}
-		declare_local(decl, initflg);
-		break;
-	}
-
-	if (initflg && !*current_initerr())
-		initstack_init();
-}
-
 /*
  * Process a single external declarator.
  */
-void
-decl1ext(sym_t *dsym, bool initflg)
+static void
+declare_extern(sym_t *dsym, bool initflg, sbuf_t *renaming)
 {
 	bool	dowarn, rval, redec;
 	sym_t	*rdsym;
+	char	*s;
+
+	if (renaming != NULL) {
+		lint_assert(dsym->s_rename == NULL);
+
+		s = getlblk(1, renaming->sb_len + 1);
+		(void)memcpy(s, renaming->sb_name, renaming->sb_len + 1);
+		dsym->s_rename = s;
+	}
 
 	check_function_definition(dsym, true);
 
 	check_type(dsym);
 
-	if (initflg && !(*current_initerr() = check_init(dsym)))
+	if (initflg && !check_init(dsym))
 		dsym->s_def = DEF;
 
 	/*
@@ -2051,6 +2021,28 @@ decl1ext(sym_t *dsym, bool initflg)
 		settdsym(dsym->s_type, dsym);
 	}
 
+}
+
+void
+declare(sym_t *decl, bool initflg, sbuf_t *renaming)
+{
+
+	if (dcs->d_ctx == EXTERN) {
+		declare_extern(decl, initflg, renaming);
+	} else if (dcs->d_ctx == ARG) {
+		if (renaming != NULL) {
+			/* symbol renaming can't be used on function arguments */
+			error(310);
+		} else
+			(void)declare_argument(decl, initflg);
+	} else {
+		lint_assert(dcs->d_ctx == AUTO);
+		if (renaming != NULL) {
+			/* symbol renaming can't be used on automatic variables */
+			error(311);
+		} else
+			declare_local(decl, initflg);
+	}
 }
 
 /*
@@ -2421,7 +2413,6 @@ declare_argument(sym_t *sym, bool initflg)
 	if (initflg) {
 		/* cannot initialize parameter: %s */
 		error(52, sym->s_name);
-		*current_initerr() = true;
 	}
 
 	if ((t = sym->s_type->t_tspec) == ARRAY) {
@@ -2756,7 +2747,7 @@ declare_local(sym_t *dsym, bool initflg)
 
 	}
 
-	if (initflg && !(*current_initerr() = check_init(dsym))) {
+	if (initflg && !check_init(dsym)) {
 		dsym->s_def = DEF;
 		mark_as_set(dsym);
 	}
