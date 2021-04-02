@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.91 2021/03/27 12:42:22 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.95 2021/03/30 14:25:28 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -82,7 +82,7 @@ extern	int64_t	xsign(int64_t, tspec_t, int);
 extern	void	clear_warn_flags(void);
 extern	sym_t	*getsym(sbuf_t *);
 extern	void	cleanup(void);
-extern	sym_t	*pushdown(sym_t *);
+extern	sym_t	*pushdown(const sym_t *);
 extern	sym_t	*mktempsym(type_t *);
 extern	void	rmsym(sym_t *);
 extern	void	rmsyms(sym_t *);
@@ -171,7 +171,6 @@ extern	type_t	*complete_tag_struct_or_union(type_t *, sym_t *);
 extern	type_t	*complete_tag_enum(type_t *, sym_t *);
 extern	sym_t	*enumeration_constant(sym_t *, int, bool);
 extern	void	declare(sym_t *, bool, sbuf_t *);
-extern	void	decl1ext(sym_t *, bool);
 extern	void	copy_usage_info(sym_t *, sym_t *);
 extern	bool	check_redeclaration(sym_t *, bool *);
 extern	bool	eqptrtype(const type_t *, const type_t *, bool);
@@ -209,10 +208,10 @@ extern	bool	is_typeok_bool_operand(const tnode_t *);
 extern	bool	typeok(op_t, int, const tnode_t *, const tnode_t *);
 extern	tnode_t	*promote(op_t, bool, tnode_t *);
 extern	tnode_t	*convert(op_t, int, type_t *, tnode_t *);
-extern	void	convert_constant(op_t, int, type_t *, val_t *, val_t *);
-extern	tnode_t	*build_sizeof(type_t *);
-extern	tnode_t	*build_offsetof(type_t *, sym_t *);
-extern	tnode_t	*build_alignof(type_t *);
+extern	void	convert_constant(op_t, int, const type_t *, val_t *, val_t *);
+extern	tnode_t	*build_sizeof(const type_t *);
+extern	tnode_t	*build_offsetof(const type_t *, const sym_t *);
+extern	tnode_t	*build_alignof(const type_t *);
 extern	tnode_t	*cast(tnode_t *, type_t *);
 extern	tnode_t	*new_function_argument_node(tnode_t *, tnode_t *);
 extern	tnode_t	*new_function_call_node(tnode_t *, tnode_t *);
@@ -220,9 +219,9 @@ extern	val_t	*constant(tnode_t *, bool);
 extern	void	expr(tnode_t *, bool, bool, bool, bool);
 extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
 		    bool, bool, bool);
-extern	bool	constant_addr(const tnode_t *, sym_t **, ptrdiff_t *);
+extern	bool	constant_addr(const tnode_t *, const sym_t **, ptrdiff_t *);
 extern	strg_t	*cat_strings(strg_t *, strg_t *);
-extern  int64_t type_size_in_bits(type_t *);
+extern  int64_t type_size_in_bits(const type_t *);
 #ifdef DEBUG
 extern	void	debug_node(const tnode_t *, int);
 #else
@@ -293,15 +292,13 @@ extern	void	bitfieldtype(int);
  */
 extern	void	begin_initialization(sym_t *);
 extern	void	end_initialization(void);
-extern	bool	*current_initerr(void);
 extern	sym_t	**current_initsym(void);
 
-extern	void	initstack_init(void);
 extern	void	init_rbrace(void);
 extern	void	init_lbrace(void);
-extern	void	init_using_expr(tnode_t *);
-extern	void	designation_add_name(sbuf_t *);
-extern	void	designation_add_subscript(range_t);
+extern	void	init_expr(tnode_t *);
+extern	void	add_designator_member(sbuf_t *);
+extern	void	add_designator_subscript(range_t);
 
 /*
  * emit.c
