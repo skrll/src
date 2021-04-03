@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.96 2021/03/27 12:42:22 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.99 2021/03/30 15:18:19 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.96 2021/03/27 12:42:22 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.99 2021/03/30 15:18:19 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -155,7 +155,7 @@ const	char *msgs[] = {
 	"suffixes F and L are illegal in traditional C",	      /* 98 */
 	"'%s' undefined",					      /* 99 */
 	"unary + is illegal in traditional C",			      /* 100 */
-	"undefined struct/union member: %s",			      /* 101 */
+	"type '%s' does not have member '%s'",			      /* 101 */
 	"illegal member use: %s",				      /* 102 */
 	"left operand of '.' must be struct/union object",	      /* 103 */
 	"left operand of '->' must be pointer to struct/union not %s",/* 104 */
@@ -229,8 +229,8 @@ const	char *msgs[] = {
 	"too many struct/union initializers",			      /* 172 */
 	"too many array initializers, expected %d",		      /* 173 */
 	"too many initializers",				      /* 174 */
-	"initialization of an incomplete type",			      /* 175 */
-	"invalid initializer type %s",				      /* 176 */
+	"initialization of incomplete type '%s'",		      /* 175 */
+	"",			/* no longer used */		      /* 176 */
 	"non-constant initializer",				      /* 177 */
 	"initializer does not fit",				      /* 178 */
 	"cannot initialize struct/union with no named member",	      /* 179 */
