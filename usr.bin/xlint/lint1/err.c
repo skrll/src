@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.86 2021/02/28 02:45:37 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.96 2021/03/27 12:42:22 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.86 2021/02/28 02:45:37 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.96 2021/03/27 12:42:22 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -51,11 +51,6 @@ int	nerr;
 
 /* number of syntax errors */
 int	sytxerr;
-
-
-static	const	char *lbasename(const char *);
-static	void	verror(int, va_list);
-static	void	vwarning(int, va_list);
 
 
 const	char *msgs[] = {
@@ -158,7 +153,7 @@ const	char *msgs[] = {
 	"cannot dereference non-pointer type",			      /* 96 */
 	"suffix U is illegal in traditional C",			      /* 97 */
 	"suffixes F and L are illegal in traditional C",	      /* 98 */
-	"%s undefined",						      /* 99 */
+	"'%s' undefined",					      /* 99 */
 	"unary + is illegal in traditional C",			      /* 100 */
 	"undefined struct/union member: %s",			      /* 101 */
 	"illegal member use: %s",				      /* 102 */
@@ -230,7 +225,7 @@ const	char *msgs[] = {
 	"array subscript cannot be > %d: %ld",			      /* 168 */
 	"precedence confusion possible: parenthesize!",		      /* 169 */
 	"first operand must have scalar type, op ? :",		      /* 170 */
-	"assignment type mismatch (%s != %s)",			      /* 171 */
+	"cannot assign to '%s' from '%s'",			      /* 171 */
 	"too many struct/union initializers",			      /* 172 */
 	"too many array initializers, expected %d",		      /* 173 */
 	"too many initializers",				      /* 174 */
@@ -244,7 +239,7 @@ const	char *msgs[] = {
 	"incompatible pointer types (%s != %s)",		      /* 182 */
 	"illegal combination of %s (%s) and %s (%s)",		      /* 183 */
 	"illegal pointer combination",				      /* 184 */
-	"initialization type mismatch (%s) and (%s)",		      /* 185 */
+	"cannot initialize '%s' from '%s'",			      /* 185 */
 	"bit-field initialization is illegal in traditional C",	      /* 186 */
 	"non-null byte ignored in string initializer",		      /* 187 */
 	"no automatic aggregate initialization in traditional C",     /* 188 */
@@ -386,7 +381,7 @@ const	char *msgs[] = {
 	"suggest cast from '%s' to '%s' on op %s to avoid overflow",  /* 324 */
 	"variable declaration in for loop",			      /* 325 */
 	"%s attribute ignored for %s",				      /* 326 */
-	"declarations after statements is a C9X feature",	      /* 327 */
+	"declarations after statements is a C99 feature",	      /* 327 */
 	"union cast is a C9X feature",				      /* 328 */
 	"type '%s' is not a member of '%s'",			      /* 329 */
 	"operand of '%s' must be bool, not '%s'",		      /* 330 */
@@ -399,6 +394,7 @@ const	char *msgs[] = {
 	"right operand of '%s' must not be bool",		      /* 337 */
 	"option '%c' should be handled in the switch",		      /* 338 */
 	"option '%c' should be listed in the options string",	      /* 339 */
+	"initialization with '[a...b]' is a GNU extension",	      /* 340 */
 };
 
 /*
@@ -409,7 +405,7 @@ msglist(void)
 {
 	size_t i;
 
-	for (i = 0; i < sizeof(msgs) / sizeof(msgs[0]); i++)
+	for (i = 0; i < sizeof msgs / sizeof msgs[0]; i++)
 		printf("%zu\t%s\n", i, msgs[i]);
 }
 
@@ -444,7 +440,7 @@ verror(int n, va_list ap)
 		return;
 
 	fn = lbasename(curr_pos.p_file);
-	(void)printf("%s(%d): ", fn, curr_pos.p_line);
+	(void)printf("%s(%d): error: ", fn, curr_pos.p_line);
 	(void)vprintf(msgs[n], ap);
 	(void)printf(" [%d]\n", n);
 	nerr++;
@@ -484,18 +480,18 @@ void
 }
 
 void
-lerror(const char *file, int line, const char *msg, ...)
+internal_error(const char *file, int line, const char *msg, ...)
 {
 	va_list	ap;
 	const	char *fn;
 
-	va_start(ap, msg);
 	fn = lbasename(curr_pos.p_file);
-	(void)fprintf(stderr, "%s(%d): lint error: %s, %d: ",
-	    fn, curr_pos.p_line, file, line);
+	(void)fprintf(stderr, "lint: internal error in %s:%d near %s:%d: ",
+	    file, line, fn, curr_pos.p_line);
+	va_start(ap, msg);
 	(void)vfprintf(stderr, msg, ap);
-	(void)fprintf(stderr, "\n");
 	va_end(ap);
+	(void)fprintf(stderr, "\n");
 	abort();
 }
 

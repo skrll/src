@@ -1,4 +1,4 @@
-/*	$NetBSD: sti.c,v 1.25 2020/12/26 08:58:03 tsutsui Exp $	*/
+/*	$NetBSD: sti.c,v 1.29 2021/03/14 08:13:58 skrll Exp $	*/
 
 /*	$OpenBSD: sti.c,v 1.76 2015/04/05 23:25:57 miod Exp $	*/
 
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sti.c,v 1.25 2020/12/26 08:58:03 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sti.c,v 1.29 2021/03/14 08:13:58 skrll Exp $");
 
 #include "wsdisplay.h"
 
@@ -54,10 +54,6 @@ __KERNEL_RCSID(0, "$NetBSD: sti.c,v 1.25 2020/12/26 08:58:03 tsutsui Exp $");
 
 #include <dev/ic/stireg.h>
 #include <dev/ic/stivar.h>
-
-#ifndef hp300	/* XXX */
-#include "sti_pci.h"
-#endif
 
 #ifdef STIDEBUG
 
@@ -154,7 +150,6 @@ void	ngle_timber_setupfb(struct sti_screen *);
 int	ngle_putcmap(struct sti_screen *, u_int, u_int);
 #endif
 
-#if NSTI_PCI > 0
 #define	STI_ENABLE_ROM(sc) \
 do { \
 	if ((sc) != NULL && (sc)->sc_enable_rom != NULL) \
@@ -165,10 +160,6 @@ do { \
 	if ((sc) != NULL && (sc)->sc_disable_rom != NULL) \
 		(*(sc)->sc_disable_rom)(sc); \
 } while (0)
-#else
-#define	STI_ENABLE_ROM(sc)		do { /* nothing */ } while (0)
-#define	STI_DISABLE_ROM(sc)		do { /* nothing */ } while (0)
-#endif
 
 /* Macros to read larger than 8 bit values from byte roms */
 #define	parseshort(o) \
@@ -1288,25 +1279,23 @@ paddr_t
 sti_mmap(void *v, void *vs, off_t offset, int prot)
 {
 	struct sti_screen *scr = (struct sti_screen *)v;
-#if 0
 	struct sti_rom *rom = scr->scr_rom;
-#endif
 	paddr_t pa;
 
 	if ((offset & PAGE_MASK) != 0)
 		return -1;
 
 	if (offset < 0 || offset >= scr->fblen)
-
 		return -1;
-/* XXXNH ??? */
-#if 0 /* XXX not all platforms provide bus_space_mmap() yet */
+
+	if (scr->scr_wsmode != WSDISPLAYIO_MODE_DUMBFB)
+		return -1;
+
 	pa = bus_space_mmap(rom->memt, scr->fbaddr, offset, prot,
 	    BUS_SPACE_MAP_LINEAR);
-#else
-	pa = scr->fbaddr + offset;
-#endif
-printf("%s: %lx\n", __func__, pa);
+
+	if (pa == -1)
+		pa = scr->fbaddr + offset;
 
 	return pa;
 }
@@ -1556,9 +1545,8 @@ sti_alloc_attr(void *v, int fg, int bg, int flags, long *pattr)
 	return 0;
 }
 
-#ifdef hp300	/* XXX */
 /*
- * Early console support.  Only used on hp300.
+ * Early console support.  Only used on hp300, currently
  */
 int
 sti_cnattach(struct sti_rom *rom, struct sti_screen *scr, bus_space_tag_t memt,
@@ -1596,7 +1584,6 @@ sti_cnattach(struct sti_rom *rom, struct sti_screen *scr, bus_space_tag_t memt,
 
 	return 0;
 }
-#endif
 
 int
 ngle_default_putcmap(struct sti_screen *scr, u_int idx, u_int count)

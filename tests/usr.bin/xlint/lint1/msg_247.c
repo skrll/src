@@ -1,7 +1,77 @@
-/*	$NetBSD: msg_247.c,v 1.3 2021/02/28 12:40:00 rillig Exp $	*/
+/*	$NetBSD: msg_247.c,v 1.7 2021/03/26 16:59:19 rillig Exp $	*/
 # 3 "msg_247.c"
 
 // Test for message: pointer cast from '%s' to '%s' may be troublesome [247]
 
-TODO: "Add example code that triggers the above message." /* expect: 249 */
-TODO: "Add example code that almost triggers the above message."
+/* lint1-extra-flags: -c */
+
+/* example taken from Xlib.h */
+typedef struct {
+	int id;
+} *PDisplay;
+
+struct Other {
+	int id;
+};
+
+void
+example(struct Other *arg)
+{
+	PDisplay display;
+
+	/*
+	 * XXX: The target type is reported as 'struct <unnamed>'.  In cases
+	 *  like these, it would be helpful to print at least the type name
+	 *  of the pointer.  This type name though is discarded immediately
+	 *  when the parser reduces 'T_TYPENAME clrtyp' to 'clrtyp_typespec'.
+	 *  After that, the target type of the cast is just an unnamed struct,
+	 *  with no hint at all that there is a typedef for a pointer to the
+	 *  struct.
+	 */
+	display = (PDisplay)arg;	/* expect: 247 */
+}
+
+/*
+ * C code with a long history that has existed in pre-C90 times already often
+ * uses 'pointer to char' where modern code would use 'pointer to void'.
+ * Since 'char' is the most general underlying type, there is nothing wrong
+ * with casting to it.  An example for this type of code is X11.
+ *
+ * Casting to 'pointer to char' may also be used by programmers who don't know
+ * about endianness, but that's not something lint can do anything about.  The
+ * code for these two use cases looks exactly the same, so lint errs on the
+ * side of fewer false positive warnings here. (after fixing the FIXME below)
+ */
+char *
+cast_to_char_pointer(struct Other *arg)
+{
+	return (char *)arg;
+}
+
+/*
+ * In traditional C there was 'unsigned char' as well, so the same reasoning
+ * as for plain 'char' applies here.
+ */
+unsigned char *
+cast_to_unsigned_char_pointer(struct Other *arg)
+{
+	return (unsigned char *)arg;
+}
+
+/*
+ * Traditional C does not have the type specifier 'signed', which means that
+ * this type cannot be used by old code.  Therefore warn about this.  All code
+ * that triggers this warning should do the intermediate cast via 'void
+ * pointer'.
+ */
+signed char *
+cast_to_signed_char_pointer(struct Other *arg)
+{
+	return (signed char *)arg;	/* expect: 247 */
+}
+
+char *
+cast_to_void_pointer_then_to_char_pointer(struct Other *arg)
+{
+	return (char *)(void *)arg;
+}

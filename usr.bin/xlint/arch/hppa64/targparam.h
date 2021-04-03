@@ -43,9 +43,9 @@
  * kept in sync with the compiler!
  */
 
-#define	PTRDIFF_IS_LONG		1
-#define	SIZEOF_IS_ULONG		1
-#define	INTPTR_IS_LONG		1
+#define	PTRDIFF_TSPEC		LONG
+#define	SIZEOF_TSPEC		ULONG
+#define	INTPTR_TSPEC		LONG
 
 #define	FLOAT_SIZE		(4 * CHAR_BIT)
 #define	DOUBLE_SIZE		(8 * CHAR_BIT)
