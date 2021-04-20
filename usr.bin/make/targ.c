@@ -1,4 +1,4 @@
-/*	$NetBSD: targ.c,v 1.166 2021/02/22 20:38:55 rillig Exp $	*/
+/*	$NetBSD: targ.c,v 1.168 2021/04/03 12:01:00 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -93,7 +93,7 @@
  *	Targ_FindList	Given a list of names, find nodes for all
  *			of them, creating them as necessary.
  *
- *	Targ_Precious	Return TRUE if the target is precious and
+ *	Targ_Precious	Return true if the target is precious and
  *			should not be removed if we are interrupted.
  *
  *	Targ_Propagate	Propagate information between related nodes.
@@ -113,7 +113,7 @@
 #include "dir.h"
 
 /*	"@(#)targ.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: targ.c,v 1.166 2021/02/22 20:38:55 rillig Exp $");
+MAKE_RCSID("$NetBSD: targ.c,v 1.168 2021/04/03 12:01:00 rillig Exp $");
 
 /*
  * All target nodes that appeared on the left-hand side of one of the
@@ -283,7 +283,7 @@ Targ_FindNode(const char *name)
 GNode *
 Targ_GetNode(const char *name)
 {
-	Boolean isNew;
+	bool isNew;
 	HashEntry *he = HashTable_CreateEntry(&allTargetsByName, name, &isNew);
 	if (!isNew)
 		return HashEntry_Get(he);
@@ -347,7 +347,7 @@ Targ_FindList(GNodeList *gns, StringList *names)
 }
 
 /* See if the given target is precious. */
-Boolean
+bool
 Targ_Precious(const GNode *gn)
 {
 	/* XXX: Why are '::' targets precious? */
@@ -410,7 +410,7 @@ Targ_FmtTime(time_t tm)
 	static char buf[128];
 
 	struct tm *parts = localtime(&tm);
-	(void)strftime(buf, sizeof buf, "%k:%M:%S %b %d, %Y", parts);
+	(void)strftime(buf, sizeof buf, "%H:%M:%S %b %d, %Y", parts);
 	return buf;
 }
 

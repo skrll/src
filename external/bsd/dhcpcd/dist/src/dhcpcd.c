@@ -2379,7 +2379,6 @@ printpidfile:
 	logdebugx("spawned master process on PID %d", getpid());
 start_master:
 	ctx.options |= DHCPCD_STARTED;
-	logdebugx("spawned master process on PID %d", getpid());
 	if ((pid = pidfile_lock(ctx.pidfile)) != 0) {
 		logerr("%s: pidfile_lock %d", __func__, pid);
 #ifdef PRIVSEP
