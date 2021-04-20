@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.207 2021/03/30 14:25:28 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.219 2021/04/18 21:53:37 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.207 2021/03/30 14:25:28 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.219 2021/04/18 21:53:37 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -118,12 +118,12 @@ RESTORE_WARN_FLAGS(const char *file, size_t line)
 static void
 anonymize(sym_t *s)
 {
-	for ( ; s; s = s->s_next)
+	for ( ; s != NULL; s = s->s_next)
 		s->s_styp = NULL;
 }
 %}
 
-%expect 165
+%expect 177
 
 %union {
 	val_t	*y_val;
@@ -138,7 +138,7 @@ anonymize(sym_t *s)
 	range_t	y_range;
 	strg_t	*y_string;
 	pqinf_t	*y_pqinf;
-	int	y_seen_statement;
+	bool	y_seen_statement;
 };
 
 %token			T_LBRACE T_RBRACE T_LBRACK T_RBRACK T_LPAREN T_RPAREN
@@ -218,6 +218,7 @@ anonymize(sym_t *s)
 %token <y_type>		T_AT_CONSTRUCTOR
 %token <y_type>		T_AT_DEPRECATED
 %token <y_type>		T_AT_DESTRUCTOR
+%token <y_type>		T_AT_FALLTHROUGH
 %token <y_type>		T_AT_FORMAT
 %token <y_type>		T_AT_FORMAT_ARG
 %token <y_type>		T_AT_FORMAT_GNU_PRINTF
@@ -295,6 +296,7 @@ anonymize(sym_t *s)
 %type	<y_sym>		notype_member_decl
 %type	<y_sym>		type_member_decl
 %type	<y_tnode>	constant_expr
+%type	<y_tnode>	array_size
 %type	<y_sym>		enum_declaration
 %type	<y_sym>		enums_with_opt_comma
 %type	<y_sym>		enums
@@ -595,6 +597,9 @@ type_attribute_spec:
 	| T_AT_WARN_UNUSED_RESULT
 	| T_AT_WEAK
 	| T_AT_VISIBILITY T_LPAREN constant_expr T_RPAREN
+	| T_AT_FALLTHROUGH {
+		fallthru(1);
+	}
 	| T_QUAL {
 		if ($1 != CONST)
 			yyerror("Bad attribute");
@@ -1067,7 +1072,7 @@ notype_direct_decl:
 	| notype_direct_decl T_LBRACK T_RBRACK {
 		$$ = add_array($1, false, 0);
 	  }
-	| notype_direct_decl T_LBRACK constant_expr T_RBRACK {
+	| notype_direct_decl T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
 	| notype_direct_decl param_list opt_asm_or_symbolrename {
@@ -1100,7 +1105,7 @@ type_direct_decl:
 	| type_direct_decl T_LBRACK T_RBRACK {
 		$$ = add_array($1, false, 0);
 	  }
-	| type_direct_decl T_LBRACK constant_expr T_RBRACK {
+	| type_direct_decl T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
 	| type_direct_decl param_list opt_asm_or_symbolrename {
@@ -1127,6 +1132,25 @@ param_decl:
 	  }
 	;
 
+opt_type_qualifier_list:
+	  /* empty */
+	| type_qualifier_list
+	;
+
+array_size:
+	  opt_type_qualifier_list T_SCLASS constant_expr {
+		/* C11 6.7.6.3p7 */
+		if ($2 != STATIC)
+			yyerror("Bad attribute");
+		/* static array size is a C11 extension */
+		c11ism(343);
+		$$ = $3;
+	  }
+	| constant_expr {
+		$$ = $1;
+	}
+	;
+
 direct_param_decl:
 	  identifier type_attribute_list {
 		$$ = declarator_name(getsym($1));
@@ -1140,7 +1164,7 @@ direct_param_decl:
 	| direct_param_decl T_LBRACK T_RBRACK {
 		$$ = add_array($1, false, 0);
 	  }
-	| direct_param_decl T_LBRACK constant_expr T_RBRACK {
+	| direct_param_decl T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
 	| direct_param_decl param_list opt_asm_or_symbolrename {
@@ -1169,7 +1193,7 @@ direct_notype_param_decl:
 	| direct_notype_param_decl T_LBRACK T_RBRACK {
 		$$ = add_array($1, false, 0);
 	  }
-	| direct_notype_param_decl T_LBRACK constant_expr T_RBRACK {
+	| direct_notype_param_decl T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
 	| direct_notype_param_decl param_list opt_asm_or_symbolrename {
@@ -1197,7 +1221,7 @@ pointer:
 
 asterisk:
 	  T_ASTERISK {
-		$$ = xcalloc(1, sizeof *$$);
+		$$ = xcalloc(1, sizeof(*$$));
 		$$->p_pcnt = 1;
 	  }
 	;
@@ -1213,7 +1237,7 @@ type_qualifier_list:
 
 type_qualifier:
 	  T_QUAL {
-		$$ = xcalloc(1, sizeof *$$);
+		$$ = xcalloc(1, sizeof(*$$));
 		if ($1 == CONST) {
 			$$->p_const = true;
 		} else if ($1 == VOLATILE) {
@@ -1253,14 +1277,14 @@ identifier_list:
 	;
 
 abstract_decl_param_list:
-	  abstract_decl_lparen T_RPAREN {
+	  abstract_decl_lparen T_RPAREN opt_type_attribute {
 		$$ = NULL;
 	  }
-	| abstract_decl_lparen vararg_parameter_type_list T_RPAREN {
+	| abstract_decl_lparen vararg_parameter_type_list T_RPAREN opt_type_attribute {
 		dcs->d_proto = true;
 		$$ = $2;
 	  }
-	| abstract_decl_lparen error T_RPAREN {
+	| abstract_decl_lparen error T_RPAREN opt_type_attribute {
 		$$ = NULL;
 	  }
 	;
@@ -1464,7 +1488,7 @@ direct_abstract_decl:
 	| T_LBRACK T_RBRACK {
 		$$ = add_array(abstract_name(), false, 0);
 	  }
-	| T_LBRACK constant_expr T_RBRACK {
+	| T_LBRACK array_size T_RBRACK {
 		$$ = add_array(abstract_name(), true, to_int_constant($2, false));
 	  }
 	| type_attribute direct_abstract_decl {
@@ -1473,7 +1497,7 @@ direct_abstract_decl:
 	| direct_abstract_decl T_LBRACK T_RBRACK {
 		$$ = add_array($1, false, 0);
 	  }
-	| direct_abstract_decl T_LBRACK constant_expr T_RBRACK {
+	| direct_abstract_decl T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
 	| abstract_decl_param_list opt_asm_or_symbolrename {
@@ -1490,7 +1514,8 @@ direct_abstract_decl:
 	;
 
 non_expr_statement:
-	  labeled_statement
+	  type_attribute T_SEMI
+	| labeled_statement
 	| compound_statement
 	| selection_statement
 	| iteration_statement
@@ -1498,6 +1523,7 @@ non_expr_statement:
 		seen_fallthrough = false;
 	  }
 	| asm_statement
+	;
 
 statement:			/* C99 6.8 */
 	  expr_statement
@@ -1596,7 +1622,7 @@ expr_statement_val:
 		seen_fallthrough = false;
 	  }
 	| non_expr_statement {
-		$$ = getnode();
+		$$ = expr_zalloc_tnode();
 		$$->tn_type = gettyp(VOID);
 	  }
 	;
@@ -1878,7 +1904,7 @@ term:
 		$$ = new_string_node($1);
 	  }
 	| T_CON {
-		$$ = new_constant_node(gettyp($1->v_tspec), $1);
+		$$ = expr_new_constant(gettyp($1->v_tspec), $1);
 	  }
 	| T_LPAREN expr T_RPAREN {
 		if ($2 != NULL)
@@ -1889,7 +1915,7 @@ term:
 	    expr_statement_list {
 		block_level--;
 		mem_block_level--;
-		begin_initialization(mktempsym(duptyp($4->tn_type)));
+		begin_initialization(mktempsym(dup_type($4->tn_type)));
 		mem_block_level++;
 		block_level++;
 		/* ({ }) is a GCC extension */
@@ -2119,7 +2145,7 @@ ignore_up_to_rparen(void)
 static	sym_t *
 symbolrename(sym_t *s, sbuf_t *sb)
 {
-	if (sb)
+	if (sb != NULL)
 		s->s_rename = sb->sb_name;
 	return s;
 }

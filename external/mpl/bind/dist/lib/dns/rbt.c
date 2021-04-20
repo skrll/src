@@ -1,4 +1,4 @@
-/*	$NetBSD: rbt.c,v 1.7 2021/02/19 16:42:16 christos Exp $	*/
+/*	$NetBSD: rbt.c,v 1.9 2021/04/05 11:29:49 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -49,7 +49,7 @@
 		result = (x);                \
 		if (result != ISC_R_SUCCESS) \
 			goto cleanup;        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define RBT_MAGIC      ISC_MAGIC('R', 'B', 'T', '+')
 #define VALID_RBT(rbt) ISC_MAGIC_VALID(rbt, RBT_MAGIC)
@@ -283,7 +283,7 @@ getdata(dns_rbtnode_t *node, file_header_t *header) {
 	do {                                                       \
 		INSIST((chain)->level_count < DNS_RBT_LEVELBLOCK); \
 		(chain)->levels[(chain)->level_count++] = (node);  \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*%
  * The following macros directly access normally private name variables.
@@ -772,7 +772,7 @@ cleanup:
 			result = ISC_R_INVALIDFILE; \
 			goto cleanup;               \
 		}                                   \
-	} while(/*CONSTCOND*/0)
+	} while (0)
 
 static isc_result_t
 treefix(dns_rbt_t *rbt, void *base, size_t filesize, dns_rbtnode_t *n,

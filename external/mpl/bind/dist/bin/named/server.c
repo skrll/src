@@ -1,4 +1,4 @@
-/*	$NetBSD: server.c,v 1.12 2021/02/19 16:42:10 christos Exp $	*/
+/*	$NetBSD: server.c,v 1.15 2021/04/05 11:36:55 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -173,7 +173,7 @@
 		result = (op);               \
 		if (result != ISC_R_SUCCESS) \
 			goto cleanup;        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define TCHECK(op)                               \
 	do {                                     \
@@ -182,7 +182,7 @@
 			isc_buffer_clear(*text); \
 			goto cleanup;            \
 		}                                \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define CHECKM(op, msg)                                                        \
 	do {                                                                   \
@@ -194,7 +194,7 @@
 				      isc_result_totext(result));              \
 			goto cleanup;                                          \
 		}                                                              \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define CHECKMF(op, msg, file)                                                 \
 	do {                                                                   \
@@ -206,14 +206,14 @@
 				      isc_result_totext(result));              \
 			goto cleanup;                                          \
 		}                                                              \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define CHECKFATAL(op, msg)                         \
 	do {                                        \
 		result = (op);                      \
 		if (result != ISC_R_SUCCESS)        \
 			fatal(server, msg, result); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*%
  * Maximum ADB size for views that share a cache.  Use this limit to suppress
@@ -3161,7 +3161,7 @@ cleanup:
 			result = ISC_R_RANGE;                              \
 			goto cleanup;                                      \
 		}                                                          \
-	} while (/*CONSTCOND*/ 0)
+	} while (0)
 
 #define CHECK_RRL_RATE(rate, def, max_rate, name)                           \
 	do {                                                                \
@@ -3176,7 +3176,7 @@ cleanup:
 			rrl->rate.r = def;                                  \
 		}                                                           \
 		rrl->rate.scaled = rrl->rate.r;                             \
-	} while (/*CONSTCOND*/ 0)
+	} while (0)
 
 static isc_result_t
 configure_rrl(dns_view_t *view, const cfg_obj_t *config, const cfg_obj_t *map) {
@@ -9198,6 +9198,7 @@ load_configuration(const char *filename, named_server_t *server,
 		goto cleanup;
 	}
 #endif
+
 #ifdef HAVE_LMDB
 	/*
 	 * Reopen NZD databases.

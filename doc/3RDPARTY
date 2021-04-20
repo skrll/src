@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1787 2021/03/26 08:21:32 wiz Exp $
+#	$NetBSD: 3RDPARTY,v 1.1799 2021/04/19 14:42:18 christos Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -41,12 +41,12 @@
 #
 
 Package:	acpica
-Version:	20201113
-Current Vers:	20210105
+Version:	20210331
+Current Vers:	20210331
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
 Home Page:	http://www.acpica.org/
-Date:		2020-11-27
+Date:		2021-04-03
 Mailing List:	devel@acpica.org
 License:	BSD-like
 Responsible:	jruoho
@@ -421,12 +421,12 @@ Notes:
 Please use "expat" as the vendor tag for CVS imports.
 
 Package:	file
-Version:	5.39
-Current Vers:	5.39
+Version:	5.40
+Current Vers:	5.40
 Maintainer:	Christos Zoulas <christos@zoulas.com>
 Archive Site:	ftp://ftp.astron.com/pub/file/
 Home Page:	http://www.darwinsys.com/file/
-Date:		2020-06-14
+Date:		2021-04-09
 Mailing List:	file@astron.com
 Responsible:	christos, pooka
 License:	BSD (2-clause)
@@ -449,8 +449,8 @@ Notes:
 There is a flex2netbsd script to help newer imports.
 
 Package:	gcc
-Version:	8.4.0/9.3.0
-Current Vers:	8.4.0/9.3.0/10.1
+Version:	9.3.0/10.3.0
+Current Vers:	9.3.0/10.3.0
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gcc/
 Home Page:	http://www.gnu.org/software/gcc/
@@ -526,11 +526,11 @@ It is not part of the regular build.
 
 Package:	gdtoa
 Version:	2016-02-19
-Current Vers:	$(date)
+Current Vers:	2018-06-18
 Maintainer:	David M. Gay <dmg@acm.org>
 Archive Site:	http://www.netlib.org/fp/
 Home Page:	http://www.netlib.org/fp/
-Date:		2019-01-09
+Date:		2021-04-10
 Mailing List:	none
 Responsible:	kleink
 License:	BSD-like
@@ -738,12 +738,12 @@ The lvm2tools and the libdevmapper are now distributed as one source
 repository. See the lvm2tools Notes for more information.
 
 Package:	libevent
-Version:	2.1.8-stable
+Version:	2.1.12-stable
 Current Vers:	2.1.12-stable
 Maintainer:	Niels Provos <provos@citi.umich.edu>
 Archive Site:	http://www.monkey.org/~provos/libevent/
 Home Page:	http://www.monkey.org/~provos/libevent/
-Date:		2021-03-01
+Date:		2021-04-06
 Responsible:
 License:	BSD (3/4-clause)
 Location:	external/bsd/libevent/dist
@@ -1070,12 +1070,12 @@ Notes:
 Patch applied after OpenSSH import.
 
 Package:	OpenSSH
-Version:	8.5
-Current Vers:	8.5 / portable 8.5p1
+Version:	8.6
+Current Vers:	8.6 / portable 8.6p1
 Maintainer:	OpenSSH
 Archive Site:	http://www.openssh.com/ftp.html
 Home Page:	http://www.openssh.com/portable.html
-Date:		2021-03-05
+Date:		2021-04-19
 Mailing List:	openssh-unix-announce@mindrot.org
 Responsible:	thorpej, christos, elric
 License:	BSD. See src/crypto/external/bsd/openssh/dist/LICENSE
@@ -1192,8 +1192,8 @@ definition (files.pf).  userland code is imported into src/dist/pf, and
 reachover Makefiles are in src/usr.sbin/pf.
 
 Package:	pkg_install
-Version:	20201212
-Current Vers:	20201212
+Version:	20210410
+Current Vers:	20210410
 Maintainer:	The pkgsrc developers
 Home Page:	http://www.pkgsrc.org/
 Date:		2020-12-12
@@ -1369,8 +1369,8 @@ perhaps this implementation should be kept anyway for historical
 purposes.
 
 Package:	tmux
-Version:	3.1c
-Current Vers:	3.1c
+Version:	3.2
+Current Vers:	3.2
 Maintainer:	Nicholas Marriott <nicholas.marriott@gmail.com>
 Archive site:	https://github.com/tmux/tmux
 Home page:	http://tmux.github.io
@@ -1458,12 +1458,13 @@ Imported to src/common/dist/zlib and shared by the kernel and userland.
 Remember to run cleantags
 
 Package:	services, protocols
-Version:	2019-10-09 (services), 2017-10-13 (protocols)
-Current Vers:	2019-10-09 (services), 2017-10-13 (protocols)
+Version:	2021-04-07 (services), 2021-02-26 (protocols)
+Current Vers:	2021-04-07 (services), 2021-02-26 (protocols)
 Maintainer:	IANA
 Archive Site:	http://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt (services)
 Archive Site:	http://www.iana.org/assignments/protocol-numbers/protocol-numbers.txt (protocols)
 Home Page:	http://www.iana.org/
+Date: 		2021-04-08
 Mailing List:
 Responsible:	christos
 License:	None

@@ -1,6 +1,7 @@
-# $NetBSD: Makefile,v 1.37 2021/03/28 14:01:50 rillig Exp $
+# $NetBSD: Makefile,v 1.46 2021/04/18 23:05:26 rillig Exp $
 
 NOMAN=		# defined
+MAX_MESSAGE=	343		# see lint1/err.c
 
 .include <bsd.own.mk>
 
@@ -21,6 +22,7 @@ FILES+=		d_c99_anon_struct.c
 FILES+=		d_c99_anon_union.c
 FILES+=		d_c99_complex_num.c
 FILES+=		d_c99_complex_split.c
+FILES+=		d_c99_complex_split.exp
 FILES+=		d_c99_compound_literal_comma.c
 FILES+=		d_c99_decls_after_stmt.c
 FILES+=		d_c99_decls_after_stmt2.c
@@ -98,7 +100,16 @@ FILES+=		d_type_question_colon.c
 FILES+=		d_typefun.c
 FILES+=		d_typename_as_var.c
 FILES+=		d_zero_sized_arrays.c
-FILES+=		${:U0 ${:U:range=340}:C,^.$,0&,:C,^..$,0&,:@msg@msg_${msg}.c msg_${msg}.exp@:Nmsg_176.exp}
+FILES+=		emit.c
+FILES+=		emit.exp
+FILES+=		emit.ln
+FILES+=		feat_stacktrace.c
+FILES+=		feat_stacktrace.exp
+FILES+=		gcc_init_compound_literal.c
+FILES+=		gcc_init_compound_literal.exp
+FILES+=		${:U0 ${:U:${:Urange=${MAX_MESSAGE}}}:C,^.$,0&,:C,^..$,0&,:@i@msg_${i}.c msg_${i}.exp@:Nmsg_176.exp}
+FILES+=		op_colon.c
+FILES+=		op_colon.exp
 
 # Note: only works for adding tests.
 # To remove a test, the $$mi file must be edited manually.
@@ -109,7 +120,7 @@ sync-mi: .PHONY
 	cvs update "$$mi";						\
 	fmt="./usr/tests/usr.bin/xlint/lint1/%s\ttests-usr.bin-tests\tcompattestfile,atf\n"; \
 	cat "$$mi" > "$$mi.tmp";					\
-	printf "$$fmt" ${FILES:M*.c} ${FILES:M*.exp} >> "$$mi.tmp";	\
+	printf "$$fmt" ${FILES} >> "$$mi.tmp";				\
 	distrib/sets/fmt-list "$$mi.tmp";				\
 	mv "$$mi.tmp" "$$mi";						\
 	cvs diff "$$mi" || true
