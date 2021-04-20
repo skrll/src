@@ -1,4 +1,5 @@
-/*	$NetBSD: bufferevent_ratelim.c,v 1.3 2017/01/31 23:17:39 christos Exp $	*/
+/*	$NetBSD: bufferevent_ratelim.c,v 1.6 2021/04/10 19:18:45 rillig Exp $	*/
+
 /*
  * Copyright (c) 2007-2012 Niels Provos and Nick Mathewson
  * Copyright (c) 2002-2006 Niels Provos <provos@citi.umich.edu>
@@ -212,7 +213,7 @@ bufferevent_get_rlim_max_(struct bufferevent_private *bev, int is_write)
 	do {					\
 		if (max_so_far > (x))		\
 			max_so_far = (x);	\
-	} while (/*CONSTCOND*/0);
+	} while (0);
 
 	if (!bev->rate_limiting)
 		return max_so_far;
@@ -483,7 +484,7 @@ bev_group_random_element_(struct bufferevent_rate_limit_group *group)
 		    bev = LIST_NEXT(bev, rate_limiting->next_in_group)) { \
 			block ;						\
 		}							\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 static void
 bev_group_unsuspend_reading_(struct bufferevent_rate_limit_group *g)
@@ -561,8 +562,7 @@ int
 bufferevent_set_rate_limit(struct bufferevent *bev,
     struct ev_token_bucket_cfg *cfg)
 {
-	struct bufferevent_private *bevp =
-	    EVUTIL_UPCAST(bev, struct bufferevent_private, bev);
+	struct bufferevent_private *bevp = BEV_UPCAST(bev);
 	int r = -1;
 	struct bufferevent_rate_limit *rlim;
 	struct timeval now;
@@ -738,8 +738,7 @@ bufferevent_add_to_rate_limit_group(struct bufferevent *bev,
     struct bufferevent_rate_limit_group *g)
 {
 	int wsuspend, rsuspend;
-	struct bufferevent_private *bevp =
-	    EVUTIL_UPCAST(bev, struct bufferevent_private, bev);
+	struct bufferevent_private *bevp = BEV_UPCAST(bev);
 	BEV_LOCK(bev);
 
 	if (!bevp->rate_limiting) {
@@ -790,8 +789,7 @@ int
 bufferevent_remove_from_rate_limit_group_internal_(struct bufferevent *bev,
     int unsuspend)
 {
-	struct bufferevent_private *bevp =
-	    EVUTIL_UPCAST(bev, struct bufferevent_private, bev);
+	struct bufferevent_private *bevp = BEV_UPCAST(bev);
 	BEV_LOCK(bev);
 	if (bevp->rate_limiting && bevp->rate_limiting->group) {
 		struct bufferevent_rate_limit_group *g =

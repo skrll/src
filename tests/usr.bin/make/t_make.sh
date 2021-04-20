@@ -1,4 +1,4 @@
-# $NetBSD: t_make.sh,v 1.13 2021/02/06 19:00:25 martin Exp $
+# $NetBSD: t_make.sh,v 1.15 2021/04/17 11:36:34 rillig Exp $
 #
 # Copyright (c) 2008, 2010, 2014 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -53,13 +53,9 @@ test_case()
 {
 	local atfname="${1}"; shift	# e.g. foo_bar
 	local makename="${1}"; shift	# e.g. foo-bar
-	local descr="${1}"; shift
 
 	atf_test_case "${atfname}"
 	eval "${atfname}_head() { \
-		if [ -n '${descr}' ]; then \
-		    atf_set descr '${descr}'; \
-		fi; \
 		atf_set require.user unprivileged; \
 	}"
 	eval "${atfname}_body() { \
@@ -71,25 +67,23 @@ atf_init_test_cases()
 {
 	local filename basename atfname descr
 
-	for filename in "$(atf_get_srcdir)"/unit-tests/*.mk ; do
-	    basename="${filename##*/}"
-	    basename="${basename%.mk}"
+	for filename in "$(atf_get_srcdir)"/unit-tests/*.mk; do
+		basename="${filename##*/}"
+		basename="${basename%.mk}"
 
-	    # skip files that are not test cases on their own
-	    case "${basename}" in
-	    include-sub*) continue;;
-	    esac
-
-	    atfname=${basename}
-	    while :
-	    do
-		case "${atfname}" in
-		(*-*)	atfname=${atfname%-*}_${atfname##*-};;
-		(*)	break;;
+		# skip files that are not test cases on their own
+		case "${basename}" in
+		include-sub*) continue;;
 		esac
-	    done
-	    descr='' # XXX
-	    test_case "${atfname}" "${basename}" "${descr}"
-	    atf_add_test_case "${atfname}"
+
+		atfname=${basename}
+		while :; do
+			case "${atfname}" in
+			(*-*)	atfname=${atfname%-*}_${atfname##*-};;
+			(*)	break;;
+			esac
+		done
+		test_case "${atfname}" "${basename}"
+		atf_add_test_case "${atfname}"
 	done
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: main2.c,v 1.14 2021/03/26 20:31:07 rillig Exp $	*/
+/*	$NetBSD: main2.c,v 1.17 2021/04/18 22:51:24 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: main2.c,v 1.14 2021/03/26 20:31:07 rillig Exp $");
+__RCSID("$NetBSD: main2.c,v 1.17 2021/04/18 22:51:24 rillig Exp $");
 #endif
 
 #include <stdio.h>
@@ -89,7 +89,7 @@ bool	Fflag;
  */
 const char **libs;
 
-static	void	usage(void);
+static	void	usage(void) __attribute__((noreturn));
 
 int
 main(int argc, char *argv[])
@@ -98,7 +98,7 @@ main(int argc, char *argv[])
 	size_t	len;
 	char	*lname;
 
-	libs = xcalloc(1, sizeof *libs);
+	libs = xcalloc(1, sizeof(*libs));
 
 	opterr = 0;
 	while ((c = getopt(argc, argv, "hpstxuC:HTFl:")) != -1) {
@@ -141,11 +141,11 @@ main(int argc, char *argv[])
 		case 'l':
 			for (i = 0; libs[i] != NULL; i++)
 				continue;
-			libs = xrealloc(libs, (i + 2) * sizeof *libs);
+			libs = xrealloc(libs, (i + 2) * sizeof(*libs));
 			libs[i] = xstrdup(optarg);
 			libs[i + 1] = NULL;
 			break;
-		case '?':
+		default:
 			usage();
 		}
 	}

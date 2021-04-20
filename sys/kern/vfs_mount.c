@@ -841,7 +841,6 @@ err_mounted:
 
 	if (VFS_UNMOUNT(mp, MNT_FORCE) != 0)
 		panic("Unmounting fresh file system failed");
-	vfs_resume(mp);
 
 	if (error2 == 0)
 		vfs_resume(mp);

@@ -1,4 +1,4 @@
-/* $NetBSD: lex.c,v 1.21 2021/03/28 13:09:43 rillig Exp $ */
+/* $NetBSD: lex.c,v 1.28 2021/04/18 08:00:13 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: lex.c,v 1.21 2021/03/28 13:09:43 rillig Exp $");
+__RCSID("$NetBSD: lex.c,v 1.28 2021/04/18 08:00:13 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -56,13 +56,13 @@ __RCSID("$NetBSD: lex.c,v 1.21 2021/03/28 13:09:43 rillig Exp $");
 
 
 /* Current position (it's also updated when an included file is parsed) */
-pos_t	curr_pos = { 1, "", 0 };
+pos_t	curr_pos = { "", 1, 0 };
 
 /*
  * Current position in C source (not updated when an included file is
  * parsed).
  */
-pos_t	csrc_pos = { 1, "", 0 };
+pos_t	csrc_pos = { "", 1, 0 };
 
 /* Are we parsing a gcc attribute? */
 bool attron;
@@ -169,6 +169,7 @@ static	struct	kwtab {
 	kwdef_token(	"enum",		T_ENUM,			0,0,0,0,1),
 	kwdef_token(	"extension",	T_EXTENSION,		0,0,1,0,4),
 	kwdef_sclass(	"extern",	EXTERN,			0,0,0,0,1),
+	kwdef_token(	"fallthrough",	T_AT_FALLTHROUGH,	0,0,1,1,5),
 	kwdef_type(	"float",	FLOAT,			0,0,0,0,1),
 	kwdef_token(	"for",		T_FOR,			0,0,0,0,1),
 	kwdef_token(	"format",	T_AT_FORMAT,		0,0,1,1,5),
@@ -273,12 +274,12 @@ add_keyword(struct kwtab *kw, int deco)
 		name = kw->kw_name;
 		break;
 	case 2:
-		snprintf(buf, sizeof buf, "__%s", kw->kw_name);
+		snprintf(buf, sizeof(buf), "__%s", kw->kw_name);
 		name = strdup(buf);
 		break;
 	default:
 		lint_assert(deco == 4);
-		snprintf(buf, sizeof buf, "__%s__", kw->kw_name);
+		snprintf(buf, sizeof(buf), "__%s__", kw->kw_name);
 		name = strdup(buf);
 		break;
 	}
@@ -286,7 +287,7 @@ add_keyword(struct kwtab *kw, int deco)
 	if (name == NULL)
 		err(1, "Can't init symbol table");
 
-	sym = getblk(sizeof *sym);
+	sym = getblk(sizeof(*sym));
 	sym->s_name = name;
 	sym->s_keyword = kw;
 	sym->s_value.v_quad = kw->kw_token;
@@ -349,13 +350,13 @@ allocsb(void)
 	if ((sb = sbfrlst) != NULL) {
 		sbfrlst = sb->sb_next;
 #ifdef BLKDEBUG
-		(void)memset(sb, 0, sizeof *sb);
+		(void)memset(sb, 0, sizeof(*sb));
 #else
 		sb->sb_next = NULL;
 #endif
 	} else {
-		sb = xmalloc(sizeof *sb);
-		(void)memset(sb, 0, sizeof *sb);
+		sb = xmalloc(sizeof(*sb));
+		(void)memset(sb, 0, sizeof(*sb));
 	}
 	return sb;
 }
@@ -367,7 +368,7 @@ static void
 freesb(sbuf_t *sb)
 {
 
-	(void)memset(sb, ZERO, sizeof *sb);
+	(void)memset(sb, ZERO, sizeof(*sb));
 	sb->sb_next = sbfrlst;
 	sbfrlst = sb;
 }
@@ -394,8 +395,8 @@ hash(const char *s)
 
 	v = 0;
 	for (us = (const u_char *)s; *us != '\0'; us++) {
-		v = (v << sizeof v) + *us;
-		v ^= v >> (sizeof v * CHAR_BIT - sizeof v);
+		v = (v << sizeof(v)) + *us;
+		v ^= v >> (sizeof(v) * CHAR_BIT - sizeof(v));
 	}
 	return v % HSHSIZ1;
 }
@@ -487,7 +488,7 @@ keyw(sym_t *sym)
 
 /*
  * Convert a string representing an integer into internal representation.
- * The value is returned in yylval. icon() (and yylex()) returns T_CON.
+ * Return T_CON, storing the numeric value in yylval, for yylex.
  */
 int
 lex_integer_constant(const char *yytext, size_t yyleng, int base)
@@ -677,7 +678,7 @@ lex_integer_constant(const char *yytext, size_t yyleng, int base)
 
 	uq = (uint64_t)xsign((int64_t)uq, typ, -1);
 
-	yylval.y_val = xcalloc(1, sizeof *yylval.y_val);
+	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = typ;
 	yylval.y_val->v_ansiu = ansiu;
 	yylval.y_val->v_quad = (int64_t)uq;
@@ -801,7 +802,7 @@ lex_floating_constant(const char *yytext, size_t yyleng)
 		}
 	}
 
-	yylval.y_val = xcalloc(1, sizeof *yylval.y_val);
+	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = typ;
 	if (typ == FLOAT) {
 		yylval.y_val->v_ldbl = f;
@@ -857,7 +858,7 @@ lex_character_constant(void)
 		val = cv;
 	}
 
-	yylval.y_val = xcalloc(1, sizeof *yylval.y_val);
+	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = INT;
 	yylval.y_val->v_quad = val;
 
@@ -906,7 +907,7 @@ lex_wide_character_constant(void)
 		}
 	}
 
-	yylval.y_val = xcalloc(1, sizeof *yylval.y_val);
+	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = WCHAR;
 	yylval.y_val->v_quad = wc;
 
@@ -1052,10 +1053,13 @@ get_escaped_char(int delim)
 
 /* See https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html */
 static void
-parse_line_directive_flags(const char *p)
+parse_line_directive_flags(const char *p,
+			   bool *is_begin, bool *is_end, bool *is_system)
 {
 
-	in_system_header = false;
+	*is_begin = false;
+	*is_end = false;
+	*is_system = false;
 
 	while (*p != '\0') {
 		while (ch_isspace(*p))
@@ -1066,13 +1070,20 @@ parse_line_directive_flags(const char *p)
 			p++;
 		const char *word_end = p;
 
+		if (word_end - word_start == 1 && word_start[0] == '1')
+			*is_begin = true;
+		if (word_end - word_start == 1 && word_start[0] == '2')
+			*is_end = true;
 		if (word_end - word_start == 1 && word_start[0] == '3')
-			in_system_header = true;
+			*is_system = true;
+		/* Flag '4' would only be interesting if lint handled C++. */
 	}
 
 #if 0
-	if (c != '\0')
-		warning("extra character(s) after directive");
+	if (*p != '\0') {
+		/* syntax error '%s' */
+		warning(249, "extra character(s) after directive");
+	}
 #endif
 }
 
@@ -1089,6 +1100,8 @@ lex_directive(const char *yytext)
 	char	c, *eptr;
 	size_t	fnl;
 	long	ln;
+	bool	is_begin, is_end, is_system;
+
 	static	bool first = true;
 
 	/* Go to first non-whitespace after # */
@@ -1120,8 +1133,6 @@ lex_directive(const char *yytext)
 			goto error;
 		if ((fnl = cp++ - fn) > PATH_MAX)
 			goto error;
-		parse_line_directive_flags(cp);
-
 		/* empty string means stdin */
 		if (fnl == 0) {
 			fn = "{standard input}";
@@ -1139,6 +1150,10 @@ lex_directive(const char *yytext)
 			    strlen(curr_pos.p_file)));
 			first = false;
 		}
+
+		parse_line_directive_flags(cp, &is_begin, &is_end, &is_system);
+		update_location(curr_pos.p_file, (int)ln, is_begin, is_end);
+		in_system_header = is_system;
 	}
 	curr_pos.p_line = (int)ln - 1;
 	curr_pos.p_uniq = 0;
@@ -1194,18 +1209,18 @@ lex_comment(void)
 
 	/* Read the potential keyword to keywd */
 	l = 0;
-	while (c != EOF && isupper(c) && l < sizeof keywd - 1) {
+	while (c != EOF && isupper(c) && l < sizeof(keywd) - 1) {
 		keywd[l++] = (char)c;
 		c = inpc();
 	}
 	keywd[l] = '\0';
 
 	/* look for the keyword */
-	for (i = 0; i < sizeof keywtab / sizeof keywtab[0]; i++) {
+	for (i = 0; i < sizeof(keywtab) / sizeof(keywtab[0]); i++) {
 		if (strcmp(keywtab[i].keywd, keywd) == 0)
 			break;
 	}
-	if (i == sizeof keywtab / sizeof keywtab[0])
+	if (i == sizeof(keywtab) / sizeof(keywtab[0]))
 		goto skip_rest;
 
 	/* skip whitespace after the keyword */
@@ -1215,7 +1230,7 @@ lex_comment(void)
 	/* read the argument, if the keyword accepts one and there is one */
 	l = 0;
 	if (keywtab[i].arg) {
-		while (c != EOF && isdigit(c) && l < sizeof arg - 1) {
+		while (c != EOF && isdigit(c) && l < sizeof(arg) - 1) {
 			arg[l++] = (char)c;
 			c = inpc();
 		}
@@ -1314,7 +1329,7 @@ lex_string(void)
 		/* unterminated string constant */
 		error(258);
 
-	strg = xcalloc(1, sizeof *strg);
+	strg = xcalloc(1, sizeof(*strg));
 	strg->st_tspec = CHAR;
 	strg->st_len = len;
 	strg->st_cp = s;
@@ -1358,7 +1373,7 @@ lex_wide_string(void)
 			n = 1;
 	}
 
-	ws = xmalloc((wlen + 1) * sizeof *ws);
+	ws = xmalloc((wlen + 1) * sizeof(*ws));
 
 	/* convert from multibyte to wide char */
 	(void)mbtowc(NULL, NULL, 0);
@@ -1371,7 +1386,7 @@ lex_wide_string(void)
 	ws[wi] = 0;
 	free(s);
 
-	strg = xcalloc(1, sizeof *strg);
+	strg = xcalloc(1, sizeof(*strg));
 	strg->st_tspec = WCHAR;
 	strg->st_len = wlen;
 	strg->st_wcp = ws;
@@ -1426,7 +1441,7 @@ getsym(sbuf_t *sb)
 
 	/* labels must always be allocated at level 1 (outermost block) */
 	if (symtyp == FLABEL) {
-		sym = getlblk(1, sizeof *sym);
+		sym = getlblk(1, sizeof(*sym));
 		s = getlblk(1, sb->sb_len + 1);
 		(void)memcpy(s, sb->sb_name, sb->sb_len + 1);
 		sym->s_name = s;
@@ -1436,7 +1451,7 @@ getsym(sbuf_t *sb)
 			di = di->d_next;
 		lint_assert(di->d_ctx == AUTO);
 	} else {
-		sym = getblk(sizeof *sym);
+		sym = getblk(sizeof(*sym));
 		sym->s_name = sb->sb_name;
 		sym->s_block_level = block_level;
 		di = dcs;
@@ -1470,15 +1485,20 @@ mktempsym(type_t *t)
 	static int n = 0;
 	int h;
 	char *s = getlblk(block_level, 64);
-	sym_t *sym = getblk(sizeof *sym);
+	sym_t *sym = getblk(sizeof(*sym));
+	scl_t scl;
 
 	(void)snprintf(s, 64, "%.8d_tmp", n++);
 	h = hash(s);
 
+	scl = dcs->d_scl;
+	if (scl == NOSCL)
+		scl = block_level > 0 ? AUTO : EXTERN;
+
 	sym->s_name = s;
 	sym->s_type = t;
 	sym->s_block_level = block_level;
-	sym->s_scl = AUTO;
+	sym->s_scl = scl;
 	sym->s_kind = FVFT;
 	sym->s_used = true;
 	sym->s_set = true;
@@ -1583,7 +1603,7 @@ pushdown(const sym_t *sym)
 	sym_t	*nsym;
 
 	h = hash(sym->s_name);
-	nsym = getblk(sizeof *nsym);
+	nsym = getblk(sizeof(*nsym));
 	lint_assert(sym->s_block_level <= block_level);
 	nsym->s_name = sym->s_name;
 	UNIQUE_CURR_POS(nsym->s_def_pos);

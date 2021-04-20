@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.90 2021/03/27 12:42:22 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.100 2021/04/18 17:47:32 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -57,10 +57,15 @@
 
 /*
  * Describes the position of a declaration or anything else.
+ *
+ * FIXME: Just a single file:lineno pair is not enough to accurately describe
+ *  the position of a symbol.  The whole inclusion path at that point must be
+ *  stored as well.  This makes a difference for symbols from included
+ *  headers, see print_stack_trace.
  */
 typedef struct {
-	int	p_line;
 	const	char *p_file;
+	int	p_line;
 	int	p_uniq;			/* uniquifier */
 } pos_t;
 
@@ -71,7 +76,7 @@ typedef struct {
 		curr_pos.p_uniq++;					\
 		if (curr_pos.p_file == csrc_pos.p_file)			\
 			csrc_pos.p_uniq++;				\
-	} while (/*CONSTCOND*/false)
+	} while (false)
 
 /*
  * Strings cannot be referenced to simply by a pointer to its first
@@ -145,10 +150,10 @@ typedef	struct {
 } enumeration;
 
 /*
- * Types are represented by concatenation of structures of type type_t
- * via t_subt.
+ * The type of an expression or object. Complex types are formed via t_subt
+ * (for arrays, pointers and functions), as well as t_str.
  */
-struct type {
+struct lint1_type {
 	tspec_t	t_tspec;	/* type specifier */
 	bool	t_incomplete_array : 1;
 	bool	t_const : 1;	/* const modifier */
@@ -169,8 +174,9 @@ struct type {
 		u_int	_t_flen : 8;	/* length of bit-field */
 		u_int	_t_foffs : 24;	/* offset of bit-field */
 	} t_b;
-	struct	type *t_subt;	/* element type (arrays), return value
-				   (functions), or type pointer points to */
+	struct	lint1_type *t_subt; /* element type (if ARRAY),
+				 * return value (if FUNC),
+				 * target type (if PTR) */
 };
 
 #define	t_dim	t_u._t_dim
@@ -301,10 +307,10 @@ typedef	struct tnode {
 	} tn_u;
 } tnode_t;
 
-#define	tn_left	tn_u.tn_s._tn_left
-#define tn_right tn_u.tn_s._tn_right
-#define tn_sym	tn_u._tn_sym
-#define	tn_val	tn_u._tn_val
+#define	tn_left		tn_u.tn_s._tn_left
+#define tn_right	tn_u.tn_s._tn_right
+#define tn_sym		tn_u._tn_sym
+#define	tn_val		tn_u._tn_val
 #define	tn_string	tn_u._tn_string
 
 /*
@@ -371,7 +377,8 @@ typedef	struct pqinf {
 } pqinf_t;
 
 /*
- * Case values are stored in a list of type case_label_t.
+ * The values of the 'case' labels, linked via cl_next in reverse order of
+ * appearance in the code, that is from bottom to top.
  */
 typedef	struct case_label {
 	val_t	cl_val;
@@ -411,7 +418,7 @@ typedef struct control_statement {
 	type_t	*c_switch_type;		/* type of switch expression */
 	case_label_t *c_case_labels;	/* list of case values */
 
-	struct	mbl *c_for_expr3_mem;	/* saved memory for end of loop
+	struct	memory_block *c_for_expr3_mem; /* saved memory for end of loop
 					 * expression in for() */
 	tnode_t	*c_for_expr3;		/* end of loop expr in for() */
 	pos_t	c_for_expr3_pos;	/* position of end of loop expr */
@@ -449,7 +456,7 @@ typedef	struct err_set {
 	do {								\
 		if (!(cond))						\
 			assert_failed(__FILE__, __LINE__, __func__, #cond); \
-	} while (/*CONSTCOND*/false)
+	} while (false)
 
 #ifdef BLKDEBUG
 #define ZERO	0xa5
@@ -469,17 +476,31 @@ check_printf(const char *fmt, ...)
 {
 }
 
-#  define wrap_check_printf(func, id, args...)				\
+#  define wrap_check_printf_at(func, msgid, pos, args...)		\
 	do {								\
-		check_printf(__CONCAT(MSG_, id), ##args);		\
-		(func)(id, ##args);					\
-	} while (/*CONSTCOND*/false)
+		check_printf(__CONCAT(MSG_, msgid), ##args);		\
+		(func)(msgid, pos, ##args);				\
+	} while (false)
 
-#  define error(id, args...) wrap_check_printf(error, id, ##args)
-#  define warning(id, args...) wrap_check_printf(warning, id, ##args)
-#  define message(id, args...) wrap_check_printf(message, id, ##args)
-#  define gnuism(id, args...) wrap_check_printf(gnuism, id, ##args)
-#  define c99ism(id, args...) wrap_check_printf(c99ism, id, ##args)
+#  define error_at(msgid, pos, args...) \
+	wrap_check_printf_at(error_at, msgid, pos, ##args)
+#  define warning_at(msgid, pos, args...) \
+	wrap_check_printf_at(warning_at, msgid, pos, ##args)
+#  define message_at(msgid, pos, args...) \
+	wrap_check_printf_at(message_at, msgid, pos, ##args)
+
+#  define wrap_check_printf(func, msgid, args...)			\
+	do {								\
+		check_printf(__CONCAT(MSG_, msgid), ##args);		\
+		(func)(msgid, ##args);					\
+	} while (false)
+
+#  define error(msgid, args...) wrap_check_printf(error, msgid, ##args)
+#  define warning(msgid, args...) wrap_check_printf(warning, msgid, ##args)
+#  define message(msgid, args...) wrap_check_printf(message, msgid, ##args)
+#  define gnuism(msgid, args...) wrap_check_printf(gnuism, msgid, ##args)
+#  define c99ism(msgid, args...) wrap_check_printf(c99ism, msgid, ##args)
+#  define c11ism(msgid, args...) wrap_check_printf(c11ism, msgid, ##args)
 #endif
 
 static inline bool
