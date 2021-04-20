@@ -1,4 +1,4 @@
-/*	$NetBSD: print.c,v 1.132 2019/06/19 21:25:50 kamil Exp $	*/
+/*	$NetBSD: print.c,v 1.135 2021/04/17 08:35:33 maya Exp $	*/
 
 /*
  * Copyright (c) 2000, 2007 The NetBSD Foundation, Inc.
@@ -63,7 +63,7 @@
 #if 0
 static char sccsid[] = "@(#)print.c	8.6 (Berkeley) 4/16/94";
 #else
-__RCSID("$NetBSD: print.c,v 1.132 2019/06/19 21:25:50 kamil Exp $");
+__RCSID("$NetBSD: print.c,v 1.135 2021/04/17 08:35:33 maya Exp $");
 #endif
 #endif /* not lint */
 
@@ -108,6 +108,14 @@ static time_t now;
 #ifndef LSDEAD
 #define LSDEAD 6
 #endif
+
+static void __attribute__((__format__(__strftime__, 3, 0)))
+safe_strftime(char *buf, size_t bufsiz, const char *fmt,
+    const struct tm *tp)
+{
+	if (tp == NULL || strftime(buf, bufsiz, fmt, tp) == 0)
+		strlcpy(buf, "-", sizeof(buf));
+}
 
 static int
 iwidth(u_int64_t v)
@@ -792,13 +800,11 @@ started(struct pinfo *pi, VARENT *ve, enum mode mode)
 	if (now == 0)
 		(void)time(&now);
 	if (now - k->p_ustart_sec < SECSPERDAY)
-		/* I *hate* SCCS... */
-		(void)strftime(buf, sizeof(buf) - 1, "%l:%" "M%p", tp);
+		safe_strftime(buf, sizeof(buf) - 1, "%l:%M%p", tp);
 	else if (now - k->p_ustart_sec < DAYSPERWEEK * SECSPERDAY)
-		/* I *hate* SCCS... */
-		(void)strftime(buf, sizeof(buf) - 1, "%a%" "I%p", tp);
+		safe_strftime(buf, sizeof(buf) - 1, "%a%I%p", tp);
 	else
-		(void)strftime(buf, sizeof(buf) - 1, "%e%b%y", tp);
+		safe_strftime(buf, sizeof(buf) - 1, "%e%b%y", tp);
 	/* %e and %l can start with a space. */
 	cp = buf;
 	if (*cp == ' ')
@@ -815,23 +821,31 @@ lstarted(struct pinfo *pi, VARENT *ve, enum mode mode)
 	char buf[100];
 
 	v = ve->var;
-	if (!k->p_uvalid) {
-		/*
-		 * Minimum width is less than header - we don't
-		 * need to check it every time.
-		 */
-		if (mode == PRINTMODE)
-			(void)printf("%*s", v->width, "-");
-		return;
-	}
 	startt = k->p_ustart_sec;
 
-	/* assume all times are the same length */
-	if (mode != WIDTHMODE || v->width == 0) {
-		(void)strftime(buf, sizeof(buf) -1, "%c",
-		    localtime(&startt));
-		strprintorsetwidth(v, buf, mode);
+	if (mode == WIDTHMODE) {
+		/*
+		 * We only need to set the width once, as we assume
+		 * that all times are the same length.  We do need to
+		 * check against the header length as well, as "no
+		 * header" mode for this variable will set the field
+		 * width to the length of the header anyway (ref: the
+		 * P1003.1-2004 comment in findvar()).
+		 *
+		 * XXX: The hardcoded "STARTED" string.  Better or
+		 * worse than a "<= 7" or some other arbitary number?
+		 */
+		if (v->width > (int)sizeof("STARTED") - 1) {
+			return;
+		}
+	} else {
+		if (!k->p_uvalid) {
+			(void)printf("%*s", v->width, "-");
+			return;
+		}
 	}
+	safe_strftime(buf, sizeof(buf) - 1, "%c", localtime(&startt));
+	strprintorsetwidth(v, buf, mode);
 }
 
 void

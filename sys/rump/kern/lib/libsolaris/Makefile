@@ -1,5 +1,9 @@
-#	$NetBSD: Makefile,v 1.4 2018/05/28 21:05:02 chs Exp $
+#	$NetBSD: Makefile,v 1.6 2021/04/15 17:31:44 christos Exp $
 #
+
+NEED_ISYSTEM=	# Tell rump that we must use -isystem
+
+.include <bsd.init.mk>
 
 S!=             cd ${.PARSEDIR}/../../../../;pwd
 

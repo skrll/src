@@ -1,4 +1,4 @@
-/*	$NetBSD: d_c99_init.c,v 1.30 2021/04/01 14:20:30 rillig Exp $	*/
+/*	$NetBSD: d_c99_init.c,v 1.33 2021/04/09 23:03:26 rillig Exp $	*/
 # 3 "d_c99_init.c"
 
 /*
@@ -185,7 +185,7 @@ struct point points[] = {
 		 * extend_if_array_of_unknown_size, setcomplete is called too
 		 * early.
 		 */
-		sizeof points,
+		sizeof(points),
 		4
 	}
 };
@@ -237,8 +237,8 @@ char prefixed_message[] = {
 };
 
 char message_with_suffix[] = {
-	"message",		/* expect: illegal combination */
-	/* */
+	"message",
+	/* The excess character is not detected by lint but by compilers. */
 	'\n',
 };
 
@@ -384,4 +384,10 @@ int designator_for_scalar = {
 struct point designator_for_scalar_in_struct = {
 	{ .x = 3 },		/* expect: scalar type cannot use designator */
 	{ [1] = 4 },		/* expect: scalar type cannot use designator */
+};
+
+
+/* Seen in pcidevs_data.h, variable 'pci_words'. */
+const char string_initialized_with_braced_literal[] = {
+	"initializer",
 };
