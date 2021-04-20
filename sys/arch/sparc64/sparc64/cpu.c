@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.138 2020/08/07 14:20:08 fcambus Exp $ */
+/*	$NetBSD: cpu.c,v 1.140 2021/04/05 22:36:27 nakayama Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -52,7 +52,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.138 2020/08/07 14:20:08 fcambus Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.140 2021/04/05 22:36:27 nakayama Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -95,6 +95,7 @@ struct cpu_bootargs *cpu_args;	/* allocated very early in pmap_bootstrap. */
 struct pool_cache *fpstate_cache;
 
 static struct cpu_info *alloc_cpuinfo(u_int);
+static void cpu_idle_sun4v(void);
 
 /* The following are used externally (sysctl_hw). */
 char	machine[] = MACHINE;		/* from <machine/param.h> */
@@ -695,7 +696,19 @@ cpu_attach(device_t parent, device_t dev, void *aux)
 		ci->ci_cpuset = pa;
 		pa += 64;
 	}
-	
+
+	/*
+	 * cpu_idle setup (currently only necessary for sun4v)
+	 */
+	if (CPU_ISSUN4V) {
+		ci->ci_idlespin = cpu_idle_sun4v;
+	}
+}
+
+static void
+cpu_idle_sun4v(void)
+{
+	hv_cpu_yield();
 }
 
 int

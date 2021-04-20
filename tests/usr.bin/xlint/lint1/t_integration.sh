@@ -1,4 +1,4 @@
-# $NetBSD: t_integration.sh,v 1.37 2021/03/28 14:01:50 rillig Exp $
+# $NetBSD: t_integration.sh,v 1.43 2021/04/18 20:02:56 rillig Exp $
 #
 # Copyright (c) 2008, 2010 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -57,16 +57,27 @@ check_lint1()
 {
 	local src="$(atf_get_srcdir)/$1"
 	local exp="${src%.c}.exp"
+	local src_ln="${src%.c}.ln"
+	local wrk_ln="${1%.c}.ln"
 	local flags="$(extract_flags "${src}")"
+
+	if [ ! -f "${src_ln}" ]; then
+		src_ln="/dev/null"
+		wrk_ln="/dev/null"
+	fi
 
 	if [ -f "${exp}" ]; then
 		# shellcheck disable=SC2086
 		atf_check -s not-exit:0 -o "file:${exp}" -e empty \
-		    ${LINT1} ${flags} "${src}" /dev/null
+		    ${LINT1} ${flags} "${src}" "${wrk_ln}"
 	else
 		# shellcheck disable=SC2086
 		atf_check -s exit:0 \
-		    ${LINT1} ${flags} "${src}" /dev/null
+		    ${LINT1} ${flags} "${src}" "${wrk_ln}"
+	fi
+
+	if [ "${src_ln}" != "/dev/null" ]; then
+		atf_check -o "file:${src_ln}" cat "${wrk_ln}"
 	fi
 }
 
@@ -166,6 +177,14 @@ test_case d_type_conv3
 test_case d_incorrect_array_size
 test_case d_long_double_int
 
+test_case emit
+
+test_case gcc_init_compound_literal
+
+test_case op_colon
+
+test_case feat_stacktrace
+
 test_case all_messages
 all_messages_body()
 {
@@ -173,7 +192,7 @@ all_messages_body()
 
 	failed=""
 
-	for msg in $(seq 0 340); do
+	for msg in $(seq 0 343); do
 		name="$(printf 'msg_%03d.c' "${msg}")"
 		check_lint1 "${name}" \
 		|| failed="$failed${failed:+ }$name"

@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.99 2021/03/30 15:18:19 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.116 2021/04/18 17:36:18 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.99 2021/03/30 15:18:19 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.116 2021/04/18 17:36:18 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -53,7 +53,7 @@ int	nerr;
 int	sytxerr;
 
 
-const	char *msgs[] = {
+const char *const msgs[] = {
 	"empty declaration",					      /* 0 */
 	"old style declaration; add 'int'",			      /* 1 */
 	"empty declaration",					      /* 2 */
@@ -176,7 +176,7 @@ const	char *msgs[] = {
 	"conversion of '%s' to '%s' is out of range",		      /* 119 */
 	"bitwise '%s' on signed value nonportable",		      /* 120 */
 	"negative shift",					      /* 121 */
-	"shift greater than size of object",			      /* 122 */
+	"shift amount %llu is greater than bit-size %llu of '%s'",    /* 122 */
 	"illegal combination of %s (%s) and %s (%s), op %s",	      /* 123 */
 	"illegal pointer combination (%s) and (%s), op %s",	      /* 124 */
 	"ANSI C forbids ordered comparisons of pointers to functions",/* 125 */
@@ -245,8 +245,8 @@ const	char *msgs[] = {
 	"no automatic aggregate initialization in traditional C",     /* 188 */
 	"",			/* no longer used */		      /* 189 */
 	"empty array declaration: %s",				      /* 190 */
-	"%s set but not used in function %s",			      /* 191 */
-	"%s unused in function %s",				      /* 192 */
+	"'%s' set but not used in function '%s'",		      /* 191 */
+	"'%s' unused in function '%s'",				      /* 192 */
 	"statement not reached",				      /* 193 */
 	"label %s redefined",					      /* 194 */
 	"case not in switch",					      /* 195 */
@@ -285,7 +285,7 @@ const	char *msgs[] = {
 	"function cannot return const or volatile object",	      /* 228 */
 	"converting '%s' to '%s' is questionable",		      /* 229 */
 	"nonportable character comparison, op %s",		      /* 230 */
-	"argument %s unused in function %s",			      /* 231 */
+	"argument '%s' unused in function '%s'",		      /* 231 */
 	"label %s unused in function %s",			      /* 232 */
 	"struct %s never defined",				      /* 233 */
 	"union %s never defined",				      /* 234 */
@@ -293,7 +293,7 @@ const	char *msgs[] = {
 	"static function %s unused",				      /* 236 */
 	"redeclaration of formal parameter %s",			      /* 237 */
 	"initialization of union is illegal in traditional C",	      /* 238 */
-	"constant argument to NOT",				      /* 239 */
+	"constant argument to '!'",				      /* 239 */
 	"assignment of different structures (%s != %s)",	      /* 240 */
 	"dubious operation on enum, op %s",			      /* 241 */
 	"combination of '%s' and '%s', op %s",			      /* 242 */
@@ -395,7 +395,59 @@ const	char *msgs[] = {
 	"option '%c' should be handled in the switch",		      /* 338 */
 	"option '%c' should be listed in the options string",	      /* 339 */
 	"initialization with '[a...b]' is a GNU extension",	      /* 340 */
+	"argument to '%s' must be 'unsigned char' or EOF, not '%s'",  /* 341 */
+	"argument to '%s' must be cast to 'unsigned char', not to '%s'", /* 342 */
+	"static array size is a C11 extension",			      /* 343 */
 };
+
+static struct include_level {
+	const char *filename;
+	int lineno;
+	struct include_level *by;
+} *includes;
+
+
+void
+update_location(const char *filename, int lineno, bool is_begin, bool is_end)
+{
+	struct include_level *top;
+
+	top = includes;
+	if (is_begin && top != NULL)
+		top->lineno = curr_pos.p_line;
+
+	if (top == NULL || is_begin) {
+		top = xmalloc(sizeof(*top));
+		top->filename = filename;
+		top->lineno = lineno;
+		top->by = includes;
+		includes = top;
+	} else {
+		if (is_end) {
+			includes = top->by;
+			free(top);
+			top = includes;
+		}
+		top->filename = filename;
+		top->lineno = lineno;
+	}
+}
+
+static void
+print_stack_trace(void)
+{
+	const struct include_level *top;
+
+	if ((top = includes) == NULL)
+		return;
+	/*
+	 * Skip the innermost include level since it is already listed in the
+	 * diagnostic itself.  Furthermore, its lineno is the line number of
+	 * the last '#' line, not the current line.
+	 */
+	for (top = top->by; top != NULL; top = top->by)
+		printf("\tincluded from %s(%d)\n", top->filename, top->lineno);
+}
 
 /*
  * print a list of the messages with their ids
@@ -405,7 +457,7 @@ msglist(void)
 {
 	size_t i;
 
-	for (i = 0; i < sizeof msgs / sizeof msgs[0]; i++)
+	for (i = 0; i < sizeof(msgs) / sizeof(msgs[0]); i++)
 		printf("%zu\t%s\n", i, msgs[i]);
 }
 
@@ -432,50 +484,77 @@ lbasename(const char *path)
 }
 
 static void
-verror(int n, va_list ap)
+verror_at(int msgid, const pos_t *pos, va_list ap)
 {
 	const	char *fn;
 
-	if (ERR_ISSET(n, &msgset))
+	if (ERR_ISSET(msgid, &msgset))
 		return;
 
-	fn = lbasename(curr_pos.p_file);
-	(void)printf("%s(%d): error: ", fn, curr_pos.p_line);
-	(void)vprintf(msgs[n], ap);
-	(void)printf(" [%d]\n", n);
+	fn = lbasename(pos->p_file);
+	(void)printf("%s(%d): error: ", fn, pos->p_line);
+	(void)vprintf(msgs[msgid], ap);
+	(void)printf(" [%d]\n", msgid);
 	nerr++;
+	print_stack_trace();
 }
 
 static void
-vwarning(int n, va_list ap)
+vwarning_at(int msgid, const pos_t *pos, va_list ap)
 {
 	const	char *fn;
 
-	if (ERR_ISSET(n, &msgset))
+	if (ERR_ISSET(msgid, &msgset))
 		return;
 
 #ifdef DEBUG
-	printf("%s: lwarn=%d n=%d\n", __func__, lwarn, n);
+	printf("%s: lwarn=%d msgid=%d\n", __func__, lwarn, msgid);
 #endif
-	if (lwarn == LWARN_NONE || lwarn == n)
+	if (lwarn == LWARN_NONE || lwarn == msgid)
 		/* this warning is suppressed by a LINTED comment */
 		return;
 
-	fn = lbasename(curr_pos.p_file);
-	(void)printf("%s(%d): warning: ", fn, curr_pos.p_line);
-	(void)vprintf(msgs[n], ap);
-	(void)printf(" [%d]\n", n);
+	fn = lbasename(pos->p_file);
+	(void)printf("%s(%d): warning: ", fn, pos->p_line);
+	(void)vprintf(msgs[msgid], ap);
+	(void)printf(" [%d]\n", msgid);
 	if (wflag)
 		nerr++;
+	print_stack_trace();
+}
+
+static void
+vmessage_at(int msgid, const pos_t *pos, va_list ap)
+{
+	const char *fn;
+
+	if (ERR_ISSET(msgid, &msgset))
+		return;
+
+	fn = lbasename(pos->p_file);
+	(void)printf("%s(%d): ", fn, pos->p_line);
+	(void)vprintf(msgs[msgid], ap);
+	(void)printf(" [%d]\n", msgid);
+	print_stack_trace();
 }
 
 void
-(error)(int n, ...)
+(error_at)(int msgid, const pos_t *pos, ...)
 {
 	va_list	ap;
 
-	va_start(ap, n);
-	verror(n, ap);
+	va_start(ap, pos);
+	verror_at(msgid, pos, ap);
+	va_end(ap);
+}
+
+void
+(error)(int msgid, ...)
+{
+	va_list	ap;
+
+	va_start(ap, msgid);
+	verror_at(msgid, &curr_pos, ap);
 	va_end(ap);
 }
 
@@ -492,6 +571,7 @@ internal_error(const char *file, int line, const char *msg, ...)
 	(void)vfprintf(stderr, msg, ap);
 	va_end(ap);
 	(void)fprintf(stderr, "\n");
+	print_stack_trace();
 	abort();
 }
 
@@ -504,33 +584,47 @@ assert_failed(const char *file, int line, const char *func, const char *cond)
 	(void)fprintf(stderr,
 	    "lint: assertion \"%s\" failed in %s at %s:%d near %s:%d\n",
 	    cond, func, file, line, fn, curr_pos.p_line);
+	print_stack_trace();
 	abort();
 }
 
 void
-(warning)(int n, ...)
+(warning_at)(int msgid, const pos_t *pos, ...)
 {
 	va_list	ap;
 
-	va_start(ap, n);
-	vwarning(n, ap);
+	va_start(ap, pos);
+	vwarning_at(msgid, pos, ap);
 	va_end(ap);
 }
 
 void
-(message)(int n, ...)
+(warning)(int msgid, ...)
 {
 	va_list	ap;
-	const	char *fn;
 
-	if (ERR_ISSET(n, &msgset))
-		return;
+	va_start(ap, msgid);
+	vwarning_at(msgid, &curr_pos, ap);
+	va_end(ap);
+}
 
-	va_start(ap, n);
-	fn = lbasename(curr_pos.p_file);
-	(void)printf("%s(%d): ", fn, curr_pos.p_line);
-	(void)vprintf(msgs[n], ap);
-	(void)printf(" [%d]\n", n);
+void
+(message_at)(int msgid, const pos_t *pos, ...)
+{
+	va_list ap;
+
+	va_start(ap, pos);
+	vmessage_at(msgid, pos, ap);
+	va_end(ap);
+}
+
+void
+(message)(int msgid, ...)
+{
+	va_list	ap;
+
+	va_start(ap, msgid);
+	vmessage_at(msgid, &curr_pos, ap);
 	va_end(ap);
 }
 
@@ -541,30 +635,42 @@ void
  * "right"... [perry, 2 Nov 2002]
 */
 void
-(c99ism)(int n, ...)
+(c99ism)(int msgid, ...)
 {
 	va_list	ap;
 	bool extensions_ok = Sflag || gflag;
 
-	va_start(ap, n);
+	va_start(ap, msgid);
 	if (sflag && !extensions_ok) {
-		verror(n, ap);
+		verror_at(msgid, &curr_pos, ap);
 	} else if (sflag || !extensions_ok) {
-		vwarning(n, ap);
+		vwarning_at(msgid, &curr_pos, ap);
 	}
 	va_end(ap);
 }
 
 void
-(gnuism)(int n, ...)
+(c11ism)(int msgid, ...)
 {
 	va_list	ap;
 
-	va_start(ap, n);
+	if (c11flag || gflag)
+		return;
+	va_start(ap, msgid);
+	verror_at(msgid, &curr_pos, ap);
+	va_end(ap);
+}
+
+void
+(gnuism)(int msgid, ...)
+{
+	va_list	ap;
+
+	va_start(ap, msgid);
 	if (sflag && !gflag) {
-		verror(n, ap);
+		verror_at(msgid, &curr_pos, ap);
 	} else if (sflag || !gflag) {
-		vwarning(n, ap);
+		vwarning_at(msgid, &curr_pos, ap);
 	}
 	va_end(ap);
 }

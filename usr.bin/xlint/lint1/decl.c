@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.167 2021/03/30 14:25:28 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.178 2021/04/18 17:36:18 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.167 2021/03/30 14:25:28 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.178 2021/04/18 17:36:18 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -91,7 +91,7 @@ initdecl(void)
 	int i;
 
 	/* declaration stack */
-	dcs = xcalloc(1, sizeof *dcs);
+	dcs = xcalloc(1, sizeof(*dcs));
 	dcs->d_ctx = EXTERN;
 	dcs->d_ldlsym = &dcs->d_dlsyms;
 
@@ -99,7 +99,7 @@ initdecl(void)
 	inittyp();
 
 	/* shared type structures */
-	typetab = xcalloc(NTSPEC, sizeof *typetab);
+	typetab = xcalloc(NTSPEC, sizeof(*typetab));
 	for (i = 0; i < NTSPEC; i++)
 		typetab[i].t_tspec = NOTSPEC;
 	typetab[BOOL].t_tspec = BOOL;
@@ -133,18 +133,20 @@ initdecl(void)
 /*
  * Returns a shared type structure for arithmetic types and void.
  *
- * It's important to duplicate this structure (using duptyp() or tduptyp())
- * if it is to be modified (adding qualifiers or anything else).
+ * It's important to duplicate this structure (using dup_type() or
+ * expr_dup_type()) if it is to be modified (adding qualifiers or anything
+ * else).
  */
 type_t *
 gettyp(tspec_t t)
 {
 
+	/* TODO: make the return type 'const' */
 	return &typetab[t];
 }
 
 type_t *
-duptyp(const type_t *tp)
+dup_type(const type_t *tp)
 {
 	type_t	*ntp;
 
@@ -154,15 +156,15 @@ duptyp(const type_t *tp)
 }
 
 /*
- * Use tduptyp() instead of duptyp() inside expressions (if the
+ * Use expr_dup_type() instead of dup_type() inside expressions (if the
  * allocated memory should be freed after the expr).
  */
 type_t *
-tduptyp(const type_t *tp)
+expr_dup_type(const type_t *tp)
 {
 	type_t	*ntp;
 
-	ntp = tgetblk(sizeof *ntp);
+	ntp = expr_zalloc(sizeof(*ntp));
 	*ntp = *tp;
 	return ntp;
 }
@@ -394,7 +396,7 @@ tdeferr(type_t *td, tspec_t t)
 			if (!tflag)
 				/* modifying typedef with '%s'; only ... */
 				warning(5, ttab[t].tt_name);
-			td = duptyp(gettyp(merge_type_specifiers(t2, t)));
+			td = dup_type(gettyp(merge_type_specifiers(t2, t)));
 			td->t_typedef = true;
 			return td;
 		}
@@ -403,7 +405,7 @@ tdeferr(type_t *td, tspec_t t)
 		if (t2 == INT || t2 == UINT) {
 			/* modifying typedef with '%s'; only qualifiers ... */
 			warning(5, "short");
-			td = duptyp(gettyp(t2 == INT ? SHORT : USHORT));
+			td = dup_type(gettyp(t2 == INT ? SHORT : USHORT));
 			td->t_typedef = true;
 			return td;
 		}
@@ -428,7 +430,7 @@ tdeferr(type_t *td, tspec_t t)
 			} else if (t2 == DCOMPLEX) {
 				td = gettyp(LCOMPLEX);
 			}
-			td = duptyp(td);
+			td = dup_type(td);
 			td->t_typedef = true;
 			return td;
 		}
@@ -593,7 +595,7 @@ begin_declaration_level(scl_t sc)
 	dinfo_t	*di;
 
 	/* put a new element on the declaration stack */
-	di = xcalloc(1, sizeof *di);
+	di = xcalloc(1, sizeof(*di));
 	di->d_next = dcs;
 	dcs = di;
 	di->d_ctx = sc;
@@ -857,7 +859,7 @@ deftyp(void)
 	}
 
 	if (dcs->d_const || dcs->d_volatile) {
-		dcs->d_type = duptyp(dcs->d_type);
+		dcs->d_type = dup_type(dcs->d_type);
 		dcs->d_type->t_const |= dcs->d_const;
 		dcs->d_type->t_volatile |= dcs->d_volatile;
 	}
@@ -1015,9 +1017,9 @@ check_type(sym_t *sym)
 				/* function returns illegal type */
 				error(15);
 				if (t == FUNC) {
-					*tpp = incref(*tpp, PTR);
+					*tpp = derive_type(*tpp, PTR);
 				} else {
-					*tpp = incref((*tpp)->t_subt, PTR);
+					*tpp = derive_type((*tpp)->t_subt, PTR);
 				}
 				return;
 			} else if (tp->t_const || tp->t_volatile) {
@@ -1123,7 +1125,7 @@ declare_bit_field(sym_t *dsym, tspec_t *inout_t, type_t **const inout_tp)
 			/* illegal bit-field type '%s' */
 			warning(35, type_name(tp));
 			int sz = tp->t_flen;
-			dsym->s_type = tp = duptyp(gettyp(t = INT));
+			dsym->s_type = tp = dup_type(gettyp(t = INT));
 			if ((tp->t_flen = sz) > size_in_bits(t))
 				tp->t_flen = size_in_bits(t);
 		}
@@ -1183,7 +1185,7 @@ declarator_1_struct_union(sym_t *dsym)
 	} else if (t == FUNC) {
 		/* function illegal in structure or union */
 		error(38);
-		dsym->s_type = tp = incref(tp, t = PTR);
+		dsym->s_type = tp = derive_type(tp, t = PTR);
 	}
 
 	/*
@@ -1260,14 +1262,14 @@ bitfield(sym_t *dsym, int len)
 {
 
 	if (dsym == NULL) {
-		dsym = getblk(sizeof *dsym);
+		dsym = getblk(sizeof(*dsym));
 		dsym->s_name = unnamed;
 		dsym->s_kind = FMEMBER;
 		dsym->s_scl = MOS;
 		dsym->s_type = gettyp(UINT);
 		dsym->s_block_level = -1;
 	}
-	dsym->s_type = duptyp(dsym->s_type);
+	dsym->s_type = dup_type(dsym->s_type);
 	dsym->s_type->t_bitfield = true;
 	dsym->s_type->t_flen = len;
 	dsym->s_bitfield = true;
@@ -1332,7 +1334,7 @@ add_pointer(sym_t *decl, pqinf_t *pi)
 		return decl;
 
 	while (pi != NULL) {
-		*tpp = tp = getblk(sizeof *tp);
+		*tpp = tp = getblk(sizeof(*tp));
 		tp->t_tspec = PTR;
 		tp->t_const = pi->p_const;
 		tp->t_volatile = pi->p_volatile;
@@ -1359,7 +1361,7 @@ add_array(sym_t *decl, bool dim, int n)
 	if (*tpp == NULL)
 	    return decl;
 
-	*tpp = tp = getblk(sizeof *tp);
+	*tpp = tp = getblk(sizeof(*tp));
 	tp->t_tspec = ARRAY;
 	tp->t_subt = dcs->d_type;
 	tp->t_dim = n;
@@ -1414,7 +1416,7 @@ add_function(sym_t *decl, sym_t *args)
 	if (*tpp == NULL)
 	    return decl;
 
-	*tpp = tp = getblk(sizeof *tp);
+	*tpp = tp = getblk(sizeof(*tp));
 	tp->t_tspec = FUNC;
 	tp->t_subt = dcs->d_next->d_type;
 	if ((tp->t_proto = dcs->d_proto) != false)
@@ -1668,19 +1670,19 @@ mktag(sym_t *tag, tspec_t kind, bool decl, bool semi)
 		}
 		if (tag->s_scl == NOSCL) {
 			tag->s_scl = scl;
-			tag->s_type = tp = getblk(sizeof *tp);
+			tag->s_type = tp = getblk(sizeof(*tp));
 			tp->t_packed = dcs->d_packed;
 		} else {
 			tp = tag->s_type;
 		}
 	} else {
-		tag = getblk(sizeof *tag);
+		tag = getblk(sizeof(*tag));
 		tag->s_name = unnamed;
 		UNIQUE_CURR_POS(tag->s_def_pos);
 		tag->s_kind = FTAG;
 		tag->s_scl = scl;
 		tag->s_block_level = -1;
-		tag->s_type = tp = getblk(sizeof *tp);
+		tag->s_type = tp = getblk(sizeof(*tp));
 		tp->t_packed = dcs->d_packed;
 		dcs->d_next->d_nonempty_decl = true;
 	}
@@ -1688,12 +1690,12 @@ mktag(sym_t *tag, tspec_t kind, bool decl, bool semi)
 	if (tp->t_tspec == NOTSPEC) {
 		tp->t_tspec = kind;
 		if (kind != ENUM) {
-			tp->t_str = getblk(sizeof *tp->t_str);
+			tp->t_str = getblk(sizeof(*tp->t_str));
 			tp->t_str->sou_align_in_bits = CHAR_SIZE;
 			tp->t_str->sou_tag = tag;
 		} else {
 			tp->t_is_enum = true;
-			tp->t_enum = getblk(sizeof *tp->t_enum);
+			tp->t_enum = getblk(sizeof(*tp->t_enum));
 			tp->t_enum->en_tag = tag;
 		}
 		setcomplete(tp, false);
@@ -2016,7 +2018,7 @@ declare_extern(sym_t *dsym, bool initflg, sbuf_t *renaming)
 	}
 
 	if (dsym->s_scl == TYPEDEF) {
-		dsym->s_type = duptyp(dsym->s_type);
+		dsym->s_type = dup_type(dsym->s_type);
 		dsym->s_type->t_typedef = true;
 		settdsym(dsym->s_type, dsym);
 	}
@@ -2368,13 +2370,13 @@ complete_type(sym_t *dsym, sym_t *ssym)
 		lint_assert(dst->t_tspec == src->t_tspec);
 		if (dst->t_tspec == ARRAY) {
 			if (dst->t_dim == 0 && src->t_dim != 0) {
-				*dstp = dst = duptyp(dst);
+				*dstp = dst = dup_type(dst);
 				dst->t_dim = src->t_dim;
 				setcomplete(dst, true);
 			}
 		} else if (dst->t_tspec == FUNC) {
 			if (!dst->t_proto && src->t_proto) {
-				*dstp = dst = duptyp(dst);
+				*dstp = dst = dup_type(dst);
 				dst->t_proto = true;
 				dst->t_args = src->t_args;
 			}
@@ -2416,12 +2418,12 @@ declare_argument(sym_t *sym, bool initflg)
 	}
 
 	if ((t = sym->s_type->t_tspec) == ARRAY) {
-		sym->s_type = incref(sym->s_type->t_subt, PTR);
+		sym->s_type = derive_type(sym->s_type->t_subt, PTR);
 	} else if (t == FUNC) {
 		if (tflag)
 			/* a function is declared as an argument: %s */
 			warning(50, sym->s_name);
-		sym->s_type = incref(sym->s_type, PTR);
+		sym->s_type = derive_type(sym->s_type, PTR);
 	} else if (t == FLOAT) {
 		if (tflag)
 			sym->s_type = gettyp(DOUBLE);
@@ -2753,7 +2755,7 @@ declare_local(sym_t *dsym, bool initflg)
 	}
 
 	if (dsym->s_scl == TYPEDEF) {
-		dsym->s_type = duptyp(dsym->s_type);
+		dsym->s_type = dup_type(dsym->s_type);
 		dsym->s_type->t_typedef = true;
 		settdsym(dsym->s_type, dsym);
 	}
@@ -2861,7 +2863,7 @@ abstract_name(void)
 
 	lint_assert(dcs->d_ctx == ABSTRACT || dcs->d_ctx == PROTO_ARG);
 
-	sym = getblk(sizeof *sym);
+	sym = getblk(sizeof(*sym));
 
 	sym->s_name = unnamed;
 	sym->s_def = DEF;
@@ -3006,26 +3008,18 @@ check_usage(dinfo_t *di)
 void
 check_usage_sym(bool novar, sym_t *sym)
 {
-	pos_t	cpos;
 
 	if (sym->s_block_level == -1)
 		return;
 
-	cpos = curr_pos;
-
-	if (sym->s_kind == FVFT) {
-		if (sym->s_arg) {
-			check_argument_usage(novar, sym);
-		} else {
-			check_variable_usage(novar, sym);
-		}
-	} else if (sym->s_kind == FLABEL) {
+	if (sym->s_kind == FVFT && sym->s_arg)
+		check_argument_usage(novar, sym);
+	else if (sym->s_kind == FVFT)
+		check_variable_usage(novar, sym);
+	else if (sym->s_kind == FLABEL)
 		check_label_usage(sym);
-	} else if (sym->s_kind == FTAG) {
+	else if (sym->s_kind == FTAG)
 		check_tag_usage(sym);
-	}
-
-	curr_pos = cpos;
 }
 
 static void
@@ -3038,9 +3032,8 @@ check_argument_usage(bool novar, sym_t *arg)
 		return;
 
 	if (!arg->s_used && vflag) {
-		curr_pos = arg->s_def_pos;
-		/* argument %s unused in function %s */
-		warning(231, arg->s_name, funcsym->s_name);
+		/* argument '%s' unused in function '%s' */
+		warning_at(231, &arg->s_def_pos, arg->s_name, funcsym->s_name);
 	}
 }
 
@@ -3071,19 +3064,19 @@ check_variable_usage(bool novar, sym_t *sym)
 
 	if (sc == EXTERN) {
 		if (!sym->s_used && !sym->s_set) {
-			curr_pos = sym->s_def_pos;
-			/* %s unused in function %s */
-			warning(192, sym->s_name, funcsym->s_name);
+			/* '%s' unused in function '%s' */
+			warning_at(192, &sym->s_def_pos,
+			    sym->s_name, funcsym->s_name);
 		}
 	} else {
 		if (sym->s_set && !sym->s_used) {
-			curr_pos = sym->s_set_pos;
-			/* %s set but not used in function %s */
-			warning(191, sym->s_name, funcsym->s_name);
+			/* '%s' set but not used in function '%s' */
+			warning_at(191, &sym->s_set_pos,
+			    sym->s_name, funcsym->s_name);
 		} else if (!sym->s_used) {
-			curr_pos = sym->s_def_pos;
-			/* %s unused in function %s */
-			warning(192, sym->s_name, funcsym->s_name);
+			/* '%s' unused in function '%s' */
+			warning_at(192, &sym->s_def_pos,
+			    sym->s_name, funcsym->s_name);
 		}
 	}
 
@@ -3119,13 +3112,11 @@ check_label_usage(sym_t *lab)
 	lint_assert(lab->s_block_level == 1);
 
 	if (lab->s_set && !lab->s_used) {
-		curr_pos = lab->s_set_pos;
 		/* label %s unused in function %s */
-		warning(232, lab->s_name, funcsym->s_name);
+		warning_at(232, &lab->s_set_pos, lab->s_name, funcsym->s_name);
 	} else if (!lab->s_set) {
-		curr_pos = lab->s_use_pos;
 		/* undefined label %s */
-		warning(23, lab->s_name);
+		warning_at(23, &lab->s_use_pos, lab->s_name);
 	}
 }
 
@@ -3140,19 +3131,18 @@ check_tag_usage(sym_t *sym)
 	if (!zflag || dcs->d_ctx != EXTERN)
 		return;
 
-	curr_pos = sym->s_def_pos;
 	switch (sym->s_type->t_tspec) {
 	case STRUCT:
 		/* struct %s never defined */
-		warning(233, sym->s_name);
+		warning_at(233, &sym->s_def_pos, sym->s_name);
 		break;
 	case UNION:
 		/* union %s never defined */
-		warning(234, sym->s_name);
+		warning_at(234, &sym->s_def_pos, sym->s_name);
 		break;
 	case ENUM:
 		/* enum %s never defined */
-		warning(235, sym->s_name);
+		warning_at(235, &sym->s_def_pos, sym->s_name);
 		break;
 	default:
 		lint_assert(/*CONSTCOND*/false);
@@ -3171,12 +3161,9 @@ void
 check_global_symbols(void)
 {
 	sym_t	*sym;
-	pos_t	cpos;
 
 	if (block_level != 0 || dcs->d_next != NULL)
 		norecover();
-
-	cpos = curr_pos;
 
 	for (sym = dcs->d_dlsyms; sym != NULL; sym = sym->s_dlnxt) {
 		if (sym->s_block_level == -1)
@@ -3189,29 +3176,26 @@ check_global_symbols(void)
 			lint_assert(sym->s_kind == FMEMBER);
 		}
 	}
-
-	curr_pos = cpos;
 }
 
 static void
 check_unused_static_global_variable(const sym_t *sym)
 {
-	curr_pos = sym->s_def_pos;
 	if (sym->s_type->t_tspec == FUNC) {
 		if (sym->s_def == DEF) {
 			if (!sym->s_inline)
 				/* static function %s unused */
-				warning(236, sym->s_name);
+				warning_at(236, &sym->s_def_pos, sym->s_name);
 		} else {
 			/* static function %s declared but not defined */
-			warning(290, sym->s_name);
+			warning_at(290, &sym->s_def_pos, sym->s_name);
 		}
 	} else if (!sym->s_set) {
 		/* static variable %s unused */
-		warning(226, sym->s_name);
+		warning_at(226, &sym->s_def_pos, sym->s_name);
 	} else {
 		/* static variable %s set but not used */
-		warning(307, sym->s_name);
+		warning_at(307, &sym->s_def_pos, sym->s_name);
 	}
 }
 
@@ -3219,18 +3203,16 @@ static void
 check_static_global_variable(const sym_t *sym)
 {
 	if (sym->s_type->t_tspec == FUNC && sym->s_used && sym->s_def != DEF) {
-		curr_pos = sym->s_use_pos;
 		/* static function called but not defined: %s() */
-		error(225, sym->s_name);
+		error_at(225, &sym->s_use_pos, sym->s_name);
 	}
 
 	if (!sym->s_used)
 		check_unused_static_global_variable(sym);
 
 	if (!tflag && sym->s_def == TDEF && sym->s_type->t_const) {
-		curr_pos = sym->s_def_pos;
 		/* const object %s should have initializer */
-		warning(227, sym->s_name);
+		warning_at(227, &sym->s_def_pos, sym->s_name);
 	}
 }
 
@@ -3255,6 +3237,8 @@ check_global_variable(const sym_t *sym)
 static void
 check_global_variable_size(const sym_t *sym)
 {
+	pos_t cpos;
+	int length_in_bits;
 
 	if (sym->s_def != TDEF)
 		return;
@@ -3265,15 +3249,19 @@ check_global_variable_size(const sym_t *sym)
 		 */
 		return;
 
+	cpos = curr_pos;
 	curr_pos = sym->s_def_pos;
-	if (length(sym->s_type, sym->s_name) == 0 &&
+	length_in_bits = length(sym->s_type, sym->s_name);
+	curr_pos = cpos;
+
+	if (length_in_bits == 0 &&
 	    sym->s_type->t_tspec == ARRAY && sym->s_type->t_dim == 0) {
 		if (tflag || (sym->s_scl == EXTERN && !sflag)) {
 			/* empty array declaration: %s */
-			warning(190, sym->s_name);
+			warning_at(190, &sym->s_def_pos, sym->s_name);
 		} else {
 			/* empty array declaration: %s */
-			error(190, sym->s_name);
+			error_at(190, &sym->s_def_pos, sym->s_name);
 		}
 	}
 }
@@ -3284,23 +3272,19 @@ check_global_variable_size(const sym_t *sym)
 void
 print_previous_declaration(int msg, const sym_t *psym)
 {
-	pos_t	cpos;
 
 	if (!rflag)
 		return;
 
-	cpos = curr_pos;
-	curr_pos = psym->s_def_pos;
 	if (msg != -1) {
-		(message)(msg);
+		(message_at)(msg, &psym->s_def_pos);
 	} else if (psym->s_def == DEF || psym->s_def == TDEF) {
 		/* previous definition of %s */
-		message(261, psym->s_name);
+		message_at(261, &psym->s_def_pos, psym->s_name);
 	} else {
 		/* previous declaration of %s */
-		message(260, psym->s_name);
+		message_at(260, &psym->s_def_pos, psym->s_name);
 	}
-	curr_pos = cpos;
 }
 
 /*
@@ -3334,7 +3318,7 @@ to_int_constant(tnode_t *tn, bool required)
 	 * will be used later to match types.
 	 */
 	if (tn->tn_op != CON && dcs->d_ctx != ABSTRACT)
-		tfreeblk();
+		expr_free_all();
 
 	if ((t = v->v_tspec) == FLOAT || t == DOUBLE || t == LDOUBLE) {
 		i = (int)v->v_ldbl;

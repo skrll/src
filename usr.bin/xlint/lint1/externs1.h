@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.95 2021/03/30 14:25:28 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.108 2021/04/18 17:36:18 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,6 +37,7 @@
 extern	int	aflag;
 extern	bool	bflag;
 extern	bool	cflag;
+extern	bool	c11flag;
 extern	bool	dflag;
 extern	bool	eflag;
 extern	bool	Fflag;
@@ -105,29 +106,34 @@ extern	void	*getlblk(size_t, size_t);
 extern	void	freeblk(void);
 extern	void	freelblk(int);
 
-extern	void	*tgetblk(size_t);
-extern	tnode_t	*getnode(void);
-extern	void	tfreeblk(void);
-extern	struct	mbl *tsave(void);
-extern	void	trestor(struct mbl *);
+extern	void	*expr_zalloc(size_t);
+extern	tnode_t	*expr_zalloc_tnode(void);
+extern	void	expr_free_all(void);
+extern	struct	memory_block *expr_save_memory(void);
+extern	void	expr_restore_memory(struct memory_block *);
 
 /*
  * err.c
  */
 extern	int	nerr;
 extern	int	sytxerr;
-extern	const	char *msgs[];
+extern	const char *const msgs[];
 
 extern	void	msglist(void);
+extern	void	error_at(int, const pos_t *, ...);
+extern	void	warning_at(int, const pos_t *, ...);
+extern	void	message_at(int, const pos_t *, ...);
 extern	void	error(int, ...);
 extern	void	warning(int, ...);
 extern	void	message(int, ...);
 extern	void	gnuism(int, ...);
 extern	void	c99ism(int, ...);
+extern	void	c11ism(int, ...);
 extern	void	internal_error(const char *, int, const char *, ...)
      __attribute__((__noreturn__,__format__(__printf__, 3, 4)));
 extern	void	assert_failed(const char *, int, const char *, const char *)
 		__attribute__((__noreturn__));
+extern	void	update_location(const char *, int, bool, bool);
 
 /*
  * decl.c
@@ -138,8 +144,8 @@ extern	int	enumval;
 
 extern	void	initdecl(void);
 extern	type_t	*gettyp(tspec_t);
-extern	type_t	*duptyp(const type_t *);
-extern	type_t	*tduptyp(const type_t *);
+extern	type_t	*dup_type(const type_t *);
+extern	type_t	*expr_dup_type(const type_t *);
 extern	bool	is_incomplete(const type_t *);
 extern	void	setcomplete(type_t *, bool);
 extern	void	add_storage_class(scl_t);
@@ -196,9 +202,10 @@ extern	int	to_int_constant(tnode_t *, bool);
 /*
  * tree.c
  */
-extern	type_t	*incref(type_t *, tspec_t);
-extern	type_t	*tincref(type_t *, tspec_t);
-extern	tnode_t	*new_constant_node(type_t *, val_t *);
+extern	const tnode_t *before_conversion(const tnode_t *);
+extern	type_t	*derive_type(type_t *, tspec_t);
+extern	type_t	*expr_derive_type(type_t *, tspec_t);
+extern	tnode_t	*expr_new_constant(type_t *, val_t *);
 extern	tnode_t	*new_name_node(sym_t *, int);
 extern	tnode_t	*new_string_node(strg_t *);
 extern	sym_t	*struct_or_union_member(tnode_t *, op_t, sym_t *);
@@ -333,6 +340,19 @@ extern	int	lex_input(void);
  * print.c
  */
 extern	char	*print_tnode(char *, size_t, const tnode_t *);
+
+/*
+ * ckbool.c
+ */
+extern	bool	typeok_scalar_strict_bool(op_t, const mod_t *, int,
+		    const tnode_t *, const tnode_t *);
+extern	bool	fallback_symbol_strict_bool(sym_t *);
+
+/*
+ * ckctype.c
+ */
+extern	void	check_ctype_function_call(const tnode_t *, const tnode_t *);
+extern	void	check_ctype_macro_invocation(const tnode_t *, const tnode_t *);
 
 /*
  * ckgetopt.c
