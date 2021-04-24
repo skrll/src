@@ -1,0 +1,77 @@
+cp- "upstream"
+---------------
+https://source.codeaurora.org/external/qoriq/
+
+https://github.com/SolidRun/edk2-platforms/blob/696d322818631d25c2295173258b0ededd847607/Silicon/NXP/LX2160A/AcpiTables/Dsdt/Mc.asl
+https://github.com/SolidRun/edk2-platforms/blob/696d322818631d25c2295173258b0ededd847607/Silicon/NXP/LX2160A/AcpiTables/Dsdt/Mdio.asl
+https://github.com/SolidRun/edk2-platforms/blob/696d322818631d25c2295173258b0ededd847607/Silicon/NXP/LX2160A/Include/AcpiTablesInclude/Dsdt/Mc.asl
+https://github.com/SolidRun/edk2-platforms/blob/696d322818631d25c2295173258b0ededd847607/Silicon/NXP/LX2160A/Include/AcpiTablesInclude/Dsdt/Mdio.asl
+
+
+
+Linux directories
+-----------------
+
+nick@thinkbook:~/linux/linux$ find . -name "*[Dd][Pp][Aa][Aa]*"
+./arch/powerpc/configs/dpaa.config
+./Documentation/networking/device_drivers/ethernet/freescale/dpaa2
+./Documentation/networking/device_drivers/ethernet/freescale/dpaa.rst
+./Documentation/devicetree/bindings/misc/fsl,dpaa2-console.yaml
+./drivers/soc/fsl/dpaa2-console.c
+./drivers/soc/fsl/qbman/dpaa_sys.c
+./drivers/soc/fsl/qbman/dpaa_sys.h
+./drivers/dma/fsl-dpaa2-qdma
+./drivers/dma/fsl-dpaa2-qdma/dpaa2-qdma.h
+./drivers/dma/fsl-dpaa2-qdma/dpaa2-qdma.c
+./drivers/net/ethernet/freescale/dpaa2
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-eth-trace.h
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-eth.c
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-eth-devlink.c
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-ptp.h
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-eth-debugfs.h
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-ethtool.c
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-eth-dcb.c
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-mac.h
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-ptp.c
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-eth-debugfs.c
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-eth.h
+./drivers/net/ethernet/freescale/dpaa2/dpaa2-mac.c
+./drivers/net/ethernet/freescale/dpaa
+./drivers/net/ethernet/freescale/dpaa/dpaa_eth.c
+./drivers/net/ethernet/freescale/dpaa/dpaa_eth_sysfs.c
+./drivers/net/ethernet/freescale/dpaa/dpaa_eth.h
+./drivers/net/ethernet/freescale/dpaa/dpaa_ethtool.c
+./drivers/net/ethernet/freescale/dpaa/dpaa_eth_trace.h
+./drivers/staging/fsl-dpaa2
+./include/soc/fsl/dpaa2-global.h
+./include/soc/fsl/dpaa2-fd.h
+./include/soc/fsl/dpaa2-io.h
+nick@thinkbook:~/linux/linux$ 
+
+
+C symbol: match_id_table
+
+  File                                    Function         Line
+0 drivers/bus/fsl-mc/dprc-driver.c        <global>          833 static const struct fsl_mc_device_id match_id_table[] = {
+1 drivers/bus/fsl-mc/dprc-driver.c        <global>          846 .match_id_table = match_id_table,
+2 drivers/bus/fsl-mc/fsl-mc-allocator.c   <global>          635 static const struct fsl_mc_device_id match_id_table[] = {
+3 drivers/bus/fsl-mc/fsl-mc-allocator.c   <global>          656 .match_id_table = match_id_table,
+4 drivers/crypto/caam/caamalg_qi2.c       <global>         5510 .match_id_table = dpaa2_caam_match_id_table
+5 drivers/dma/fsl-dpaa2-qdma/dpaa2-qdma.c <global>          823 .match_id_table = dpaa2_qdma_id_table
+6 ethernet/freescale/dpaa2/dpaa2-eth.c    <global>         4448 .match_id_table = dpaa2_eth_match_id_table
+7 ethernet/freescale/dpaa2/dpaa2-ptp.c    <global>          256 .match_id_table = dpaa2_ptp_match_id_table,
+8 soc/fsl/dpio/dpio-driver.c              <global>          325 .match_id_table = dpaa2_dpio_match_id_table
+9 staging/fsl-dpaa2/ethsw/ethsw.c         <global>         1856 .match_id_table = dpaa2_switch_match_id_table
+a include/linux/fsl/mc.h                  <global>           41 const struct fsl_mc_device_id *match_id_table;
+b drivers/bus/fsl-mc/fsl-mc-bus.c         fsl_mc_bus_match   91 if (!mc_drv->match_id_table)
+c drivers/bus/fsl-mc/fsl-mc-bus.c         fsl_mc_bus_match  106 for (id = mc_drv->match_id_table; id->vendor != 0x0; id++) {
+
+DPAA2 links
+
+https://www.nxp.com/design/qoriq-developer-resources/second-generation-data-path-acceleration-architecture-dpaa2:DPAA2
+https://www.nxp.com/design/software/development-software/vortiqa-software-for-networking/vortiqa-applications-development-kits/vortiqa-network-and-security-package-adk:VORTIQA-NSP-ADK?tab=Design_Tools_Tab
+
+
+Other:
+
+https://www.nxp.com/design/software/embedded-software/linux-software-and-development-tools/dpaa-fman-microcode-sdk-source-code-software-kit:DPAA-FMAN-SDK
