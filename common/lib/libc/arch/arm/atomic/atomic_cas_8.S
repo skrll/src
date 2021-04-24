@@ -49,11 +49,6 @@ ENTRY_NP(_atomic_cas_8)
 	strexb	r3, r2, [ip]		/* store new value */
 	cmp	r3, #0			/*   succeed? */
 	bne	1b			/*     nope, try again. */
-#ifdef _ARM_ARCH_7
-	dsb				/* data synchronization barrier */
-#else
-	mcr	p15, 0, r3, c7, c10, 4	/* data synchronization barrier */
-#endif
 2:	RET				/* return. */
 	END(_atomic_cas_8)
 

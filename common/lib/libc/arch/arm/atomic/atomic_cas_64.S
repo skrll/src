@@ -59,11 +59,6 @@ ENTRY_NP(_atomic_cas_64)
 	strexd	r6, r4, r5, [ip]	/* store new value */
 	cmp	r6, #0			/*   succeed? */
 	bne	1b			/*     nope, try again. */
-#ifdef _ARM_ARCH_7
-	dsb
-#else
-	mcr	p15, 0, ip, c7, c10, 4	/* data synchronization barrier */
-#endif
 2:
 	pop	{r4-r7}			/* restore temporaries */
 	RET				/* return. */

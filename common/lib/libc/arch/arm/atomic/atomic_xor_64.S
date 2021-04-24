@@ -45,11 +45,6 @@ ENTRY_NP(_atomic_xor_64_nv)
 	strexd	r4, r0, r1, [ip]	/* try to store */
 	cmp	r4, #0			/*   succeed? */
 	bne	1b			/*     no, try again? */
-#ifdef _ARM_ARCH_7
-	dmb
-#else
-	mcr	p15, 0, r4, c7, c10, 5	/* data memory barrier */
-#endif
 	pop	{r3,r4}			/* restore temporary */
 	RET				/* return new value */
 END(_atomic_xor_64_nv)

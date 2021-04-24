@@ -65,11 +65,6 @@ ENTRY_NP(_atomic_swap_32)
 	cmpne	r3, #0
 #endif
 	bne	1b
-#ifdef _ARM_ARCH_7
-	dmb
-#else
-	mcr	p15, 0, r3, c7, c10, 5	/* data memory barrier */
-#endif
 99:
 	RET
 END(_atomic_swap_32)
@@ -109,11 +104,6 @@ ENTRY_NP(_atomic_swap_8)
 #endif
 	cmp	r3, #0
 	bne	1b
-#ifdef _ARM_ARCH_7
-	dmb
-#else
-	mcr	p15, 0, ip, c7, c10, 5	/* data memory barrier */
-#endif
 	RET
 END(_atomic_swap_8)
 

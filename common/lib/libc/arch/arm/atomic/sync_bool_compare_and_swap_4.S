@@ -50,11 +50,6 @@ ENTRY_NP(__sync_bool_compare_and_swap_4)
 	cmp	r0, #0			/*   succeed? */
 	bne	1b			/*     nope, try again. */
 	movs	r0, #1			/* indicate success */
-#ifdef _ARM_ARCH_7
-	dsb
-#else
-	mcr	p15, 0, r3, c7, c10, 4	/* data synchronization barrier */
-#endif
 2:	RET				/* return. */
 END(__sync_bool_compare_and_swap_4)
 

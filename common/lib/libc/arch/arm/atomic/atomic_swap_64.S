@@ -41,11 +41,6 @@ ENTRY_NP(_atomic_swap_64)
 	strexd	r4, r2, r3, [ip]	/* store new value */
 	cmp	r4, #0			/*   succeed? */
 	bne	1b			/*    no, try again */
-#ifdef _ARM_ARCH_7
-	dmb
-#else
-	mcr	p15, 0, r4, c7, c10, 5	/* data memory barrier */
-#endif
 	pop	{r3,r4}			/* restore temporary */
 	RET
 END(_atomic_swap_64)
