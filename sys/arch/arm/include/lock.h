@@ -65,11 +65,6 @@ __cpu_simple_lock_set(__cpu_simple_lock_t *__ptr)
 	*__ptr = __SIMPLELOCK_LOCKED;
 }
 
-#ifdef _KERNEL
-/* XXX Formerly included for obsolete mb_* API, maybe no longer needed.  */
-#include <arm/cpufunc.h>
-#endif
-
 #ifdef _ARM_ARCH_6
 static __inline unsigned int
 __arm_load_exclusive(__cpu_simple_lock_t *__alp)
