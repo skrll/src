@@ -34,10 +34,10 @@
 
 ENTRY_NP(_membar_producer)
 #ifdef _ARM_ARCH_7
-	dsb
+	dmb	ishst
 #else
 	mov	r0, #0
-	mcr	p15, 0, r0, c7, c10, 4	 /* Data Synchronization Barrier */
+	mcr	p15, 0, r0, c7, c10, 5	/* Data Memory Barrier */
 #endif
 	RET
 END(_membar_producer)
@@ -47,7 +47,7 @@ STRONG_ALIAS(_membar_write,_membar_producer)
 
 ENTRY_NP(_membar_sync)
 #ifdef _ARM_ARCH_7
-	dmb
+	dmb	ish
 #else
 	mov	r0, #0
 	mcr	p15, 0, r0, c7, c10, 5	/* Data Memory Barrier */
