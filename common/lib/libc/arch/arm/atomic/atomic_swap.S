@@ -88,7 +88,7 @@ STRONG_ALIAS(_atomic_swap_ptr,_atomic_swap_32)
 ENTRY_NP(__sync_lock_release_4)
 	mov	r1, #0
 #ifdef _ARM_ARCH_7
-	dmb
+	dmb	ishst
 #else
 	mcr	p15, 0, r1, c7, c10, 5	/* data memory barrier */
 #endif
@@ -129,7 +129,7 @@ STRONG_ALIAS(_atomic_swap_uchar,_atomic_swap_8)
 ENTRY_NP(__sync_lock_release_1)
 	mov	r1, #0
 #ifdef _ARM_ARCH_7
-	dmb
+	dmb	ishst
 #else
 	mcr	p15, 0, r1, c7, c10, 5	/* data memory barrier */
 #endif
