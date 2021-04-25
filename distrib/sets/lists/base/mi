@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1274 2021/01/17 19:32:52 rillig Exp $
+# $NetBSD: mi,v 1.1278 2021/04/16 01:14:38 mrg Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -1240,10 +1240,12 @@
 ./usr/include/gcc-6/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-7				base-obsolete		obsolete
 ./usr/include/gcc-7/sanitizer			base-obsolete		obsolete
-./usr/include/gcc-8				base-c-usr
-./usr/include/gcc-8/sanitizer			base-c-usr
+./usr/include/gcc-8				base-obsolete		obsolete
+./usr/include/gcc-8/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-9				base-c-usr
 ./usr/include/gcc-9/sanitizer			base-c-usr
+./usr/include/gcc-10				base-c-usr
+./usr/include/gcc-10/sanitizer			base-c-usr
 ./usr/include/gssapi				base-c-usr
 ./usr/include/gssapi/rpc			base-obsolete		obsolete
 ./usr/include/isofs				base-c-usr
@@ -1601,6 +1603,7 @@
 ./usr/libexec/mail.local			base-mail-bin
 ./usr/libexec/makekey				base-crypto-bin
 ./usr/libexec/makewhatis			base-man-bin		!makemandb
+./usr/libexec/named				base-bind-bin
 ./usr/libexec/named-xfer			base-obsolete		obsolete
 ./usr/libexec/ntalkd				base-netutil-bin
 ./usr/libexec/pfspamd				base-obsolete		obsolete

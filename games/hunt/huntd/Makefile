@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.8 2019/09/29 23:44:59 mrg Exp $
+#	$NetBSD: Makefile,v 1.10 2021/04/15 01:55:21 mrg Exp $
 
 PROG=	huntd
 SRCS=	answer.c draw.c driver.c execute.c expl.c \
@@ -9,9 +9,9 @@ CPPFLAGS+=-I${.CURDIR}/../include
 
 .include <bsd.own.mk>
 
-# Has fallthru comment that is missed
-.if defined(HAVE_GCC) && ${HAVE_GCC} >= 7 && ${ACTIVE_CC} == "gcc"
-COPTS.shots.c+=        -Wno-error=implicit-fallthrough
-.endif
+# Appears wrong - should not exceed bounds of array.
+COPTS.answer.c+=	${GCC_NO_STRINGOP_OVERFLOW}
+COPTS.shots.c+=		${GCC_NO_STRINGOP_OVERFLOW}
+COPTS.driver.c+=	${GCC_NO_STRINGOP_OVERFLOW}
 
 .include <bsd.prog.mk>

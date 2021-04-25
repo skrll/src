@@ -1,24 +1,31 @@
-#	$NetBSD: Makefile,v 1.64 2021/03/21 13:10:58 rillig Exp $
+#	$NetBSD: Makefile,v 1.70 2021/04/18 22:51:24 rillig Exp $
 
 .include <bsd.own.mk>
 
 PROG=		lint1
-SRCS=		cgram.y ckgetopt.c decl.c emit.c emit1.c err.c \
-		func.c init.c inittyp.c lex.c \
+SRCS=		cgram.y \
+		ckbool.c ckctype.c ckgetopt.c \
+		decl.c emit.c emit1.c err.c func.c init.c inittyp.c lex.c \
 		main1.c mem.c mem1.c oper.c print.c scan.l tree.c tyname.c
 
 MAN=		lint.7
 YHEADER=
-#DBG=-g
-#CPPFLAGS+=-DYYDEBUG=1
-#YFLAGS+=-v
-#LFLAGS+=-d
+#DBG=		-g
+#CPPFLAGS+=	-DYYDEBUG=1
+#YFLAGS+=	-v
+#LFLAGS+=	-d
 
 CWARNFLAGS.clang+=	-Wno-error=implicit-int-float-conversion
 LINTFLAGS+=		-T
+LOBJS.${PROG}+=		${SRCS:M*.y:.y=.ln}
+#LOBJS.${PROG}+=	${SRCS:M*.l:.l=.ln}
+LINTFLAGS.scan.c=	-X 107,330,331,333
 
-CPPFLAGS+=	-I${.CURDIR} -I. -DPASS=\"${PROG}.h\"
+CPPFLAGS+=	-DIS_LINT1
+CPPFLAGS+=	-I${.CURDIR}
 CPPFLAGS+=	${DEBUG:D-DDEBUG}
+
+COPTS.err.c+=	${${ACTIVE_CC} == "clang":? -Wno-format-nonliteral :}
 
 BINDIR=		/usr/libexec
 
@@ -41,8 +48,6 @@ DPADD+=		${LIBM}
 LDADD+=		-ll
 DPADD+=		${LIBL}
 .endif
-
-oper.o: ops.def
 
 .include "Makefile.err-msgs-h"
 ${SRCS:Nerr.c}: err-msgs.h

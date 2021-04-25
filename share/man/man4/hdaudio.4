@@ -1,4 +1,4 @@
-.\"	$NetBSD: hdaudio.4,v 1.19 2021/03/12 08:03:24 nia Exp $
+.\"	$NetBSD: hdaudio.4,v 1.21 2021/04/10 08:01:21 nia Exp $
 .\"
 .\" Copyright (c) 2009, 2010 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -133,8 +133,8 @@ Handle unsolicited RIRB messages
 .It
 Modem function groups
 .It
-20-bit and 24-bit I/O formats.
-The machine-independent audio layer supports samples with 32-bit precision,
-but these will be converted down to 16-bit before output, because converting
-to a hardware precision that isn't a power of two is not yet handled.
+24-bit and 20-bit hardware formats cannot yet be used.
+Since the machine-independent audio layer converts all input from
+userland and the hardware layer to 16-bit precision for processing,
+there would currently be no advantage in using them.
 .El

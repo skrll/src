@@ -1,4 +1,5 @@
-/*	$NetBSD: evthread-internal.h,v 1.3 2017/01/31 23:17:39 christos Exp $	*/
+/*	$NetBSD: evthread-internal.h,v 1.6 2021/04/10 19:18:45 rillig Exp $	*/
+
 /*
  * Copyright (c) 2008-2012 Niels Provos, Nick Mathewson
  *
@@ -39,7 +40,7 @@ extern "C" {
 
 struct event_base;
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__CYGWIN__)
 /* On Windows, the way we currently make DLLs, it's not allowed for us to
  * have shared global structures.  Thus, we only do the direct-call-to-function
  * code path if we know that the local shared library system supports it.
@@ -50,9 +51,12 @@ struct event_base;
 #if ! defined(EVENT__DISABLE_THREAD_SUPPORT) && defined(EVTHREAD_EXPOSE_STRUCTS)
 /* Global function pointers to lock-related functions. NULL if locking isn't
    enabled. */
+EVENT2_EXPORT_SYMBOL
 extern struct evthread_lock_callbacks evthread_lock_fns_;
+EVENT2_EXPORT_SYMBOL
 extern struct evthread_condition_callbacks evthread_cond_fns_;
 extern unsigned long (*evthread_id_fn_)(void);
+EVENT2_EXPORT_SYMBOL
 extern int evthread_lock_debugging_enabled_;
 
 /** Return the ID of the current thread, or 1 if threading isn't enabled. */
@@ -85,21 +89,21 @@ extern int evthread_lock_debugging_enabled_;
 		void *lock_tmp_ = (lockvar);				\
 		if (lock_tmp_ && evthread_lock_fns_.free)		\
 			evthread_lock_fns_.free(lock_tmp_, (locktype)); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Acquire a lock. */
 #define EVLOCK_LOCK(lockvar,mode)					\
 	do {								\
 		if (lockvar)						\
 			evthread_lock_fns_.lock(mode, lockvar);		\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Release a lock */
 #define EVLOCK_UNLOCK(lockvar,mode)					\
 	do {								\
 		if (lockvar)						\
 			evthread_lock_fns_.unlock(mode, lockvar);	\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Helper: put lockvar1 and lockvar2 into pointerwise ascending order. */
 #define EVLOCK_SORTLOCKS_(lockvar1, lockvar2)				\
@@ -109,18 +113,18 @@ extern int evthread_lock_debugging_enabled_;
 			lockvar1 = lockvar2;				\
 			lockvar2 = tmp;					\
 		}							\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Lock an event_base, if it is set up for locking.  Acquires the lock
     in the base structure whose field is named 'lockvar'. */
 #define EVBASE_ACQUIRE_LOCK(base, lockvar) do {				\
 		EVLOCK_LOCK((base)->lockvar, 0);			\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Unlock an event_base, if it is set up for locking. */
 #define EVBASE_RELEASE_LOCK(base, lockvar) do {				\
 		EVLOCK_UNLOCK((base)->lockvar, 0);			\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** If lock debugging is enabled, and lock is non-null, assert that 'lock' is
  * locked and held by us. */
@@ -129,7 +133,7 @@ extern int evthread_lock_debugging_enabled_;
 		if ((lock) && evthread_lock_debugging_enabled_) {	\
 			EVUTIL_ASSERT(evthread_is_debug_lock_held_(lock)); \
 		}							\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Try to grab the lock for 'lockvar' without blocking, and return 1 if we
  * manage to get it. */
@@ -152,13 +156,13 @@ EVLOCK_TRY_LOCK_(void *lock)
 	do {								\
 		(condvar) = evthread_cond_fns_.alloc_condition ?	\
 		    evthread_cond_fns_.alloc_condition(0) : NULL;	\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 /** Deallocate and free a condition variable in condvar */
 #define EVTHREAD_FREE_COND(cond)					\
 	do {								\
 		if (cond)						\
 			evthread_cond_fns_.free_condition((cond));	\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 /** Signal one thread waiting on cond */
 #define EVTHREAD_COND_SIGNAL(cond)					\
 	( (cond) ? evthread_cond_fns_.signal_condition((cond), 0) : 0 )
@@ -183,14 +187,23 @@ EVLOCK_TRY_LOCK_(void *lock)
 #elif ! defined(EVENT__DISABLE_THREAD_SUPPORT)
 
 unsigned long evthreadimpl_get_id_(void);
+EVENT2_EXPORT_SYMBOL
 int evthreadimpl_is_lock_debugging_enabled_(void);
+EVENT2_EXPORT_SYMBOL
 void *evthreadimpl_lock_alloc_(unsigned locktype);
+EVENT2_EXPORT_SYMBOL
 void evthreadimpl_lock_free_(void *lock, unsigned locktype);
+EVENT2_EXPORT_SYMBOL
 int evthreadimpl_lock_lock_(unsigned mode, void *lock);
+EVENT2_EXPORT_SYMBOL
 int evthreadimpl_lock_unlock_(unsigned mode, void *lock);
+EVENT2_EXPORT_SYMBOL
 void *evthreadimpl_cond_alloc_(unsigned condtype);
+EVENT2_EXPORT_SYMBOL
 void evthreadimpl_cond_free_(void *cond);
+EVENT2_EXPORT_SYMBOL
 int evthreadimpl_cond_signal_(void *cond, int broadcast);
+EVENT2_EXPORT_SYMBOL
 int evthreadimpl_cond_wait_(void *cond, void *lock, const struct timeval *tv);
 int evthreadimpl_locking_enabled_(void);
 
@@ -209,32 +222,32 @@ int evthreadimpl_locking_enabled_(void);
 		void *lock_tmp_ = (lockvar);				\
 		if (lock_tmp_)						\
 			evthreadimpl_lock_free_(lock_tmp_, (locktype)); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Acquire a lock. */
 #define EVLOCK_LOCK(lockvar,mode)					\
 	do {								\
 		if (lockvar)						\
 			evthreadimpl_lock_lock_(mode, lockvar);		\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Release a lock */
 #define EVLOCK_UNLOCK(lockvar,mode)					\
 	do {								\
 		if (lockvar)						\
 			evthreadimpl_lock_unlock_(mode, lockvar);	\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Lock an event_base, if it is set up for locking.  Acquires the lock
     in the base structure whose field is named 'lockvar'. */
 #define EVBASE_ACQUIRE_LOCK(base, lockvar) do {				\
 		EVLOCK_LOCK((base)->lockvar, 0);			\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Unlock an event_base, if it is set up for locking. */
 #define EVBASE_RELEASE_LOCK(base, lockvar) do {				\
 		EVLOCK_UNLOCK((base)->lockvar, 0);			\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** If lock debugging is enabled, and lock is non-null, assert that 'lock' is
  * locked and held by us. */
@@ -243,7 +256,7 @@ int evthreadimpl_locking_enabled_(void);
 		if ((lock) && evthreadimpl_is_lock_debugging_enabled_()) { \
 			EVUTIL_ASSERT(evthread_is_debug_lock_held_(lock)); \
 		}							\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Try to grab the lock for 'lockvar' without blocking, and return 1 if we
  * manage to get it. */
@@ -265,13 +278,13 @@ EVLOCK_TRY_LOCK_(void *lock)
 #define EVTHREAD_ALLOC_COND(condvar)					\
 	do {								\
 		(condvar) = evthreadimpl_cond_alloc_(0);		\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 /** Deallocate and free a condition variable in condvar */
 #define EVTHREAD_FREE_COND(cond)					\
 	do {								\
 		if (cond)						\
 			evthreadimpl_cond_free_((cond));		\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 /** Signal one thread waiting on cond */
 #define EVTHREAD_COND_SIGNAL(cond)					\
 	( (cond) ? evthreadimpl_cond_signal_((cond), 0) : 0 )
@@ -332,7 +345,7 @@ EVLOCK_TRY_LOCK_(void *lock)
 			lockvar1 = lockvar2;				\
 			lockvar2 = tmp;					\
 		}							\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /** Acquire both lock1 and lock2.  Always allocates locks in the same order,
  * so that two threads locking two locks with LOCK2 will not deadlock. */
@@ -344,7 +357,7 @@ EVLOCK_TRY_LOCK_(void *lock)
 		EVLOCK_LOCK(lock1_tmplock_,mode1);			\
 		if (lock2_tmplock_ != lock1_tmplock_)			\
 			EVLOCK_LOCK(lock2_tmplock_,mode2);		\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 /** Release both lock1 and lock2.  */
 #define EVLOCK_UNLOCK2(lock1,lock2,mode1,mode2)				\
 	do {								\
@@ -354,8 +367,9 @@ EVLOCK_TRY_LOCK_(void *lock)
 		if (lock2_tmplock_ != lock1_tmplock_)			\
 			EVLOCK_UNLOCK(lock2_tmplock_,mode2);		\
 		EVLOCK_UNLOCK(lock1_tmplock_,mode1);			\
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
+EVENT2_EXPORT_SYMBOL
 int evthread_is_debug_lock_held_(void *lock);
 void *evthread_debug_get_real_lock_(void *lock);
 
@@ -370,7 +384,7 @@ void *evthread_setup_global_lock_(void *lock_, unsigned locktype,
 			event_warn("Couldn't allocate %s", #lockvar);	\
 			return -1;					\
 		}							\
-	} while (/*CONSTCOND*/0);
+	} while (0);
 
 int event_global_setup_locks_(const int enable_locks);
 int evsig_global_setup_locks_(const int enable_locks);
@@ -378,6 +392,7 @@ int evutil_global_setup_locks_(const int enable_locks);
 int evutil_secure_rng_global_setup_locks_(const int enable_locks);
 
 /** Return current evthread_lock_callbacks */
+EVENT2_EXPORT_SYMBOL
 struct evthread_lock_callbacks *evthread_get_lock_callbacks(void);
 /** Return current evthread_condition_callbacks */
 struct evthread_condition_callbacks *evthread_get_condition_callbacks(void);

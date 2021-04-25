@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.321 2021/02/12 08:56:04 leot Exp $
+$NetBSD: acronyms.comp,v 1.323 2021/04/16 15:53:55 pgoyette Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -446,6 +446,7 @@ DRAM	dynamic random access memory
 DRBG	deterministic random bit generator
 DRI	direct rendering infrastructure
 DRM	digital rights management
+DRM	direct rendering manager
 DRRS	display refresh rate switching
 DS	debug store
 DS	differentiated services
@@ -1366,6 +1367,7 @@ RMW	read, modify, write
 RNG	random number generator
 ROM	read only memory
 RPC	remote procedure call
+RPG	Report Program Generator
 RPKI	resource PKI
 RPL	requested privilege level
 RPM	revolutions per minute

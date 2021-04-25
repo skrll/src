@@ -1,4 +1,4 @@
-# $NetBSD: t_integration.sh,v 1.35 2021/03/27 13:28:03 rillig Exp $
+# $NetBSD: t_integration.sh,v 1.43 2021/04/18 20:02:56 rillig Exp $
 #
 # Copyright (c) 2008, 2010 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -57,16 +57,27 @@ check_lint1()
 {
 	local src="$(atf_get_srcdir)/$1"
 	local exp="${src%.c}.exp"
+	local src_ln="${src%.c}.ln"
+	local wrk_ln="${1%.c}.ln"
 	local flags="$(extract_flags "${src}")"
+
+	if [ ! -f "${src_ln}" ]; then
+		src_ln="/dev/null"
+		wrk_ln="/dev/null"
+	fi
 
 	if [ -f "${exp}" ]; then
 		# shellcheck disable=SC2086
 		atf_check -s not-exit:0 -o "file:${exp}" -e empty \
-		    ${LINT1} ${flags} "${src}" /dev/null
+		    ${LINT1} ${flags} "${src}" "${wrk_ln}"
 	else
 		# shellcheck disable=SC2086
 		atf_check -s exit:0 \
-		    ${LINT1} ${flags} "${src}" /dev/null
+		    ${LINT1} ${flags} "${src}" "${wrk_ln}"
+	fi
+
+	if [ "${src_ln}" != "/dev/null" ]; then
+		atf_check -o "file:${src_ln}" cat "${wrk_ln}"
 	fi
 }
 
@@ -128,77 +139,68 @@ test_case d_pr_22119
 test_case d_struct_init_nested
 
 test_case d_cast_init
-test_case d_cast_init2		"Checks cast initialization as the rhs of a" \
-				"- operand"
-test_case d_cast_lhs		"Checks whether pointer casts are valid lhs" \
-				"lvalues"
+test_case d_cast_init2
+test_case d_cast_lhs
 
-test_case d_gcc_func		"Checks GCC __FUNCTION__"
-test_case d_c99_func		"Checks C99 __func__"
+test_case d_gcc_func
+test_case d_c99_func
 
-test_case d_gcc_variable_array_init "Checks GCC variable array initializers"
+test_case d_gcc_variable_array_init
 test_case d_c9x_array_init
 test_case d_c99_decls_after_stmt
 test_case d_c99_decls_after_stmt3
-test_case d_nolimit_init	"Checks no limit initializers"
+test_case d_nolimit_init
 test_case d_zero_sized_arrays
 
 test_case d_compound_literals1
 test_case d_compound_literals2
 test_case d_gcc_compound_statements1
-test_case d_gcc_compound_statements2 "Checks GCC compound statements with" \
-				"non-expressions"
-test_case d_gcc_compound_statements3 "Checks GCC compound statements with" \
-				"void type"
+test_case d_gcc_compound_statements2
+test_case d_gcc_compound_statements3
+
 # XXX: Because of polymorphic __builtin_isnan and expression has null effect
 # test_case gcc_extension "Checks GCC __extension__ and __typeof__"
 
-test_case d_cvt_in_ternary	"Checks CVT nodes handling in ?"
-test_case d_cvt_constant		"Checks constant conversion"
-test_case d_ellipsis_in_switch	"Checks ellipsis in switch()"
-test_case d_c99_complex_num	"Checks C99 complex numbers"
-test_case d_c99_complex_split	"Checks C99 complex access"
+test_case d_cvt_in_ternary
+test_case d_cvt_constant
+test_case d_ellipsis_in_switch
+test_case d_c99_complex_num
+test_case d_c99_complex_split
 test_case d_c99_for_loops
-test_case d_alignof		"Checks __alignof__"
-test_case d_shift_to_narrower_type "Checks that type shifts that result in" \
-				"narrower types do not produce warnings"
-
-test_case d_constant_conv1	"Checks failing on information-losing" \
-				"constant conversion in argument lists"
-test_case d_constant_conv2	"Checks failing on information-losing" \
-				"constant conversion in argument lists"
-
-test_case d_type_conv1		"Checks failing on information-losing" \
-				"type conversion in argument lists"
-test_case d_type_conv2		"Checks failing on information-losing" \
-				"type conversion in argument lists"
-test_case d_type_conv3		"Checks failing on information-losing" \
-				"type conversion in argument lists"
-
+test_case d_alignof
+test_case d_shift_to_narrower_type
+test_case d_constant_conv1
+test_case d_constant_conv2
+test_case d_type_conv1
+test_case d_type_conv2
+test_case d_type_conv3
 test_case d_incorrect_array_size
+test_case d_long_double_int
 
-test_case d_long_double_int	"Checks for confusion of 'long double' with" \
-				"'long int'; PR bin/39639"
+test_case emit
+
+test_case gcc_init_compound_literal
+
+test_case op_colon
+
+test_case feat_stacktrace
 
 test_case all_messages
 all_messages_body()
 {
-	local srcdir ok msg base flags
+	local failed msg
 
-	srcdir="$(atf_get_srcdir)"
-	ok="true"
+	failed=""
 
-	for msg in $(seq 0 340); do
-		base="$(printf '%s/msg_%03d' "${srcdir}" "${msg}")"
-		flags="$(extract_flags "${base}.c")"
-
-		# shellcheck disable=SC2154 disable=SC2086
-		${Atf_Check} -s not-exit:0 -o "file:${base}.exp" -e empty \
-		    ${LINT1} ${flags} "${base}.c" /dev/null \
-		|| ok="false"
+	for msg in $(seq 0 343); do
+		name="$(printf 'msg_%03d.c' "${msg}")"
+		check_lint1 "${name}" \
+		|| failed="$failed${failed:+ }$name"
 	done
 
-	atf_check "${ok}"
+	if [ "$failed" != "" ]; then
+		atf_check "false" "$failed"
+	fi
 }
 
 

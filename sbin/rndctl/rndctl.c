@@ -1,4 +1,4 @@
-/*	$NetBSD: rndctl.c,v 1.37 2020/05/12 09:48:44 simonb Exp $	*/
+/*	$NetBSD: rndctl.c,v 1.40 2021/04/04 13:37:17 nia Exp $	*/
 
 /*-
  * Copyright (c) 1997 Michael Graff.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: rndctl.c,v 1.37 2020/05/12 09:48:44 simonb Exp $");
+__RCSID("$NetBSD: rndctl.c,v 1.40 2021/04/04 13:37:17 nia Exp $");
 #endif
 
 #include <sys/param.h>
@@ -75,8 +75,10 @@ __dead static void usage(void);
 static u_int32_t find_type(const char *name);
 static const char *find_name(u_int32_t);
 static void do_ioctl(rndctl_t *);
-static char * strflags(u_int32_t);
+static char * strflags(uint32_t, u_int32_t);
 static void do_list(int, u_int32_t, char *);
+static void do_print_source(rndsource_est_t *);
+static void do_print_source_verbose(rndsource_est_t *);
 static void do_stats(void);
 
 static int iflag;
@@ -444,29 +446,21 @@ do_ioctl(rndctl_t *rctl)
 }
 
 static char *
-strflags(u_int32_t fl)
+strflags(uint32_t totalbits, u_int32_t fl)
 {
 	static char str[512];
 
 	str[0] = '\0';
-	if (fl & RND_FLAG_NO_ESTIMATE)
-		;
-	else
+	if (totalbits > 0 && (fl & RND_FLAG_NO_ESTIMATE) == 0)
 		strlcat(str, "estimate, ", sizeof(str));
 
-	if (fl & RND_FLAG_NO_COLLECT)
-		;
-	else
+	if ((fl & RND_FLAG_NO_COLLECT) == 0)
 		strlcat(str, "collect, ", sizeof(str));
 
 	if (fl & RND_FLAG_COLLECT_VALUE)
 		strlcat(str, "v, ", sizeof(str));
 	if (fl & RND_FLAG_COLLECT_TIME)
 		strlcat(str, "t, ", sizeof(str));
-	if (fl & RND_FLAG_ESTIMATE_VALUE)
-		strlcat(str, "dv, ", sizeof(str));
-	if (fl & RND_FLAG_ESTIMATE_TIME)
-		strlcat(str, "dt, ", sizeof(str));
 
 	if (str[strlen(str) - 2] == ',')
 		str[strlen(str) - 2] = '\0';
@@ -474,7 +468,26 @@ strflags(u_int32_t fl)
 	return (str);
 }
 
-#define HEADER "Source                 Bits Type      Flags\n"
+#define HEADER "Source       Estimated bits    Samples Type   Flags\n"
+
+static void
+do_print_source(rndsource_est_t *source)
+{
+	printf("%-16s ", source->rt.name);
+	printf("%10" PRIu32 " ", source->rt.total);
+	printf("%10" PRIu32 " ", source->dt_samples + source->dv_samples);
+	printf("%-6s ", find_name(source->rt.type));
+	printf("%s\n", strflags(source->rt.total, source->rt.flags));
+}
+
+static void
+do_print_source_verbose(rndsource_est_t *source)
+{
+	printf("\tDt samples = %d\n", source->dt_samples);
+	printf("\tDt bits = %d\n", source->dt_total);
+	printf("\tDv samples = %d\n", source->dv_samples);
+	printf("\tDv bits = %d\n", source->dv_total);
+}
 
 static void
 do_list(int all, u_int32_t type, char *name)
@@ -490,27 +503,15 @@ do_list(int all, u_int32_t type, char *name)
 	if (fd < 0)
 		err(1, "open");
 
-	if (all == 0 && type == 0xff) {
+	if (!all && type == 0xff) {
 		strncpy(rstat_name.name, name, sizeof(rstat_name.name));
 		res = ioctl(fd, RNDGETESTNAME, &rstat_name);
 		if (res < 0)
 			err(1, "ioctl(RNDGETESTNAME)");
 		printf(HEADER);
-		printf("%-16s %10u %-4s %s\n",
-		    rstat_name.source.rt.name,
-		    rstat_name.source.rt.total,
-		    find_name(rstat_name.source.rt.type),
-		    strflags(rstat_name.source.rt.flags));
-		if (vflag) {
-			printf("\tDt samples = %d\n",
-			       rstat_name.source.dt_samples);
-			printf("\tDt bits = %d\n",
-			       rstat_name.source.dt_total);
-			printf("\tDv samples = %d\n",
-				rstat_name.source.dv_samples);
-			printf("\tDv bits = %d\n",
-			       rstat_name.source.dv_total);
-		}
+		do_print_source(&rstat_name.source);
+		if (vflag)
+			do_print_source_verbose(&rstat_name.source);
 		close(fd);
 		return;
 	}
@@ -532,22 +533,10 @@ do_list(int all, u_int32_t type, char *name)
 			break;
 
 		for (i = 0; i < rstat.count; i++) {
-			if (all != 0 ||
-			    type == rstat.source[i].rt.type)
-				printf("%-16s %10u %-4s %s\n",
-				    rstat.source[i].rt.name,
-				    rstat.source[i].rt.total,
-				    find_name(rstat.source[i].rt.type),
-				    strflags(rstat.source[i].rt.flags));
-			if (vflag) {
-				printf("\tDt samples = %d\n",
-				       rstat.source[i].dt_samples);
-				printf("\tDt bits = %d\n",
-				       rstat.source[i].dt_total);
-				printf("\tDv samples = %d\n",
-				       rstat.source[i].dv_samples);
-				printf("\tDv bits = %d\n",
-				       rstat.source[i].dv_total);
+			if (all || type == rstat.source[i].rt.type) {
+				do_print_source(&rstat.source[i]);
+				if (vflag)
+					do_print_source_verbose(&rstat.source[i]);
 			}
                 }
 		start += rstat.count;
@@ -569,13 +558,8 @@ do_stats(void)
 	if (ioctl(fd, RNDGETPOOLSTAT, &rs) < 0)
 		err(1, "ioctl(RNDGETPOOLSTAT)");
 
-	printf("\t%9u bits mixed into pool\n", rs.added);
 	printf("\t%9u bits currently stored in pool (max %u)\n",
 	    rs.curentropy, rs.maxentropy);
-	printf("\t%9u bits of entropy discarded due to full pool\n",
-	    rs.discarded);
-	printf("\t%9u hard-random bits generated\n", rs.removed);
-	printf("\t%9u pseudo-random bits generated\n", rs.generated);
 
 	close(fd);
 }

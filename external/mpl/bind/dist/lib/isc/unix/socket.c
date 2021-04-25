@@ -1,4 +1,4 @@
-/*	$NetBSD: socket.c,v 1.20 2021/02/22 01:31:51 christos Exp $	*/
+/*	$NetBSD: socket.c,v 1.22 2021/04/05 11:27:03 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -3946,7 +3946,7 @@ isc_socketmgr_create2(isc_mem_t *mctx, isc_socketmgr_t **managerp,
 		isc_thread_create(netthread, &manager->threads[i],
 				  &manager->threads[i].thread);
 		char tname[1024];
-		sprintf(tname, "isc-socket-%d", i);
+		sprintf(tname, "sock-%d", i);
 		isc_thread_setname(manager->threads[i].thread, tname);
 	}
 
@@ -5467,7 +5467,7 @@ _socktype(isc_sockettype_t type) {
 		xmlrc = (a);        \
 		if (xmlrc < 0)      \
 			goto error; \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 int
 isc_socketmgr_renderxml(isc_socketmgr_t *mgr0, void *writer0) {
 	isc__socketmgr_t *mgr = (isc__socketmgr_t *)mgr0;
@@ -5574,7 +5574,7 @@ error:
 			result = ISC_R_NOMEMORY; \
 			goto error;              \
 		}                                \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 isc_result_t
 isc_socketmgr_renderjson(isc_socketmgr_t *mgr0, void *stats0) {
