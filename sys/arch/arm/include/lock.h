@@ -78,22 +78,6 @@ __arm_load_acquire_exclusive(__cpu_simple_lock_t *__alp)
 	return __rv;
 }
 
-/* returns 0 on success and 1 on failure */
-static __inline unsigned int
-__arm_store_release_exclusive(__cpu_simple_lock_t *__alp, unsigned int __val)
-{
-	unsigned int __rv;
-	if (/*CONSTCOND*/sizeof(*__alp) == 1) {
-		__asm __volatile("stlxrb\t%w0,%w1,[%2]"
-		    : "=&r"(__rv) : "r"(__val), "r"(__alp) : "cc", "memory");
-	} else {
-		__asm __volatile("stlxr\t%0,%1,[%2]"
-		    : "=&r"(__rv) : "r"(__val), "r"(__alp) : "cc", "memory");
-	}
-	return __rv;
-}
-
-
 static __inline unsigned int
 __arm_load_exclusive(__cpu_simple_lock_t *__alp)
 {
