@@ -1,4 +1,4 @@
-/* $NetBSD: cgram.c,v 1.17 2021/02/26 15:18:40 rillig Exp $ */
+/* $NetBSD: cgram.c,v 1.21 2021/04/25 20:38:03 rillig Exp $ */
 
 /*-
  * Copyright (c) 2013, 2021 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.c,v 1.17 2021/02/26 15:18:40 rillig Exp $");
+__RCSID("$NetBSD: cgram.c,v 1.21 2021/04/25 20:38:03 rillig Exp $");
 #endif
 
 #include <assert.h>
@@ -46,31 +46,6 @@ __RCSID("$NetBSD: cgram.c,v 1.17 2021/02/26 15:18:40 rillig Exp $");
 
 #include "pathnames.h"
 
-////////////////////////////////////////////////////////////
-
-static char
-ch_toupper(char ch)
-{
-	return (char)toupper((unsigned char)ch);
-}
-
-static char
-ch_tolower(char ch)
-{
-	return (char)tolower((unsigned char)ch);
-}
-
-static bool
-ch_isalpha(char ch)
-{
-	return isalpha((unsigned char)ch) != 0;
-}
-
-static bool
-ch_islower(char ch)
-{
-	return islower((unsigned char)ch) != 0;
-}
 
 static bool
 ch_isspace(char ch)
@@ -79,9 +54,33 @@ ch_isspace(char ch)
 }
 
 static bool
+ch_islower(char ch)
+{
+	return ch >= 'a' && ch <= 'z';
+}
+
+static bool
 ch_isupper(char ch)
 {
-	return isupper((unsigned char)ch) != 0;
+	return ch >= 'A' && ch <= 'Z';
+}
+
+static bool
+ch_isalpha(char ch)
+{
+	return ch_islower(ch) || ch_isupper(ch);
+}
+
+static char
+ch_toupper(char ch)
+{
+	return ch_islower(ch) ? (char)(ch - 'a' + 'A') : ch;
+}
+
+static char
+ch_tolower(char ch)
+{
+	return ch_isupper(ch) ? (char)(ch - 'A' + 'a') : ch;
 }
 
 static int
@@ -217,12 +216,8 @@ char_at_cursor(void)
 }
 
 static void
-readquote(void)
+getquote(FILE *f)
 {
-	FILE *f = popen(_PATH_FORTUNE, "r");
-	if (f == NULL)
-		err(1, "%s", _PATH_FORTUNE);
-
 	struct string line;
 	string_init(&line);
 
@@ -249,6 +244,30 @@ readquote(void)
 	extent_y = (int)lines.num;
 	for (int i = 0; i < extent_y; i++)
 		extent_x = imax(extent_x, (int)lines.v[i].len);
+}
+
+static void
+readfile(const char *name)
+{
+	FILE *f = fopen(name, "r");
+	if (f == NULL)
+		err(1, "%s", name);
+
+	getquote(f);
+
+	if (fclose(f) != 0)
+		err(1, "%s", name);
+}
+
+
+static void
+readquote(void)
+{
+	FILE *f = popen(_PATH_FORTUNE, "r");
+	if (f == NULL)
+		err(1, "%s", _PATH_FORTUNE);
+
+	getquote(f);
 
 	if (pclose(f) != 0)
 		exit(1); /* error message must come from child process */
@@ -535,12 +554,16 @@ handle_key(void)
 }
 
 static void
-init(void)
+init(const char *filename)
 {
 	stringarray_init(&lines);
 	stringarray_init(&sollines);
 	srandom((unsigned int)time(NULL));
-	readquote();
+	if (filename != NULL) {
+	    readfile(filename);
+	} else {
+	    readquote();
+	}
 	encode();
 
 	initscr();
@@ -570,12 +593,24 @@ clean_up(void)
 	stringarray_cleanup(&lines);
 }
 
-////////////////////////////////////////////////////////////
+
+static void __dead
+usage(void)
+{
+
+	fprintf(stderr, "usage: %s [file]\n", getprogname());
+	exit(1);
+}
 
 int
-main(void)
+main(int argc, char *argv[])
 {
-	init();
+
+	setprogname(argv[0]);
+	if (argc != 1 && argc != 2)
+		usage();
+
+	init(argc > 1 ? argv[1] : NULL);
 	loop();
 	clean_up();
 }

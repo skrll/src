@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.219 2021/04/18 21:53:37 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.221 2021/04/23 20:26:43 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.219 2021/04/18 21:53:37 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.221 2021/04/23 20:26:43 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -123,7 +123,7 @@ anonymize(sym_t *s)
 }
 %}
 
-%expect 177
+%expect 185
 
 %union {
 	val_t	*y_val;
@@ -215,6 +215,7 @@ anonymize(sym_t *s)
 %token <y_type>		T_AT_BOUNDED
 %token <y_type>		T_AT_BUFFER
 %token <y_type>		T_AT_COLD
+%token <y_type>		T_AT_COMMON
 %token <y_type>		T_AT_CONSTRUCTOR
 %token <y_type>		T_AT_DEPRECATED
 %token <y_type>		T_AT_DESTRUCTOR
@@ -578,6 +579,7 @@ type_attribute_spec:
 	| T_AT_NORETURN
 	| T_AT_NOTHROW
 	| T_AT_COLD
+	| T_AT_COMMON
 	| T_AT_RETURNS_TWICE
 	| T_AT_PACKED {
 		addpacked();
@@ -1824,6 +1826,11 @@ read_until_rparen:
 	  }
 	;
 
+declaration_list_opt:
+	  /* empty */
+	| declaration_list
+	;
+
 declaration_list:
 	  declaration {
 		clear_warning_flags();
@@ -1911,23 +1918,11 @@ term:
 			$2->tn_parenthesized = true;
 		$$ = $2;
 	  }
-	| T_LPAREN compound_statement_lbrace declaration_list
+	| T_LPAREN compound_statement_lbrace declaration_list_opt
 	    expr_statement_list {
 		block_level--;
 		mem_block_level--;
 		begin_initialization(mktempsym(dup_type($4->tn_type)));
-		mem_block_level++;
-		block_level++;
-		/* ({ }) is a GCC extension */
-		gnuism(320);
-	 } compound_statement_rbrace T_RPAREN {
-		$$ = new_name_node(*current_initsym(), 0);
-		end_initialization();
-	 }
-	| T_LPAREN compound_statement_lbrace expr_statement_list {
-		block_level--;
-		mem_block_level--;
-		begin_initialization(mktempsym($3->tn_type));
 		mem_block_level++;
 		block_level++;
 		/* ({ }) is a GCC extension */
