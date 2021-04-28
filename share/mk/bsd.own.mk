@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1242 2021/04/18 20:32:49 skrll Exp $
+#	$NetBSD: bsd.own.mk,v 1.1246 2021/04/25 21:55:58 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -14,7 +14,16 @@ MAKECONF?=	/etc/mk.conf
 #
 # CPU model, derived from MACHINE_ARCH
 #
-MACHINE_CPU=	${MACHINE_ARCH:C/mipse[bl]/mips/:C/mips64e[bl]/mips/:C/sh3e[bl]/sh3/:S/coldfire/m68k/:S/m68000/m68k/:C/arm.*/arm/:C/earm.*/arm/:S/earm/arm/:S/powerpc64/powerpc/:S/aarch64eb/aarch64/:S/or1knd/or1k/:C/riscv../riscv/}
+MACHINE_CPU=	${MACHINE_ARCH:C/mips.*e[bl]/mips/:C/sh3e[bl]/sh3/:S/coldfire/m68k/:S/m68000/m68k/:C/e?arm.*/arm/:S/powerpc64/powerpc/:S/aarch64eb/aarch64/:S/or1knd/or1k/:C/riscv../riscv/}
+
+.if (${MACHINE_ARCH} == "mips64el" || \
+     ${MACHINE_ARCH} == "mips64eb" || \
+     ${MACHINE_ARCH} == "mipsn64el" || \
+     ${MACHINE_ARCH} == "mipsn64eb")
+MACHINE_MIPS64= 	1
+.else
+MACHINE_MIPS64= 	0
+.endif
 
 #
 # Subdirectory used below ${RELEASEDIR} when building a release
@@ -64,14 +73,15 @@ TOOLCHAIN_MISSING?=	no
 # What GCC is used?
 #
 .if ${MACHINE} == "alpha" || \
-    ${MACHINE_ARCH} == "x86_64" || \
     ${MACHINE} == "hppa" || \
     ${MACHINE} == "ia64" || \
     ${MACHINE} == "sparc" || \
     ${MACHINE} == "sparc64" || \
     ${MACHINE} == "vax" || \
-    ${MACHINE_ARCH} == "riscv32" || \
-    ${MACHINE_ARCH} == "riscv64"
+    ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_CPU} == "aarch64" || \
+    ${MACHINE_CPU} == "powerpc" || \
+    ${MACHINE_CPU} == "riscv"
 HAVE_GCC?=	10
 .else
 HAVE_GCC?=	9
@@ -1038,7 +1048,7 @@ MK${var}:=	yes
 # aarch64eb is not yet supported.
 #
 .if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "sparc64" \
-    || ${MACHINE_ARCH} == "mips64eb" || ${MACHINE_ARCH} == "mips64el" \
+    || ${MACHINE_MIPS64} \
     || ${MACHINE_ARCH} == "powerpc64" || ${MACHINE_ARCH} == "aarch64" \
     || ${MACHINE_ARCH} == "riscv64" || !empty(MACHINE_ARCH:Mearm*)
 MKCOMPAT?=	yes
@@ -1052,7 +1062,7 @@ MKCOMPATTESTS:=	no
 MKCOMPATX11:=	no
 .endif
 
-.if ${MACHINE_ARCH} == "mips64eb" || ${MACHINE_ARCH} == "mips64el" \
+.if ${MACHINE_MIPS64} \
     || (${MACHINE} == "evbppc" && ${MACHINE_ARCH} == "powerpc")
 MKCOMPATMODULES?=	yes
 .else
@@ -1062,7 +1072,7 @@ MKCOMPATMODULES:=	no
 #
 # These platforms use softfloat by default.
 #
-.if ${MACHINE_ARCH} == "mips64eb" || ${MACHINE_ARCH} == "mips64el"
+.if ${MACHINE_MIPS64}
 MKSOFTFLOAT?=	yes
 .endif
 
