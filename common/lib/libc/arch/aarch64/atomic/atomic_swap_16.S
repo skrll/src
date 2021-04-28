@@ -1,4 +1,4 @@
-/* $NetBSD: atomic_swap_16.S,v 1.2 2020/08/12 12:59:57 skrll Exp $ */
+/* $NetBSD: atomic_swap_16.S,v 1.4 2021/04/21 16:23:47 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
