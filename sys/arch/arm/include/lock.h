@@ -1,4 +1,4 @@
-/*	$NetBSD: lock.h,v 1.34 2019/11/29 20:05:19 riastradh Exp $	*/
+/*	$NetBSD: lock.h,v 1.36 2021/04/24 07:58:12 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -64,11 +64,6 @@ __cpu_simple_lock_set(__cpu_simple_lock_t *__ptr)
 {
 	*__ptr = __SIMPLELOCK_LOCKED;
 }
-
-#ifdef _KERNEL
-/* XXX Formerly included for obsolete mb_* API, maybe no longer needed.  */
-#include <arm/cpufunc.h>
-#endif
 
 #ifdef _ARM_ARCH_6
 static __inline unsigned int
@@ -211,10 +206,10 @@ __cpu_simple_unlock(__cpu_simple_lock_t *__alp)
 
 #ifdef _ARM_ARCH_8
 	if (sizeof(*__alp) == 1) {
-		__asm __volatile("stlb\t%0, [%1]"
+		__asm __volatile("stlrb\t%w0, [%1]"
 		    :: "r"(__SIMPLELOCK_UNLOCKED), "r"(__alp) : "memory");
 	} else {
-		__asm __volatile("stl\t%0, [%1]"
+		__asm __volatile("stlr\t%0, [%1]"
 		    :: "r"(__SIMPLELOCK_UNLOCKED), "r"(__alp) : "memory");
 	}
 #else
