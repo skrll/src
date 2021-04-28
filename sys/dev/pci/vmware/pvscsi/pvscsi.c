@@ -1829,7 +1829,7 @@ pvscsi_attach(device_t parent, device_t dev, void *aux)
 
 	pvscsi_intr_enable(sc);
 
-	sc->sc_scsibus_dv = config_found(sc->dev, &sc->sc_channel, scsiprint);
+	sc->sc_scsibus_dv = config_found(sc->dev, &sc->sc_channel, scsiprint, CFARG_EOL);
 
 	return;
 }
