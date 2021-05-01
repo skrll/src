@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.222 2021/04/29 17:11:30 christos Exp $ */
+/* $NetBSD: cgram.y,v 1.224 2021/05/01 07:25:07 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.222 2021/04/29 17:11:30 christos Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.224 2021/05/01 07:25:07 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -123,7 +123,7 @@ anonymize(sym_t *s)
 }
 %}
 
-%expect 185
+%expect 189
 
 %union {
 	val_t	*y_val;
@@ -235,6 +235,7 @@ anonymize(sym_t *s)
 %token <y_type>		T_AT_MODE
 %token <y_type>		T_AT_NOINLINE
 %token <y_type>		T_AT_NONNULL
+%token <y_type>		T_AT_NONSTRING
 %token <y_type>		T_AT_NORETURN
 %token <y_type>		T_AT_NOTHROW
 %token <y_type>		T_AT_NO_INSTRUMENT_FUNCTION
@@ -562,7 +563,9 @@ type_attribute_spec:
 	| T_AT_SENTINEL T_LPAREN constant_expr T_RPAREN
 	| T_AT_SENTINEL
 	| T_AT_FORMAT_ARG T_LPAREN constant_expr T_RPAREN
-	| T_AT_NONNULL T_LPAREN constant_expr T_RPAREN
+	| T_AT_NONNULL
+	| T_AT_NONNULL T_LPAREN constant_expr_list_opt T_RPAREN
+	| T_AT_NONSTRING
 	| T_AT_MODE T_LPAREN T_NAME T_RPAREN
 	| T_AT_ALIAS T_LPAREN string T_RPAREN
 	| T_AT_OPTIMIZE T_LPAREN string T_RPAREN
@@ -1535,7 +1538,7 @@ statement:			/* C99 6.8 */
 	;
 
 labeled_statement:		/* C99 6.8.1 */
-	  label statement
+	  label opt_type_attribute statement
 	;
 
 label:
@@ -1840,6 +1843,16 @@ declaration_list:
 	| declaration_list declaration {
 		clear_warning_flags();
 	  }
+	;
+
+constant_expr_list_opt:
+	  /* empty */
+	| constant_expr_list
+	;
+
+constant_expr_list:
+	  constant_expr
+	| constant_expr_list T_COMMA constant_expr
 	;
 
 constant_expr:			/* C99 6.6 */
