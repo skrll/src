@@ -1,4 +1,4 @@
-/*	$NetBSD: membar_ops.S,v 1.6 2014/03/28 21:32:41 skrll Exp $	*/
+/*	$NetBSD: membar_ops.S,v 1.7 2021/04/27 05:40:29 skrll Exp $	*/
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.

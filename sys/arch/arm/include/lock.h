@@ -1,4 +1,4 @@
-/*	$NetBSD: lock.h,v 1.36 2021/04/24 07:58:12 skrll Exp $	*/
+/*	$NetBSD: lock.h,v 1.38 2021/04/27 06:03:09 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
