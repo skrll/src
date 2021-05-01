@@ -1,3 +1,4 @@
+/* $NetBSD: if_bypass.c,v 1.8 2021/04/30 06:55:32 msaitoh Exp $ */
 /******************************************************************************
 
   Copyright (c) 2001-2017, Intel Corporation
@@ -32,6 +33,8 @@
 ******************************************************************************/
 /*$FreeBSD: head/sys/dev/ixgbe/if_bypass.c 327031 2017-12-20 18:15:06Z erj $*/
 
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: if_bypass.c,v 1.8 2021/04/30 06:55:32 msaitoh Exp $");
 
 #include "ixgbe.h"
 

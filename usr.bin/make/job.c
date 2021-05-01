@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.429 2021/04/16 16:49:27 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.432 2021/04/27 16:25:46 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -142,7 +142,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.429 2021/04/16 16:49:27 rillig Exp $");
+MAKE_RCSID("$NetBSD: job.c,v 1.432 2021/04/27 16:25:46 rillig Exp $");
 
 /*
  * A shell defines how the commands are run.  All commands for a target are
@@ -1061,6 +1061,20 @@ JobClosePipes(Job *job)
 }
 
 static void
+DebugFailedJob(const Job *job)
+{
+	const StringListNode *ln;
+
+	if (!DEBUG(ERROR))
+		return;
+
+	debug_printf("\n*** Failed target: %s\n*** Failed commands:\n",
+	    job->node->name);
+	for (ln = job->node->commands.first; ln != NULL; ln = ln->next)
+		debug_printf("\t%s\n", (const char *)ln->datum);
+}
+
+static void
 JobFinishDoneExitedError(Job *job, int *inout_status)
 {
 	SwitchOutputTo(job->node);
@@ -1071,6 +1085,7 @@ JobFinishDoneExitedError(Job *job, int *inout_status)
 	}
 #endif
 	if (!shouldDieQuietly(job->node, -1)) {
+		DebugFailedJob(job);
 		(void)printf("*** [%s] Error code %d%s\n",
 		    job->node->name, WEXITSTATUS(*inout_status),
 		    job->ignerr ? " (ignored)" : "");
@@ -1103,6 +1118,7 @@ static void
 JobFinishDoneSignaled(Job *job, int status)
 {
 	SwitchOutputTo(job->node);
+	DebugFailedJob(job);
 	(void)printf("*** [%s] Signal %d\n", job->node->name, WTERMSIG(status));
 	if (deleteOnError)
 		JobDeleteTarget(job->node);
