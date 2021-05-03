@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1045 2021/04/22 22:43:26 rillig Exp $
+# $NetBSD: mi,v 1.1047 2021/04/30 23:49:36 rillig Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -5533,6 +5533,8 @@
 ./usr/tests/usr.bin/make/unit-tests/opt-debug-curdir.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-debug-dir.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-debug-dir.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/opt-debug-errors-jobs.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/opt-debug-errors-jobs.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-debug-errors.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-debug-errors.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-debug-file.exp				tests-usr.bin-tests	compattestfile,atf
@@ -6189,6 +6191,8 @@
 ./usr/tests/usr.bin/xlint/lint1/emit.ln				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/feat_stacktrace.c		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/feat_stacktrace.exp		tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/gcc_attribute.c			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/gcc_attribute.exp		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/gcc_init_compound_literal.c	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/gcc_init_compound_literal.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/gcc_typeof_after_statement.c	tests-usr.bin-tests	compattestfile,atf
