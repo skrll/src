@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.inc,v 1.8 2020/05/30 20:47:59 christos Exp $
+# $NetBSD: Makefile.inc,v 1.10 2021/04/13 04:14:46 mrg Exp $
 
 WARNS?=	1	# XXX -Wshadow -Wcast-qual -Wsign-compare
 
@@ -54,10 +54,12 @@ DPADD+= ${LIBKRB5_DPADD} ${LIBHEIMNTLM} ${LIBGSSAPI} ${LIBKRB5_STATIC_DPADD}
 .if defined(PROG) && ${PROG} == "dhclient" && ${MKSANITIZER:Uno} != "yes"
 LDADD+=-Wl,-Bdynamic
 .endif
-LDADD+= -lcrypto -lipsec -lcrypt
-DPADD+= ${LIBCRYPTO} ${LIBIPSEC} ${LIBCRYPT}
+LDADD+= -lssl -lcrypto -lipsec -lcrypt
+DPADD+= ${LIBSSL} ${LIBCRYPTO} ${LIBIPSEC} ${LIBCRYPT}
 .if defined(PROG) && ${PROG} == "dhclient" && ${MKSANITIZER:Uno} != "yes"
 LDADD+=-Wl,-Bdynamic
 .endif
 DPADD+= ${COBJDIR}/libdhcp.a
 DPADD+= ${OMOBJDIR}/libomapi.a
+
+COPTS+=	-fcommon

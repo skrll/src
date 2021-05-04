@@ -1,11 +1,11 @@
-/*	$NetBSD: dlz_dlopen_driver.c,v 1.7 2020/08/03 17:23:37 christos Exp $	*/
+/*	$NetBSD: dlz_dlopen_driver.c,v 1.9 2021/04/05 11:27:00 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -69,14 +69,14 @@ typedef struct dlopen_data {
 		if ((cd->flags & DNS_SDLZFLAG_THREADSAFE) == 0 && \
 		    !cd->in_configure)                            \
 			LOCK(&cd->lock);                          \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define MAYBE_UNLOCK(cd)                                          \
 	do {                                                      \
 		if ((cd->flags & DNS_SDLZFLAG_THREADSAFE) == 0 && \
 		    !cd->in_configure)                            \
 			UNLOCK(&cd->lock);                        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*
  * Log a message at the given level.

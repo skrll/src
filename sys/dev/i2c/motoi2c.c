@@ -1,4 +1,4 @@
-/* $NetBSD: motoi2c.c,v 1.7 2019/12/22 23:23:32 thorpej Exp $ */
+/* $NetBSD: motoi2c.c,v 1.11 2021/04/24 23:36:54 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007, 2010 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: motoi2c.c,v 1.7 2019/12/22 23:23:32 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: motoi2c.c,v 1.11 2021/04/24 23:36:54 thorpej Exp $");
 
 #if defined(__arm__) || defined(__aarch64__)
 #include "opt_fdt.h"
@@ -56,20 +56,6 @@ int motoi2c_debug = 0;
 #define	DPRINTF(x)	if (motoi2c_debug) printf x
 #else
 #define	DPRINTF(x)
-#endif
-
-#ifdef FDT
-static i2c_tag_t
-motoi2c_get_tag(device_t dev)
-{
-	struct motoi2c_softc * const sc = device_private(dev);
-
-	return &sc->sc_i2c;
-}
-
-static const struct fdtbus_i2c_controller_func motoi2c_funcs = {
-	.get_tag = motoi2c_get_tag,
-};
 #endif
 
 static int  motoi2c_acquire_bus(void *, int);
@@ -121,21 +107,36 @@ motoi2c_attach_common(device_t self, struct motoi2c_softc *sc,
 		sc->sc_iowr = motoi2c_iowr1;
 	memset(&iba, 0, sizeof(iba));
 	iba.iba_tag = &sc->sc_i2c;
+	iba.iba_child_devices = sc->sc_child_devices;
 
-	I2C_WRITE(I2CCR, 0);		/* reset before changing anything */
+	if ((sc->sc_flags & MOTOI2C_F_ENABLE_INV) != 0) {
+		sc->sc_enable_mask = 0;
+		sc->sc_disable_mask = CR_MEN;
+	} else {
+		sc->sc_enable_mask = CR_MEN;
+		sc->sc_disable_mask = 0;
+	}
+
+	I2C_WRITE(I2CCR, sc->sc_disable_mask);	/* reset before config */
 	I2C_WRITE(I2CDFSRR, i2c->i2c_dfsrr);	/* sampling units */
 	I2C_WRITE(I2CFDR, i2c->i2c_fdr);	/* divider 3072 (0x31) */
 	I2C_WRITE(I2CADR, i2c->i2c_adr);	/* our slave address is 0x7f */
-	I2C_WRITE(I2CSR, 0);		/* clear status flags */
+	if ((sc->sc_flags & MOTOI2C_F_STATUS_W1C) != 0) {
+		I2C_WRITE(I2CSR, I2C_READ(I2CSR)); /* clear status flags */
+	} else {
+		I2C_WRITE(I2CSR, 0);		/* clear status flags */
+	}
 
 #ifdef FDT
-	KASSERT(sc->sc_phandle != 0);
-	fdtbus_register_i2c_controller(self, sc->sc_phandle, &motoi2c_funcs);
-
-	fdtbus_attach_i2cbus(self, sc->sc_phandle, &sc->sc_i2c, iicbus_print);
-#else
-	config_found_ia(self, "i2cbus", &iba, iicbus_print);
+	if (sc->sc_phandle != 0) {
+		fdtbus_register_i2c_controller(&sc->sc_i2c, sc->sc_phandle);
+		fdtbus_attach_i2cbus(self, sc->sc_phandle, &sc->sc_i2c,
+		    iicbus_print);
+	} else
 #endif
+	config_found(self, &iba, iicbus_print,
+	    CFARG_IATTR, "i2cbus",
+	    CFARG_EOL);
 }
 
 static int
@@ -143,7 +144,7 @@ motoi2c_acquire_bus(void *v, int flags)
 {
 	struct motoi2c_softc * const sc = v;
 
-	I2C_WRITE(I2CCR, CR_MEN);	/* enable the I2C module */
+	I2C_WRITE(I2CCR, sc->sc_enable_mask);	/* enable the I2C module */
 
 	return 0;
 }
@@ -153,7 +154,7 @@ motoi2c_release_bus(void *v, int flags)
 {
 	struct motoi2c_softc * const sc = v;
 
-	I2C_WRITE(I2CCR, 0);		/* reset before changing anything */
+	I2C_WRITE(I2CCR, sc->sc_disable_mask);	/* disable the I2C module */
 }
 
 static int
@@ -172,6 +173,16 @@ motoi2c_stop_wait(struct motoi2c_softc *sc)
 	}
 
 	return error;
+}
+
+static void
+motoi2c_clear_status(struct motoi2c_softc *sc, uint8_t sr)
+{
+	if ((sc->sc_flags & MOTOI2C_F_STATUS_W1C) != 0) {
+		I2C_WRITE(I2CSR, sr);
+	} else {
+		I2C_WRITE(I2CSR, 0);
+	}
 }
 
 /* busy waiting for byte data transfer completion */
@@ -199,7 +210,7 @@ motoi2c_busy_wait(struct motoi2c_softc *sc, uint8_t cr)
 		    __func__, sr, 1000 - timo));
 		error = EIO;
 	}
-	I2C_WRITE(I2CSR, 0);
+	motoi2c_clear_status(sc, sr);
 	return error;
 }
 
@@ -241,13 +252,13 @@ motoi2c_exec(void *v, i2c_op_t op, i2c_addr_t addr,
 	}
 
 	/* reset interrupt and arbitration-lost flags (all others are RO) */
-	I2C_WRITE(I2CSR, 0);
+	motoi2c_clear_status(sc, sr);
 	sr = I2C_READ(I2CSR);
 
 	/*
 	 * Generate start condition
 	 */
-	cr = CR_MEN | CR_MTX | CR_MSTA;
+	cr = sc->sc_enable_mask | CR_MTX | CR_MSTA;
 	I2C_WRITE(I2CCR, cr);
 
 	DPRINTF(("%s: started: sr=%#x cr=%#x/%#x\n",
@@ -257,9 +268,9 @@ motoi2c_exec(void *v, i2c_op_t op, i2c_addr_t addr,
 	if (sr & SR_MAL) {
 		DPRINTF(("%s: lost bus: sr=%#x cr=%#x/%#x\n",
 		    __func__, I2C_READ(I2CSR), cr, I2C_READ(I2CCR)));
-		I2C_WRITE(I2CCR, 0);
+		I2C_WRITE(I2CCR, sc->sc_disable_mask);
 		DELAY(10);
-		I2C_WRITE(I2CCR, CR_MEN | CR_MTX | CR_MSTA);
+		I2C_WRITE(I2CCR, sc->sc_enable_mask | CR_MTX | CR_MSTA);
 		DELAY(10);
 		sr = I2C_READ(I2CSR);
 		if (sr & SR_MAL) {
@@ -342,14 +353,14 @@ motoi2c_exec(void *v, i2c_op_t op, i2c_addr_t addr,
 				cr |= CR_TXAK;
 				I2C_WRITE(I2CCR, cr);
 			} else if (i == datalen - 1 && I2C_OP_STOP_P(op)) {
-				cr = CR_MEN | CR_TXAK;
+				cr = sc->sc_enable_mask | CR_TXAK;
 				I2C_WRITE(I2CCR, cr);
 			}
 			*dataptr++ = I2C_READ(I2CDR);
 		}
 		if (datalen == 0) {
 			if (I2C_OP_STOP_P(op)) {
-				cr = CR_MEN | CR_TXAK;
+				cr = sc->sc_enable_mask | CR_TXAK;
 				I2C_WRITE(I2CCR, cr);
 			}
 			(void)I2C_READ(I2CDR);	/* dummy read */
@@ -379,7 +390,7 @@ motoi2c_exec(void *v, i2c_op_t op, i2c_addr_t addr,
 	 * send a STOP.
 	 */
 	if (error || (cr & CR_TXAK) || ((cr & CR_MSTA) && I2C_OP_STOP_P(op))) {
-		cr = CR_MEN;
+		cr = sc->sc_enable_mask;
 		I2C_WRITE(I2CCR, cr);
 		motoi2c_stop_wait(sc);
 		DPRINTF(("%s: stopping: cr=%#x/%#x\n", __func__,

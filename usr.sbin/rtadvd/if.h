@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.11 2018/04/20 10:39:37 roy Exp $	*/
+/*	$NetBSD: if.h,v 1.13 2021/03/23 18:16:21 christos Exp $	*/
 /*	$KAME: if.h,v 1.12 2003/09/21 07:17:03 itojun Exp $	*/
 
 /*
@@ -35,20 +35,21 @@
 struct nd_opt_hdr;
 struct sockaddr_dl *if_nametosdl(const char *);
 int if_getmtu(const char *);
-int if_getflags(int, int);
+int if_getflags(unsigned int, int);
 int lladdropt_length(struct sockaddr_dl *);
 void lladdropt_fill(struct sockaddr_dl *, struct nd_opt_hdr *);
-char *get_next_msg(char *, char *, int, size_t *, int);
-struct in6_addr *get_addr(char *);
-int get_rtm_ifindex(char *);
-int get_ifm_ifindex(char *);
-int get_ifam_ifindex(char *);
-int get_ifm_flags(char *);
+char *get_next_msg(char *, char *, unsigned int, size_t *, int);
+const struct in6_addr *get_addr(const void *);
+unsigned int get_rtm_ifindex(const void *);
+unsigned int get_ifm_ifindex(const void *);
+unsigned int get_ifam_ifindex(const void *);
+int get_ifm_flags(const void *);
 #ifdef RTM_IFANNOUNCE
-int get_ifan_ifindex(char *);
-int get_ifan_what(char *);
+unsigned int get_ifan_ifindex(const void *);
+int get_ifan_what(const void *);
 #endif
-int get_prefixlen(char *);
+int get_prefixlen(const void *);
 int prefixlen(const unsigned char *, const unsigned char *);
-int rtmsg_type(char *);
-int rtmsg_len(char *);
+const char *rtmsg_typestr(const void *);
+int rtmsg_type(const void *);
+int rtmsg_len(const void *);

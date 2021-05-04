@@ -1,4 +1,4 @@
-/*	$NetBSD: lst.h,v 1.92 2020/12/04 20:11:48 rillig Exp $	*/
+/*	$NetBSD: lst.h,v 1.98 2021/04/03 11:08:40 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -90,16 +90,12 @@ typedef struct ListNode ListNode;
 struct ListNode {
 	ListNode *prev;		/* previous node in list, or NULL */
 	ListNode *next;		/* next node in list, or NULL */
-	union {
-		void *datum;	/* datum associated with this element */
-		const struct GNode *priv_gnode; /* alias, just for debugging */
-		const char *priv_str; /* alias, just for debugging */
-	};
+	void *datum;		/* datum associated with this element */
 };
 
 struct List {
-	ListNode *first;	/* first node in list */
-	ListNode *last;		/* last node in list */
+	ListNode *first;
+	ListNode *last;
 };
 
 /* Free the datum of a node, called before freeing the node itself. */
@@ -115,8 +111,6 @@ void Lst_Done(List *);
 void Lst_DoneCall(List *, LstFreeProc);
 /* Free the list, leaving the node data unmodified. */
 void Lst_Free(List *);
-/* Free the list, freeing the node data using the given function. */
-void Lst_Destroy(List *, LstFreeProc);
 
 #define LST_INIT { NULL, NULL }
 
@@ -124,15 +118,17 @@ void Lst_Destroy(List *, LstFreeProc);
 MAKE_INLINE void
 Lst_Init(List *list)
 {
-    list->first = NULL;
-    list->last = NULL;
+	list->first = NULL;
+	list->last = NULL;
 }
 
 /* Get information about a list */
 
-MAKE_INLINE Boolean
+MAKE_INLINE bool
 Lst_IsEmpty(List *list)
-{ return list->first == NULL; }
+{
+	return list->first == NULL;
+}
 
 /* Find the first node that contains the given datum, or NULL. */
 ListNode *Lst_FindDatum(List *, const void *);
@@ -169,19 +165,23 @@ Lst_Enqueue(List *list, void *datum) {
 /* Remove the head node of the queue and return its datum. */
 void *Lst_Dequeue(List *);
 
-/* A vector is an ordered collection of items, allowing for fast indexed
- * access. */
+/*
+ * A vector is an ordered collection of items, allowing for fast indexed
+ * access.
+ */
 typedef struct Vector {
 	void *items;		/* memory holding the items */
-	size_t itemSize;	/* size of a single item in bytes */
+	size_t itemSize;	/* size of a single item */
 	size_t len;		/* number of actually usable elements */
-	size_t priv_cap;	/* capacity */
+	size_t cap;		/* capacity */
 } Vector;
 
 void Vector_Init(Vector *, size_t);
 
-/* Return the pointer to the given item in the vector.
- * The returned data is valid until the next modifying operation. */
+/*
+ * Return the pointer to the given item in the vector.
+ * The returned data is valid until the next modifying operation.
+ */
 MAKE_INLINE void *
 Vector_Get(Vector *v, size_t i)
 {

@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.h,v 1.37 2019/06/02 06:09:17 mrg Exp $	*/
+/*	$NetBSD: db_interface.h,v 1.40 2021/04/18 01:28:50 mrg Exp $	*/
 
 /*-
  * Copyright (c) 1995 The NetBSD Foundation, Inc.
@@ -80,16 +80,32 @@ void		db_show_all_device(db_expr_t, bool, db_expr_t, const char *);
 /* kern/subr_disk.c, dev/dksubr.c */
 void		db_show_disk(db_expr_t, bool, db_expr_t, const char *);
 
-#define	db_stacktrace() \
+/* The db_stacktrace_print macro may be overridden by an MD macro */
+#ifndef db_stacktrace_print
+#define	db_stacktrace_print(prfunc) \
     db_stack_trace_print((db_expr_t)(intptr_t)__builtin_frame_address(0), \
-	true, 65535, "", printf)
+	true, 65535, "", prfunc)
+#endif	/* !db_stacktrace_print */
 
-#define	db_ustacktrace() \
-    db_stack_trace_print((db_expr_t)(intptr_t)__builtin_frame_address(0), \
-	true, 65535, "", uprintf)
+#define	db_stacktrace()		db_stacktrace_print(printf);
+#define	db_ustacktrace()	db_stacktrace_print(uprintf);
 
-#define	db_lstacktrace() \
-    db_stack_trace_print((db_expr_t)(intptr_t)__builtin_frame_address(0), \
-	true, 65535, "", addlog)
+#include <sys/syslog.h>
+
+#ifdef _KERNEL
+
+static __inline__ void
+_db_log_wrapper(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vlog(LOG_INFO, fmt, ap);
+	va_end(ap);
+}
+
+#define	db_lstacktrace()	db_stacktrace_print(_db_log_wrapper);
+
+#endif
 
 #endif /* _DDB_DB_INTERFACE_H_ */

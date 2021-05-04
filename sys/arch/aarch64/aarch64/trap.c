@@ -1,4 +1,4 @@
-/* $NetBSD: trap.c,v 1.41 2020/12/11 18:03:33 skrll Exp $ */
+/* $NetBSD: trap.c,v 1.46 2021/04/14 05:43:09 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.41 2020/12/11 18:03:33 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.46 2021/04/14 05:43:09 ryo Exp $");
 
 #include "opt_arm_intr_impl.h"
 #include "opt_compat_netbsd32.h"
@@ -416,8 +416,14 @@ trap_el0_sync(struct trapframe *tf)
 	const uint32_t esr = tf->tf_esr;
 	const uint32_t eclass = __SHIFTOUT(esr, ESR_EC); /* exception class */
 
+#ifdef DDB
+	/* disable trace, and enable hardware breakpoint/watchpoint */
+	reg_mdscr_el1_write(
+	    (reg_mdscr_el1_read() & ~MDSCR_SS) | MDSCR_KDE);
+#else
 	/* disable trace */
 	reg_mdscr_el1_write(reg_mdscr_el1_read() & ~MDSCR_SS);
+#endif
 	/* enable traps and interrupts */
 	daif_enable(DAIF_D|DAIF_A|DAIF_I|DAIF_F);
 
@@ -511,9 +517,14 @@ interrupt(struct trapframe *tf)
 	}
 #endif
 
+#ifdef DDB
+	/* disable trace, and enable hardware breakpoint/watchpoint */
+	reg_mdscr_el1_write(
+	    (reg_mdscr_el1_read() & ~MDSCR_SS) | MDSCR_KDE);
+#else
 	/* disable trace */
 	reg_mdscr_el1_write(reg_mdscr_el1_read() & ~MDSCR_SS);
-
+#endif
 	/* enable traps */
 	daif_enable(DAIF_D|DAIF_A);
 
@@ -761,8 +772,14 @@ trap_el0_32sync(struct trapframe *tf)
 	const uint32_t esr = tf->tf_esr;
 	const uint32_t eclass = __SHIFTOUT(esr, ESR_EC); /* exception class */
 
+#ifdef DDB
+	/* disable trace, and enable hardware breakpoint/watchpoint */
+	reg_mdscr_el1_write(
+	    (reg_mdscr_el1_read() & ~MDSCR_SS) | MDSCR_KDE);
+#else
 	/* disable trace */
 	reg_mdscr_el1_write(reg_mdscr_el1_read() & ~MDSCR_SS);
+#endif
 	/* enable traps and interrupts */
 	daif_enable(DAIF_D|DAIF_A|DAIF_I|DAIF_F);
 
@@ -844,6 +861,26 @@ unknown:
 	}
 }
 
+void
+trap_el1h_error(struct trapframe *tf)
+{
+	/*
+	 * Normally, we should panic unconditionally,
+	 * but SError interrupt may occur when accessing to unmapped(?) I/O
+	 * spaces. bus_space_{peek,poke}_{1,2,4,8}() should trap these case.
+	 */
+	struct faultbuf *fb;
+
+	if (curcpu()->ci_intr_depth == 0) {
+		fb = cpu_disable_onfault();
+		if (fb != NULL) {
+			cpu_jump_onfault(tf, fb, EFAULT);
+			return;
+		}
+	}
+	panic("%s", __func__);
+}
+
 #define bad_trap_panic(trapfunc)	\
 void					\
 trapfunc(struct trapframe *tf)		\
@@ -855,7 +892,6 @@ bad_trap_panic(trap_el1t_irq)
 bad_trap_panic(trap_el1t_fiq)
 bad_trap_panic(trap_el1t_error)
 bad_trap_panic(trap_el1h_fiq)
-bad_trap_panic(trap_el1h_error)
 bad_trap_panic(trap_el0_fiq)
 bad_trap_panic(trap_el0_error)
 bad_trap_panic(trap_el0_32fiq)
@@ -919,7 +955,8 @@ sigdebug(const struct trapframe *tf, const ksiginfo_t *ksi)
 }
 #endif
 
-void do_trapsignal1(
+void
+do_trapsignal1(
 #ifdef TRAP_SIGDEBUG
     const char *func,
     size_t line,

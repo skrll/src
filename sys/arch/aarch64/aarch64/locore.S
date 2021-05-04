@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.74 2020/10/22 07:16:06 ryo Exp $	*/
+/*	$NetBSD: locore.S,v 1.78 2021/03/21 09:08:40 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -38,7 +38,7 @@
 #include <aarch64/hypervisor.h>
 #include "assym.h"
 
-RCSID("$NetBSD: locore.S,v 1.74 2020/10/22 07:16:06 ryo Exp $")
+RCSID("$NetBSD: locore.S,v 1.78 2021/03/21 09:08:40 skrll Exp $")
 
 #ifdef AARCH64_DEVICE_MEM_STRONGLY_ORDERED
 #define	MAIR_DEVICE_MEM		MAIR_DEVICE_nGnRnE
@@ -175,7 +175,7 @@ vstart:
 	msr	tpidr_el0, xzr
 	msr	tpidrro_el0, xzr
 
-	/* set curcpu() */
+	/* set curlwp() */
 	adrl	x0, lwp0		/* curlwp is lwp0 */
 	msr	tpidr_el1, x0
 	DPRINTREG("curlwp           = ", x0);
@@ -250,6 +250,7 @@ init_sysregs:
 
 	/* No trap system register access, and Trap FP/SIMD access */
 	msr	cpacr_el1, xzr
+	isb
 
 	/* allow to read CNTVCT_EL0 and CNTFRQ_EL0 from EL0 */
 	mrs	x0, cntkctl_el1
@@ -831,7 +832,7 @@ init_mmutable:
 #endif
 
 	/*
-	 * int
+	 * void
 	 * pmapboot_enter(
 	 *     x0: vaddr_t va,
 	 *     x1: paddr_t pa,
@@ -852,7 +853,6 @@ init_mmutable:
 	orr	x4, x4, #LX_BLKPAG_UXN | LX_BLKPAG_PXN	/* attr */
 	mov	x5, x26				/* pr func */
 	bl	pmapboot_enter
-	cbnz	x0, init_mmutable_error
 #endif
 
 	/* identity mapping for kernel image */
@@ -864,10 +864,10 @@ init_mmutable:
 	sub	x2, x2, x1			/* size = _end - start */
 	add	x2, x2, #PMAPBOOT_PAGEALLOCMAX	/* for pmapboot_pagealloc() */
 	mov	x3, #L2_SIZE			/* blocksize */
-	mov	x4, #LX_BLKPAG_ATTR_NORMAL_NC | LX_BLKPAG_AP_RW	/* attr */
+	mov	x4, #LX_BLKPAG_ATTR_NORMAL_WB | LX_BLKPAG_AP_RW	/* attr */
+	orr	x4, x4, #LX_BLKPAG_UXN
 	mov	x5, x26				/* pr func */
 	bl	pmapboot_enter
-	cbnz	x0, init_mmutable_error
 
 #ifdef FDT
 	VPRINT("Creating identity mapping for FDT\n")
@@ -878,11 +878,10 @@ init_mmutable:
 	mov	x1, x8				/* pa */
 	mov	x2, #L2_SIZE			/* size */
 	mov	x3, #L2_SIZE			/* blocksize */
-	mov	x4, #LX_BLKPAG_ATTR_NORMAL_NC | LX_BLKPAG_AP_RW
+	mov	x4, #LX_BLKPAG_ATTR_NORMAL_WB | LX_BLKPAG_AP_RW
 	orr	x4, x4, #LX_BLKPAG_UXN | LX_BLKPAG_PXN	/* attr */
 	mov	x5, x26				/* pr func */
 	bl	pmapboot_enter
-	cbnz	x0, init_mmutable_error
 #endif
 
 	VPRINT("Creating KVA=PA tables\n")
@@ -895,7 +894,6 @@ init_mmutable:
 	orr	x4, x4, #LX_BLKPAG_UXN
 	mov	x5, x26				/* pr func */
 	bl	pmapboot_enter
-	cbnz	x0, init_mmutable_error
 
 	VPRINT("OK\n");
 	mov	x0, xzr

@@ -1,4 +1,4 @@
-/*	$NetBSD: main1.c,v 1.27 2018/12/23 19:09:03 christos Exp $	*/
+/*	$NetBSD: main1.c,v 1.45 2021/04/18 22:51:24 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,25 +37,25 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: main1.c,v 1.27 2018/12/23 19:09:03 christos Exp $");
+__RCSID("$NetBSD: main1.c,v 1.45 2021/04/18 22:51:24 rillig Exp $");
 #endif
 
 #include <sys/types.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <errno.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "lint1.h"
 
 /* set yydebug to 1*/
-int	yflag;
+bool	yflag;
 
 /*
- * Print warnings if an assignment of an integertype to another integertype
+ * Print warnings if an assignment of an integer type to another integer type
  * causes an implicit narrowing conversion. If aflag is 1, these warnings
  * are printed only if the source type is at least as wide as long. If aflag
  * is greater than 1, they are always printed.
@@ -63,64 +63,69 @@ int	yflag;
 int	aflag;
 
 /* Print a warning if a break statement cannot be reached. */
-int	bflag;
+bool	bflag;
 
 /* Print warnings for pointer casts. */
-int	cflag;
+bool	cflag;
+
+/* Allow features from C11, C99 and C90. */
+bool	c11flag;
 
 /* Print various debug information. */
-int	dflag;
+bool	dflag;
 
 /* Perform stricter checking of enum types and operations on enum types. */
-int	eflag;
+bool	eflag;
 
 /* Print complete pathnames, not only the basename. */
-int	Fflag;
+bool	Fflag;
 
 /* Enable some extensions of gcc */
-int	gflag;
+bool	gflag;
 
 /* Treat warnings as errors */
-int	wflag;
+bool	wflag;
 
 /*
  * Apply a number of heuristic tests to attempt to intuit bugs, improve
  * style, and reduce waste.
  */
-int	hflag;
+bool	hflag;
 
 /* Attempt to check portability to other dialects of C. */
-int	pflag;
+bool	pflag;
 
 /*
  * In case of redeclarations/redefinitions print the location of the
  * previous declaration/definition.
  */
-int	rflag;
+bool	rflag;
 
 /* Strict ANSI C mode. */
-int	sflag;
+bool	sflag;
+
+bool	Tflag;
 
 /* Traditional C mode. */
-int	tflag;
+bool	tflag;
 
 /* Enable C9X extensions */
-int	Sflag;
+bool	Sflag;
 
 /* Picky flag */
-int	Pflag;
+bool	Pflag;
 
 /*
  * Complain about functions and external variables used and not defined,
  * or defined and not used.
  */
-int	uflag = 1;
+bool	uflag = true;
 
 /* Complain about unused function arguments. */
-int	vflag = 1;
+bool	vflag = true;
 
 /* Complain about structures which are never defined. */
-int	zflag = 1;
+bool	zflag = true;
 
 err_set	msgset;
 
@@ -133,10 +138,10 @@ static const char builtins[] =
     "int __builtin_isnan(long double);\n"
     "int __builtin_copysign(long double, long double);\n"
 ;
-static size_t builtinlen = sizeof(builtins) - 1;
+static const size_t builtinlen = sizeof(builtins) - 1;
 
 static FILE *
-bltin(void)
+gcc_builtins(void)
 {
 #if HAVE_NBTOOL_CONFIG_H
 	char template[] = "/tmp/lint.XXXXXX";
@@ -176,38 +181,48 @@ main(int argc, char *argv[])
 	setprogname(argv[0]);
 
 	ERR_ZERO(&msgset);
-	while ((c = getopt(argc, argv, "abcdeghmprstuvwyzFPR:SX:")) != -1) {
+	while ((c = getopt(argc, argv, "abcdeghmprstuvwyzA:FPR:STX:")) != -1) {
 		switch (c) {
 		case 'a':	aflag++;	break;
-		case 'b':	bflag = 1;	break;
-		case 'c':	cflag = 1;	break;
-		case 'd':	dflag = 1;	break;
-		case 'e':	eflag = 1;	break;
-		case 'F':	Fflag = 1;	break;
-		case 'g':	gflag = 1;	break;
-		case 'h':	hflag = 1;	break;
-		case 'p':	pflag = 1;	break;
-		case 'P':	Pflag = 1;	break;
-		case 'r':	rflag = 1;	break;
-		case 's':	sflag = 1;	break;
-		case 'S':	Sflag = 1;	break;
-		case 't':	tflag = 1;	break;
-		case 'u':	uflag = 0;	break;
-		case 'w':	wflag = 1;	break;
-		case 'v':	vflag = 0;	break;
-		case 'y':	yflag = 1;	break;
-		case 'z':	zflag = 0;	break;
+		case 'b':	bflag = true;	break;
+		case 'c':	cflag = true;	break;
+		case 'd':	dflag = true;	break;
+		case 'e':	eflag = true;	break;
+		case 'F':	Fflag = true;	break;
+		case 'g':	gflag = true;	break;
+		case 'h':	hflag = true;	break;
+		case 'p':	pflag = true;	break;
+		case 'P':	Pflag = true;	break;
+		case 'r':	rflag = true;	break;
+		case 's':	sflag = true;	break;
+		case 'S':	Sflag = true;	break;
+		case 'T':	Tflag = true;	break;
+		case 't':	tflag = true;	break;
+		case 'u':	uflag = false;	break;
+		case 'w':	wflag = true;	break;
+		case 'v':	vflag = false;	break;
+		case 'y':	yflag = true;	break;
+		case 'z':	zflag = false;	break;
+
+		case 'A':
+			if (strcmp(optarg, "c11") == 0) {
+				c11flag = true;
+				Sflag = true;
+				sflag = true;
+			} else
+				usage();
+			break;
 
 		case 'm':
 			msglist();
-			return(0);
+			return 0;
 
-		case 'R':	
-			fnaddreplsrcdir(optarg);
+		case 'R':
+			add_directory_replacement(optarg);
 			break;
 
 		case 'X':
-			for (ptr = strtok(optarg, ","); ptr;
+			for (ptr = strtok(optarg, ","); ptr != NULL;
 			    ptr = strtok(NULL, ",")) {
 				char *eptr;
 				long msg;
@@ -218,17 +233,15 @@ main(int argc, char *argv[])
 				    errno == ERANGE)
 				    err(1, "invalid error message id '%s'",
 					ptr);
-				if (*eptr || ptr == eptr || msg < 0 ||
+				if (*eptr != '\0' || ptr == eptr || msg < 0 ||
 				    msg >= ERR_SETSIZE)
 					errx(1, "invalid error message id '%s'",
 					    ptr);
 				ERR_SET(msg, &msgset);
 			}
 			break;
-		case '?':
 		default:
 			usage();
-			break;
 		}
 	}
 	argc -= optind;
@@ -250,12 +263,13 @@ main(int argc, char *argv[])
 	initmem();
 	initdecl();
 	initscan();
-	initmtab();
 
-	if ((yyin = bltin()) == NULL)
-		err(1, "cannot open builtins");
-	yyparse();
-	fclose(yyin);
+	if (gflag) {
+		if ((yyin = gcc_builtins()) == NULL)
+			err(1, "cannot open builtins");
+		yyparse();
+		fclose(yyin);
+	}
 
 	/* open the input file */
 	if ((yyin = fopen(argv[0], "r")) == NULL)
@@ -269,23 +283,24 @@ main(int argc, char *argv[])
 	printf("%s, %d: lwarn = %d\n", curr_pos.p_file, curr_pos.p_line, lwarn);
 #endif
 
-	chkglsyms();
+	check_global_symbols();
 
 	outclose();
 
-	return (nerr != 0);
+	return nerr != 0 ? 1 : 0;
 }
 
-static void
+static void __attribute__((noreturn))
 usage(void)
 {
 	(void)fprintf(stderr,
-	    "Usage: %s [-abcdeghmprstuvwyzFS] [-X <id>[,<id>]... src dest\n",
+	    "usage: %s [-abcdeghmprstuvwyzFST] [-Ac11] [-X <id>[,<id>]... "
+	    "src dest\n",
 	    getprogname());
 	exit(1);
 }
 
-void
+void __attribute__((noreturn))
 norecover(void)
 {
 	/* cannot recover from previous errors */

@@ -36,43 +36,29 @@ controls {
 	inet 10.53.0.6 port @CONTROLPORT@ allow { any; } keys { rndc_key; };
 };
 
-/* These are zones that migrate to dnssec-policy. */
-zone "migrate.kasp" {
+/* These zones are going insecure. */
+zone "step1.going-insecure.kasp" {
 	type master;
-	file "migrate.kasp.db";
-	auto-dnssec maintain;
-	allow-update { any; };
-	dnssec-dnskey-kskonly yes;
-	update-check-ksk yes;
+	file "step1.going-insecure.kasp.db";
+	dnssec-policy "unsigning";
 };
 
-zone "migrate-nomatch-algnum.kasp" {
+zone "step1.going-insecure-dynamic.kasp" {
 	type master;
-	file "migrate-nomatch-algnum.kasp.db";
-	auto-dnssec maintain;
+	file "step1.going-insecure-dynamic.kasp.db";
+	dnssec-policy "unsigning";
 	allow-update { any; };
-	dnssec-dnskey-kskonly yes;
-	update-check-ksk yes;
-};
-
-zone "migrate-nomatch-alglen.kasp" {
-	type master;
-	file "migrate-nomatch-alglen.kasp.db";
-	auto-dnssec maintain;
-	allow-update { any; };
-	dnssec-dnskey-kskonly yes;
-	update-check-ksk yes;
 };
 
 /* These are alorithm rollover test zones. */
 zone "step1.algorithm-roll.kasp" {
-	type master;
+	type primary;
 	file "step1.algorithm-roll.kasp.db";
 	dnssec-policy "rsasha1";
 };
 
 zone "step1.csk-algorithm-roll.kasp" {
-	type master;
+	type primary;
 	file "step1.csk-algorithm-roll.kasp.db";
 	dnssec-policy "csk-algoroll";
 };

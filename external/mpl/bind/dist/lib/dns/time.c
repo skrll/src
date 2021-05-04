@@ -1,11 +1,11 @@
-/*	$NetBSD: time.c,v 1.4 2020/05/24 19:46:23 christos Exp $	*/
+/*	$NetBSD: time.c,v 1.6 2021/04/05 11:27:02 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -139,7 +139,7 @@ dns_time64_fromtext(const char *source, int64_t *target) {
 	do {                                        \
 		if (value < (min) || value > (max)) \
 			return ((ISC_R_RANGE));     \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 	if (strlen(source) != 14U) {
 		return (DNS_R_SYNTAX);

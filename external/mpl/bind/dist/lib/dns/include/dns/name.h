@@ -1,11 +1,11 @@
-/*	$NetBSD: name.h,v 1.5 2020/05/24 19:46:23 christos Exp $	*/
+/*	$NetBSD: name.h,v 1.7 2021/04/05 11:27:02 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -1350,7 +1350,7 @@ ISC_LANG_ENDDECLS
 		_n->buffer = NULL;                \
 		ISC_LINK_INIT(_n, link);          \
 		ISC_LIST_INIT(_n->list);          \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define DNS_NAME_RESET(n)                                  \
 	do {                                               \
@@ -1360,7 +1360,7 @@ ISC_LANG_ENDDECLS
 		(n)->attributes &= ~DNS_NAMEATTR_ABSOLUTE; \
 		if ((n)->buffer != NULL)                   \
 			isc_buffer_clear((n)->buffer);     \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define DNS_NAME_SETBUFFER(n, b) (n)->buffer = (b)
 
@@ -1373,7 +1373,7 @@ ISC_LANG_ENDDECLS
 	do {                               \
 		(r)->base = (n)->ndata;    \
 		(r)->length = (n)->length; \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define DNS_NAME_SPLIT(n, l, p, s)                                             \
 	do {                                                                   \
@@ -1386,7 +1386,7 @@ ISC_LANG_ENDDECLS
 		if (_s != NULL)                                                \
 			dns_name_getlabelsequence(_n, _n->labels - _l, _l,     \
 						  _s);                         \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #ifdef DNS_NAME_USEINLINE
 

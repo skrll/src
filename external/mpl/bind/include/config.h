@@ -46,6 +46,12 @@
 /* define if the ARM yield instruction is available */
 /* #undef HAVE_ARM_YIELD */
 
+/* Define to 1 if you have the `BIO_read_ex' function. */
+#define HAVE_BIO_READ_EX 1
+
+/* Define to 1 if you have the `BIO_write_ex' function. */
+#define HAVE_BIO_WRITE_EX 1
+
 /* Define to 1 if the compiler supports __builtin_clz. */
 #define HAVE_BUILTIN_CLZ 1
 
@@ -166,6 +172,12 @@
 /* Define to 1 if fseeko (and presumably ftello) exists and is declared. */
 #define HAVE_FSEEKO 1
 
+/* Define to 1 if the system has the `constructor' function attribute */
+#define HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR 1
+
+/* Define to 1 if the system has the `destructor' function attribute */
+#define HAVE_FUNC_ATTRIBUTE_DESTRUCTOR 1
+
 /* Build with GeoIP2 support */
 /* #undef HAVE_GEOIP2 */
 
@@ -176,7 +188,7 @@
 /* #undef HAVE_GETPASSPHRASE */
 
 /* Define to 1 if you have the `getrandom' function. */
-/* #undef HAVE_GETRANDOM */
+#define HAVE_GETRANDOM 1
 
 /* Define to use gperftools CPU profiler. */
 /* #undef HAVE_GPERFTOOLS_PROFILER */
@@ -214,7 +226,7 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #define HAVE_INTTYPES_H 1
 
-/* Define if json-c was found */
+/* Use json-c library */
 /* #undef HAVE_JSON_C */
 
 /* Define to 1 if you have the <kerberosv5/krb5.h> header file. */
@@ -244,8 +256,8 @@
 /* Define to 1 if you have the `socket' library (-lsocket). */
 /* #undef HAVE_LIBSOCKET */
 
-/* Define if libxml2 was found */
-/* #define HAVE_LIBXML2 */
+/* Use libxml2 library */
+/* #undef HAVE_LIBXML2 */
 
 /* Define to 1 if you have the <linux/netlink.h> header file. */
 /* #undef HAVE_LINUX_NETLINK_H */
@@ -280,8 +292,11 @@
 /* define if OpenSSL supports Ed448 */
 #define HAVE_OPENSSL_ED448 1
 
-/* define if OpenSSL supports SipHash */
-#define HAVE_OPENSSL_SIPHASH 1
+/* Define to 1 if you have the `OPENSSL_init_crypto' function. */
+#define HAVE_OPENSSL_INIT_CRYPTO 1
+
+/* Define to 1 if you have the `OPENSSL_init_ssl' function. */
+#define HAVE_OPENSSL_INIT_SSL 1
 
 /* Define to 1 if you have the `processor_bind' function. */
 /* #undef HAVE_PROCESSOR_BIND */
@@ -363,6 +378,21 @@
 
 /* define if the SPARC pause instruction is available */
 /* #undef HAVE_SPARC_PAUSE */
+
+/* Define to 1 if you have the `SSL_CTX_set_min_proto_version' function. */
+/* #undef HAVE_SSL_CTX_SET_MIN_PROTO_VERSION */
+
+/* Define to 1 if you have the `SSL_CTX_up_ref' function. */
+#define HAVE_SSL_CTX_UP_REF 1
+
+/* Define to 1 if you have the `SSL_peek_ex' function. */
+#define HAVE_SSL_PEEK_EX 1
+
+/* Define to 1 if you have the `SSL_read_ex' function. */
+#define HAVE_SSL_READ_EX 1
+
+/* Define to 1 if you have the `SSL_write_ex' function. */
+#define HAVE_SSL_WRITE_EX 1
 
 /* define if struct stat has st_mtim.tv_nsec field */
 /* #undef HAVE_STAT_NSEC */
@@ -451,6 +481,12 @@
 /* Define if Thread-Local Storage is available */
 #define HAVE_TLS 1
 
+/* Define to 1 if you have the `TLS_client_method' function. */
+#define HAVE_TLS_CLIENT_METHOD 1
+
+/* Define to 1 if you have the `TLS_server_method' function. */
+#define HAVE_TLS_SERVER_METHOD 1
+
 /* Define to 1 if you have the `tzset' function. */
 #define HAVE_TZSET 1
 
@@ -466,6 +502,9 @@
 /* Define to 1 if you have the <unistd.h> header file. */
 #define HAVE_UNISTD_H 1
 
+/* define if the compiler supports _Unwind_Backtrace() */
+#define HAVE_UNWIND_BACKTRACE 1
+
 /* Define to 1 if you have the `usleep' function. */
 #define HAVE_USLEEP 1
 
@@ -477,6 +516,12 @@
 
 /* Define to 1 if you have the `uv_import' function. */
 /* #undef HAVE_UV_IMPORT */
+
+/* Define to 1 if you have the `uv_translate_sys_error' function. */
+#define HAVE_UV_TRANSLATE_SYS_ERROR 1
+
+/* Define to 1 if you have the `uv_udp_connect' function. */
+#define HAVE_UV_UDP_CONNECT 1
 
 /* Use zlib library */
 #define HAVE_ZLIB 1
@@ -541,14 +586,17 @@
    your system. */
 /* #undef PTHREAD_CREATE_JOINABLE */
 
+/* Exit code for skipped tests */
+#define SKIPPED_TEST_EXIT_CODE 0
+
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
 
 /* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
 #define TIME_WITH_SYS_TIME 1
 
-/* Define to use large-system tuning. */
-/* #undef TUNE_LARGE */
+/* Define to use default system tuning. */
+#define TUNE_LARGE 1
 
 /* define if we can use backtrace */
 #define USE_BACKTRACE 1
@@ -607,15 +655,16 @@
 # if defined __BIG_ENDIAN__
 #  define WORDS_BIGENDIAN 1
 # endif
-/* Enable large inode numbers on Mac OS X 10.5.  */
-# ifndef _DARWIN_USE_64_BIT_INODE
-#  define _DARWIN_USE_64_BIT_INODE 1
-# endif
 #else
 # ifndef WORDS_BIGENDIAN
 /* #  undef WORDS_BIGENDIAN */
 # endif
 #endif
+#endif
+
+/* Enable large inode numbers on Mac OS X 10.5.  */
+#ifndef _DARWIN_USE_64_BIT_INODE
+# define _DARWIN_USE_64_BIT_INODE 1
 #endif
 
 /* Number of bits in a file offset, on hosts where this is settable. */

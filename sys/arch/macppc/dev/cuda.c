@@ -1,4 +1,4 @@
-/*	$NetBSD: cuda.c,v 1.26 2020/07/14 08:58:03 martin Exp $ */
+/*	$NetBSD: cuda.c,v 1.28 2021/04/24 23:36:41 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2006 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cuda.c,v 1.26 2020/07/14 08:58:03 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cuda.c,v 1.28 2021/04/24 23:36:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -203,7 +203,8 @@ cuda_attach(device_t parent, device_t self, void *aux)
 		aprint_normal(": unable to map registers\n");
 		return;
 	}
-	sc->sc_ih = intr_establish(irq, IST_EDGE, IPL_TTY, cuda_intr, sc);
+	sc->sc_ih = intr_establish_xname(irq, IST_EDGE, IPL_TTY, cuda_intr, sc,
+	    device_xname(self));
 	printf("\n");
 
 	for (i = 0; i < 16; i++) {
@@ -231,8 +232,9 @@ cuda_attach(device_t parent, device_t self, void *aux)
 			sc->sc_adbops.poll = cuda_adb_poll;
 			sc->sc_adbops.autopoll = cuda_autopoll;
 			sc->sc_adbops.set_handler = cuda_adb_set_handler;
-			config_found_ia(self, "adb_bus", &sc->sc_adbops,
-			    nadb_print);
+			config_found(self, &sc->sc_adbops, nadb_print,
+			    CFARG_IATTR, "adb_bus",
+			    CFARG_EOL);
 		} else if (strncmp(name, "rtc", 4) == 0) {
 
 			sc->sc_todr.todr_gettime = cuda_todr_get;
@@ -248,7 +250,7 @@ cuda_attach(device_t parent, device_t self, void *aux)
 	caa.send = cuda_send;
 	caa.poll = cuda_poll;
 #if notyet
-	config_found(self, &caa, cuda_print);
+	config_found(self, &caa, cuda_print, CFARG_EOL);
 #endif
 	cfg = prop_array_create();
 	prop_dictionary_set(dict, "i2c-child-devices", cfg);
@@ -279,7 +281,9 @@ cuda_attach(device_t parent, device_t self, void *aux)
 	iic_tag_init(&sc->sc_i2c);
 	sc->sc_i2c.ic_cookie = sc;
 	sc->sc_i2c.ic_exec = cuda_i2c_exec;
-	config_found_ia(self, "i2cbus", &iba, iicbus_print);
+	config_found(self, &iba, iicbus_print,
+	    CFARG_IATTR, "i2cbus",
+	    CFARG_EOL);
 
 	if (cuda0 == NULL)
 		cuda0 = &caa;

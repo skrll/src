@@ -1,4 +1,4 @@
-/* $NetBSD: subr_evcnt.c,v 1.13 2018/11/24 17:40:37 maxv Exp $ */
+/* $NetBSD: subr_evcnt.c,v 1.17 2021/04/17 00:05:31 mrg Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_evcnt.c,v 1.13 2018/11/24 17:40:37 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_evcnt.c,v 1.17 2021/04/17 00:05:31 mrg Exp $");
 
 #include <sys/param.h>
 #include <sys/evcnt.h>
@@ -85,6 +85,25 @@ __KERNEL_RCSID(0, "$NetBSD: subr_evcnt.c,v 1.13 2018/11/24 17:40:37 maxv Exp $")
 #include <sys/mutex.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
+
+/*
+ * Everything related to __HAVE_LEGACY_INTRCNT can disappear once
+ * no more ports are using old-style intrcnt/intrnames interrupt
+ * accounting.  The follow files have __HAVE_LEGACY_INTRCNT code:
+ *
+ *   sys/kern/init_main.c
+ *   sys/kern/subr_evcnt.c
+ *   sys/sys/evcnt.h
+ *   sys/arch/<port>/include/types.h
+ */
+#ifdef _RUMPKERNEL
+/* RUMP doesn't need/want to know about intrcnts */
+#undef __HAVE_LEGACY_INTRCNT
+#endif
+
+#ifdef __HAVE_LEGACY_INTRCNT
+static void evcnt_update_intrcnt(void);
+#endif
 
 /* list of all events */
 struct evcntlist allevents = TAILQ_HEAD_INITIALIZER(allevents);
@@ -195,13 +214,10 @@ evcnt_detach(struct evcnt *ev)
 	mutex_exit(&evcnt_lock);
 }
 
-struct xevcnt_sysctl {
-	struct evcnt_sysctl evs;
-	char ev_strings[2*EVCNT_STRING_MAX];
-};
+typedef char ev_strings[2*EVCNT_STRING_MAX];
 
 static size_t
-sysctl_fillevcnt(const struct evcnt *ev, struct xevcnt_sysctl *xevs,
+sysctl_fillevcnt(const struct evcnt *ev, struct evcnt_sysctl *evs,
 	size_t *copylenp)
 {
 	const bool allowaddr = get_expose_address(curproc);
@@ -209,17 +225,17 @@ sysctl_fillevcnt(const struct evcnt *ev, struct xevcnt_sysctl *xevs,
 	    + ev->ev_grouplen + 1 + ev->ev_namelen + 1;
 	const size_t len = roundup2(copylen, sizeof(uint64_t));
 
-	if (xevs != NULL) {
-		xevs->evs.ev_count = ev->ev_count;
-		COND_SET_VALUE(xevs->evs.ev_addr, PTRTOUINT64(ev), allowaddr);
-		COND_SET_VALUE(xevs->evs.ev_parent, PTRTOUINT64(ev->ev_parent),
+	if (evs != NULL) {
+		evs->ev_count = ev->ev_count;
+		COND_SET_VALUE(evs->ev_addr, PTRTOUINT64(ev), allowaddr);
+		COND_SET_VALUE(evs->ev_parent, PTRTOUINT64(ev->ev_parent),
 		    allowaddr);
-		xevs->evs.ev_type = ev->ev_type;
-		xevs->evs.ev_grouplen = ev->ev_grouplen;
-		xevs->evs.ev_namelen = ev->ev_namelen;
-		xevs->evs.ev_len = len / sizeof(uint64_t);
-		strcpy(xevs->evs.ev_strings, ev->ev_group);
-		strcpy(xevs->evs.ev_strings + ev->ev_grouplen + 1, ev->ev_name);
+		evs->ev_type = ev->ev_type;
+		evs->ev_grouplen = ev->ev_grouplen;
+		evs->ev_namelen = ev->ev_namelen;
+		evs->ev_len = len / sizeof(uint64_t);
+		strcpy(evs->ev_strings, ev->ev_group);
+		strcpy(evs->ev_strings + ev->ev_grouplen + 1, ev->ev_name);
 	}
 
 	*copylenp = copylen;
@@ -229,7 +245,8 @@ sysctl_fillevcnt(const struct evcnt *ev, struct xevcnt_sysctl *xevs,
 static int
 sysctl_doevcnt(SYSCTLFN_ARGS)
 {       
-	struct xevcnt_sysctl *xevs0 = NULL, *xevs;
+	struct evcnt_sysctl *evs0 = NULL, *evs;
+	const size_t xevcnt_size = sizeof(*evs0) + sizeof(ev_strings);
 	const struct evcnt *ev;
 	int error;
 	int retries;
@@ -259,18 +276,21 @@ sysctl_doevcnt(SYSCTLFN_ARGS)
 
 	sysctl_unlock();
 
-	if (oldp != NULL && xevs0 == NULL)
-		xevs0 = kmem_zalloc(sizeof(*xevs0), KM_SLEEP);
+	if (oldp != NULL)
+		evs0 = kmem_zalloc(xevcnt_size, KM_SLEEP);
 
 	retries = 100;
  retry:
 	dp = oldp;
 	len = (oldp != NULL) ? *oldlenp : 0;
-	xevs = xevs0;
+	evs = evs0;
 	error = 0;
 	needed = 0;
 
 	mutex_enter(&evcnt_lock);
+#ifdef __HAVE_LEGACY_INTRCNT
+	evcnt_update_intrcnt();
+#endif
 	TAILQ_FOREACH(ev, &allevents, ev_list) {
 		if (filter != EVCNT_TYPE_ANY && filter != ev->ev_type)
 			continue;
@@ -278,22 +298,22 @@ sysctl_doevcnt(SYSCTLFN_ARGS)
 			continue;
 
 		/*
-		 * Prepare to copy.  If xevs is NULL, fillevcnt will just
+		 * Prepare to copy.  If evs is NULL, fillevcnt will just
 		 * how big the item is.
 		 */
 		size_t copylen;
-		const size_t elem_size = sysctl_fillevcnt(ev, xevs, &copylen);
+		const size_t elem_size = sysctl_fillevcnt(ev, evs, &copylen);
 		needed += elem_size;
 
 		if (len < elem_size) {
-			xevs = NULL;
+			evs = NULL;
 			continue;
 		}
 
-		KASSERT(xevs != NULL);
-		KASSERT(xevs->evs.ev_grouplen != 0);
-		KASSERT(xevs->evs.ev_namelen != 0);
-		KASSERT(xevs->evs.ev_strings[0] != 0);
+		KASSERT(evs != NULL);
+		KASSERT(evs->ev_grouplen != 0);
+		KASSERT(evs->ev_namelen != 0);
+		KASSERT(evs->ev_strings[0] != 0);
 
 		const uint32_t last_generation = evcnt_generation;
 		mutex_exit(&evcnt_lock);
@@ -303,7 +323,7 @@ sysctl_doevcnt(SYSCTLFN_ARGS)
 		 * number.  If we did the latter we'd have to zero them
 		 * first or we'd leak random kernel memory.
 		 */
-		error = copyout(xevs, dp, copylen);
+		error = copyout(evs, dp, copylen);
 
 		mutex_enter(&evcnt_lock);
 		if (error)
@@ -332,8 +352,8 @@ sysctl_doevcnt(SYSCTLFN_ARGS)
 	}
 	mutex_exit(&evcnt_lock);
 
-	if (xevs0 != NULL)
-		kmem_free(xevs0, sizeof(*xevs0));
+	if (evs0 != NULL)
+		kmem_free(evs0, xevcnt_size);
 
 	sysctl_relock();
 
@@ -356,3 +376,40 @@ SYSCTL_SETUP(sysctl_evcnt_setup, "sysctl kern.evcnt subtree setup")
 		       sysctl_doevcnt, 0, NULL, 0,
 		       CTL_KERN, KERN_EVCNT, CTL_EOL);
 }
+
+#ifdef __HAVE_LEGACY_INTRCNT
+extern u_int intrcnt[], eintrcnt[];
+extern char intrnames[];
+static size_t nintr;
+struct evcnt *intr_evcnts;
+/*
+ * Remove the following when the last intrcnt/intrnames user is cleaned up.
+ */
+void
+evcnt_attach_legacy_intrcnt(void)
+{
+	size_t i;
+	const char *cp;
+
+	nintr = ((intptr_t)eintrcnt - (intptr_t)intrcnt) / sizeof(intrcnt[0]);
+	intr_evcnts = kmem_alloc(sizeof(struct evcnt) * nintr, KM_SLEEP);
+	for (cp = intrnames, i = 0; i < nintr; i++) {
+		evcnt_attach_dynamic(&intr_evcnts[i], EVCNT_TYPE_INTR,
+		    NULL, "cpu", cp);
+		cp += strlen(cp) + 1;
+	}
+}
+
+static void
+evcnt_update_intrcnt(void)
+{
+	size_t i;
+
+	KASSERT(nintr > 0);
+	KASSERT(intr_evcnts != NULL);
+
+	for (i = 0; i < nintr; i++) {
+		intr_evcnts[i].ev_count = intrcnt[i];
+	}
+}
+#endif

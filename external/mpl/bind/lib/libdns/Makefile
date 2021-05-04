@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.5 2020/05/24 19:46:31 christos Exp $
+#	$NetBSD: Makefile,v 1.7 2021/04/29 17:26:14 christos Exp $
 
 LIB=dns
 #USE_SHLIBDIR=   yes
@@ -8,7 +8,6 @@ LIB=dns
 .include "${.CURDIR}/../Makefile.inc"
 
 DIST=	${IDIST}/lib/dns
-.include "${DIST}/api"
 .include "${DIST}/mapapi"
 
 LIBDPLIBS+=	isc	${.CURDIR}/../libisc
@@ -29,7 +28,7 @@ DNSSEC_SRCS=	dst_api.c dst_parse.c dst_result.c \
 	openssldh_link.c opensslrsa_link.c \
 	opensslecdsa_link.c openssleddsa_link.c
 .if ${MKKERBEROS} != "no"
-DNSSEC_SRCS+=	gssapi_link.c spnego.c
+DNSSEC_SRCS+=	gssapi_link.c
 
 CWARNFLAGS.clang+=	-Wno-error=tautological-constant-compare
 .endif

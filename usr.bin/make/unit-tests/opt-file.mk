@@ -1,4 +1,4 @@
-# $NetBSD: opt-file.mk,v 1.7 2020/12/06 20:55:30 rillig Exp $
+# $NetBSD: opt-file.mk,v 1.12 2021/04/04 10:13:09 rillig Exp $
 #
 # Tests for the -f command line option.
 
@@ -6,6 +6,8 @@
 
 all: .PHONY
 all: file-ending-in-backslash
+all: file-ending-in-backslash-mmap
+all: line-with-trailing-whitespace
 all: file-containing-null-byte
 
 # Passing '-' as the filename reads from stdin.  This is unusual but possible.
@@ -26,18 +28,35 @@ all: file-containing-null-byte
 #	ParseReadLine (1): 'VAR=value\<A5><A5><A5><A5><A5><A5>'
 #	Global:VAR = value\<A5><A5><A5><A5><A5><A5>value\<A5><A5><A5><A5><A5><A5>
 #	ParseReadLine (2): 'alue\<A5><A5><A5><A5><A5><A5>'
-#	ParseDoDependency(alue\<A5><A5><A5><A5><A5><A5>)
+#	ParseDependency(alue\<A5><A5><A5><A5><A5><A5>)
 #	make-2014.01.01.00.00.00: "(stdin)" line 2: Need an operator
 #	ParseReadLine (3): '<A5><A5><A5>ZZZZZZZZZZZZZZZZ'
-#	ParseDoDependency(<A5><A5><A5>ZZZZZZZZZZZZZZZZ)
+#	ParseDependency(<A5><A5><A5>ZZZZZZZZZZZZZZZZ)
 #
 file-ending-in-backslash: .PHONY
 	@printf '%s' 'VAR=value\' \
 	| ${MAKE} -r -f - -V VAR
 
-# If a file contains null bytes, the rest of the line is skipped, and parsing
-# continues in the next line.  Throughout the history of make, the behavior
-# has changed several times, sometimes knowingly, sometimes by accident.
+# Between parse.c 1.170 from 2010-12-25 and parse.c 1.511 from 2020-12-22,
+# there was an out-of-bounds write in ParseGetLine, where line_end pointed at
+# the end of the allocated buffer, in the special case where loadedfile_mmap
+# had not added the final newline character.
+file-ending-in-backslash-mmap: .PHONY
+	@printf '%s' 'VAR=value\' > opt-file-backslash
+	@${MAKE} -r -f opt-file-backslash -V VAR
+	@rm opt-file-backslash
+
+# Since parse.c 1.511 from 2020-12-22, an assertion in ParseGetLine failed
+# for lines that contained trailing whitespace.  Worked around in parse.c
+# 1.513, properly fixed in parse.c 1.514.
+line-with-trailing-whitespace: .PHONY
+	@printf '%s' 'VAR=$@ ' > opt-file-trailing-whitespace
+	@${MAKE} -r -f opt-file-trailing-whitespace -V VAR
+	@rm opt-file-trailing-whitespace
+
+# If a makefile contains null bytes, it is an error.  Throughout the history
+# of make, the behavior has changed several times, sometimes intentionally,
+# sometimes by accident.
 #
 #	echo 'VAR=value' | tr 'l' '\0' > zero-byte.in
 #	printf '%s\n' 'all:' ': VAR=${VAR:Q}' >> zero-byte.in

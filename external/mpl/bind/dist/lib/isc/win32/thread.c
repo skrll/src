@@ -1,11 +1,11 @@
-/*	$NetBSD: thread.c,v 1.4 2020/05/24 19:46:28 christos Exp $	*/
+/*	$NetBSD: thread.c,v 1.6 2021/04/29 17:26:13 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -13,17 +13,25 @@
 
 #include <process.h>
 
+#include <isc/mutex.h>
+#include <isc/once.h>
 #include <isc/strerr.h>
 #include <isc/thread.h>
 #include <isc/util.h>
+
+#include "trampoline_p.h"
 
 void
 isc_thread_create(isc_threadfunc_t start, isc_threadarg_t arg,
 		  isc_thread_t *threadp) {
 	isc_thread_t thread;
 	unsigned int id;
+	isc__trampoline_t *trampoline_arg;
 
-	thread = (isc_thread_t)_beginthreadex(NULL, 0, start, arg, 0, &id);
+	trampoline_arg = isc__trampoline_get(start, arg);
+
+	thread = (isc_thread_t)_beginthreadex(NULL, 0, isc__trampoline_run,
+					      trampoline_arg, 0, &id);
 	if (thread == NULL) {
 		char strbuf[ISC_STRERRORSIZE];
 		strerror_r(errno, strbuf, sizeof(strbuf));

@@ -1,4 +1,4 @@
-/*	$NetBSD: i2c.c,v 1.75 2020/07/07 16:14:23 thorpej Exp $	*/
+/*	$NetBSD: i2c.c,v 1.78 2021/04/24 23:36:54 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -40,7 +40,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.75 2020/07/07 16:14:23 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.78 2021/04/24 23:36:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -343,7 +343,7 @@ iic_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 		 * us from having to poke at the bus to see if anything
 		 * is there.
 		 */
-		match_result = config_match(parent, cf, &ia);
+		match_result = config_probe(parent, cf, &ia);/*XXX*/
 		if (match_result <= 0)
 			continue;
 
@@ -358,7 +358,7 @@ iic_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 			continue;
 
 		sc->sc_devices[ia.ia_addr] =
-		    config_attach(parent, cf, &ia, iic_print);
+		    config_attach(parent, cf, &ia, iic_print, CFARG_EOL);
 	}
 
 	return 0;
@@ -380,7 +380,10 @@ iic_child_detach(device_t parent, device_t child)
 static int
 iic_rescan(device_t self, const char *ifattr, const int *locators)
 {
-	config_search_ia(iic_search, self, ifattr, NULL);
+	config_search(self, NULL,
+	    CFARG_SEARCH, iic_search,
+	    CFARG_LOCATORS, locators,
+	    CFARG_EOL);
 	return 0;
 }
 
@@ -439,6 +442,7 @@ iic_attach(device_t parent, device_t self, void *aux)
 		prop_data_t cdata;
 		uint32_t addr;
 		uint64_t cookie;
+		uint32_t cookietype;
 		const char *name;
 		struct i2c_attach_args ia;
 		int loc[IICCF_NLOCS];
@@ -457,6 +461,9 @@ iic_attach(device_t parent, device_t self, void *aux)
 				continue;
 			if (!prop_dictionary_get_uint64(dev, "cookie", &cookie))
 				cookie = 0;
+			if (!prop_dictionary_get_uint32(dev, "cookietype",
+			    &cookietype))
+				cookietype = I2C_COOKIE_NONE;
 			loc[IICCF_ADDR] = addr;
 
 			memset(&ia, 0, sizeof ia);
@@ -464,6 +471,7 @@ iic_attach(device_t parent, device_t self, void *aux)
 			ia.ia_tag = ic;
 			ia.ia_name = name;
 			ia.ia_cookie = cookie;
+			ia.ia_cookietype = cookietype;
 			ia.ia_prop = dev;
 
 			buf = NULL;
@@ -484,9 +492,10 @@ iic_attach(device_t parent, device_t self, void *aux)
 					    "address @ 0x%02x\n", addr);
 				} else if (sc->sc_devices[addr] == NULL) {
 					sc->sc_devices[addr] =
-					    config_found_sm_loc(self, "iic",
-					        loc, &ia, iic_print_direct,
-						NULL);
+					    config_found(self, &ia,
+					    iic_print_direct,
+					    CFARG_LOCATORS, loc,
+					    CFARG_EOL);
 				}
 			}
 
@@ -687,13 +696,12 @@ iic_fill_compat(struct i2c_attach_args *ia, const char *compat, size_t len,
  */
 int
 iic_compatible_match(const struct i2c_attach_args *ia,
-		     const struct device_compatible_entry *compats,
-		     const struct device_compatible_entry **matching_entryp)
+		     const struct device_compatible_entry *compats)
 {
 	int match_result;
 
 	match_result = device_compatible_match(ia->ia_compat, ia->ia_ncompat,
-					       compats, matching_entryp);
+					       compats);
 	if (match_result) {
 		match_result =
 		    MIN(I2C_MATCH_DIRECT_COMPATIBLE + match_result - 1,
@@ -701,6 +709,19 @@ iic_compatible_match(const struct i2c_attach_args *ia,
 	}
 
 	return match_result;
+}
+
+/*
+ * iic_compatible_lookup --
+ *	Look the compatible entry that matches one of the driver's
+ *	"compatible" strings.  The first match is returned.
+ */
+const struct device_compatible_entry *
+iic_compatible_lookup(const struct i2c_attach_args *ia,
+		      const struct device_compatible_entry *compats)
+{
+	return device_compatible_lookup(ia->ia_compat, ia->ia_ncompat,
+					compats);
 }
 
 /*
@@ -724,7 +745,7 @@ iic_use_direct_match(const struct i2c_attach_args *ia, const cfdata_t cf,
 	}
 
 	if (ia->ia_ncompat > 0 && ia->ia_compat != NULL) {
-		*match_resultp = iic_compatible_match(ia, compats, NULL);
+		*match_resultp = iic_compatible_match(ia, compats);
 		return true;
 	}
 

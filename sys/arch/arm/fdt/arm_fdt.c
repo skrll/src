@@ -1,4 +1,4 @@
-/* $NetBSD: arm_fdt.c,v 1.12 2020/10/10 15:34:05 jmcneill Exp $ */
+/* $NetBSD: arm_fdt.c,v 1.16 2021/04/24 23:36:26 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_modular.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.12 2020/10/10 15:34:05 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.16 2021/04/24 23:36:26 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -56,6 +56,8 @@ __KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.12 2020/10/10 15:34:05 jmcneill Exp $"
 static int	arm_fdt_match(device_t, cfdata_t, void *);
 static void	arm_fdt_attach(device_t, device_t, void *);
 
+static void	arm_fdt_irq_default_handler(void *);
+
 #ifdef EFI_RUNTIME
 static void	arm_fdt_efi_init(device_t);
 static int	arm_fdt_efi_rtc_gettime(todr_chip_handle_t, struct clock_ymdhms *);
@@ -76,7 +78,7 @@ struct arm_fdt_cpu_hatch_cb {
 static TAILQ_HEAD(, arm_fdt_cpu_hatch_cb) arm_fdt_cpu_hatch_cbs =
     TAILQ_HEAD_INITIALIZER(arm_fdt_cpu_hatch_cbs);
 
-static void (*_arm_fdt_irq_handler)(void *) = NULL;
+static void (*_arm_fdt_irq_handler)(void *) = arm_fdt_irq_default_handler;
 static void (*_arm_fdt_timer_init)(void) = NULL;
 
 int
@@ -102,7 +104,7 @@ arm_fdt_attach(device_t parent, device_t self, void *aux)
 	faa.faa_name = "";
 	faa.faa_phandle = OF_peer(0);
 
-	config_found(self, &faa, NULL);
+	config_found(self, &faa, NULL, CFARG_EOL);
 }
 
 const struct arm_platform *
@@ -118,8 +120,12 @@ arm_fdt_platform(void)
 		int match, best_match = 0;
 
 		__link_set_foreach(info, arm_platforms) {
-			const char * const compat[] = { (*info)->api_compat, NULL };
-			match = of_match_compatible(phandle, compat);
+			const struct device_compatible_entry compat_data[] = {
+				{ .compat = (*info)->api_compat },
+				DEVICE_COMPAT_EOL
+			};
+
+			match = of_compatible_match(phandle, compat_data);
 			if (match > best_match) {
 				best_match = match;
 				best_info = *info;
@@ -165,10 +171,16 @@ arm_fdt_cpu_hatch(struct cpu_info *ci)
 		c->cb(c->priv, ci);
 }
 
+static void
+arm_fdt_irq_default_handler(void *frame)
+{
+	panic("missing interrupt controller driver");
+}
+
 void
 arm_fdt_irq_set_handler(void (*irq_handler)(void *))
 {
-	KASSERT(_arm_fdt_irq_handler == NULL);
+	KASSERT(_arm_fdt_irq_handler == arm_fdt_irq_default_handler);
 	_arm_fdt_irq_handler = irq_handler;
 }
 
@@ -263,7 +275,7 @@ arm_fdt_module_init(void)
 		for (pa = startpa, va = startva;
 		     pa < endpa;
 		     pa += PAGE_SIZE, va += PAGE_SIZE) {
-			pmap_kenter_pa(va, pa, VM_PROT_ALL, PMAP_WRITE_BACK);
+			pmap_kenter_pa(va, pa, VM_PROT_ALL, 0);
 		}
 		pmap_update(pmap_kernel());
 

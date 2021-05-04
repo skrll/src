@@ -1,4 +1,4 @@
-/* $NetBSD: bus_space.c,v 1.11 2020/10/15 21:14:15 jmcneill Exp $ */
+/* $NetBSD: bus_space.c,v 1.16 2021/04/14 05:43:09 ryo Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: bus_space.c,v 1.11 2020/10/15 21:14:15 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: bus_space.c,v 1.16 2021/04/14 05:43:09 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -613,15 +613,45 @@ generic_bs_barrier(void *t, bus_space_handle_t bsh, bus_size_t offset,
 {
 	flags &= BUS_SPACE_BARRIER_READ|BUS_SPACE_BARRIER_WRITE;
 
+	/*
+	 * For default mappings, which are mapped with nGnRE memory
+	 * regions, all loads and stores are issued in program order
+	 * (non-reordered).
+	 *
+	 * For strongly ordered mappings, which are mapped with nGnRnE
+	 * regions, all loads and stores are issued in program order
+	 * (non-reordered) and will complete at the endpoint, thus
+	 * not requiring any barrier.
+	 *
+	 * For BUS_SPACE_MAP_PREFETCHABLE mappings, which are mapped
+	 * as normal memory with the non-cacheable cacheability attr-
+	 * ibute, loads and stores may be issued out of order, and
+	 * writes may be buffered, potentially requiring any of the
+	 * read, write, and read/write barriers.
+	 *
+	 * For BUS_SPACE_MAP_CACHEABLE mappings, which are mapped as
+	 * normal memory with the write-back cacheability attribute
+	 * (just like normal memory), the same potential for any of
+	 * the barriers exists.
+	 *
+	 * We can't easily tell here how the region was mapped (without
+	 * consulting the page tables), so just issue the barrier
+	 * unconditionally.  Chances are either it's necessary or the
+	 * cost is small in comparison to device register I/O.
+	 *
+	 * The bus_space(9) man page is not clear whether barriers
+	 * should enforce ordering or completion. To be safe, use dsb
+	 * (ensure completion) here instead of dmb (ordering).
+	 */
 	switch (flags) {
 	case BUS_SPACE_BARRIER_READ:
-		dmb(ishld);
+		dsb(ld);
 		break;
 	case BUS_SPACE_BARRIER_WRITE:
-		dmb(ishst);
+		dsb(st);
 		break;
 	case BUS_SPACE_BARRIER_READ|BUS_SPACE_BARRIER_WRITE:
-		dmb(ish);
+		dsb(sy);
 		break;
 	}
 }
@@ -672,6 +702,7 @@ generic_bs_pe_1(void *t, bus_space_handle_t bsh, bus_size_t offset,
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
 		*datap = generic_dsb_bs_r_1(t, bsh, offset);
+		dsb(ld);
 		cpu_unset_onfault();
 	}
 	return error;
@@ -686,6 +717,7 @@ generic_bs_pe_2(void *t, bus_space_handle_t bsh, bus_size_t offset,
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
 		*datap = NSWAP(generic_dsb_bs_r_2)(t, bsh, offset);
+		dsb(ld);
 		cpu_unset_onfault();
 	}
 	return error;
@@ -700,6 +732,7 @@ generic_bs_pe_4(void *t, bus_space_handle_t bsh, bus_size_t offset,
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
 		*datap = NSWAP(generic_dsb_bs_r_4)(t, bsh, offset);
+		dsb(ld);
 		cpu_unset_onfault();
 	}
 	return error;
@@ -714,6 +747,7 @@ generic_bs_pe_8(void *t, bus_space_handle_t bsh, bus_size_t offset,
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
 		*datap = NSWAP(generic_dsb_bs_r_8)(t, bsh, offset);
+		dsb(ld);
 		cpu_unset_onfault();
 	}
 	return error;

@@ -1,4 +1,4 @@
-/*	$NetBSD: ms.c,v 1.34 2014/07/25 08:10:35 dholland Exp $ */
+/*	$NetBSD: ms.c,v 1.36 2021/04/24 16:24:14 tsutsui Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ms.c,v 1.34 2014/07/25 08:10:35 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ms.c,v 1.36 2021/04/24 16:24:14 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -85,6 +85,16 @@ __KERNEL_RCSID(0, "$NetBSD: ms.c,v 1.34 2014/07/25 08:10:35 dholland Exp $");
  * Mouse serial line is fixed at 4800 bps.
  */
 #define MS_BPS 4800
+
+/*
+ * Send mouse commands per MS_TICK.
+ */
+#ifndef HZ
+#define HZ		100
+#endif
+#define MS_TICK		2
+#define MS_TIMEOUT_SEC	5
+#define MS_TIMEOUT	((MS_TIMEOUT_SEC * HZ) / MS_TICK)
 
 /*
  * Mouse state.  A SHARP X1/X680x0 mouse is a fairly simple device,
@@ -258,7 +268,7 @@ msopen(dev_t dev, int flags, int mode, struct lwp *l)
 	ms->ms_nodata = 0;
 
 	/* start sequencer */
-	ms_modem(ms);
+	callout_reset(&ms->ms_modem_ch, MS_TICK, ms_modem, ms);
 
 	return 0;
 }
@@ -356,8 +366,8 @@ ms_input(struct ms_softc *ms, int c)
 {
 	struct firm_event *fe;
 	int mb, ub, d, get, put, any;
-	static const char to_one[] = { 1, 2, 3 };
-	static const int to_id[] = { MS_LEFT, MS_RIGHT, MS_MIDDLE };
+	static const char to_one[] = { 1, 2, 2 };
+	static const int to_id[] = { MS_LEFT, MS_RIGHT };
 
 	/*
 	 * Discard input if not ready.  Drop sync on parity or framing
@@ -402,7 +412,7 @@ ms_input(struct ms_softc *ms, int c)
 
 	/*
 	 * We have at least one event (mouse button, delta-X, or
-	 * delta-Y; possibly all three, and possibly three separate
+	 * delta-Y; possibly all three, and possibly two separate
 	 * button events).  Deliver these events until we are out
 	 * of changes or out of room.  As events get delivered,
 	 * mark them `unchanged'.
@@ -430,12 +440,12 @@ ms_input(struct ms_softc *ms, int c)
 	ub = ms->ms_ub;
 	while ((d = mb ^ ub) != 0) {
 		/*
-		 * Mouse button change.  Convert up to three changes
+		 * Mouse button change.  Convert up to two changes
 		 * to the `first' change, and drop it into the event queue.
 		 */
 		NEXT;
-		d = to_one[d - 1];		/* from 1..7 to {1,2,4} */
-		fe->id = to_id[d - 1];		/* from {1,2,4} to ID */
+		d = to_one[d - 1];		/* from 1..3 to {1,2} */
+		fe->id = to_id[d - 1];		/* from {1,2} to ID */
 		fe->value = mb & d ? VKEY_DOWN : VKEY_UP;
 		firm_gettime(fe);
 		ADVANCE;
@@ -649,9 +659,9 @@ ms_modem(void *arg)
 
 	mutex_enter(&ms->ms_lock);
 
-	if (ms->ms_nodata++ > 250) { /* XXX */
-		log(LOG_ERR, "%s: no data for 5 secs. resetting.\n",
-		    device_xname(ms->ms_dev));
+	if (ms->ms_nodata++ > MS_TIMEOUT) {
+		log(LOG_ERR, "%s: no data for %d secs. resetting.\n",
+		    device_xname(ms->ms_dev), MS_TIMEOUT_SEC);
 		ms->ms_byteno = -1;
 		ms->ms_nodata = 0;
 		ms->ms_rts = 0;
@@ -670,5 +680,5 @@ ms_modem(void *arg)
 	}
 
 	mutex_exit(&ms->ms_lock);
-	callout_reset(&ms->ms_modem_ch, 2, ms_modem, ms);
+	callout_schedule(&ms->ms_modem_ch, MS_TICK);
 }

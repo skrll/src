@@ -1,4 +1,4 @@
-/*	$NetBSD: powerpc_machdep.c,v 1.80 2020/07/15 08:58:52 rin Exp $	*/
+/*	$NetBSD: powerpc_machdep.c,v 1.83 2021/04/15 00:04:07 rin Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: powerpc_machdep.c,v 1.80 2020/07/15 08:58:52 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: powerpc_machdep.c,v 1.83 2021/04/15 00:04:07 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_altivec.h"
@@ -160,6 +160,11 @@ setregs(struct lwp *l, struct exec_package *epp, vaddr_t stack)
 	tf->tf_vrsave = 0;
 #endif
 	pcb->pcb_flags = PSL_FE_DFLT;
+
+#if defined(PPC_BOOKE) || defined(PPC_IBM4XX)
+	p->p_md.md_ss_addr[0] = p->p_md.md_ss_addr[1] = 0;
+	p->p_md.md_ss_insn[0] = p->p_md.md_ss_insn[1] = 0;
+#endif
 }
 
 /*
@@ -376,7 +381,8 @@ void
 cpu_idle(void)
 {
 	KASSERT(mfmsr() & PSL_EE);
-	KASSERT(curcpu()->ci_cpl == IPL_NONE);
+	KASSERTMSG(curcpu()->ci_cpl == IPL_NONE,
+	    "ci_cpl = %d", curcpu()->ci_cpl);
 	(*curcpu()->ci_idlespin)();
 }
 
@@ -814,7 +820,7 @@ emulate_mxmsr(struct lwp *l, struct trapframe *tf, uint32_t opcode)
 	return 0;
 }
 
-#ifdef MODULAR
+#if defined(MODULAR) && !defined(__PPC_HAVE_MODULE_INIT_MD)
 /*
  * Push any modules loaded by the boot loader.
  */
@@ -822,7 +828,7 @@ void
 module_init_md(void)
 {
 }
-#endif /* MODULAR */
+#endif
 
 bool
 mm_md_direct_mapped_phys(paddr_t pa, vaddr_t *vap)

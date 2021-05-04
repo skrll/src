@@ -1,11 +1,11 @@
-/*	$NetBSD: mem_test.c,v 1.6 2020/05/24 19:46:27 christos Exp $	*/
+/*	$NetBSD: mem_test.c,v 1.8 2021/04/29 17:26:12 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -108,8 +108,10 @@ isc_mem_test(void **state) {
 		items1[i] = NULL;
 	}
 
+#if !__SANITIZE_ADDRESS__
 	rval = isc_mempool_getfreecount(mp1);
 	assert_int_equal(rval, 10);
+#endif /* !__SANITIZE_ADDRESS__ */
 
 	rval = isc_mempool_getallocated(mp1);
 	assert_int_equal(rval, 19);
@@ -535,7 +537,7 @@ main(void) {
 int
 main(void) {
 	printf("1..0 # Skipped: cmocka not available\n");
-	return (0);
+	return (SKIPPED_TEST_EXIT_CODE);
 }
 
 #endif /* if HAVE_CMOCKA */

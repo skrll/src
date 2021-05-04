@@ -1,11 +1,11 @@
-/*	$NetBSD: dst_internal.h,v 1.4 2020/05/24 19:46:22 christos Exp $	*/
+/*	$NetBSD: dst_internal.h,v 1.6 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Portions Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -55,6 +55,21 @@
 
 #include <dst/dst.h>
 
+#ifdef GSSAPI
+#ifdef WIN32
+/*
+ * MSVC does not like macros in #include lines.
+ */
+#include <gssapi/gssapi.h>
+#include <gssapi/gssapi_krb5.h>
+#else /* ifdef WIN32 */
+#include ISC_PLATFORM_GSSAPIHEADER
+#ifdef ISC_PLATFORM_GSSAPI_KRB5_HEADER
+#include ISC_PLATFORM_GSSAPI_KRB5_HEADER
+#endif /* ifdef ISC_PLATFORM_GSSAPI_KRB5_HEADER */
+#endif /* ifdef WIN32 */
+#endif /* ifdef GSSAPI */
+
 ISC_LANG_BEGINDECLS
 
 #define KEY_MAGIC ISC_MAGIC('D', 'S', 'T', 'K')
@@ -98,7 +113,7 @@ struct dst_key {
 	char *label;		    /*%< engine label (HSM) */
 	union {
 		void *generic;
-		gss_ctx_id_t gssctx;
+		dns_gss_ctx_id_t gssctx;
 		DH *dh;
 #if USE_OPENSSL
 		EVP_PKEY *pkey;
@@ -125,6 +140,7 @@ struct dst_key {
 	bool keystateset[DST_MAX_KEYSTATES + 1];	  /*%< data
 							   * set? */
 
+	bool kasp;     /*%< key has kasp state */
 	bool inactive; /*%< private key not present as it is
 			* inactive */
 	bool external; /*%< external key */
@@ -202,7 +218,7 @@ struct dst_func {
  * Initializers
  */
 isc_result_t
-dst__openssl_init(isc_mem_t *, const char *engine);
+dst__openssl_init(const char *engine);
 #define dst__pkcs11_init pk11_initialize
 
 isc_result_t

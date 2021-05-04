@@ -1,3 +1,5 @@
+/*	$NetBSD: memset2.c,v 1.10 2021/04/19 01:12:10 simonb Exp $	*/
+
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -29,7 +31,7 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: memset2.c,v 1.5 2012/03/02 16:22:27 apb Exp $");
+__RCSID("$NetBSD: memset2.c,v 1.10 2021/04/19 01:12:10 simonb Exp $");
 #endif /* LIBC_SCCS and not lint */
 
 #include <sys/types.h>
@@ -47,6 +49,9 @@ __RCSID("$NetBSD: memset2.c,v 1.5 2012/03/02 16:22:27 apb Exp $");
 #include <sys/endian.h>
 #include <machine/types.h>
 
+#undef __OPTIMIZE_SIZE__
+#define __OPTIMIZE_SIZE__ 1	/* other code path is very broken */
+
 #ifdef TEST
 #include <assert.h>
 #define _DIAGASSERT(a)		assert(a)
@@ -58,11 +63,9 @@ __RCSID("$NetBSD: memset2.c,v 1.5 2012/03/02 16:22:27 apb Exp $");
 #undef memset
 
 /*
- * Assume uregister_t is the widest non-synthetic unsigned type.
+ * Assume __register_t is the widest non-synthetic unsigned type.
  */
-typedef uregister_t memword_t;
-
-__CTASSERT((~(memword_t)0U >> 1) != ~(memword_t)0U);
+typedef __register_t memword_t;
 
 #ifdef BZERO
 static inline
@@ -95,7 +98,7 @@ memset(void *addr, int c, size_t len)
 	 * The conditional at the end prevents GCC from complaing about
 	 * shift count >= width of type 
 	 */
-	fill = c;
+	fill = (unsigned char)c;
 	fill |= fill << 8;
 	fill |= fill << 16;
 	fill |= fill << (sizeof(c) < sizeof(fill) ? 32 : 0);

@@ -1,11 +1,11 @@
-/*	$NetBSD: keytable.c,v 1.5 2020/08/03 17:23:41 christos Exp $	*/
+/*	$NetBSD: keytable.c,v 1.7 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -158,11 +158,7 @@ dns_keytable_create(isc_mem_t *mctx, dns_keytable_t **keytablep) {
 		goto cleanup_keytable;
 	}
 
-	result = isc_rwlock_init(&keytable->rwlock, 0, 0);
-	if (result != ISC_R_SUCCESS) {
-		goto cleanup_rbt;
-	}
-
+	isc_rwlock_init(&keytable->rwlock, 0, 0);
 	isc_refcount_init(&keytable->references, 1);
 
 	keytable->mctx = NULL;
@@ -171,9 +167,6 @@ dns_keytable_create(isc_mem_t *mctx, dns_keytable_t **keytablep) {
 	*keytablep = keytable;
 
 	return (ISC_R_SUCCESS);
-
-cleanup_rbt:
-	dns_rbt_destroy(&keytable->table);
 
 cleanup_keytable:
 	isc_mem_putanddetach(&mctx, keytable, sizeof(*keytable));
@@ -340,7 +333,6 @@ static dns_keynode_t *
 new_keynode(dns_rdata_ds_t *ds, dns_keytable_t *keytable, bool managed,
 	    bool initial) {
 	dns_keynode_t *knode = NULL;
-	isc_result_t result;
 
 	REQUIRE(VALID_KEYTABLE(keytable));
 	REQUIRE(!initial || managed);
@@ -350,8 +342,7 @@ new_keynode(dns_rdata_ds_t *ds, dns_keytable_t *keytable, bool managed,
 
 	dns_rdataset_init(&knode->dsset);
 	isc_refcount_init(&knode->refcount, 1);
-	result = isc_rwlock_init(&knode->rwlock, 0, 0);
-	RUNTIME_CHECK(result == ISC_R_SUCCESS);
+	isc_rwlock_init(&knode->rwlock, 0, 0);
 
 	/*
 	 * If a DS was supplied, initialize an rdatalist.
@@ -679,10 +670,12 @@ keynode_dslist_totext(dns_name_t *name, dns_keynode_t *keynode,
 
 		dns_secalg_format(ds.algorithm, algbuf, sizeof(algbuf));
 
+		RWLOCK(&keynode->rwlock, isc_rwlocktype_read);
 		snprintf(obuf, sizeof(obuf), "%s/%s/%d ; %s%s\n", namebuf,
 			 algbuf, ds.key_tag,
 			 keynode->initial ? "initializing " : "",
 			 keynode->managed ? "managed" : "static");
+		RWUNLOCK(&keynode->rwlock, isc_rwlocktype_read);
 
 		result = putstr(text, obuf);
 		if (result != ISC_R_SUCCESS) {
@@ -804,38 +797,56 @@ cleanup:
 
 bool
 dns_keynode_dsset(dns_keynode_t *keynode, dns_rdataset_t *rdataset) {
+	bool result;
 	REQUIRE(VALID_KEYNODE(keynode));
 	REQUIRE(rdataset == NULL || DNS_RDATASET_VALID(rdataset));
 
+	RWLOCK(&keynode->rwlock, isc_rwlocktype_read);
 	if (keynode->dslist != NULL) {
 		if (rdataset != NULL) {
 			keynode_clone(&keynode->dsset, rdataset);
 		}
-		return (true);
+		result = true;
+	} else {
+		result = false;
 	}
-
-	return (false);
+	RWUNLOCK(&keynode->rwlock, isc_rwlocktype_read);
+	return (result);
 }
 
 bool
 dns_keynode_managed(dns_keynode_t *keynode) {
+	bool managed;
+
 	REQUIRE(VALID_KEYNODE(keynode));
 
-	return (keynode->managed);
+	RWLOCK(&keynode->rwlock, isc_rwlocktype_read);
+	managed = keynode->managed;
+	RWUNLOCK(&keynode->rwlock, isc_rwlocktype_read);
+
+	return (managed);
 }
 
 bool
 dns_keynode_initial(dns_keynode_t *keynode) {
+	bool initial;
+
 	REQUIRE(VALID_KEYNODE(keynode));
 
-	return (keynode->initial);
+	RWLOCK(&keynode->rwlock, isc_rwlocktype_read);
+	initial = keynode->initial;
+	RWUNLOCK(&keynode->rwlock, isc_rwlocktype_read);
+
+	return (initial);
 }
 
 void
 dns_keynode_trust(dns_keynode_t *keynode) {
 	REQUIRE(VALID_KEYNODE(keynode));
 
+	RWLOCK(&keynode->rwlock, isc_rwlocktype_write);
 	keynode->initial = false;
+	RWUNLOCK(&keynode->rwlock, isc_rwlocktype_write);
 }
 
 static void

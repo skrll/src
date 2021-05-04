@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.14 2020/07/07 03:38:47 thorpej Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.16 2021/04/24 23:36:40 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All rights reserved.
@@ -39,7 +39,7 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/autoconf.h>
 #include <sys/bus.h>
@@ -107,7 +107,9 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	ca.ca_name = "cpu";
 	ca.ca_node = 0;
-	config_found_ia(self, "mainbus", &ca, mainbus_print);
+	config_found(self, &ca, mainbus_print,
+	    CFARG_IATTR, "mainbus",
+	    CFARG_EOL);
 
 #if NOBIO > 0
 	obio_reserve_resource_map();
@@ -120,8 +122,7 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	 * XXX that's not currently possible.
 	 */
 #if NPCI > 0
-	genppc_pct = malloc(sizeof(struct genppc_pci_chipset), M_DEVBUF,
-	    M_WAITOK);
+	genppc_pct = kmem_alloc(sizeof(struct genppc_pci_chipset), KM_SLEEP);
 	ibmnws_pci_get_chipset_tag_indirect (genppc_pct);
 
 #ifdef PCI_NETBSD_CONFIGURE
@@ -146,7 +147,9 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	mba.mba_pba.pba_bus = 0;
 	mba.mba_pba.pba_bridgetag = NULL;
 	mba.mba_pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY;
-	config_found_ia(self, "pcibus", &mba.mba_pba, pcibusprint);
+	config_found(self, &mba.mba_pba, pcibusprint,
+	    CFARG_IATTR, "pcibus",
+	    CFARG_EOL);
 #endif
 
 #if NOBIO > 0
@@ -158,7 +161,9 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 		mba.mba_busname = "obio"; /* XXX needs placeholder in pba */
 		mba.mba_pba.pba_iot = &isa_io_space_tag;
 		mba.mba_pba.pba_memt = &isa_mem_space_tag;
-		config_found_ia(self, "mainbus", &mba.mba_pba, mainbus_print);
+		config_found(self, &mba.mba_pba, mainbus_print,
+		    CFARG_IATTR, "mainbus",
+		    CFARG_EOL);
 	}
 #endif
 #endif

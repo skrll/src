@@ -1,3 +1,5 @@
+#! /bin/sh
+# $NetBSD: t_indent.sh,v 1.4 2021/03/08 22:13:05 rillig Exp $
 #
 # Copyright 2016 Dell EMC
 # All rights reserved.
@@ -38,27 +40,36 @@ check()
 	# to pass.
 	atf_check cp ${SRCDIR}/${tc}* .
 
-	# Remove $FreeBSD: head/usr.bin/indent/tests/functional_test.sh 314613 2017-03-03 20:15:22Z ngie $ RCS expansions because they get re-indented, which
-	# changes the output
-	local out_file="${tc}.stdout"
-	if [ -f "${out_file}" ]; then
-		parsed_file=output_file.parsed
+	# Remove single-line comments that start with '$'.  This removes RCS
+	# IDs, preventing them to be broken into several lines.  It also
+	# allows for remarks that are only needed in either the input or the
+	# output.  These removals affect the line numbers in the diffs.
+	for fname in "$tc" "$tc.stdout" "$tc.stderr"; do
+		if [ -f "$fname" ]; then
+			atf_check -o "save:$fname.clean" \
+			    sed -e '/^\/\*[[:space:]]$.*/d' "$fname"
+		fi
+	done
 
-		atf_check -o save:$parsed_file sed -e '/\$NetBSD.*\$/,/\$FreeBSD.*\$/d' \
-		    ${tc}.stdout
-		out_flag="-o file:$parsed_file"
+	local out_arg='empty'
+	if [ -f "$tc.stdout.clean" ]; then
+		out_arg="file:$tc.stdout.clean"
 	fi
-	local profile_file="${tc}.pro"
-	if [ -f "${profile_file}" ]; then
-		profile_flag="-P${profile_file}"
-	else
-		# Make sure we don't implicitly use ~/.indent.pro from the test
-		# host, for determinism purposes.
-		profile_flag="-npro"
-	fi
-	sed -e '/\$NetBSD.*\$/,/\$FreeBSD.*\$/d'  ${tc} > input_file.parsed
 
-	atf_check -s exit:${tc##*.} ${out_flag} ${indent} ${profile_flag} < input_file.parsed
+	local err_arg='empty'
+	if [ -f "$tc.stderr.clean" ]; then
+		err_arg="file:$tc.stderr.clean"
+	fi
+
+	# Make sure we don't implicitly use ~/.indent.pro from the test
+	# host, for determinism purposes.
+	local pro_arg='-npro'
+	if [ -f "$tc.pro" ]; then
+		pro_arg="-P$tc.pro"
+	fi
+
+	atf_check -s "exit:${tc##*.}" -o "$out_arg" -e "$err_arg" \
+	    "$indent" "$pro_arg" < "$tc.clean"
 }
 
 add_testcase()
@@ -68,7 +79,7 @@ add_testcase()
 
 	case "${tc%.*}" in
 	*-*)
-		local IFS="-"
+		local IFS="-+"
 		for word in ${tc%.*}; do
 			tc_escaped="${tc_escaped:+${tc_escaped}_}${word}"
 		done

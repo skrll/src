@@ -1,5 +1,5 @@
-/*	$NetBSD: monitor_wrap.h,v 1.20 2020/12/04 18:42:50 christos Exp $	*/
-/* $OpenBSD: monitor_wrap.h,v 1.45 2020/08/27 01:06:18 djm Exp $ */
+/*	$NetBSD: monitor_wrap.h,v 1.22 2021/04/19 14:40:15 christos Exp $	*/
+/* $OpenBSD: monitor_wrap.h,v 1.47 2021/04/15 16:24:31 markus Exp $ */
 
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
@@ -41,7 +41,7 @@ struct sshkey;
 struct sshauthopt;
 struct sshkey_sig_details;
 
-void mm_log_handler(LogLevel, const char *, void *);
+void mm_log_handler(LogLevel, int, const char *, void *);
 int mm_is_monitor(void);
 #ifdef WITH_OPENSSL
 DH *mm_choose_dh(int, int, int);

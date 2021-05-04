@@ -1,11 +1,11 @@
-/*	$NetBSD: condition.c,v 1.4 2020/05/24 19:46:28 christos Exp $	*/
+/*	$NetBSD: condition.c,v 1.6 2021/04/29 17:26:13 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -94,7 +94,7 @@ register_thread(unsigned long thrd, isc_condition_t *gblcond,
 }
 
 static isc_result_t
-find_thread_condition(unsigned long thrd, isc_condition_t *cond,
+find_thread_condition(uintptr_t thrd, isc_condition_t *cond,
 		      isc_condition_thread_t **threadcondp) {
 	isc_condition_thread_t *threadcond;
 

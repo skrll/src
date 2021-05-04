@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.17 2020/08/20 05:54:32 mrg Exp $	*/
+/*	$NetBSD: pmap.h,v 1.20 2021/03/19 07:51:33 skrll Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -186,6 +186,11 @@ extern u_int pmap_page_colormask;
 
 extern pmap_segtab_t pmap_kern_segtab;
 
+/*
+ * The current top of kernel VM
+ */
+extern vaddr_t pmap_curmaxkvaddr;
+
 #define	pmap_wired_count(pmap) 	((pmap)->pm_stats.wired_count)
 #define pmap_resident_count(pmap) ((pmap)->pm_stats.resident_count)
 
@@ -195,9 +200,12 @@ bool	pmap_page_clear_attributes(struct vm_page_md *, u_int);
 void	pmap_page_set_attributes(struct vm_page_md *, u_int);
 void	pmap_pvlist_lock_init(size_t);
 #ifdef PMAP_VIRTUAL_CACHE_ALIASES
-void	pmap_page_cache(struct vm_page *, bool cached);
+void	pmap_page_cache(struct vm_page_md *, bool);
 #endif
 
+#ifdef __HAVE_PMAP_PV_TRACK
+void	pmap_pv_protect(paddr_t, vm_prot_t);
+#endif
 
 #define	PMAP_WB		0
 #define	PMAP_WBINV	1

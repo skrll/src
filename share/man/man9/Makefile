@@ -1,4 +1,4 @@
-#       $NetBSD: Makefile,v 1.453 2020/10/31 22:43:01 uwe Exp $
+#       $NetBSD: Makefile,v 1.458 2021/04/28 00:49:22 thorpej Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
@@ -54,6 +54,7 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	SET.9 setbit.9 setjmp.9 shutdownhook_establish.9 \
 	signal.9 skpc.9 sockopt.9 softintr.9 spl.9 specificdata.9 \
 	spi.9 splraiseipl.9 \
+	strlist.9 \
 	suspendsched.9 \
 	sysctl.9 sysmon_envsys.9 sysmon_pswitch.9 sysmon_taskq.9 tc.9 \
 	tcp_congctl.9 thmap.9 threadpool.9 timecounter.9 time_second.9 todr.9 \
@@ -119,13 +120,9 @@ MLINKS+=accept_filter.9 accept_filt_generic_mod_event.9
 MLINKS+=accept_filter.9 accept_filt_get.9
 
 MLINKS+=arp.9 arp_ifinit.9 arp.9 arpresolve.9 arp.9 arpintr.9
-MLINKS+=autoconf.9 config_search_loc.9 \
-	autoconf.9 config_search_ia.9 \
-	autoconf.9 config_found_sm_loc.9 \
-	autoconf.9 config_found_ia.9 \
+MLINKS+=autoconf.9 config_search.9 \
 	autoconf.9 config_found.9 \
 	autoconf.9 config_match.9 \
-	autoconf.9 config_attach_loc.9 \
 	autoconf.9 config_attach.9 \
 	autoconf.9 config_attach_pseudo.9 \
 	autoconf.9 config_detach.9 \
@@ -137,6 +134,7 @@ MLINKS+=autoconf.9 config_search_loc.9 \
 	autoconf.9 config_mountroot.9 \
 	autoconf.9 config_pending_incr.9 \
 	autoconf.9 config_pending_decr.9 \
+	autoconf.9 config_probe.9 \
 	autoconf.9 config_finalize_register.9
 MLINKS+=bcdtobin.9 bintobcd.9
 MLINKS+=bintime_add.9 bintime_addx.9 \
@@ -455,13 +453,15 @@ MLINKS+=kmem.9 kmem_alloc.9 \
 	kmem.9 kmem_intr_zalloc.9 \
 	kmem.9 kmem_asprintf.9 \
 	kmem.9 kmem_strdupsize.9 \
-	kmem.9 kmem_strfree.9
+	kmem.9 kmem_strfree.9 \
+	kmem.9 kmem_tmpbuf_alloc.9 \
+	kmem.9 kmem_tmpbuf_free.9
 MAN+=	kpreempt.9
 MLINKS+=kpreempt.9 kpreempt_disable.9 \
 	kpreempt.9 kpreempt_disabled.9 \
 	kpreempt.9 kpreempt_enable.9
 MLINKS+=proc_find.9 pgrp_find.9
-MLINKS+=kprintf.9 printf.9 kprintf.9 printf_nolog.9 \
+MLINKS+=kprintf.9 printf.9 kprintf.9 printf_nolog.9 kprintf.9 printf_nostamp.9 \
 	kprintf.9 snprintf.9 kprintf.9 vprintf.9 \
 	kprintf.9 vsnprintf.9 kprintf.9 uprintf.9 kprintf.9 ttyprintf.9 \
 	kprintf.9 tprintf.9 kprintf.9 tprintf_open.9 kprintf.9 tprintf_close.9 \
@@ -493,7 +493,8 @@ MLINKS+=malloc.9 malloc_type_attach.9
 MLINKS+=malloc.9 malloc_type_detach.9
 MLINKS+=malloc.9 MALLOC_DEFINE.9
 MLINKS+=malloc.9 MALLOC_DECLARE.9
-MLINKS+=mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
+MLINKS+=mbuf.9 m_align.9 \
+	mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
 	mbuf.9 m_copym.9 mbuf.9 m_copypacket.9 mbuf.9 m_copydata.9 \
 	mbuf.9 m_copyback.9 mbuf.9 m_cat.9 mbuf.9 m_dup.9 mbuf.9 m_prepend.9 \
 	mbuf.9 m_copyback_cow.9 \
@@ -501,7 +502,7 @@ MLINKS+=mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
 	mbuf.9 m_pulldown.9 mbuf.9 m_pullup.9 mbuf.9 m_copyup.9 \
 	mbuf.9 m_split.9 mbuf.9 m_adj.9 mbuf.9 m_free.9 \
 	mbuf.9 m_apply.9 \
-	mbuf.9 m_freem.9 mbuf.9 mtod.9 mbuf.9 mtocl.9 mbuf.9 cltom.9 \
+	mbuf.9 m_freem.9 mbuf.9 mtod.9 \
 	mbuf.9 MGET.9 mbuf.9 MGETHDR.9 mbuf.9 MEXTMALLOC.9 \
 	mbuf.9 MEXTADD.9 mbuf.9 MCLGET.9 \
 	mbuf.9 M_LEADINGSPACE.9 \
@@ -885,6 +886,13 @@ MLINKS+=spl.9 spl0.9 spl.9 splbio.9 spl.9 splclock.9 spl.9 splhigh.9 \
 	spl.9 splsoftclock.9 spl.9 splsoftnet.9 spl.9 splsoftserial.9 \
 	spl.9 splstatclock.9 spl.9 spltty.9 spl.9 splvm.9 spl.9 splx.9 \
 	spl.9 splsoftbio.9
+MLINKS+=strlist.9 strlist_append.9 \
+	strlist.9 strlist_count.9 \
+	strlist.9 strlist_index.9 \
+	strlist.9 strlist_match.9 \
+	strlist.9 strlist_next.9 \
+	strlist.9 strlist_pmatch.9 \
+	strlist.9 strlist_string.9
 MLINKS+=sysctl.9 old_sysctl.9 \
 	sysctl.9 sysctl_create.9 \
 	sysctl.9 sysctl_createv.9 \

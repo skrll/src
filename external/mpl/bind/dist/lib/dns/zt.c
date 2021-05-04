@@ -1,11 +1,11 @@
-/*	$NetBSD: zt.c,v 1.5 2020/05/24 19:46:23 christos Exp $	*/
+/*	$NetBSD: zt.c,v 1.7 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -90,11 +90,7 @@ dns_zt_create(isc_mem_t *mctx, dns_rdataclass_t rdclass, dns_zt_t **ztp) {
 		goto cleanup_zt;
 	}
 
-	result = isc_rwlock_init(&zt->rwlock, 0, 0);
-	if (result != ISC_R_SUCCESS) {
-		goto cleanup_rbt;
-	}
-
+	isc_rwlock_init(&zt->rwlock, 0, 0);
 	zt->mctx = NULL;
 	isc_mem_attach(mctx, &zt->mctx);
 	isc_refcount_init(&zt->references, 1);
@@ -108,9 +104,6 @@ dns_zt_create(isc_mem_t *mctx, dns_rdataclass_t rdclass, dns_zt_t **ztp) {
 	*ztp = zt;
 
 	return (ISC_R_SUCCESS);
-
-cleanup_rbt:
-	dns_rbt_destroy(&zt->table);
 
 cleanup_zt:
 	isc_mem_put(mctx, zt, sizeof(*zt));
@@ -377,8 +370,8 @@ asyncload(dns_zone_t *zone, void *zt_) {
 		 * Caller is holding a reference to zt->loads_pending
 		 * and zt->references so these can't decrement to zero.
 		 */
-		INSIST(isc_refcount_decrement(&zt->loads_pending) > 1);
-		INSIST(isc_refcount_decrement(&zt->references) > 1);
+		isc_refcount_decrement1(&zt->references);
+		isc_refcount_decrement1(&zt->loads_pending);
 	}
 	return (ISC_R_SUCCESS);
 }

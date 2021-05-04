@@ -1,4 +1,4 @@
-# $NetBSD: moderrs.mk,v 1.25 2020/11/15 20:20:58 rillig Exp $
+# $NetBSD: moderrs.mk,v 1.27 2021/02/23 16:04:16 rillig Exp $
 #
 # various modifier error tests
 
@@ -35,11 +35,11 @@ mod-unknown-indirect: print-header print-footer
 	@echo 'VAR:${MOD_UNKN}=before-${VAR:${MOD_UNKN}:inner}-after'
 
 unclosed-direct: print-header print-footer
-	@echo 'want: Unclosed variable specification (expecting $'}$') for "VAR" (value "Thevariable") modifier S'
+	@echo 'want: Unclosed variable expression, expecting $'}$' for modifier "S,V,v," of variable "VAR" with value "Thevariable"'
 	@echo VAR:S,V,v,=${VAR:S,V,v,
 
 unclosed-indirect: print-header print-footer
-	@echo 'want: Unclosed variable specification after complex modifier (expecting $'}$') for VAR'
+	@echo 'want: Unclosed variable expression after indirect modifier, expecting $'}$' for variable "VAR"'
 	@echo VAR:${MOD_TERM},=${VAR:${MOD_S}
 
 unfinished-indirect: print-header print-footer
@@ -140,6 +140,7 @@ mod-ts-parse: print-header print-footer
 	@echo ${FIB:ts}
 	@echo ${FIB:ts\65}	# octal 065 == U+0035 == '5'
 	@echo ${FIB:ts\65oct}	# bad modifier
+	@echo ${:U${FIB}:ts\65oct} # bad modifier, variable name is ""
 	@echo ${FIB:tsxy}	# modifier too long
 
 mod-t-parse: print-header print-footer

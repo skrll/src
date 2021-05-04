@@ -1,4 +1,4 @@
-/* $NetBSD: emit2.c,v 1.13 2008/09/26 22:52:24 matt Exp $ */
+/* $NetBSD: emit2.c,v 1.19 2021/04/02 12:16:50 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -34,7 +34,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: emit2.c,v 1.13 2008/09/26 22:52:24 matt Exp $");
+__RCSID("$NetBSD: emit2.c,v 1.19 2021/04/02 12:16:50 rillig Exp $");
 #endif
 
 #include "lint2.h"
@@ -55,7 +55,7 @@ outtype(type_t *tp)
 	type_t	**ap;
 
 	while (tp != NULL) {
-		if ((ts = tp->t_tspec) == INT && tp->t_isenum)
+		if ((ts = tp->t_tspec) == INT && tp->t_is_enum)
 			ts = ENUM;
 		switch (ts) {
 		case BOOL:	t = 'B';	s = '\0';	break;
@@ -203,7 +203,7 @@ dumpname(hte_t *hte)
 	 * definition is allowed (except with sflag).
 	 */
 	def = NULL;
-	for (sym = hte->h_syms; sym != NULL; sym = sym->s_nxt) {
+	for (sym = hte->h_syms; sym != NULL; sym = sym->s_next) {
 		if (sym->s_def == DEF) {
 			def = sym;
 			break;
@@ -223,7 +223,7 @@ dumpname(hte_t *hte)
 void
 outlib(const char *name)
 {
-	/* Open of output file and initialisation of the output buffer */
+	/* Open of output file and initialization of the output buffer */
 	outopen(name);
 
 	/* write name of lint library */
@@ -277,11 +277,11 @@ addoutfile(short num)
 	}
 
 	if (ofl == NULL) {
-		ofl = *pofl = xmalloc(sizeof (struct outflist));
+		ofl = *pofl = xmalloc(sizeof(**pofl));
 		ofl->ofl_num = num;
 		ofl->ofl_next = NULL;
 	}
-	return (i);
+	return i;
 }
 
 static void

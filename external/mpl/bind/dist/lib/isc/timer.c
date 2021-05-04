@@ -1,11 +1,11 @@
-/*	$NetBSD: timer.c,v 1.6 2020/05/24 19:46:26 christos Exp $	*/
+/*	$NetBSD: timer.c,v 1.8 2021/04/03 22:20:26 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -716,7 +716,7 @@ isc_timermgr_create(isc_mem_t *mctx, isc_timermgr_t **managerp) {
 	isc_mem_attach(mctx, &manager->mctx);
 	isc_condition_init(&manager->wakeup);
 	isc_thread_create(run, manager, &manager->thread);
-	isc_thread_setname(manager->thread, "isc-timer");
+	isc_thread_setname(manager->thread, "timer");
 
 	*managerp = (isc_timermgr_t *)manager;
 

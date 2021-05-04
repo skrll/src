@@ -1,11 +1,11 @@
-/*	$NetBSD: rwlock_test.c,v 1.4 2020/05/24 19:46:13 christos Exp $	*/
+/*	$NetBSD: rwlock_test.c,v 1.6 2021/04/29 17:26:10 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -107,7 +107,7 @@ main(int argc, char *argv[]) {
 	}
 	printf("%u workers\n", nworkers);
 
-	RUNTIME_CHECK(isc_rwlock_init(&lock, 5, 10) == ISC_R_SUCCESS);
+	isc_rwlock_init(&lock, 5, 10);
 
 	for (i = 0; i < nworkers; i++) {
 		snprintf(name, sizeof(name), "%02u", i);

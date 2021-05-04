@@ -1,9 +1,9 @@
-/*	$NetBSD: bozohttpd.h,v 1.65 2020/10/15 04:21:53 mrg Exp $	*/
+/*	$NetBSD: bozohttpd.h,v 1.68 2021/02/27 12:36:46 mrg Exp $	*/
 
 /*	$eterna: bozohttpd.h,v 1.39 2011/11/18 09:21:15 mrg Exp $	*/
 
 /*
- * Copyright (c) 1997-2020 Matthew R. Green
+ * Copyright (c) 1997-2021 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -159,7 +159,8 @@ typedef struct bozo_httpreq_t {
 	const char *hr_methodstr;
 	char	*hr_virthostname;	/* server name (if not identical
 					   to hr_httpd->virthostname) */
-	char	*hr_file;
+	char	*hr_file_free;	/* pointer to file buffer to free() */
+	char	*hr_file;	/* pointer into file buffer */
 	char	*hr_oldfile;	/* if we added an index_html */
 	char	*hr_query;
 	char	*hr_host;	/* HTTP/1.1 Host: or virtual hostname,
@@ -442,6 +443,7 @@ int bozo_init_httpd(bozohttpd_t *);
 int bozo_init_prefs(bozohttpd_t *, bozoprefs_t *);
 int bozo_set_defaults(bozohttpd_t *, bozoprefs_t *);
 int bozo_setup(bozohttpd_t *, bozoprefs_t *, const char *, const char *);
+void bozo_cleanup(bozohttpd_t *, bozoprefs_t *);
 bozo_httpreq_t *bozo_read_request(bozohttpd_t *);
 void bozo_process_request(bozo_httpreq_t *);
 void bozo_clean_request(bozo_httpreq_t *);

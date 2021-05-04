@@ -1,11 +1,11 @@
-/*	$NetBSD: host.c,v 1.5 2020/05/24 19:46:11 christos Exp $	*/
+/*	$NetBSD: host.c,v 1.7 2021/04/29 17:26:09 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -150,7 +150,11 @@ received(unsigned int bytes, isc_sockaddr_t *from, dig_query_t *query) {
 	if (!short_form) {
 		char fromtext[ISC_SOCKADDR_FORMATSIZE];
 		isc_sockaddr_format(from, fromtext, sizeof(fromtext));
-		TIME_NOW(&now);
+		if (query->lookup->use_usec) {
+			TIME_NOW_HIRES(&now);
+		} else {
+			TIME_NOW(&now);
+		}
 		diff = (int)isc_time_microdiff(&now, &query->time_sent);
 		printf("Received %u bytes from %s in %d ms\n", bytes, fromtext,
 		       diff / 1000);

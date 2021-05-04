@@ -1,11 +1,11 @@
-/*	$NetBSD: xfrin.c,v 1.6 2020/08/03 17:23:41 christos Exp $	*/
+/*	$NetBSD: xfrin.c,v 1.9 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -60,14 +60,14 @@
 		result = (code);             \
 		if (result != ISC_R_SUCCESS) \
 			goto failure;        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define CHECK(op)                            \
 	do {                                 \
 		result = (op);               \
 		if (result != ISC_R_SUCCESS) \
 			goto failure;        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*%
  * The states of the *XFR state machine.  We handle both IXFR and AXFR
@@ -498,6 +498,20 @@ xfr_rr(dns_xfrin_ctx_t *xfr, dns_name_t *name, uint32_t ttl,
 	if (rdata->type == dns_rdatatype_none ||
 	    dns_rdatatype_ismeta(rdata->type)) {
 		FAIL(DNS_R_FORMERR);
+	}
+
+	/*
+	 * Immediately reject the entire transfer if the RR that is currently
+	 * being processed is an SOA record that is not placed at the zone
+	 * apex.
+	 */
+	if (rdata->type == dns_rdatatype_soa &&
+	    !dns_name_equal(&xfr->name, name)) {
+		char namebuf[DNS_NAME_FORMATSIZE];
+		dns_name_format(name, namebuf, sizeof(namebuf));
+		xfrin_log(xfr, ISC_LOG_DEBUG(3), "SOA name mismatch: '%s'",
+			  namebuf);
+		FAIL(DNS_R_NOTZONETOP);
 	}
 
 redo:
@@ -1112,7 +1126,7 @@ xfrin_send_request(dns_xfrin_ctx_t *xfr) {
 	dns_name_t *msgsoaname = NULL;
 
 	/* Create the request message */
-	CHECK(dns_message_create(xfr->mctx, DNS_MESSAGE_INTENTRENDER, &msg));
+	dns_message_create(xfr->mctx, DNS_MESSAGE_INTENTRENDER, &msg);
 	CHECK(dns_message_settsigkey(msg, xfr->tsigkey));
 
 	/* Create a name for the question section. */
@@ -1197,7 +1211,7 @@ failure:
 		dns_message_puttemprdataset(msg, &qrdataset);
 	}
 	if (msg != NULL) {
-		dns_message_destroy(&msg);
+		dns_message_detach(&msg);
 	}
 	if (soatuple != NULL) {
 		dns_difftuple_free(&soatuple);
@@ -1264,7 +1278,7 @@ xfrin_recv_done(isc_task_t *task, isc_event_t *ev) {
 
 	CHECK(isc_timer_touch(xfr->timer));
 
-	CHECK(dns_message_create(xfr->mctx, DNS_MESSAGE_INTENTPARSE, &msg));
+	dns_message_create(xfr->mctx, DNS_MESSAGE_INTENTPARSE, &msg);
 
 	CHECK(dns_message_settsigkey(msg, xfr->tsigkey));
 	CHECK(dns_message_setquerytsig(msg, xfr->lasttsig));
@@ -1314,7 +1328,7 @@ xfrin_recv_done(isc_task_t *task, isc_event_t *ev) {
 		xfrin_log(xfr, ISC_LOG_DEBUG(3), "got %s, retrying with AXFR",
 			  isc_result_totext(result));
 	try_axfr:
-		dns_message_destroy(&msg);
+		dns_message_detach(&msg);
 		xfrin_reset(xfr);
 		xfr->reqtype = dns_rdatatype_soa;
 		xfr->state = XFRST_SOAQUERY;
@@ -1425,7 +1439,7 @@ xfrin_recv_done(isc_task_t *task, isc_event_t *ev) {
 	xfr->tsigctx = msg->tsigctx;
 	msg->tsigctx = NULL;
 
-	dns_message_destroy(&msg);
+	dns_message_detach(&msg);
 
 	switch (xfr->state) {
 	case XFRST_GOTSOA:
@@ -1471,7 +1485,7 @@ xfrin_recv_done(isc_task_t *task, isc_event_t *ev) {
 
 failure:
 	if (msg != NULL) {
-		dns_message_destroy(&msg);
+		dns_message_detach(&msg);
 	}
 	if (result != ISC_R_SUCCESS) {
 		xfrin_fail(xfr, result, "failed while receiving responses");
@@ -1531,10 +1545,10 @@ maybe_free(dns_xfrin_ctx_t *xfr) {
 	xfrin_log(xfr, ISC_LOG_INFO,
 		  "Transfer completed: %d messages, %d records, "
 		  "%" PRIu64 " bytes, "
-		  "%u.%03u secs (%u bytes/sec)",
+		  "%u.%03u secs (%u bytes/sec) (serial %u)",
 		  xfr->nmsg, xfr->nrecs, xfr->nbytes,
 		  (unsigned int)(msecs / 1000), (unsigned int)(msecs % 1000),
-		  (unsigned int)persec);
+		  (unsigned int)persec, xfr->end_serial);
 
 	if (xfr->socket != NULL) {
 		isc_socket_detach(&xfr->socket);

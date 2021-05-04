@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_subr.c,v 1.248 2020/06/11 02:39:30 thorpej Exp $	*/
+/*	$NetBSD: usb_subr.c,v 1.250 2021/04/24 23:36:59 thorpej Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_subr.c,v 1.18 1999/11/17 22:33:47 n_hibma Exp $	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.248 2020/06/11 02:39:30 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.250 2021/04/24 23:36:59 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -851,7 +851,9 @@ usbd_attach_roothub(device_t parent, struct usbd_device *dev)
 	uaa.uaa_proto = dd->bDeviceProtocol;
 
 	KERNEL_LOCK(1, curlwp);
-	dv = config_found_ia(parent, "usbroothubif", &uaa, 0);
+	dv = config_found(parent, &uaa, NULL,
+	    CFARG_IATTR, "usbroothubif",
+	    CFARG_EOL);
 	KERNEL_UNLOCK_ONE(curlwp);
 	if (dv) {
 		dev->ud_subdevs = kmem_alloc(sizeof(dv), KM_SLEEP);
@@ -862,10 +864,36 @@ usbd_attach_roothub(device_t parent, struct usbd_device *dev)
 }
 
 static void
-usbd_serialnumber(device_t dv, struct usbd_device *dev)
+usbd_properties(device_t dv, struct usbd_device *dev)
 {
+	usb_device_descriptor_t *dd = &dev->ud_ddesc;
+	prop_dictionary_t dict = device_properties(dv);
+	int class, subclass, release, proto, vendor, product;
+
+	class = dd->bDeviceClass;
+	subclass = dd->bDeviceSubClass;
+	release = UGETW(dd->bcdDevice);
+	proto = dd->bDeviceProtocol;
+	vendor = UGETW(dd->idVendor);
+	product = UGETW(dd->idProduct);
+
+	prop_dictionary_set_uint16(dict, "class", class);
+	prop_dictionary_set_uint16(dict, "subclass", subclass);
+	prop_dictionary_set_uint16(dict, "release", release);
+	prop_dictionary_set_uint16(dict, "proto", proto);
+	prop_dictionary_set_uint16(dict, "vendor", vendor);
+	prop_dictionary_set_uint16(dict, "product", product);
+
+	if (dev->ud_vendor) {
+		prop_dictionary_set_string(dict,
+		    "vendor-string", dev->ud_vendor);
+	}
+	if (dev->ud_product) {
+		prop_dictionary_set_string(dict,
+		    "product-string", dev->ud_product);
+	}
 	if (dev->ud_serial) {
-		prop_dictionary_set_string(device_properties(dv),
+		prop_dictionary_set_string(dict,
 		    "serialnumber", dev->ud_serial);
 	}
 }
@@ -899,15 +927,18 @@ usbd_attachwholedevice(device_t parent, struct usbd_device *dev, int port,
 
 	KERNEL_LOCK(1, curlwp);
 	config_pending_incr(parent);
-	dv = config_found_sm_loc(parent, "usbdevif", dlocs, &uaa, usbd_print,
-				 config_stdsubmatch);
+	dv = config_found(parent, &uaa, usbd_print,
+			  CFARG_SUBMATCH, config_stdsubmatch,
+			  CFARG_IATTR, "usbdevif",
+			  CFARG_LOCATORS, dlocs,
+			  CFARG_EOL);
 	KERNEL_UNLOCK_ONE(curlwp);
 	if (dv) {
 		dev->ud_subdevs = kmem_alloc(sizeof(dv), KM_SLEEP);
 		dev->ud_subdevs[0] = dv;
 		dev->ud_subdevlen = 1;
 		dev->ud_nifaces_claimed = 1; /* XXX */
-		usbd_serialnumber(dv, dev);
+		usbd_properties(dv, dev);
 	}
 	config_pending_decr(parent);
 	return USBD_NORMAL_COMPLETION;
@@ -977,13 +1008,16 @@ usbd_attachinterfaces(device_t parent, struct usbd_device *dev,
 				continue;
 		}
 		KERNEL_LOCK(1, curlwp);
-		dv = config_found_sm_loc(parent, "usbifif", ilocs, &uiaa,
-					 usbd_ifprint, config_stdsubmatch);
+		dv = config_found(parent, &uiaa, usbd_ifprint,
+				  CFARG_SUBMATCH, config_stdsubmatch,
+				  CFARG_IATTR, "usbifif",
+				  CFARG_LOCATORS, ilocs,
+				  CFARG_EOL);
 		KERNEL_UNLOCK_ONE(curlwp);
 		if (!dv)
 			continue;
 
-		usbd_serialnumber(dv, dev);
+		usbd_properties(dv, dev);
 
 		/* claim */
 		ifaces[i] = NULL;

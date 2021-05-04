@@ -1,4 +1,4 @@
-/*	$NetBSD: eisa.c,v 1.46 2016/07/11 11:31:50 msaitoh Exp $	*/
+/*	$NetBSD: eisa.c,v 1.48 2021/04/24 23:36:53 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996 Christopher G. Demetriou
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: eisa.c,v 1.46 2016/07/11 11:31:50 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: eisa.c,v 1.48 2021/04/24 23:36:53 thorpej Exp $");
 
 #include "opt_eisaverbose.h"
 
@@ -181,9 +181,29 @@ eisaattach(device_t parent, device_t self, void *aux)
 		locs[EISACF_SLOT] = slot;
 
 		/* Attach matching device. */
-		config_found_sm_loc(self, "eisa", locs, &ea,
-				    eisaprint, config_stdsubmatch);
+		config_found(self, &ea, eisaprint,
+		    CFARG_SUBMATCH, config_stdsubmatch,
+		    CFARG_LOCATORS, locs,
+		    CFARG_EOL);
 	}
+}
+
+int
+eisa_compatible_match(const struct eisa_attach_args * const ea,
+    const struct device_compatible_entry *dce)
+{
+	const char *idstring = ea->ea_idstring;
+
+	return device_compatible_pmatch(&idstring, 1, dce);
+}
+
+const struct device_compatible_entry *
+eisa_compatible_lookup(const struct eisa_attach_args * const ea,
+    const struct device_compatible_entry *dce)
+{
+	const char *idstring = ea->ea_idstring;
+
+	return device_compatible_plookup(&idstring, 1, dce);
 }
 
 #ifdef EISAVERBOSE

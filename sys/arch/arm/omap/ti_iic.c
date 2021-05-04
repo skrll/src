@@ -1,4 +1,4 @@
-/* $NetBSD: ti_iic.c,v 1.12 2020/05/14 08:34:20 msaitoh Exp $ */
+/* $NetBSD: ti_iic.c,v 1.14 2021/04/24 23:36:28 thorpej Exp $ */
 
 /*
  * Copyright (c) 2013 Manuel Bouyer.  All rights reserved.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_iic.c,v 1.12 2020/05/14 08:34:20 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_iic.c,v 1.14 2021/04/24 23:36:28 thorpej Exp $");
 
 #include "opt_omap.h"
 #include "locators.h"
@@ -216,8 +216,6 @@ ti_iic_attach(device_t parent, device_t self, void *opaque)
 
 	iic_tag_init(&sc->sc_ic);
 	sc->sc_ic.ic_cookie = sc;
-	sc->sc_ic.ic_acquire_bus = ti_iic_acquire_bus;
-	sc->sc_ic.ic_release_bus = ti_iic_release_bus;
 	sc->sc_ic.ic_exec = ti_iic_exec;
 
 	if (bus_space_map(obio->obio_iot, obio->obio_addr, obio->obio_size,
@@ -294,11 +292,11 @@ ti_iic_rescan(device_t self, const char *ifattr, const int *locs)
 	struct ti_iic_softc *sc = device_private(self);
 	struct i2cbus_attach_args iba;
 
-	if (ifattr_match(ifattr, "i2cbus") && sc->sc_i2cdev == NULL) {
+	if (sc->sc_i2cdev == NULL) {
 		memset(&iba, 0, sizeof(iba));
 		iba.iba_tag = &sc->sc_ic;
-		sc->sc_i2cdev = config_found_ia(self, "i2cbus",
-		    &iba, iicbus_print);
+		sc->sc_i2cdev =
+		    config_found(self, &iba, iicbus_print, CFARG_EOL);
 	}
 
 	return 0;

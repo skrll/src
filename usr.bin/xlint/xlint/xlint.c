@@ -1,4 +1,4 @@
-/* $NetBSD: xlint.c,v 1.50 2020/05/23 17:28:27 christos Exp $ */
+/* $NetBSD: xlint.c,v 1.62 2021/04/18 22:51:25 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: xlint.c,v 1.50 2020/05/23 17:28:27 christos Exp $");
+__RCSID("$NetBSD: xlint.c,v 1.62 2021/04/18 22:51:25 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -82,7 +82,7 @@ static	char	*p2out;
 /* flags always passed to cc(1) */
 static	char	**cflags;
 
-/* flags for cc(1), controled by sflag/tflag */
+/* flags for cc(1), controlled by sflag/tflag */
 static	char	**lcflags;
 
 /* flags for lint1 */
@@ -106,16 +106,16 @@ static	char	**libsrchpath;
 static  char	*libexec_path;
 
 /* flags */
-static	int	iflag, oflag, Cflag, sflag, tflag, Fflag, dflag, Bflag, Sflag;
+static	bool	iflag, oflag, Cflag, sflag, tflag, Fflag, dflag, Bflag, Sflag;
 
 /* print the commands executed to run the stages of compilation */
-static	int	Vflag;
+static	bool	Vflag;
 
 /* filename for oflag */
 static	char	*outputfn;
 
 /* reset after first .c source has been processed */
-static	int	first = 1;
+static	bool	first = true;
 
 /*
  * name of a file which is currently written by a child and should
@@ -141,7 +141,7 @@ static	void	usage(void);
 static	void	fname(const char *);
 static	void	runchild(const char *, char *const *, const char *, int);
 static	void	findlibs(char *const *);
-static	int	rdok(const char *);
+static	bool	rdok(const char *);
 static	void	lint2(void);
 static	void	cat(char *const *, const char *);
 
@@ -158,7 +158,7 @@ appstrg(char ***lstp, char *s)
 	olst = *lstp;
 	for (i = 0; olst[i] != NULL; i++)
 		continue;
-	lst = xrealloc(olst, (i + 2) * sizeof (char *));
+	lst = xrealloc(olst, (i + 2) * sizeof(*lst));
 	lst[i] = s;
 	lst[i + 1] = NULL;
 	*lstp = lst;
@@ -182,7 +182,7 @@ applst(char ***destp, char *const *src)
 		continue;
 	for (k = 0; src[k] != NULL; k++)
 		continue;
-	dest = xrealloc(odest, (i + k + 1) * sizeof (char *));
+	dest = xrealloc(odest, (i + k + 1) * sizeof(*dest));
 	for (k = 0; src[k] != NULL; k++)
 		dest[i + k] = xstrdup(src[k]);
 	dest[i + k] = NULL;
@@ -204,6 +204,27 @@ freelst(char ***lstp)
 	}
 }
 
+static void
+pass_to_lint1(const char *opt)
+{
+
+	appcstrg(&l1flags, opt);
+}
+
+static void
+pass_to_lint2(const char *opt)
+{
+
+	appcstrg(&l2flags, opt);
+}
+
+static void
+pass_to_cpp(const char *opt)
+{
+
+	appcstrg(&cflags, opt);
+}
+
 static char *
 concat2(const char *s1, const char *s2)
 {
@@ -213,7 +234,7 @@ concat2(const char *s1, const char *s2)
 	(void)strcpy(s, s1);
 	(void)strcat(s, s2);
 
-	return (s);
+	return s;
 }
 
 static char *
@@ -226,7 +247,7 @@ concat3(const char *s1, const char *s2, const char *s3)
 	(void)strcat(s, s2);
 	(void)strcat(s, s3);
 
-	return (s);
+	return s;
 }
 
 /*
@@ -274,7 +295,7 @@ lbasename(const char *strg, int delim)
 			cp1 = cp;
 		}
 	}
-	return (*cp1 == '\0' ? cp2 : cp1);
+	return *cp1 == '\0' ? cp2 : cp1;
 }
 
 static void
@@ -285,21 +306,25 @@ appdef(char ***lstp, const char *def)
 	appstrg(lstp, concat3("-D__", def, "__"));
 }
 
-static void
+static void __attribute__((noreturn))
 usage(void)
 {
+	const char *name;
+	int indent;
 
+	name = getprogname();
+	indent = (int)(strlen("usage: ") + strlen(name));
 	(void)fprintf(stderr,
-	    "Usage: %s [-abceghprvwxzHFS] [-s|-t] [-i|-nu] [-Dname[=def]]"
-	    " [-Uname] [-X <id>[,<id>]... [-Z <cpparg>]\n", getprogname());
+	    "usage: %s [-abceghprvwxzHFST] [-s|-t] [-i|-nu]\n"
+	    "%*s [-Dname[=def]] [-Uname] [-Idirectory] [-Z <cpparg>]\n"
+	    "%*s [-Ldirectory] [-llibrary] [-ooutputfile]\n"
+	    "%*s [-X <id>[,<id>]...] [-Ac11] file...\n",
+	    name, indent, "", indent, "", indent, "");
 	(void)fprintf(stderr,
-	    "\t[-Idirectory] [-Ldirectory] [-llibrary] [-ooutputfile]"
-	    " file...\n");
-	(void)fprintf(stderr,
-	    "       %s [-abceghprvwzHFS] [|-s|-t] -Clibrary [-Dname[=def]]\n"
-	    " [-X <id>[,<id>]... [-Z <cpparg>]\n", getprogname());
-	(void)fprintf(stderr, "\t[-Idirectory] [-Uname] [-Bpath] [-R old=new]"
-	    " file ...\n");
+	    "       %s [-abceghprvwzHFST] [-s|-t] -Clibrary\n"
+	    "%*s [-Dname[=def]] [-Uname] [-Idirectory] [-Z <cpparg>]\n"
+	    "%*s [-Bpath] [-X <id>[,<id>]...] [-R old=new] file ...\n",
+	    name, indent, "", indent, "");
 	terminate(-1);
 }
 
@@ -322,7 +347,7 @@ main(int argc, char *argv[])
 		tmpdir = p;
 	}
 
-	cppout = xmalloc(strlen(tmpdir) + sizeof ("lint0.XXXXXX"));
+	cppout = xmalloc(strlen(tmpdir) + sizeof("lint0.XXXXXX"));
 	(void)sprintf(cppout, "%slint0.XXXXXX", tmpdir);
 	cppoutfd = mkstemp(cppout);
 	if (cppoutfd == -1) {
@@ -330,36 +355,36 @@ main(int argc, char *argv[])
 		terminate(-1);
 	}
 
-	p1out = xcalloc(1, sizeof (char *));
-	p2in = xcalloc(1, sizeof (char *));
-	cflags = xcalloc(1, sizeof (char *));
-	lcflags = xcalloc(1, sizeof (char *));
-	l1flags = xcalloc(1, sizeof (char *));
-	l2flags = xcalloc(1, sizeof (char *));
-	l2libs = xcalloc(1, sizeof (char *));
-	deflibs = xcalloc(1, sizeof (char *));
-	libs = xcalloc(1, sizeof (char *));
-	libsrchpath = xcalloc(1, sizeof (char *));
+	p1out = xcalloc(1, sizeof(*p1out));
+	p2in = xcalloc(1, sizeof(*p2in));
+	cflags = xcalloc(1, sizeof(*cflags));
+	lcflags = xcalloc(1, sizeof(*lcflags));
+	l1flags = xcalloc(1, sizeof(*l1flags));
+	l2flags = xcalloc(1, sizeof(*l2flags));
+	l2libs = xcalloc(1, sizeof(*l2libs));
+	deflibs = xcalloc(1, sizeof(*deflibs));
+	libs = xcalloc(1, sizeof(*libs));
+	libsrchpath = xcalloc(1, sizeof(*libsrchpath));
 
-	appcstrg(&cflags, "-E");
-	appcstrg(&cflags, "-x");
-	appcstrg(&cflags, "c");
+	pass_to_cpp("-E");
+	pass_to_cpp("-x");
+	pass_to_cpp("c");
 #if 0
-	appcstrg(&cflags, "-D__attribute__(x)=");
-	appcstrg(&cflags, "-D__extension__(x)=/*NOSTRICT*/0");
+	pass_to_cpp("-D__attribute__(x)=");
+	pass_to_cpp("-D__extension__(x)=/*NOSTRICT*/0");
 #else
-	appcstrg(&cflags, "-U__GNUC__");
-	appcstrg(&cflags, "-U__PCC__");
-	appcstrg(&cflags, "-U__SSE__");
-	appcstrg(&cflags, "-U__SSE4_1__");
+	pass_to_cpp("-U__GNUC__");
+	pass_to_cpp("-U__PCC__");
+	pass_to_cpp("-U__SSE__");
+	pass_to_cpp("-U__SSE4_1__");
 #endif
 #if 0
-	appcstrg(&cflags, "-Wp,-$");
+	pass_to_cpp("-Wp,-$");
 #endif
-	appcstrg(&cflags, "-Wp,-CC");
-	appcstrg(&cflags, "-Wcomment");
-	appcstrg(&cflags, "-D__LINT__");
-	appcstrg(&cflags, "-Dlint");		/* XXX don't def. with -s */
+	pass_to_cpp("-Wp,-CC");
+	pass_to_cpp("-Wcomment");
+	pass_to_cpp("-D__LINT__");
+	pass_to_cpp("-Dlint");		/* XXX don't def. with -s */
 
 	appdef(&cflags, "lint");
 
@@ -370,7 +395,8 @@ main(int argc, char *argv[])
 	(void)signal(SIGINT, terminate);
 	(void)signal(SIGQUIT, terminate);
 	(void)signal(SIGTERM, terminate);
-	while ((c = getopt(argc, argv, "abcd:eghil:no:prstuvwxzB:C:D:FHI:L:M:PR:SU:VX:Z:")) != -1) {
+	while ((c = getopt(argc, argv,
+	    "abcd:eghil:no:prstuvwxzA:B:C:D:FHI:L:M:PR:STU:VX:Z:")) != -1) {
 		switch (c) {
 
 		case 'a':
@@ -383,29 +409,34 @@ main(int argc, char *argv[])
 		case 'w':
 		case 'z':
 			(void)sprintf(flgbuf, "-%c", c);
-			appcstrg(&l1flags, flgbuf);
+			pass_to_lint1(flgbuf);
+			break;
+
+		case 'A':
+			pass_to_lint1("-A");
+			pass_to_lint1(optarg);
 			break;
 
 		case 'F':
-			Fflag = 1;
+			Fflag = true;
 			/* FALLTHROUGH */
 		case 'u':
 		case 'h':
 			(void)sprintf(flgbuf, "-%c", c);
-			appcstrg(&l1flags, flgbuf);
-			appcstrg(&l2flags, flgbuf);
+			pass_to_lint1(flgbuf);
+			pass_to_lint2(flgbuf);
 			break;
 
 		case 'X':
 			(void)sprintf(flgbuf, "-%c", c);
-			appcstrg(&l1flags, flgbuf);
-			appcstrg(&l1flags, optarg);
+			pass_to_lint1(flgbuf);
+			pass_to_lint1(optarg);
 			break;
 
 		case 'i':
 			if (Cflag)
 				usage();
-			iflag = 1;
+			iflag = true;
 			break;
 
 		case 'n':
@@ -413,8 +444,8 @@ main(int argc, char *argv[])
 			break;
 
 		case 'p':
-			appcstrg(&l1flags, "-p");
-			appcstrg(&l2flags, "-p");
+			pass_to_lint1("-p");
+			pass_to_lint2("-p");
 			if (*deflibs != NULL) {
 				freelst(&deflibs);
 				appcstrg(&deflibs, "c");
@@ -422,11 +453,11 @@ main(int argc, char *argv[])
 			break;
 
 		case 'P':
-			appcstrg(&l1flags, "-P");
+			pass_to_lint1("-P");
 			break;
 
 		case 'R':
-			appcstrg(&l1flags, concat2("-R", optarg));
+			pass_to_lint1(concat2("-R", optarg));
 			break;
 
 		case 's':
@@ -437,16 +468,23 @@ main(int argc, char *argv[])
 			appcstrg(&lcflags, "-Wtrigraphs");
 			appcstrg(&lcflags, "-pedantic");
 			appcstrg(&lcflags, "-D__STRICT_ANSI__");
-			appcstrg(&l1flags, "-s");
-			appcstrg(&l2flags, "-s");
-			sflag = 1;
+			pass_to_lint1("-s");
+			pass_to_lint2("-s");
+			sflag = true;
 			break;
 
 		case 'S':
 			if (tflag)
 				usage();
-			appcstrg(&l1flags, "-S");
-			Sflag = 1;
+			pass_to_lint1("-S");
+			Sflag = true;
+			break;
+
+		case 'T':
+			(void)sprintf(flgbuf, "-%c", c);
+			pass_to_cpp("-I" PATH_STRICT_BOOL_INCLUDE);
+			pass_to_lint1(flgbuf);
+			pass_to_lint2(flgbuf);
 			break;
 
 #if ! HAVE_NBTOOL_CONFIG_H
@@ -458,22 +496,22 @@ main(int argc, char *argv[])
 			appcstrg(&lcflags, "-Wtraditional");
 			appstrg(&lcflags, concat2("-D", MACHINE));
 			appstrg(&lcflags, concat2("-D", MACHINE_ARCH));
-			appcstrg(&l1flags, "-t");
-			appcstrg(&l2flags, "-t");
-			tflag = 1;
+			pass_to_lint1("-t");
+			pass_to_lint2("-t");
+			tflag = true;
 			break;
 #endif
 
 		case 'x':
-			appcstrg(&l2flags, "-x");
+			pass_to_lint2("-x");
 			break;
 
 		case 'C':
 			if (Cflag || oflag || iflag)
 				usage();
-			Cflag = 1;
+			Cflag = true;
 			appstrg(&l2flags, concat2("-C", optarg));
-			p2out = xmalloc(sizeof ("llib-l.ln") + strlen(optarg));
+			p2out = xmalloc(sizeof("llib-l.ln") + strlen(optarg));
 			(void)sprintf(p2out, "llib-l%s.ln", optarg);
 			freelst(&deflibs);
 			break;
@@ -481,10 +519,10 @@ main(int argc, char *argv[])
 		case 'd':
 			if (dflag)
 				usage();
-			dflag = 1;
-			appcstrg(&cflags, "-nostdinc");
-			appcstrg(&cflags, "-isystem");
-			appcstrg(&cflags, optarg);
+			dflag = true;
+			pass_to_cpp("-nostdinc");
+			pass_to_cpp("-isystem");
+			pass_to_cpp(optarg);
 			break;
 
 		case 'D':
@@ -502,7 +540,7 @@ main(int argc, char *argv[])
 		case 'o':
 			if (Cflag || oflag)
 				usage();
-			oflag = 1;
+			oflag = true;
 			outputfn = xstrdup(optarg);
 			break;
 
@@ -511,20 +549,20 @@ main(int argc, char *argv[])
 			break;
 
 		case 'H':
-			appcstrg(&l2flags, "-H");
+			pass_to_lint2("-H");
 			break;
 
 		case 'B':
-			Bflag = 1;
+			Bflag = true;
 			libexec_path = xstrdup(optarg);
 			break;
 
 		case 'V':
-			Vflag = 1;
+			Vflag = true;
 			break;
 
 		case 'Z':
-			appcstrg(&cflags, optarg);
+			pass_to_cpp(optarg);
 			break;
 
 		default:
@@ -564,7 +602,7 @@ main(int argc, char *argv[])
 				usage();
 				/* NOTREACHED */
 			}
-			if (arg[2])
+			if (arg[2] != '\0')
 				appcstrg(list, arg + 2);
 			else if (argc > 1) {
 				argc--;
@@ -574,7 +612,7 @@ main(int argc, char *argv[])
 		} else {
 			/* filename */
 			fname(arg);
-			first = 0;
+			first = false;
 		}
 		argc--;
 		argv++;
@@ -618,10 +656,10 @@ fname(const char *name)
 	char	**args, *ofn, *pathname;
 	const char *CC;
 	size_t	len;
-	int is_stdin;
+	bool	is_stdin;
 	int	fd;
 
-	is_stdin = (strcmp(name, "-") == 0);
+	is_stdin = strcmp(name, "-") == 0;
 	bn = lbasename(name, '/');
 	suff = lbasename(bn, '.');
 
@@ -646,7 +684,7 @@ fname(const char *name)
 	if (oflag) {
 		ofn = outputfn;
 		outputfn = NULL;
-		oflag = 0;
+		oflag = false;
 	} else if (iflag) {
 		if (is_stdin) {
 			warnx("-i not supported without -o for standard input");
@@ -666,13 +704,13 @@ fname(const char *name)
 	if (!iflag)
 		appcstrg(&p1out, ofn);
 
-	args = xcalloc(1, sizeof (char *));
+	args = xcalloc(1, sizeof(*args));
 
 	/* run cc */
 	if ((CC = getenv("CC")) == NULL)
 		CC = DEFAULT_CC;
 	if ((pathname = findcc(CC)) == NULL)
-		if (!setenv("PATH", DEFAULT_PATH, 1))
+		if (setenv("PATH", DEFAULT_PATH, 1) == 0)
 			pathname = findcc(CC);
 	if (pathname == NULL) {
 		(void)fprintf(stderr, "%s: %s: not found\n", getprogname(), CC);
@@ -701,7 +739,7 @@ fname(const char *name)
 	/* run lint1 */
 
 	if (!Bflag) {
-		pathname = xmalloc(strlen(PATH_LIBEXEC) + sizeof ("/lint1") +
+		pathname = xmalloc(strlen(PATH_LIBEXEC) + sizeof("/lint1") +
 		    strlen(target_prefix));
 		(void)sprintf(pathname, "%s/%slint1", PATH_LIBEXEC,
 		    target_prefix);
@@ -710,7 +748,7 @@ fname(const char *name)
 		 * XXX Unclear whether we should be using target_prefix
 		 * XXX here.  --thorpej@wasabisystems.com
 		 */
-		pathname = xmalloc(strlen(libexec_path) + sizeof ("/lint1"));
+		pathname = xmalloc(strlen(libexec_path) + sizeof("/lint1"));
 		(void)sprintf(pathname, "%s/lint1", libexec_path);
 	}
 
@@ -798,11 +836,11 @@ findlibs(char *const *liblst)
 	for (i = 0; (lib = liblst[i]) != NULL; i++) {
 		for (k = 0; (path = libsrchpath[k]) != NULL; k++) {
 			len = strlen(path) + strlen(lib);
-			lfn = xrealloc(lfn, len + sizeof ("/llib-l.ln"));
+			lfn = xrealloc(lfn, len + sizeof("/llib-l.ln"));
 			(void)sprintf(lfn, "%s/llib-l%s.ln", path, lib);
 			if (rdok(lfn))
 				break;
-			lfn = xrealloc(lfn, len + sizeof ("/lint/llib-l.ln"));
+			lfn = xrealloc(lfn, len + sizeof("/lint/llib-l.ln"));
 			(void)sprintf(lfn, "%s/lint/llib-l%s.ln", path, lib);
 			if (rdok(lfn))
 				break;
@@ -817,18 +855,18 @@ findlibs(char *const *liblst)
 	free(lfn);
 }
 
-static int
+static bool
 rdok(const char *path)
 {
 	struct	stat sbuf;
 
 	if (stat(path, &sbuf) == -1)
-		return (0);
+		return false;
 	if (!S_ISREG(sbuf.st_mode))
-		return (0);
+		return false;
 	if (access(path, R_OK) == -1)
-		return (0);
-	return (1);
+		return false;
+	return true;
 }
 
 static void
@@ -836,10 +874,10 @@ lint2(void)
 {
 	char	*path, **args;
 
-	args = xcalloc(1, sizeof (char *));
+	args = xcalloc(1, sizeof(*args));
 
 	if (!Bflag) {
-		path = xmalloc(strlen(PATH_LIBEXEC) + sizeof ("/lint2") +
+		path = xmalloc(strlen(PATH_LIBEXEC) + sizeof("/lint2") +
 		    strlen(target_prefix));
 		(void)sprintf(path, "%s/%slint2", PATH_LIBEXEC,
 		    target_prefix);
@@ -848,7 +886,7 @@ lint2(void)
 		 * XXX Unclear whether we should be using target_prefix
 		 * XXX here.  --thorpej@wasabisystems.com
 		 */
-		path = xmalloc(strlen(libexec_path) + sizeof ("/lint2"));
+		path = xmalloc(strlen(libexec_path) + sizeof("/lint2"));
 		(void)sprintf(path, "%s/lint2", libexec_path);
 	}
 

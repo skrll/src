@@ -1,4 +1,4 @@
-/*	$NetBSD: gffb.c,v 1.14 2020/05/21 22:55:48 macallan Exp $	*/
+/*	$NetBSD: gffb.c,v 1.16 2021/04/24 23:36:57 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2013 Michael Lorenz
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.14 2020/05/21 22:55:48 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.16 2021/04/24 23:36:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -164,6 +164,8 @@ gffb_match(device_t parent, cfdata_t match, void *aux)
 	if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_NVIDIA_GEFORCE2MX)
 		return 100;
 	if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_NVIDIA_GEFORCE_6800U)
+		return 100;
+	if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_NVIDIA_GF_FXGO5200)
 		return 100;
 	return (0);
 }
@@ -376,7 +378,7 @@ gffb_attach(device_t parent, device_t self, void *aux)
 	aa.accessops = &gffb_accessops;
 	aa.accesscookie = &sc->vd;
 
-	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint);
+	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint, CFARG_EOL);
 
 #ifdef GFFB_DEBUG
 	for (i = 0; i < 40; i++) {

@@ -1,11 +1,11 @@
-/*	$NetBSD: time.c,v 1.4 2020/05/24 19:46:27 christos Exp $	*/
+/*	$NetBSD: time.c,v 1.6 2021/04/29 17:26:13 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -35,6 +35,10 @@
 #define NS_PER_US 1000	     /*%< Nanoseconds per microsecond. */
 #define NS_PER_MS 1000000    /*%< Nanoseconds per millisecond. */
 
+#if defined(CLOCK_REALTIME)
+#define CLOCKSOURCE_HIRES CLOCK_REALTIME
+#endif /* #if defined(CLOCK_REALTIME) */
+
 #if defined(CLOCK_REALTIME_COARSE)
 #define CLOCKSOURCE CLOCK_REALTIME_COARSE
 #elif defined(CLOCK_REALTIME_FAST)
@@ -42,6 +46,10 @@
 #else /* if defined(CLOCK_REALTIME_COARSE) */
 #define CLOCKSOURCE CLOCK_REALTIME
 #endif /* if defined(CLOCK_REALTIME_COARSE) */
+
+#if !defined(CLOCKSOURCE_HIRES)
+#define CLOCKSOURCE_HIRES CLOCKSOURCE
+#endif /* #ifndef CLOCKSOURCE_HIRES */
 
 /*%
  *** Intervals
@@ -108,14 +116,14 @@ isc_time_isepoch(const isc_time_t *t) {
 	return (false);
 }
 
-isc_result_t
-isc_time_now(isc_time_t *t) {
+static inline isc_result_t
+time_now(isc_time_t *t, clockid_t clock) {
 	struct timespec ts;
 	char strbuf[ISC_STRERRORSIZE];
 
 	REQUIRE(t != NULL);
 
-	if (clock_gettime(CLOCKSOURCE, &ts) == -1) {
+	if (clock_gettime(clock, &ts) == -1) {
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__, "%s", strbuf);
 		return (ISC_R_UNEXPECTED);
@@ -138,6 +146,16 @@ isc_time_now(isc_time_t *t) {
 	t->nanoseconds = ts.tv_nsec;
 
 	return (ISC_R_SUCCESS);
+}
+
+isc_result_t
+isc_time_now_hires(isc_time_t *t) {
+	return time_now(t, CLOCKSOURCE_HIRES);
+}
+
+isc_result_t
+isc_time_now(isc_time_t *t) {
+	return time_now(t, CLOCKSOURCE);
 }
 
 isc_result_t
@@ -432,6 +450,26 @@ isc_time_formatISO8601Lms(const isc_time_t *t, char *buf, unsigned int len) {
 }
 
 void
+isc_time_formatISO8601Lus(const isc_time_t *t, char *buf, unsigned int len) {
+	time_t now;
+	unsigned int flen;
+	struct tm tm;
+
+	REQUIRE(t != NULL);
+	INSIST(t->nanoseconds < NS_PER_S);
+	REQUIRE(buf != NULL);
+	REQUIRE(len > 0);
+
+	now = (time_t)t->seconds;
+	flen = strftime(buf, len, "%Y-%m-%dT%H:%M:%S", localtime_r(&now, &tm));
+	INSIST(flen < len);
+	if (flen > 0U && len - flen >= 6) {
+		snprintf(buf + flen, len - flen, ".%06u",
+			 t->nanoseconds / NS_PER_US);
+	}
+}
+
+void
 isc_time_formatISO8601(const isc_time_t *t, char *buf, unsigned int len) {
 	time_t now;
 	unsigned int flen;
@@ -465,6 +503,27 @@ isc_time_formatISO8601ms(const isc_time_t *t, char *buf, unsigned int len) {
 		flen -= 1; /* rewind one character (Z) */
 		snprintf(buf + flen, len - flen, ".%03uZ",
 			 t->nanoseconds / NS_PER_MS);
+	}
+}
+
+void
+isc_time_formatISO8601us(const isc_time_t *t, char *buf, unsigned int len) {
+	time_t now;
+	unsigned int flen;
+	struct tm tm;
+
+	REQUIRE(t != NULL);
+	INSIST(t->nanoseconds < NS_PER_S);
+	REQUIRE(buf != NULL);
+	REQUIRE(len > 0);
+
+	now = (time_t)t->seconds;
+	flen = strftime(buf, len, "%Y-%m-%dT%H:%M:%SZ", gmtime_r(&now, &tm));
+	INSIST(flen < len);
+	if (flen > 0U && len - flen >= 5) {
+		flen -= 1; /* rewind one character (Z) */
+		snprintf(buf + flen, len - flen, ".%06uZ",
+			 t->nanoseconds / NS_PER_US);
 	}
 }
 

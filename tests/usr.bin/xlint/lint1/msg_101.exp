@@ -1,0 +1,1 @@
+msg_101.c(13): error: type 'int' does not have member 'z' [101]

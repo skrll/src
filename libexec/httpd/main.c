@@ -1,10 +1,10 @@
-/*	$NetBSD: main.c,v 1.25 2020/10/15 04:21:53 mrg Exp $	*/
+/*	$NetBSD: main.c,v 1.27 2021/02/27 12:36:46 mrg Exp $	*/
 
 /*	$eterna: main.c,v 1.6 2011/11/18 09:21:15 mrg Exp $	*/
 /* from: eterna: bozohttpd.c,v 1.159 2009/05/23 02:14:30 mrg Exp 	*/
 
 /*
- * Copyright (c) 1997-2020 Matthew R. Green
+ * Copyright (c) 1997-2021 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -407,6 +407,8 @@ main(int argc, char **argv)
 			bozo_clean_request(request);
 		}
 	} while (httpd.background);
+
+	bozo_cleanup(&httpd, &prefs);
 
 	return (0);
 }

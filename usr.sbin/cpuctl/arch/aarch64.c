@@ -1,4 +1,4 @@
-/*	$NetBSD: aarch64.c,v 1.12 2020/10/10 08:27:41 jmcneill Exp $	*/
+/*	$NetBSD: aarch64.c,v 1.14 2021/01/16 15:34:37 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2018 Ryo Shimizu <ryo@nerv.org>
@@ -29,7 +29,7 @@
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: aarch64.c,v 1.12 2020/10/10 08:27:41 jmcneill Exp $");
+__RCSID("$NetBSD: aarch64.c,v 1.14 2021/01/16 15:34:37 jmcneill Exp $");
 #endif /* no lint */
 
 #include <sys/types.h>
@@ -72,17 +72,25 @@ struct fieldinfo {
 
 #define CPU_PARTMASK	(CPU_ID_IMPLEMENTOR_MASK | CPU_ID_PARTNO_MASK)
 const struct cpuidtab cpuids[] = {
-	{ CPU_ID_CORTEXA53R0 & CPU_PARTMASK, "Cortex-A53", "Cortex", "V8-A" },
-	{ CPU_ID_CORTEXA57R0 & CPU_PARTMASK, "Cortex-A57", "Cortex", "V8-A" },
-	{ CPU_ID_CORTEXA72R0 & CPU_PARTMASK, "Cortex-A72", "Cortex", "V8-A" },
-	{ CPU_ID_CORTEXA73R0 & CPU_PARTMASK, "Cortex-A73", "Cortex", "V8-A" },
-	{ CPU_ID_CORTEXA55R1 & CPU_PARTMASK, "Cortex-A55", "Cortex", "V8.2-A" },
-	{ CPU_ID_CORTEXA75R2 & CPU_PARTMASK, "Cortex-A75", "Cortex", "V8.2-A" },
-	{ CPU_ID_CORTEXA76R3 & CPU_PARTMASK, "Cortex-A76", "Cortex", "V8.2-A" },
-	{ CPU_ID_THUNDERXRX, "Cavium ThunderX", "Cavium", "V8-A" },
-	{ CPU_ID_THUNDERX81XXRX, "Cavium ThunderX CN81XX", "Cavium", "V8-A" },
-	{ CPU_ID_THUNDERX83XXRX, "Cavium ThunderX CN83XX", "Cavium", "V8-A" },
-	{ CPU_ID_THUNDERX2RX, "Cavium ThunderX2", "Cavium", "V8.1-A" },
+	{ CPU_ID_CORTEXA35R0 & CPU_PARTMASK, "Cortex-A35", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA53R0 & CPU_PARTMASK, "Cortex-A53", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA57R0 & CPU_PARTMASK, "Cortex-A57", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA55R1 & CPU_PARTMASK, "Cortex-A55", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA65R0 & CPU_PARTMASK, "Cortex-A65", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA72R0 & CPU_PARTMASK, "Cortex-A72", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA73R0 & CPU_PARTMASK, "Cortex-A73", "Arm", "v8-A" },
+	{ CPU_ID_CORTEXA75R2 & CPU_PARTMASK, "Cortex-A75", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA76R3 & CPU_PARTMASK, "Cortex-A76", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA76AER1 & CPU_PARTMASK, "Cortex-A76AE", "Arm", "v8.2-A+" },
+	{ CPU_ID_CORTEXA77R0 & CPU_PARTMASK, "Cortex-A77", "Arm", "v8.2-A+" },
+	{ CPU_ID_NVIDIADENVER2 & CPU_PARTMASK, "Denver2", "NVIDIA", "v8-A" },
+	{ CPU_ID_EMAG8180 & CPU_PARTMASK, "eMAG", "Ampere", "v8-A" },
+	{ CPU_ID_NEOVERSEE1R1 & CPU_PARTMASK, "Neoverse E1", "Arm", "v8.2-A+" },
+	{ CPU_ID_NEOVERSEN1R3 & CPU_PARTMASK, "Neoverse N1", "Arm", "v8.2-A+" },
+	{ CPU_ID_THUNDERXRX, "ThunderX", "Cavium", "v8-A" },
+	{ CPU_ID_THUNDERX81XXRX, "ThunderX CN81XX", "Cavium", "v8-A" },
+	{ CPU_ID_THUNDERX83XXRX, "ThunderX CN83XX", "Cavium", "v8-A" },
+	{ CPU_ID_THUNDERX2RX, "ThunderX2", "Marvell", "v8.1-A" },
 };
 
 const struct impltab implids[] = {
@@ -156,8 +164,9 @@ struct fieldinfo id_aa64pfr0_fieldinfo[] = {
 	{
 		.bitpos = 24, .bitwidth = 4, .name = "GIC",
 		.info = (const char *[16]) { /* 16=4bit */
-			[0] = "No GIC",
-			[1] = "GICv3"
+			[0] = "GIC CPU interface sysregs not implemented",
+			[1] = "GIC CPU interface sysregs v3.0/4.0 supported",
+			[3] = "GIC CPU interface sysregs v4.1 supported"
 		}
 	},
 	{ .bitwidth = 0 }	/* end of table */

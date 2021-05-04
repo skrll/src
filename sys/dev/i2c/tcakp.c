@@ -1,4 +1,4 @@
-/* $NetBSD: tcakp.c,v 1.11 2019/12/23 20:38:08 thorpej Exp $ */
+/* $NetBSD: tcakp.c,v 1.16 2021/04/24 23:36:54 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcakp.c,v 1.11 2019/12/23 20:38:08 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcakp.c,v 1.16 2021/04/24 23:36:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -118,8 +118,8 @@ CFATTACH_DECL_NEW(tcakp, sizeof(struct tcakp_softc),
     tcakp_match, tcakp_attach, NULL, NULL);
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "ti,tca8418",			0 },
-	{ NULL,				0 }
+	{ .compat = "ti,tca8418" },
+	DEVICE_COMPAT_EOL
 };
 
 static u_int
@@ -400,7 +400,7 @@ tcakp_attach(device_t parent, device_t self, void *aux)
 	sc->sc_sih = softint_establish(SOFTINT_SERIAL, tcakp_softintr, sc);
 	if (sc->sc_sih == NULL) {
 		aprint_error_dev(sc->sc_dev,
-		    "unable to establish soft interupt\n");
+		    "unable to establish soft interrupt\n");
 		return;
 	}
 
@@ -416,7 +416,7 @@ tcakp_attach(device_t parent, device_t self, void *aux)
 	a.accessops = &tcakp_accessops;
 	a.accesscookie = sc;
 
-	sc->sc_wskbddev = config_found_ia(self, "wskbddev", &a, wskbddevprint);
+	sc->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARG_EOL);
 }
 
 static int

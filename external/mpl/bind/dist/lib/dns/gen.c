@@ -1,11 +1,11 @@
-/*	$NetBSD: gen.c,v 1.6 2020/05/24 19:46:22 christos Exp $	*/
+/*	$NetBSD: gen.c,v 1.9 2021/04/05 11:36:55 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -782,7 +782,6 @@ main(int argc, char **argv) {
 		 * Add in reserved/special types.  This will let us
 		 * sort them without special cases.
 		 */
-		insert_into_typenames(0, "reserved0", RESERVED);
 		insert_into_typenames(100, "uinfo", RESERVEDNAME);
 		insert_into_typenames(101, "uid", RESERVEDNAME);
 		insert_into_typenames(102, "gid", RESERVEDNAME);
@@ -815,7 +814,7 @@ main(int argc, char **argv) {
 		fprintf(stdout, "\t\t\t*(_tp) = _d; \\\n");
 		fprintf(stdout, "\t\t\treturn (ISC_R_SUCCESS); \\\n");
 		fprintf(stdout, "\t\t} \\\n");
-		fprintf(stdout, "\t} while (/*CONSTCOND*/0)\n\n");
+		fprintf(stdout, "\t} while (0)\n\n");
 
 		fprintf(stdout, "#define RDATATYPE_FROMTEXT_SW(_hash,"
 				"_typename,_length,_typep) \\\n");
@@ -972,7 +971,7 @@ main(int argc, char **argv) {
 			"#define dns_rdataclass_%s\t"                        \
 			"((dns_rdataclass_t)dns_rdataclass_%s)\n",           \
 			s, s);                                               \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 		for (cc = classes; cc != NULL; cc = cc->next) {
 			if (cc->rdclass == 3) {

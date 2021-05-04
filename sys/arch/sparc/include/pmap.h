@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.94 2020/09/06 10:48:21 mrg Exp $ */
+/*	$NetBSD: pmap.h,v 1.97 2021/01/25 20:05:29 mrg Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -183,18 +183,16 @@ struct segmap {
 	int8_t	sg_nwired;		/* number of wired pages */
 };
 
-#if 0
-struct kvm_cpustate {
-	int		kvm_npmemarr;
-	struct memarr	kvm_pmemarr[MA_SIZE];
-	int		kvm_seginval;			/* [4,4c] */
-	struct segmap	kvm_segmap_store[NKREG*NSEGRG];	/* [4,4c] */
-}/*not yet used*/;
-#endif
-
 #ifdef _KERNEL
 
 #define PMAP_NULL	((pmap_t)0)
+
+/* Mostly private data exported for a few key consumers. */
+struct memarr;
+extern struct memarr *pmemarr;
+extern int npmemarr;
+extern vaddr_t prom_vstart;
+extern vaddr_t prom_vend;
 
 /*
  * Bounds on managed physical addresses. Used by (MD) users
@@ -393,6 +391,8 @@ extern void	(*pmap_protect_p)(pmap_t, vaddr_t, vaddr_t, vm_prot_t);
 
 #define tlb_flush_context_real()	sta(ASI_SRMMUFP_L0, ASI_SRMMUFP, 0)
 #define tlb_flush_all_real()		sta(ASI_SRMMUFP_LN, ASI_SRMMUFP, 0)
+
+void setpte4m(vaddr_t va, int pte);
 
 #endif /* SUN4M || SUN4D */
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iavf.c,v 1.11 2020/12/10 04:03:00 yamaguchi Exp $	*/
+/*	$NetBSD: if_iavf.c,v 1.13 2021/03/05 13:21:07 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 2013-2015, Intel Corporation
@@ -75,7 +75,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_iavf.c,v 1.11 2020/12/10 04:03:00 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_iavf.c,v 1.13 2021/03/05 13:21:07 yamaguchi Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -1789,7 +1789,7 @@ iavf_setup_interrupts(struct iavf_softc *sc)
 		num = counts[PCI_INTR_TYPE_MSIX];
 	}
 
-	sc->sc_ihs = kmem_alloc(sizeof(sc->sc_ihs[0]) * num, KM_NOSLEEP);
+	sc->sc_ihs = kmem_zalloc(sizeof(sc->sc_ihs[0]) * num, KM_NOSLEEP);
 	if (sc->sc_ihs == NULL) {
 		IAVF_LOG(sc, LOG_ERR,
 		    "couldn't allocate memory for interrupts\n");
@@ -4435,6 +4435,7 @@ iavf_process_vc_event(struct iavf_softc *sc, struct ixl_aq_desc *iaq,
 		if (event->link_status) {
 			link = LINK_STATE_UP;
 			sc->sc_media_status |= IFM_ACTIVE;
+			sc->sc_media_active |= IFM_FDX;
 
 			ifp->if_baudrate = 0;
 			speed = iavf_find_link_speed(sc, event->link_speed);

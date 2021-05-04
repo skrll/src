@@ -1,4 +1,4 @@
-/*	$NetBSD: vnd.c,v 1.277 2020/04/23 09:40:08 jdolecek Exp $	*/
+/*	$NetBSD: vnd.c,v 1.280 2021/04/11 18:18:39 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008, 2020 The NetBSD Foundation, Inc.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.277 2020/04/23 09:40:08 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.280 2021/04/11 18:18:39 mlelstv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_vnd.h"
@@ -1433,6 +1433,10 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		if (error)
 			vnd->sc_iosize = vnd->sc_vp->v_mount->mnt_stat.f_frsize;
 
+		/* Default I/O size to DEV_BSIZE */
+		if (vnd->sc_iosize == 0)
+			vnd->sc_iosize = DEV_BSIZE;
+
 		/*
 		 * Use pseudo-geometry specified.  If none was provided,
 		 * use "standard" Adaptec fictitious geometry.
@@ -1456,8 +1460,9 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 			 * Compute missing cylinder count from size
 			 */
 			if (vnd->sc_geom.vng_ncylinders == 0)
-				vnd->sc_geom.vng_ncylinders = vnd->sc_size /
-					(vnd->sc_geom.vng_ntracks *
+				vnd->sc_geom.vng_ncylinders = vnd->sc_size / (
+					(vnd->sc_geom.vng_secsize / DEV_BSIZE) *
+					vnd->sc_geom.vng_ntracks *
 					vnd->sc_geom.vng_nsectors);
 
 			/*
@@ -2103,11 +2108,12 @@ static void
 vnd_set_geometry(struct vnd_softc *vnd)
 {
 	struct disk_geom *dg = &vnd->sc_dkdev.dk_geom;
+	unsigned spb;
 
 	memset(dg, 0, sizeof(*dg));
 
-	dg->dg_secperunit = (int64_t)vnd->sc_geom.vng_nsectors *
-	    vnd->sc_geom.vng_ntracks * vnd->sc_geom.vng_ncylinders;
+	spb = vnd->sc_geom.vng_secsize / DEV_BSIZE;
+	dg->dg_secperunit = vnd->sc_size / spb;
 	dg->dg_secsize = vnd->sc_geom.vng_secsize;
 	dg->dg_nsectors = vnd->sc_geom.vng_nsectors;
 	dg->dg_ntracks = vnd->sc_geom.vng_ntracks;

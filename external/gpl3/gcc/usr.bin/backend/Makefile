@@ -1,10 +1,10 @@
-#	$NetBSD: Makefile,v 1.63 2020/09/15 05:19:34 mrg Exp $
+#	$NetBSD: Makefile,v 1.65 2021/04/13 06:30:36 mrg Exp $
 
 LIBISPRIVATE=	yes
 
 LIB=		backend
 
-SRCS=		${G_OBJS} ${G_out_file:T} regsub.c
+SRCS=		${G_OBJS:S,analyzer/,,} ${G_out_file:T} regsub.c
 
 # XXX: something misses these.
 CLEANDIRFILES+=	${G_OBJS:.o=.d}
@@ -24,6 +24,7 @@ CPPFLAGS+=	-I${.CURDIR}/../../lib/libgcc/libgcov/arch/${MACHINE_ARCH}
 
 CPPFLAGS.cppdefault.c+=	-DPREFIX=\"/usr\" \
 			-DNATIVE_SYSTEM_HEADER_DIR=\"${G_NATIVE_SYSTEM_HEADER_DIR}\"
+CPPFLAGS.lto-streamer-in.c+=	-DTARGET_MACHINE=\"${MACHINE_GNU_PLATFORM}\"
 
 HOST_CXXFLAGS+=	-std=gnu++98
 
@@ -435,15 +436,6 @@ insn-conditions.md: gencondmd
 	./gencondmd >${.TARGET}
 CLEANFILES+=	insn-conditions.md 
 
-# build params.list for params.h.
-params.h: params.list
-${SRCS}: params.list
-params-list.h: params.def
-params.list: params-list.h
-	${CPP} ${.ALLSRC} | sed 's/^#.*//;/^$$/d' > params.list.tmp && \
-	mv params.list.tmp params.list
-CLEANFILES+=	params.list.tmp params.list
-
 # build case-cfn-macros.h and cfn-operators.pd
 case-cfn-macros.h: gencfn-macros
 	./gencfn-macros -c > case-cfn-macros.h.tmp && \
@@ -560,6 +552,7 @@ COPTS.internal-fn.c+=-O0
 COPTS.lto-streamer-out.c+=-O0
 COPTS.omp-low.c+=-O0
 COPTS.predict.c+=-O0
+COPTS.range-op.cc+=-O0
 COPTS.recog.c+=-O0
 COPTS.sanopt.c+=-O0
 COPTS.stmt.c+=-O0
@@ -599,8 +592,8 @@ COPTS.ubsan.c+=-O0
 COPTS.varasm.c+=-O0
 COPTS.vr-values.c+=-O0
 COPTS.web.c+=-O0
-COPTS.wide-int.cc+=-O0
 COPTS.wide-int-range.cc+=-O0
+COPTS.wide-int.cc+=-O0
 .else
 COPTS.tree.c=	${${ACTIVE_CC} == "clang" :? -O0 :}
 .endif
@@ -624,6 +617,7 @@ CFLAGS+= -fno-exceptions -fno-rtti -fasynchronous-unwind-tables
 
 .PATH: ${DIST}/gcc ${DIST}/libiberty ${GCCARCH} ${G_out_file:H} ${DIST}/include
 .PATH: ${DIST}/gcc/config
+.PATH: ${DIST}/gcc/analyzer
 .if ${MACHINE_CPU} == "aarch64"
 .PATH: ${DIST}/gcc/config/arm
 .endif

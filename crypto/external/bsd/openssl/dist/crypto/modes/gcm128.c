@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2010-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -689,13 +689,15 @@ void gcm_ghash_v8(u64 Xi[2], const u128 Htable[16], const u8 *inp,
 #  endif
 # elif defined(__sparc__) || defined(__sparc)
 #  include "sparc_arch.h"
-#  define GHASH_ASM_SPARC
-#  define GCM_FUNCREF_4BIT
+#  if defined(__arch64__)
+#   define GHASH_ASM_SPARC
+#   define GCM_FUNCREF_4BIT
 extern unsigned int OPENSSL_sparcv9cap_P[];
 void gcm_init_vis3(u128 Htable[16], const u64 Xi[2]);
 void gcm_gmult_vis3(u64 Xi[2], const u128 Htable[16]);
 void gcm_ghash_vis3(u64 Xi[2], const u128 Htable[16], const u8 *inp,
                     size_t len);
+#  endif /* __arch64__ */
 # elif defined(OPENSSL_CPUID_OBJ) && (defined(__powerpc__) || defined(__ppc__) || defined(_ARCH_PPC))
 #  include "ppc_arch.h"
 #  define GHASH_ASM_PPC
@@ -1385,8 +1387,8 @@ int CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx,
                 else
                     ctx->Yi.d[3] = ctr;
                 for (i = 0; i < 16 / sizeof(size_t); ++i) {
-                    size_t c = in[i];
-                    out[i] = c ^ ctx->EKi.t[i];
+                    size_t c = in_t[i];
+                    out_t[i] = c ^ ctx->EKi.t[i];
                     ctx->Xi.t[i] ^= c;
                 }
                 GCM_MUL(ctx);

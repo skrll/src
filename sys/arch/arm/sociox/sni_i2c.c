@@ -1,4 +1,4 @@
-/*	$NetBSD: sni_i2c.c,v 1.8 2020/06/01 00:00:37 thorpej Exp $	*/
+/*	$NetBSD: sni_i2c.c,v 1.11 2021/04/24 23:36:28 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sni_i2c.c,v 1.8 2020/06/01 00:00:37 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sni_i2c.c,v 1.11 2021/04/24 23:36:28 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -90,26 +90,22 @@ static int sni_i2c_intr(void *);
 static void sni_i2c_reset(struct sniiic_softc *);
 static void sni_i2c_flush(struct sniiic_softc *);
 
-static i2c_tag_t sni_i2c_get_tag(device_t);
-static const struct fdtbus_i2c_controller_func sni_i2c_funcs = {
-	.get_tag = sni_i2c_get_tag,
-};
-
 #define I2C_READ(sc, reg) \
     bus_space_read_4((sc)->sc_ioh,(sc)->sc_ioh,(reg))
 #define I2C_WRITE(sc, reg, val) \
     bus_space_write_4((sc)->sc_ioh,(sc)->sc_ioh,(reg),(val))
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "socionext,synquacer-i2c" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 sniiic_fdt_match(device_t parent, struct cfdata *match, void *aux)
 {
-	static const char * compatible[] = {
-		"socionext,synquacer-i2c",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -150,7 +146,7 @@ sniiic_fdt_attach(device_t parent, device_t self, void *aux)
 
 	sni_i2c_common_i(sc);
 
-	fdtbus_register_i2c_controller(self, phandle, &sni_i2c_funcs);
+	fdtbus_register_i2c_controller(&sc->sc_ic, phandle);
 #if 0
 	fdtbus_attach_i2cbus(self, phandle, &sc->sc_ic, iicbus_print);
 #endif
@@ -222,7 +218,7 @@ sniiic_acpi_attach(device_t parent, device_t self, void *aux)
 	memset(&iba, 0, sizeof(iba));
 	iba.iba_tag = &sc->sc_ic;
 #if 0
-	(void) config_found_ia(sc->sc_dev, "i2cbus", &iba, iicbus_print);
+	config_found(sc->sc_dev, &iba, iicbus_print, CFARG_EOL);
 #endif
 
 	acpi_resource_cleanup(&res);
@@ -321,12 +317,4 @@ static void
 sni_i2c_flush(struct sniiic_softc *sc)
 {
 	/* AAA */
-}
-
-static i2c_tag_t
-sni_i2c_get_tag(device_t dev)
-{
-	struct sniiic_softc * const sc = device_private(dev);
-
-	return &sc->sc_ic;
 }

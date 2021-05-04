@@ -1,4 +1,4 @@
-/*	$NetBSD: sdhc.c,v 1.107 2020/07/15 15:57:52 msaitoh Exp $	*/
+/*	$NetBSD: sdhc.c,v 1.109 2021/04/24 23:36:59 thorpej Exp $	*/
 /*	$OpenBSD: sdhc.c,v 1.25 2009/01/13 19:44:20 grange Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sdhc.c,v 1.107 2020/07/15 15:57:52 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sdhc.c,v 1.109 2021/04/24 23:36:59 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sdmmc.h"
@@ -389,6 +389,8 @@ sdhc_host_found(struct sdhc_softc *sc, bus_space_tag_t iot,
 		}
 	}
 
+	aprint_verbose(", caps <%08x/%08x>", caps, caps2);
+
 	const u_int retuning_mode = (caps2 >> SDHC_RETUNING_MODES_SHIFT) &
 	    SDHC_RETUNING_MODES_MASK;
 	if (retuning_mode == SDHC_RETUNING_MODE_1) {
@@ -640,7 +642,7 @@ adma_done:
 	if (ISSET(sc->sc_flags, SDHC_FLAG_BROKEN_ADMA2_ZEROLEN))
 		saa.saa_max_seg = 65535;
 
-	hp->sdmmc = config_found(sc->sc_dev, &saa, sdhc_cfprint);
+	hp->sdmmc = config_found(sc->sc_dev, &saa, sdhc_cfprint, CFARG_EOL);
 
 	return 0;
 
@@ -1724,14 +1726,17 @@ sdhc_start_command(struct sdhc_host *hp, struct sdmmc_command *cmd)
 	}
 
 	/* Prepare transfer mode register value. (2.2.5) */
-	mode = SDHC_BLOCK_COUNT_ENABLE;
+	mode = 0;
 	if (ISSET(cmd->c_flags, SCF_CMD_READ))
 		mode |= SDHC_READ_MODE;
-	if (blkcount > 1) {
-		mode |= SDHC_MULTI_BLOCK_MODE;
-		/* XXX only for memory commands? */
-		if (!ISSET(sc->sc_flags, SDHC_FLAG_NO_AUTO_STOP))
-			mode |= SDHC_AUTO_CMD12_ENABLE;
+	if (blkcount > 0) {
+		mode |= SDHC_BLOCK_COUNT_ENABLE;
+		if (blkcount > 1) {
+			mode |= SDHC_MULTI_BLOCK_MODE;
+			if (!ISSET(sc->sc_flags, SDHC_FLAG_NO_AUTO_STOP)
+			    && !ISSET(cmd->c_flags, SCF_NO_STOP))
+				mode |= SDHC_AUTO_CMD12_ENABLE;
+		}
 	}
 	if (cmd->c_dmamap != NULL && cmd->c_datalen > 0 &&
 	    ISSET(hp->flags,  SHF_MODE_DMAEN)) {

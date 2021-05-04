@@ -1,9 +1,9 @@
-/*	$NetBSD: bozohttpd.c,v 1.124 2020/11/19 10:45:36 hannken Exp $	*/
+/*	$NetBSD: bozohttpd.c,v 1.130 2021/04/08 07:02:11 rillig Exp $	*/
 
 /*	$eterna: bozohttpd.c,v 1.178 2011/11/18 09:21:15 mrg Exp $	*/
 
 /*
- * Copyright (c) 1997-2020 Matthew R. Green
+ * Copyright (c) 1997-2021 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -108,7 +108,7 @@
 #define INDEX_HTML		"index.html"
 #endif
 #ifndef SERVER_SOFTWARE
-#define SERVER_SOFTWARE		"bozohttpd/20201014"
+#define SERVER_SOFTWARE		"bozohttpd/20210403"
 #endif
 #ifndef PUBLIC_HTML
 #define PUBLIC_HTML		"public_html"
@@ -239,6 +239,20 @@ bozo_set_pref(bozohttpd_t *httpd, bozoprefs_t *bozoprefs,
 	return 1;
 }
 
+static void
+bozo_clear_prefs(bozohttpd_t *httpd, bozoprefs_t *prefs)
+{
+	size_t	i;
+
+	for (i = 0; i < prefs->count; i++) {
+		free(prefs->name[i]);
+		free(prefs->value[i]);
+	}
+
+	free(prefs->name);
+	free(prefs->value);
+}
+
 /*
  * get a variable's value, or NULL
  */
@@ -338,8 +352,12 @@ bozo_clean_request(bozo_httpreq_t *request)
 	free(request->hr_remoteaddr);
 	free(request->hr_serverport);
 	free(request->hr_virthostname);
-	free(request->hr_file);
-	free(request->hr_oldfile);
+	free(request->hr_file_free);
+	/* XXX this is gross */
+	if (request->hr_file_free != request->hr_oldfile)
+		free(request->hr_oldfile);
+	else
+		free(request->hr_file);
 	free(request->hr_query);
 	free(request->hr_host);
 	bozo_user_free(request->hr_user);
@@ -619,6 +637,7 @@ bozo_read_request(bozohttpd_t *httpd)
 	request->hr_last_byte_pos = -1;
 	request->hr_if_modified_since = NULL;
 	request->hr_virthostname = NULL;
+	request->hr_file_free = NULL;
 	request->hr_file = NULL;
 	request->hr_oldfile = NULL;
 	SIMPLEQ_INIT(&request->hr_replheaders);
@@ -735,7 +754,7 @@ bozo_read_request(bozohttpd_t *httpd)
 
 			/* we allocate return space in file and query only */
 			parse_request(httpd, str, &method, &file, &query, &proto);
-			request->hr_file = file;
+			request->hr_file_free = request->hr_file = file;
 			request->hr_query = query;
 			if (method == NULL) {
 				bozo_http_error(httpd, 404, NULL, "null method");
@@ -771,9 +790,15 @@ bozo_read_request(bozohttpd_t *httpd)
 
 			val = bozostrnsep(&str, ":", &len);
 			debug((httpd, DEBUG_EXPLODING, "read_req2: after "
-			    "bozostrnsep: str `%s' val `%s'", str, val ? val : ""));
+			    "bozostrnsep: str `%s' val `%s'",
+			    str ? str : "<null>", val ? val : "<null>"));
 			if (val == NULL || len == -1) {
 				bozo_http_error(httpd, 404, request, "no header");
+				goto cleanup;
+			}
+			if (str == NULL) {
+				bozo_http_error(httpd, 404, request,
+				    "malformed header");
 				goto cleanup;
 			}
 			while (*str == ' ' || *str == '\t')
@@ -826,6 +851,10 @@ bozo_read_request(bozohttpd_t *httpd)
 		}
 next_header:
 		alarm(httpd->header_timeout);
+	}
+	if (str == NULL) {
+		bozo_http_error(httpd, 413, request, "request too large");
+		goto cleanup;
 	}
 
 	/* now, clear it all out */
@@ -1081,7 +1110,7 @@ handle_redirect(bozo_httpreq_t *request, const char *url, int absolute)
 		 */
 		if (sep) {
 			for (s = url; s != sep;) {
-				if (!isalnum((int)*s) &&
+				if (!isalnum((unsigned char)*s) &&
 				    *s != '+' && *s != '-' && *s != '.')
 					break;
 				if (++s == sep) {
@@ -1284,8 +1313,8 @@ check_remap(bozo_httpreq_t *request)
 		strcpy(newfile+rlen, file + len);
 		debug((httpd, DEBUG_NORMAL, "remapping found '%s'",
 		    newfile));
-		free(request->hr_file);
-		request->hr_file = newfile;
+		free(request->hr_file_free);
+		request->hr_file_free = request->hr_file = newfile;
 	}
 
 	munmap(fmap, st.st_size);
@@ -1313,9 +1342,6 @@ check_virtual(bozo_httpreq_t *request)
 	debug((httpd, DEBUG_OBESE,
 	       "checking for http:// virtual host in '%s'", file));
 	if (strncasecmp(file, "http://", 7) == 0) {
-		/* bozostrdup() might access it. */
-		char *old_file = request->hr_file;
-
 		/* we would do virtual hosting here? */
 		file += 7;
 		/* RFC 2616 (HTTP/1.1), 5.2: URI takes precedence over Host: */
@@ -1324,8 +1350,9 @@ check_virtual(bozo_httpreq_t *request)
 		if ((s = strchr(request->hr_host, '/')) != NULL)
 			*s = '\0';
 		s = strchr(file, '/');
-		request->hr_file = bozostrdup(httpd, request, s ? s : "/");
-		free(old_file);
+		free(request->hr_file_free);
+		request->hr_file_free = request->hr_file =
+		    bozostrdup(httpd, request, s ? s : "/");
 		debug((httpd, DEBUG_OBESE, "got host '%s' file is now '%s'",
 		    request->hr_host, request->hr_file));
 	} else if (!request->hr_host)
@@ -1710,7 +1737,7 @@ transform_request(bozo_httpreq_t *request, int *isindex)
 		goto bad_done;
 
 	if (strlen(newfile)) {
-		request->hr_oldfile = request->hr_file;
+		request->hr_oldfile = request->hr_file_free;
 		request->hr_file = newfile;
 	}
 
@@ -2101,7 +2128,7 @@ bozo_escape_html(bozohttpd_t *httpd, const char *url)
 	if (httpd)
 		tmp = bozomalloc(httpd, len);
 	else if ((tmp = malloc(len)) == 0)
-			return NULL;
+		return NULL;
 
 	for (i = 0, j = 0; url[i]; i++) {
 		switch (url[i]) {
@@ -2350,6 +2377,9 @@ bozostrnsep(char **strp, const char *delim, ssize_t	*lenp)
  * inspired by fgetln(3), but works for fd's.  should work identically
  * except it, however, does *not* return the newline, and it does nul
  * terminate the string.
+ *
+ * returns NULL if the line grows too large.  empty lines will be
+ * returned with *lenp set to 0.
  */
 char *
 bozodgetln(bozohttpd_t *httpd, int fd, ssize_t *lenp,
@@ -2363,11 +2393,8 @@ bozodgetln(bozohttpd_t *httpd, int fd, ssize_t *lenp,
 	if (httpd->getln_buflen == 0) {
 		/* should be plenty for most requests */
 		httpd->getln_buflen = 128;
-		httpd->getln_buffer = malloc((size_t)httpd->getln_buflen);
-		if (httpd->getln_buffer == NULL) {
-			httpd->getln_buflen = 0;
-			return NULL;
-		}
+		httpd->getln_buffer =
+		    bozomalloc(httpd, (size_t)httpd->getln_buflen);
 	}
 	len = 0;
 
@@ -2382,6 +2409,9 @@ bozodgetln(bozohttpd_t *httpd, int fd, ssize_t *lenp,
 	 */
 	for (; readfn(httpd, fd, &c, 1) == 1; ) {
 		debug((httpd, DEBUG_EXPLODING, "bozodgetln read %c", c));
+
+		if (httpd->getln_buflen > BOZO_HEADERS_MAX_SIZE)
+			return NULL;
 
 		if (len >= httpd->getln_buflen - 1) {
 			httpd->getln_buflen *= 2;
@@ -2420,6 +2450,11 @@ bozodgetln(bozohttpd_t *httpd, int fd, ssize_t *lenp,
 	return httpd->getln_buffer;
 }
 
+/*
+ * allocation frontends with error handling.
+ *
+ * note that these may access members of the httpd and/or request.
+ */
 void *
 bozorealloc(bozohttpd_t *httpd, void *ptr, size_t size)
 {
@@ -2681,6 +2716,23 @@ bozo_setup(bozohttpd_t *httpd, bozoprefs_t *prefs, const char *vhost,
 			httpd->virthostname, httpd->slashdir));
 
 	return 1;
+}
+
+void
+bozo_cleanup(bozohttpd_t *httpd, bozoprefs_t *prefs)
+{
+	bozo_clear_prefs(httpd, prefs);
+
+	free(httpd->virthostname);
+	free(httpd->errorbuf);
+	free(httpd->getln_buffer);
+	free(httpd->slashdir);
+#define bozo_unconst(x) ((void *)(uintptr_t)x)
+	free(bozo_unconst(httpd->server_software));
+	free(bozo_unconst(httpd->index_html));
+	free(bozo_unconst(httpd->dir_readme));
+	free(bozo_unconst(httpd->public_html));
+#undef bozo_unconst
 }
 
 int

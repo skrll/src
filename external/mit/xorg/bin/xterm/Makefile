@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.18 2020/10/02 13:08:07 nia Exp $
+#	$NetBSD: Makefile,v 1.22 2021/04/27 02:11:55 mrg Exp $
 
 .include <bsd.own.mk>
 
@@ -8,7 +8,10 @@ SRCS=	button.c charproc.c charsets.c cursor.c data.c doublechr.c \
 	misc.c print.c ptydata.c screen.c scrollback.c scrollbar.c tabs.c \
 	util.c xstrings.c TekPrsTbl.c Tekproc.c VTPrsTbl.c main.c \
 	charclass.c precompose.c wcwidth.c xutf8.c cachedGCs.c xtermcap.c \
-	version.c
+	svg.c html.c version.c
+
+# XXX
+# xterm.appdata.xml
 
 CPPFLAGS+=	-I. \
 		-I${X11SRCDIR.${PROG}} \
@@ -17,12 +20,11 @@ CPPFLAGS+=	-I. \
 		-I${DESTDIR}${X11INCDIR}/freetype2/freetype \
 		-DPROJECTROOT=${X11ROOTDIR} \
 		-DHAVE_CONFIG_H \
-		-DOPT_GRAPHICS \
-		-DOPT_SIXEL_GRAPHICS \
 		-D_REENTRANT \
 		${X11FLAGS.VERSION}
 
 CWARNFLAGS.clang+=	-Wno-empty-body
+CWARNFLAGS.gcc+=	-Wno-error=attributes
 
 APPDEFS=XTerm.ad XTerm-color.ad
 
@@ -38,7 +40,7 @@ DPADD+=	${LIBXAW} ${LIBXMU} ${LIBXT} ${LIBSM} ${LIBICE} ${LIBXINERAMA}
 LDADD+=	-lXpm -lXext -lX11 -lcurses -lterminfo -lutil
 DPADD+=	${LIBXPM} ${LIBXEXT} ${LIBX11} ${LIBCURSES} ${LIBTERMINFO} ${LIBUTIL}
 
-SUBDIR=	resize uxterm
+SUBDIR=	uxterm
 
 .PATH:	${X11SRCDIR.${PROG}}
 

@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.h,v 1.11 2020/09/14 10:53:02 ryo Exp $ */
+/* $NetBSD: db_machdep.h,v 1.14 2021/04/30 20:07:23 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -67,7 +67,12 @@
 #ifdef __aarch64__
 
 #include <sys/types.h>
+
+#include <uvm/uvm.h>
+
 #include <aarch64/frame.h>
+#include <aarch64/pmap.h>
+
 #include <ddb/db_user.h>
 
 typedef long long int db_expr_t;
@@ -96,9 +101,9 @@ int kdb_trap(int, struct trapframe *);
 #define DB_TRAP_SW_STEP		4
 
 #define IS_BREAKPOINT_TRAP(type, code) \
-	((type) == DB_TRAP_BREAKPOINT || (type) == DB_TRAP_BKPT_INSN)
+	((type) == DB_TRAP_BKPT_INSN)
 #define IS_WATCHPOINT_TRAP(type, code) \
-	((type) == DB_TRAP_WATCHPOINT)
+	((type) == DB_TRAP_BREAKPOINT || (type) == DB_TRAP_WATCHPOINT)
 
 static inline bool
 inst_return(db_expr_t insn)
@@ -211,16 +216,22 @@ db_addr_t db_branch_taken(db_expr_t, db_addr_t, db_regs_t *);
 #endif /* SOFTWARE_SSTEP */
 
 #define DB_MACHINE_COMMANDS
-void dump_trapframe(struct trapframe *, void (*)(const char *, ...));
-void dump_switchframe(struct trapframe *, void (*)(const char *, ...));
+
+#ifdef _KERNEL
+void db_pteinfo(vaddr_t, void (*)(const char *, ...) __printflike(1, 2));
+void db_pte_print(pt_entry_t, int, void (*)(const char *, ...) __printflike(1, 2));
+void db_ttbrdump(bool, vaddr_t, void (*pr)(const char *, ...) __printflike(1, 2));
+#endif
+
+void dump_trapframe(struct trapframe *, void (*)(const char *, ...) __printflike(1, 2));
+
+void dump_switchframe(struct trapframe *, void (*)(const char *, ...) __printflike(1, 2));
 const char *strdisasm(vaddr_t, uint64_t);
 void db_machdep_init(void);
 
 /* hardware breakpoint/watchpoint functions */
-void aarch64_breakpoint_clear(int);
 void aarch64_breakpoint_set(int, vaddr_t);
-void aarch64_watchpoint_clear(int);
-void aarch64_watchpoint_set(int, vaddr_t, int, int);
+void aarch64_watchpoint_set(int, vaddr_t, u_int, u_int);
 #define WATCHPOINT_ACCESS_LOAD		0x01
 #define WATCHPOINT_ACCESS_STORE		0x02
 #define WATCHPOINT_ACCESS_LOADSTORE	0x03

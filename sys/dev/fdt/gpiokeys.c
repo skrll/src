@@ -1,4 +1,4 @@
-/* $NetBSD: gpiokeys.c,v 1.8 2018/05/10 13:05:18 jmcneill Exp $ */
+/* $NetBSD: gpiokeys.c,v 1.10 2021/04/24 23:36:53 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gpiokeys.c,v 1.8 2018/05/10 13:05:18 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gpiokeys.c,v 1.10 2021/04/24 23:36:53 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -140,13 +140,17 @@ static const struct wskbd_accessops gpiokeys_accessops = {
 	.ioctl = gpiokeys_ioctl
 };
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "gpio-keys" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 gpiokeys_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = { "gpio-keys", NULL };
 	const struct fdt_attach_args *faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -261,8 +265,8 @@ gpiokeys_attach(device_t parent, device_t self, void *aux)
 		a.keymap = &gpiokeys_keymapdata;
 		a.accessops = &gpiokeys_accessops;
 		a.accesscookie = sc;
-		sc->sc_wskbddev = config_found_ia(self, "wskbddev", &a,
-		    wskbddevprint);
+		sc->sc_wskbddev =
+		    config_found(self, &a, wskbddevprint, CFARG_EOL);
 	}
 
 	callout_init(&sc->sc_tick, CALLOUT_MPSAFE);

@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1272 2020/11/23 12:41:47 martin Exp $
+# $NetBSD: mi,v 1.1278 2021/04/16 01:14:38 mrg Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -951,6 +951,7 @@
 ./usr/bin/renice				base-util-bin
 ./usr/bin/reset					base-util-bin
 ./usr/bin/rev					base-util-bin
+./usr/bin/resize				base-util-bin
 ./usr/bin/revoke				base-util-bin
 ./usr/bin/rfcomm_sppd				base-util-bin
 ./usr/bin/rlog					base-rcs-bin
@@ -1239,10 +1240,12 @@
 ./usr/include/gcc-6/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-7				base-obsolete		obsolete
 ./usr/include/gcc-7/sanitizer			base-obsolete		obsolete
-./usr/include/gcc-8				base-c-usr
-./usr/include/gcc-8/sanitizer			base-c-usr
+./usr/include/gcc-8				base-obsolete		obsolete
+./usr/include/gcc-8/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-9				base-c-usr
 ./usr/include/gcc-9/sanitizer			base-c-usr
+./usr/include/gcc-10				base-c-usr
+./usr/include/gcc-10/sanitizer			base-c-usr
 ./usr/include/gssapi				base-c-usr
 ./usr/include/gssapi/rpc			base-obsolete		obsolete
 ./usr/include/isofs				base-c-usr
@@ -1559,6 +1562,7 @@
 ./usr/libdata/firmware/radeon/VERDE_smc.bin	base-obsolete	obsolete
 ./usr/libdata/ldscripts				base-c-usr
 ./usr/libdata/lint				base-c-usr
+./usr/libdata/lint/strict-bool			base-c-usr
 ./usr/libexec					base-sys-usr
 ./usr/libexec/atf-check				base-atf-bin		atf
 ./usr/libexec/atf-cleanup			base-obsolete		obsolete
@@ -1599,6 +1603,7 @@
 ./usr/libexec/mail.local			base-mail-bin
 ./usr/libexec/makekey				base-crypto-bin
 ./usr/libexec/makewhatis			base-man-bin		!makemandb
+./usr/libexec/named				base-bind-bin
 ./usr/libexec/named-xfer			base-obsolete		obsolete
 ./usr/libexec/ntalkd				base-netutil-bin
 ./usr/libexec/pfspamd				base-obsolete		obsolete

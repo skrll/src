@@ -1,4 +1,4 @@
-/*	$NetBSD: vlpci.c,v 1.9 2019/01/03 18:28:21 macallan Exp $	*/
+/*	$NetBSD: vlpci.c,v 1.11 2021/04/24 23:36:48 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2017 Jonathan A. Kollasch
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vlpci.c,v 1.9 2019/01/03 18:28:21 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vlpci.c,v 1.11 2021/04/24 23:36:48 thorpej Exp $");
 
 #include "opt_pci.h"
 #include "pci.h"
@@ -97,7 +97,10 @@ struct vlpci_softc {
 CFATTACH_DECL_NEW(vlpci, sizeof(struct vlpci_softc),
     vlpci_match, vlpci_attach, NULL, NULL);
 
-static const char * const compat_strings[] = { "via,vt82c505", NULL };
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "via,vt82c505" },
+	DEVICE_COMPAT_EOL
+};
 
 vaddr_t vlpci_mem_vaddr = 0;
 paddr_t vlpci_mem_paddr;
@@ -192,15 +195,14 @@ vlpci_match(device_t parent, struct cfdata *match, void *aux)
 {
 	struct ofbus_attach_args * const oba = aux;
 
-	if (of_compatible(oba->oba_phandle, compat_strings) < 0)
-		return 0;
-
-	return 2;	/* beat generic ofbus */
+						/* beat generic ofbus */
+	return of_compatible_match(oba->oba_phandle, compat_data) * 2;
 }
 
 static void
 vlpci_attach(device_t parent, device_t self, void *aux)
 {
+	struct ofbus_attach_args * const oba = aux;
 	struct vlpci_softc * const sc = device_private(self);
 	pci_chipset_tag_t const pc = &sc->sc_pc;
 	struct pcibus_attach_args pba;
@@ -326,7 +328,9 @@ vlpci_attach(device_t parent, device_t self, void *aux)
 	vlpci_dump_window(sc, VLPCI_PCI_WND_NO_2);
 	vlpci_dump_window(sc, VLPCI_PCI_WND_NO_3);
 
-	config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint,
+	    CFARG_DEVHANDLE, devhandle_from_of(oba->oba_phandle),
+	    CFARG_EOL);
 }
 
 static void

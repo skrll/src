@@ -1,4 +1,4 @@
-# generated automatically by aclocal 1.16.2 -*- Autoconf -*-
+# generated automatically by aclocal 1.16.3 -*- Autoconf -*-
 
 # Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
@@ -376,6 +376,7 @@ AC_DEFUN([AM_SUBST_NOTMAKE], [_AM_SUBST_NOTMAKE($@)])
 
 m4_include([m4/ax_check_compile_flag.m4])
 m4_include([m4/ax_check_openssl.m4])
+m4_include([m4/ax_gcc_func_attribute.m4])
 m4_include([m4/ax_posix_shell.m4])
 m4_include([m4/ax_pthread.m4])
 m4_include([m4/ax_restore_flags.m4])

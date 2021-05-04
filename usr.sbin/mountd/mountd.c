@@ -1,4 +1,4 @@
-/* 	$NetBSD: mountd.c,v 1.132 2020/06/17 00:16:21 kamil Exp $	 */
+/* 	$NetBSD: mountd.c,v 1.134 2021/02/16 10:00:27 hannken Exp $	 */
 
 /*
  * Copyright (c) 1989, 1993
@@ -42,7 +42,7 @@ __COPYRIGHT("@(#) Copyright (c) 1989, 1993\
 #if 0
 static char     sccsid[] = "@(#)mountd.c  8.15 (Berkeley) 5/1/95";
 #else
-__RCSID("$NetBSD: mountd.c,v 1.132 2020/06/17 00:16:21 kamil Exp $");
+__RCSID("$NetBSD: mountd.c,v 1.134 2021/02/16 10:00:27 hannken Exp $");
 #endif
 #endif				/* not lint */
 
@@ -226,7 +226,8 @@ __dead static void no_nfs(int);
 static struct exportlist *exphead;
 static struct mountlist *mlhead;
 static struct grouplist *grphead;
-static const char *exname;
+static char *const exnames_default[] = { __UNCONST(_PATH_EXPORTS), NULL };
+static char *const *exnames;
 static struct uucred def_anon = {
 	1,
 	(uid_t) -2,
@@ -384,15 +385,15 @@ main(int argc, char **argv)
 #ifdef IPSEC
 			    " [-P policy]"
 #endif
-			    " [-p port] [exportsfile]\n", getprogname());
+			    " [-p port] [exportsfile ...]\n", getprogname());
 			exit(1);
 		};
 	argc -= optind;
 	argv += optind;
-	if (argc == 1)
-		exname = *argv;
+	if (argc > 0)
+		exnames = argv;
 	else
-		exname = _PATH_EXPORTS;
+		exnames = exnames_default;
 
 	s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 	if (s < 0)
@@ -408,7 +409,7 @@ main(int argc, char **argv)
 
 	sem_init(&exportsem, 0, 0);
 	pthread_create(&ptdummy, NULL, exportlist_thread, NULL);
-	exname = _PATH_EXPORTS;
+	exnames = exnames_default;
 	have_v6 = 0;
 	(void)signal(SIGHUP, signal_get_exportlist);
 #endif
@@ -1009,81 +1010,22 @@ parse_directory(const char *line, size_t lineno, struct grouplist *tgrp,
 }
 
 
-/*
- * Get the export list
- */
-/* ARGSUSED */
-void
-get_exportlist(int n)
+static void
+get_exportlist_one(FILE *exp_file)
 {
 	struct exportlist *ep, *ep2;
 	struct grouplist *grp, *tgrp;
 	struct exportlist **epp;
 	struct dirlist *dirhead;
-	struct statvfs fsb, *fsp;
+	struct statvfs fsb;
 	struct addrinfo *ai;
 	struct uucred anon;
 	char *cp, *endcp, *dirp, savedc;
-	int has_host, exflags, got_nondir, dirplen, num, i;
-	FILE *exp_file;
+	int has_host, exflags, got_nondir, dirplen;
 	char *line;
 	size_t lineno = 0, len;
 
-
-	/*
-	 * First, get rid of the old list
-	 */
-	ep = exphead;
-	while (ep) {
-		ep2 = ep;
-		ep = ep->ex_next;
-		free_exp(ep2);
-	}
-	exphead = NULL;
-
 	dirp = NULL;
-	dirplen = 0;
-	grp = grphead;
-	while (grp) {
-		tgrp = grp;
-		grp = grp->gr_next;
-		free_grp(tgrp);
-	}
-	grphead = NULL;
-
-	/*
-	 * And delete exports that are in the kernel for all local
-	 * file systems.
-	 */
-	num = getmntinfo(&fsp, MNT_NOWAIT);
-	for (i = 0; i < num; i++) {
-		struct mountd_exports_list mel;
-
-		/* Delete all entries from the export list. */
-		mel.mel_path = fsp->f_mntonname;
-		mel.mel_nexports = 0;
-		if (nfssvc(NFSSVC_SETEXPORTSLIST, &mel) == -1 &&
-		    errno != EOPNOTSUPP)
-			syslog(LOG_ERR, "Can't delete exports for %s (%m)",
-			    fsp->f_mntonname);
-
-		fsp++;
-	}
-
-	/*
-	 * Read in the exports file and build the list, calling
-	 * mount() as we go along to push the export rules into the kernel.
-	 */
-	if ((exp_file = fopen(exname, "r")) == NULL) {
-		/*
-		 * Don't exit here; we can still reload the config
-		 * after a SIGHUP.
-		 */
-		if (mountd_debug)
-			(void)fprintf(stderr, "Can't open %s: %s\n", exname,
-			    strerror(errno));
-		return;
-	}
 	dirhead = NULL;
 	while ((line = fparseln(exp_file, &len, &lineno, NULL, 0)) != NULL) {
 		if (mountd_debug)
@@ -1262,7 +1204,80 @@ nextline:
 		}
 		free(line);
 	}
-	(void)fclose(exp_file);
+}
+
+/*
+ * Get the export list
+ */
+/* ARGSUSED */
+void
+get_exportlist(int n)
+{
+	struct exportlist *ep, *ep2;
+	struct grouplist *grp, *tgrp;
+	struct statvfs *fsp;
+	int num, i;
+	FILE *exp_file;
+
+
+	/*
+	 * First, get rid of the old list
+	 */
+	ep = exphead;
+	while (ep) {
+		ep2 = ep;
+		ep = ep->ex_next;
+		free_exp(ep2);
+	}
+	exphead = NULL;
+
+	grp = grphead;
+	while (grp) {
+		tgrp = grp;
+		grp = grp->gr_next;
+		free_grp(tgrp);
+	}
+	grphead = NULL;
+
+	/*
+	 * And delete exports that are in the kernel for all local
+	 * file systems.
+	 */
+	num = getmntinfo(&fsp, MNT_NOWAIT);
+	for (i = 0; i < num; i++) {
+		struct mountd_exports_list mel;
+
+		/* Delete all entries from the export list. */
+		mel.mel_path = fsp->f_mntonname;
+		mel.mel_nexports = 0;
+		if (nfssvc(NFSSVC_SETEXPORTSLIST, &mel) == -1 &&
+		    errno != EOPNOTSUPP)
+			syslog(LOG_ERR, "Can't delete exports for %s (%m)",
+			    fsp->f_mntonname);
+
+		fsp++;
+	}
+
+	/*
+	 * Read in the exports file and build the list, calling
+	 * mount() as we go along to push the export rules into the kernel.
+	 */
+	for (i = 0; exnames[i] != NULL; i++) {
+		if ((exp_file = fopen(exnames[i], "r")) == NULL) {
+			/*
+			 * Don't exit here; we can still reload the config
+			 * after a SIGHUP.
+			 */
+			if (mountd_debug)
+				(void)fprintf(stderr, "Can't open %s: %s\n",
+				    exnames[i], strerror(errno));
+			continue;
+		}
+
+		get_exportlist_one(exp_file);
+
+		(void)fclose(exp_file);
+	}
 }
 
 /*

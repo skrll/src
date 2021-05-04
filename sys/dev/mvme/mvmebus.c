@@ -1,4 +1,4 @@
-/*	$NetBSD: mvmebus.c,v 1.21 2019/11/10 21:16:36 chs Exp $	*/
+/*	$NetBSD: mvmebus.c,v 1.23 2021/04/24 23:36:56 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2002 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvmebus.c,v 1.21 2019/11/10 21:16:36 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvmebus.c,v 1.23 2021/04/24 23:36:56 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -80,7 +80,7 @@ const char *mvmebus_irq_name[] = {
 	"vmeirq4", "vmeirq5", "vmeirq6", "vmeirq7"
 };
 
-extern phys_ram_seg_t mem_clusters[0];
+extern phys_ram_seg_t mem_clusters[];
 extern int mem_cluster_cnt;
 
 
@@ -236,7 +236,7 @@ mvmebus_attach(struct mvmebus_softc *sc)
 	vaa.va_bdt = &sc->sc_mvmedmat;
 	vaa.va_slaveconfig = NULL;
 
-	config_found(sc->sc_dev, &vaa, 0);
+	config_found(sc->sc_dev, &vaa, 0, CFARG_EOL);
 }
 
 int

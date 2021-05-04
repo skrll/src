@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.115 2018/12/19 13:57:48 maxv Exp $	*/
+/*	$NetBSD: locore.s,v 1.117 2021/03/31 09:48:14 simonb Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -974,9 +974,6 @@ Lintrhand_exit:
 
 	/* FALLTHROUGH to rei */
 
-#undef INTERRUPT_SAVEREG
-#undef INTERRUPT_RESTOREREG
-
 /*
  * Emulation of VAX REI instruction.
  *
@@ -1299,5 +1296,5 @@ GLOBAL(eintrnames)
 	.even
 
 GLOBAL(intrcnt)
-	.long	0,0,0,0,0,0,0,0,0,0
+	.long	0,0,0,0,0,0,0,0,0
 GLOBAL(eintrcnt)

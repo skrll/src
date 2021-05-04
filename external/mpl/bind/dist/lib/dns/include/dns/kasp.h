@@ -1,11 +1,11 @@
-/*	$NetBSD: kasp.h,v 1.2 2020/05/24 19:46:23 christos Exp $	*/
+/*	$NetBSD: kasp.h,v 1.4 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -52,6 +52,13 @@ struct dns_kasp_key {
 	uint8_t	 role;
 };
 
+struct dns_kasp_nsec3param {
+	uint8_t saltlen;
+	uint8_t algorithm;
+	uint8_t iterations;
+	bool	optout;
+};
+
 /* Stores a DNSSEC policy */
 struct dns_kasp {
 	unsigned int magic;
@@ -77,9 +84,14 @@ struct dns_kasp {
 	dns_kasp_keylist_t keys;
 	dns_ttl_t	   dnskey_ttl;
 
+	/* Configuration: Denial of existence */
+	bool		      nsec3;
+	dns_kasp_nsec3param_t nsec3param;
+
 	/* Configuration: Timings */
 	uint32_t publish_safety;
 	uint32_t retire_safety;
+	uint32_t purge_keys;
 
 	/* Zone settings */
 	dns_ttl_t zone_max_ttl;
@@ -88,9 +100,6 @@ struct dns_kasp {
 	/* Parent settings */
 	dns_ttl_t parent_ds_ttl;
 	uint32_t  parent_propagation_delay;
-	uint32_t  parent_registration_delay;
-
-	/* TODO: The rest of the KASP configuration */
 };
 
 #define DNS_KASP_MAGIC	     ISC_MAGIC('K', 'A', 'S', 'P')
@@ -103,11 +112,11 @@ struct dns_kasp {
 #define DNS_KASP_KEY_TTL	     (3600)
 #define DNS_KASP_DS_TTL		     (86400)
 #define DNS_KASP_PUBLISH_SAFETY	     (3600)
+#define DNS_KASP_PURGE_KEYS	     (86400 * 90)
 #define DNS_KASP_RETIRE_SAFETY	     (3600)
 #define DNS_KASP_ZONE_MAXTTL	     (86400)
 #define DNS_KASP_ZONE_PROPDELAY	     (300)
 #define DNS_KASP_PARENT_PROPDELAY    (3600)
-#define DNS_KASP_PARENT_REGDELAY     (86400)
 
 /* Key roles */
 #define DNS_KASP_KEY_ROLE_KSK 0x01
@@ -302,6 +311,30 @@ dns_kasp_setdnskeyttl(dns_kasp_t *kasp, dns_ttl_t ttl);
  */
 
 uint32_t
+dns_kasp_purgekeys(dns_kasp_t *kasp);
+/*%<
+ * Get purge keys interval.
+ *
+ * Requires:
+ *
+ *\li   'kasp' is a valid, frozen kasp.
+ *
+ * Returns:
+ *
+ *\li   Purge keys interval.
+ */
+
+void
+dns_kasp_setpurgekeys(dns_kasp_t *kasp, uint32_t value);
+/*%<
+ * Set purge keys interval.
+ *
+ * Requires:
+ *
+ *\li   'kasp' is a valid, thawed kasp.
+ */
+
+uint32_t
 dns_kasp_publishsafety(dns_kasp_t *kasp);
 /*%<
  * Get publish safety interval.
@@ -439,30 +472,6 @@ void
 dns_kasp_setparentpropagationdelay(dns_kasp_t *kasp, uint32_t value);
 /*%<
  * Set parent propagation delay.
- *
- * Requires:
- *
- *\li   'kasp' is a valid, thawed kasp.
- */
-
-uint32_t
-dns_kasp_parentregistrationdelay(dns_kasp_t *kasp);
-/*%<
- * Get parent registration delay for submitting new DS.
- *
- * Requires:
- *
- *\li   'kasp' is a valid, frozen kasp.
- *
- * Returns:
- *
- *\li   Parent registration delay.
- */
-
-void
-dns_kasp_setparentregistrationdelay(dns_kasp_t *kasp, uint32_t value);
-/*%<
- * Set parent registration delay.
  *
  * Requires:
  *
@@ -629,6 +638,77 @@ dns_kasp_key_zsk(dns_kasp_key_t *key);
  *
  *\li  True, if the key role has DNS_KASP_KEY_ROLE_ZSK set.
  *\li  False, otherwise.
+ *
+ */
+
+bool
+dns_kasp_nsec3(dns_kasp_t *kasp);
+/*%<
+ * Return true if NSEC3 chain should be used.
+ *
+ * Requires:
+ *
+ *\li  'kasp' is a valid, frozen kasp.
+ *
+ */
+
+uint8_t
+dns_kasp_nsec3iter(dns_kasp_t *kasp);
+/*%<
+ * The number of NSEC3 iterations to use.
+ *
+ * Requires:
+ *
+ *\li  'kasp' is a valid, frozen kasp.
+ *\li  'kasp->nsec3' is true.
+ *
+ */
+
+uint8_t
+dns_kasp_nsec3flags(dns_kasp_t *kasp);
+/*%<
+ * The NSEC3 flags field value.
+ *
+ * Requires:
+ *
+ *\li  'kasp' is a valid, frozen kasp.
+ *\li  'kasp->nsec3' is true.
+ *
+ */
+
+uint8_t
+dns_kasp_nsec3saltlen(dns_kasp_t *kasp);
+/*%<
+ * The NSEC3 salt length.
+ *
+ * Requires:
+ *
+ *\li  'kasp' is a valid, frozen kasp.
+ *\li  'kasp->nsec3' is true.
+ *
+ */
+
+void
+dns_kasp_setnsec3(dns_kasp_t *kasp, bool nsec3);
+/*%<
+ * Set to use NSEC3 if 'nsec3' is 'true', otherwise policy will use NSEC.
+ *
+ * Requires:
+ *
+ *\li  'kasp' is a valid, unfrozen kasp.
+ *
+ */
+
+void
+dns_kasp_setnsec3param(dns_kasp_t *kasp, uint8_t iter, bool optout,
+		       uint8_t saltlen);
+/*%<
+ * Set the desired NSEC3 parameters.
+ *
+ * Requires:
+ *
+ *\li  'kasp' is a valid, unfrozen kasp.
+ *\li  'kasp->nsec3' is true.
  *
  */
 

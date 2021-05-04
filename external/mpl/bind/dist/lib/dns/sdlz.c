@@ -1,11 +1,11 @@
-/*	$NetBSD: sdlz.c,v 1.7 2020/08/03 17:23:41 christos Exp $	*/
+/*	$NetBSD: sdlz.c,v 1.9 2021/04/05 11:27:02 rillig Exp $	*/
 
 /*
  * Portions Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -171,14 +171,14 @@ typedef struct sdlz_rdatasetiter {
 		unsigned int flags = imp->flags;            \
 		if ((flags & DNS_SDLZFLAG_THREADSAFE) == 0) \
 			LOCK(&imp->driverlock);             \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define MAYBE_UNLOCK(imp)                                   \
 	do {                                                \
 		unsigned int flags = imp->flags;            \
 		if ((flags & DNS_SDLZFLAG_THREADSAFE) == 0) \
 			UNLOCK(&imp->driverlock);           \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #endif /* ifdef __COVERITY__ */
 
 /*
@@ -643,7 +643,7 @@ getnodedata(dns_db_t *db, const dns_name_t *name, bool create,
 	}
 
 	if (result != ISC_R_SUCCESS) {
-		isc_refcount_decrement(&node->references);
+		isc_refcount_decrementz(&node->references);
 		destroynode(node);
 		return (result);
 	}
@@ -655,7 +655,7 @@ getnodedata(dns_db_t *db, const dns_name_t *name, bool create,
 				      sdlz->dbdata, node);
 		MAYBE_UNLOCK(sdlz->dlzimp);
 		if (result != ISC_R_SUCCESS && result != ISC_R_NOTIMPLEMENTED) {
-			isc_refcount_decrement(&node->references);
+			isc_refcount_decrementz(&node->references);
 			destroynode(node);
 			return (result);
 		}
@@ -1286,7 +1286,10 @@ static dns_dbmethods_t sdlzdb_methods = {
 	NULL, /* getsize */
 	NULL, /* setservestalettl */
 	NULL, /* getservestalettl */
-	NULL  /* setgluecachestats */
+	NULL, /* setservestalerefresh */
+	NULL, /* getservestalerefresh */
+	NULL, /* setgluecachestats */
+	NULL  /* adjusthashsize */
 };
 
 /*
@@ -1303,7 +1306,7 @@ dbiterator_destroy(dns_dbiterator_t **iteratorp) {
 		dns_sdlznode_t *node;
 		node = ISC_LIST_HEAD(sdlziter->nodelist);
 		ISC_LIST_UNLINK(sdlziter->nodelist, node, link);
-		isc_refcount_decrement(&node->references);
+		isc_refcount_decrementz(&node->references);
 		destroynode(node);
 	}
 

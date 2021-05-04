@@ -1,4 +1,4 @@
-/* $NetBSD: ti_lcdc.c,v 1.4 2019/12/15 01:00:58 mrg Exp $ */
+/* $NetBSD: ti_lcdc.c,v 1.6 2021/04/24 23:36:29 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_lcdc.c,v 1.4 2019/12/15 01:00:58 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_lcdc.c,v 1.6 2021/04/24 23:36:29 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -54,9 +54,9 @@ __KERNEL_RCSID(0, "$NetBSD: ti_lcdc.c,v 1.4 2019/12/15 01:00:58 mrg Exp $");
 #include <arm/ti/ti_lcdc.h>
 #include <arm/ti/ti_lcdcreg.h>
 
-static const char * const compatible[] = {
-	"ti,am33xx-tilcdc",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "ti,am33xx-tilcdc" },
+	DEVICE_COMPAT_EOL
 };
 
 enum {
@@ -372,7 +372,7 @@ tilcdc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -591,7 +591,9 @@ tilcdc_fb_probe(struct drm_fb_helper *helper, struct drm_fb_helper_surface_size 
 	tfa.tfa_fb_dmat = sc->sc_dmat;
 	tfa.tfa_fb_linebytes = helper->fb->pitches[0];
 
-	helper->fbdev = config_found_ia(ddev->dev, "tilcdcfbbus", &tfa, NULL);
+	helper->fbdev = config_found(ddev->dev, &tfa, NULL,
+	    CFARG_IATTR, "tilcdcfbbus",
+	    CFARG_EOL);
 	if (helper->fbdev == NULL) {
 		DRM_ERROR("unable to attach framebuffer\n");
 		return -ENXIO;

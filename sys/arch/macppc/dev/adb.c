@@ -1,4 +1,4 @@
-/*	$NetBSD: adb.c,v 1.34 2012/10/27 17:18:00 chs Exp $	*/
+/*	$NetBSD: adb.c,v 1.36 2021/04/24 23:36:41 thorpej Exp $	*/
 
 /*-
  * Copyright (C) 1994	Bradley A. Grantham
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: adb.c,v 1.34 2012/10/27 17:18:00 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: adb.c,v 1.36 2021/04/24 23:36:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -132,10 +132,12 @@ adbattach(device_t parent, device_t self, void *aux)
 
 	switch (adbHardware) {
 	case ADB_HW_CUDA:
-		intr_establish(irq, IST_LEVEL, IPL_TTY, adb_intr_cuda, sc);
+		intr_establish_xname(irq, IST_LEVEL, IPL_TTY, adb_intr_cuda, sc,
+		    device_xname(self));
 		break;
 	case ADB_HW_PMU:
-		intr_establish(irq, IST_LEVEL, IPL_TTY, pm_intr, sc);
+		intr_establish_xname(irq, IST_LEVEL, IPL_TTY, pm_intr, sc,
+		    device_xname(self));
 		pm_init();
 		break;
 	}
@@ -148,7 +150,7 @@ adbattach(device_t parent, device_t self, void *aux)
 	aa_args.adbaddr = ADBADDR_APM;
 	aa_args.handler_id = ADBADDR_APM;
 
-	(void)config_found(self, &aa_args, NULL);
+	(void)config_found(self, &aa_args, NULL, CFARG_EOL);
 #endif
 
 	/* 
@@ -172,7 +174,7 @@ adbattach(device_t parent, device_t self, void *aux)
 	aa_args.origaddr = 0;
 	aa_args.adbaddr = 0;
 	aa_args.handler_id = 0;
-	(void)config_found(self, &aa_args, adbprint);
+	(void)config_found(self, &aa_args, adbprint, CFARG_EOL);
 #endif
 
 	/* for each ADB device */
@@ -184,7 +186,7 @@ adbattach(device_t parent, device_t self, void *aux)
 		aa_args.adbaddr = adbaddr;
 		aa_args.handler_id = adbdata.devType;
 
-		(void)config_found(self, &aa_args, adbprint);
+		(void)config_found(self, &aa_args, adbprint, CFARG_EOL);
 	}
 
 	if (adbHardware == ADB_HW_CUDA)

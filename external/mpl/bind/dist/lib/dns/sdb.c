@@ -1,11 +1,11 @@
-/*	$NetBSD: sdb.c,v 1.7 2020/08/03 17:23:41 christos Exp $	*/
+/*	$NetBSD: sdb.c,v 1.9 2021/04/05 11:27:02 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -124,14 +124,14 @@ typedef struct sdb_rdatasetiter {
 		unsigned int flags = sdb->implementation->flags; \
 		if ((flags & DNS_SDBFLAG_THREADSAFE) == 0)       \
 			LOCK(&sdb->implementation->driverlock);  \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define MAYBE_UNLOCK(sdb)                                         \
 	do {                                                      \
 		unsigned int flags = sdb->implementation->flags;  \
 		if ((flags & DNS_SDBFLAG_THREADSAFE) == 0)        \
 			UNLOCK(&sdb->implementation->driverlock); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #endif /* ifdef __COVERITY__ */
 
 static int dummy;
@@ -1311,7 +1311,10 @@ static dns_dbmethods_t sdb_methods = {
 	NULL, /* getsize */
 	NULL, /* setservestalettl */
 	NULL, /* getservestalettl */
-	NULL  /* setgluecachestats */
+	NULL, /* setservestalerefresh */
+	NULL, /* getservestalerefresh */
+	NULL, /* setgluecachestats */
+	NULL  /* adjusthashsize */
 };
 
 static isc_result_t

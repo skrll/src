@@ -1,4 +1,4 @@
-/*	$NetBSD: libkern.h,v 1.140 2020/04/17 17:24:46 maxv Exp $	*/
+/*	$NetBSD: libkern.h,v 1.142 2021/01/21 15:43:37 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -35,7 +35,6 @@
 #define _LIB_LIBKERN_LIBKERN_H_
 
 #ifdef _KERNEL_OPT
-#include "opt_diagnostic.h"
 #include "opt_kasan.h"
 #include "opt_kcsan.h"
 #include "opt_kmsan.h"
@@ -44,6 +43,8 @@
 #include <sys/types.h>
 #include <sys/inttypes.h>
 #include <sys/null.h>
+
+#include <lib/libkern/strlist.h>
 
 #ifndef LIBKERN_INLINE
 #define LIBKERN_INLINE	static __inline

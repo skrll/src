@@ -1,5 +1,5 @@
-/*	$NetBSD: ichsmb.c,v 1.68 2020/04/22 07:17:01 msaitoh Exp $	*/
-/*	$OpenBSD: ichiic.c,v 1.18 2007/05/03 09:36:26 dlg Exp $	*/
+/*	$NetBSD: ichsmb.c,v 1.70 2021/04/24 23:36:57 thorpej Exp $	*/
+/*	$OpenBSD: ichiic.c,v 1.44 2020/10/07 11:23:05 jsg Exp $	*/
 
 /*
  * Copyright (c) 2005, 2006 Alexander Yurchenko <grange@openbsd.org>
@@ -22,7 +22,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ichsmb.c,v 1.68 2020/04/22 07:17:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ichsmb.c,v 1.70 2021/04/24 23:36:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -30,7 +30,6 @@ __KERNEL_RCSID(0, "$NetBSD: ichsmb.c,v 1.68 2020/04/22 07:17:01 msaitoh Exp $");
 #include <sys/kernel.h>
 #include <sys/mutex.h>
 #include <sys/condvar.h>
-#include <sys/proc.h>
 #include <sys/module.h>
 
 #include <sys/bus.h>
@@ -128,6 +127,7 @@ ichsmb_match(device_t parent, cfdata_t match, void *aux)
 		case PCI_PRODUCT_INTEL_2HS_SMB:
 		case PCI_PRODUCT_INTEL_3HS_SMB:
 		case PCI_PRODUCT_INTEL_3HS_U_SMB:
+		case PCI_PRODUCT_INTEL_4HS_H_SMB:
 		case PCI_PRODUCT_INTEL_CORE4G_M_SMB:
 		case PCI_PRODUCT_INTEL_CORE5G_M_SMB:
 		case PCI_PRODUCT_INTEL_CMTLK_SMB:
@@ -147,6 +147,8 @@ ichsmb_match(device_t parent, cfdata_t match, void *aux)
 		case PCI_PRODUCT_INTEL_DH89XXCL_SMB:
 		case PCI_PRODUCT_INTEL_C2000_PCU_SMBUS:
 		case PCI_PRODUCT_INTEL_C3K_SMBUS_LEGACY:
+		case PCI_PRODUCT_INTEL_495_YU_SMB:
+		case PCI_PRODUCT_INTEL_5HS_LP_SMB:
 			return 1;
 		}
 	}
@@ -161,7 +163,6 @@ ichsmb_attach(device_t parent, device_t self, void *aux)
 	pcireg_t conf;
 	const char *intrstr = NULL;
 	char intrbuf[PCI_INTRSTR_LEN];
-	int flags;
 
 	sc->sc_dev = self;
 	sc->sc_pc = pa->pa_pc;
@@ -216,23 +217,19 @@ ichsmb_attach(device_t parent, device_t self, void *aux)
 	}
 
 	sc->sc_i2c_device = NULL;
-	flags = 0;
-	ichsmb_rescan(self, "i2cbus", &flags);
+	ichsmb_rescan(self, NULL, NULL);
 
 out:	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
 }
 
 static int
-ichsmb_rescan(device_t self, const char *ifattr, const int *flags)
+ichsmb_rescan(device_t self, const char *ifattr, const int *locators)
 {
 	struct ichsmb_softc *sc = device_private(self);
 	struct i2cbus_attach_args iba;
 
-	if (!ifattr_match(ifattr, "i2cbus"))
-		return 0;
-
-	if (sc->sc_i2c_device)
+	if (sc->sc_i2c_device != NULL)
 		return 0;
 
 	/* Attach I2C bus */
@@ -242,7 +239,7 @@ ichsmb_rescan(device_t self, const char *ifattr, const int *flags)
 
 	memset(&iba, 0, sizeof(iba));
 	iba.iba_tag = &sc->sc_i2c_tag;
-	sc->sc_i2c_device = config_found_ia(self, ifattr, &iba, iicbus_print);
+	sc->sc_i2c_device = config_found(self, &iba, iicbus_print, CFARG_EOL);
 
 	return 0;
 }
@@ -418,11 +415,6 @@ timeout:
 	/*
 	 * Transfer timeout. Kill the transaction and clear status bits.
 	 */
-	snprintb(fbuf, sizeof(fbuf), LPCIB_SMB_HS_BITS, st);
-	aprint_error_dev(sc->sc_dev,
-	    "exec: op %d, addr 0x%02x, cmdlen %zd, len %zd, "
-	    "flags 0x%02x: timeout, status %s\n",
-	    op, addr, cmdlen, len, flags, fbuf);
 	bus_space_write_1(sc->sc_iot, sc->sc_ioh, LPCIB_SMB_HC,
 	    LPCIB_SMB_HC_KILL);
 	DELAY(ICHIIC_DELAY);
@@ -450,9 +442,14 @@ ichsmb_intr(void *arg)
 
 	/* Read status */
 	st = bus_space_read_1(sc->sc_iot, sc->sc_ioh, LPCIB_SMB_HS);
+
+	/* Clear status bits */
+	bus_space_write_1(sc->sc_iot, sc->sc_ioh, LPCIB_SMB_HS, st);
+
+	/* XXX Ignore SMBALERT# for now */
 	if ((st & LPCIB_SMB_HS_BUSY) != 0 || (st & (LPCIB_SMB_HS_INTR |
 	    LPCIB_SMB_HS_DEVERR | LPCIB_SMB_HS_BUSERR | LPCIB_SMB_HS_FAILED |
-	    LPCIB_SMB_HS_SMBAL | LPCIB_SMB_HS_BDONE)) == 0)
+	    LPCIB_SMB_HS_BDONE)) == 0)
 		/* Interrupt was not for us */
 		return (0);
 
@@ -463,9 +460,6 @@ ichsmb_intr(void *arg)
 
 	if ((sc->sc_i2c_xfer.flags & I2C_F_POLL) == 0)
 		mutex_enter(&sc->sc_exec_lock);
-
-	/* Clear status bits */
-	bus_space_write_1(sc->sc_iot, sc->sc_ioh, LPCIB_SMB_HS, st);
 
 	/* Check for errors */
 	if (st & (LPCIB_SMB_HS_DEVERR | LPCIB_SMB_HS_BUSERR | LPCIB_SMB_HS_FAILED)) {

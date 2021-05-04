@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.c,v 1.273 2020/09/11 03:54:14 simonb Exp $ */
+/* $NetBSD: pmap.c,v 1.276 2021/04/03 15:29:02 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001, 2007, 2008, 2020
@@ -135,7 +135,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.273 2020/09/11 03:54:14 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.276 2021/04/03 15:29:02 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -915,7 +915,7 @@ pmap_tlb_shootnow(const struct pmap_tlb_context * const tlbctx)
 	const struct cpu_info *ci = curcpu();
 	const u_long this_cpu = 1UL << ci->ci_cpuid;
 	u_long active_cpus;
-	bool activation_locked;
+	bool activation_locked, activation_lock_tried;
 
 	/*
 	 * Figure out who to notify.  If it's for the kernel or
@@ -929,6 +929,7 @@ pmap_tlb_shootnow(const struct pmap_tlb_context * const tlbctx)
 	if (TLB_CTX_FLAGS(tlbctx) & (TLB_CTX_F_ASM | TLB_CTX_F_MULTI)) {
 		active_cpus = pmap_all_cpus();
 		activation_locked = false;
+		activation_lock_tried = false;
 	} else {
 		KASSERT(tlbctx->t_pmap != NULL);
 		activation_locked = PMAP_ACT_TRYLOCK(tlbctx->t_pmap);
@@ -938,6 +939,7 @@ pmap_tlb_shootnow(const struct pmap_tlb_context * const tlbctx)
 			TLB_COUNT(shootnow_over_notify);
 			active_cpus = pmap_all_cpus();
 		}
+		activation_lock_tried = true;
 	}
 
 #if defined(MULTIPROCESSOR)
@@ -959,9 +961,19 @@ pmap_tlb_shootnow(const struct pmap_tlb_context * const tlbctx)
 	 * Now that the remotes have been notified, release the
 	 * activation lock.
 	 */
-	if (activation_locked) {
-		KASSERT(tlbctx->t_pmap != NULL);
-		PMAP_ACT_UNLOCK(tlbctx->t_pmap);
+	if (activation_lock_tried) {
+		if (activation_locked) {
+			KASSERT(tlbctx->t_pmap != NULL);
+			PMAP_ACT_UNLOCK(tlbctx->t_pmap);
+		}
+		/*
+		 * When we tried to acquire the activation lock, we
+		 * raised IPL to IPL_SCHED (even if we ultimately
+		 * failed to acquire the lock), which blocks out IPIs.
+		 * Force our IPL back down to IPL_VM so that we can
+		 * receive IPIs.
+		 */
+		alpha_pal_swpipl(IPL_VM);
 	}
 
 	/*
@@ -2309,6 +2321,7 @@ pmap_kremove(vaddr_t va, vsize_t size)
 	pt_entry_t *pte, opte;
 	pmap_t const pmap = pmap_kernel();
 	struct pmap_tlb_context tlbctx;
+	int count = 0;
 
 #ifdef DEBUG
 	if (pmapdebug & (PDB_FOLLOW|PDB_ENTER))
@@ -2330,10 +2343,14 @@ pmap_kremove(vaddr_t va, vsize_t size)
 			atomic_store_relaxed(pte, PG_NV);
 			pmap_tlb_shootdown(pmap, va, opte, &tlbctx);
 
-			/* Update stats. */
-			PMAP_STAT_DECR(pmap->pm_stats.resident_count, 1);
-			PMAP_STAT_DECR(pmap->pm_stats.wired_count, 1);
+			count++;
 		}
+	}
+
+	/* Update stats. */
+	if (__predict_true(count != 0)) {
+		PMAP_STAT_DECR(pmap->pm_stats.resident_count, count);
+		PMAP_STAT_DECR(pmap->pm_stats.wired_count, count);
 	}
 
 	pmap_tlb_shootnow(&tlbctx);

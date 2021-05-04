@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $NetBSD: mountall,v 1.13 2020/03/01 15:22:55 roy Exp $
+# $NetBSD: mountall,v 1.15 2021/03/09 12:42:46 sborrill Exp $
 #
 
 # REQUIRE: mountcritremote named ypbind
@@ -20,6 +20,7 @@ mountall_start()
 	# may try and null mount paths on ZFS.
 	if checkyesno zfs; then
 		zfs mount -a
+		zfs share -a
 	fi
 
 	# Mount file systems noted in fstab.
@@ -34,9 +35,11 @@ mountall_stop()
 
 	# Unmount ZFS file systems.
 	if checkyesno zfs; then
+		zfs unshare -a
 		zfs unmount -a
 	fi
 }
 
 load_rc_config $name
+load_rc_config_var zfs zfs
 run_rc_command "$1"

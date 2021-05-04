@@ -1,4 +1,4 @@
-/*	$NetBSD: mvsata.c,v 1.57 2020/05/19 08:08:51 jdolecek Exp $	*/
+/*	$NetBSD: mvsata.c,v 1.59 2021/04/24 23:36:55 thorpej Exp $	*/
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.57 2020/05/19 08:08:51 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.59 2021/04/24 23:36:55 thorpej Exp $");
 
 #include "opt_mvsata.h"
 
@@ -221,16 +221,16 @@ static void mvsata_print_eprd(struct mvsata_port *, int);
 #endif
 
 static const struct ata_bustype mvsata_ata_bustype = {
-	SCSIPI_BUSTYPE_ATA,
-	mvsata_bio,
-	mvsata_reset_drive,
-	mvsata_reset_channel,
-	mvsata_exec_command,
-	ata_get_params,
-	mvsata_addref,
-	mvsata_delref,
-	mvsata_killpending,
-	mvsata_channel_recover,
+	.bustype_type = SCSIPI_BUSTYPE_ATA,
+	.ata_bio = mvsata_bio,
+	.ata_reset_drive = mvsata_reset_drive,
+	.ata_reset_channel = mvsata_reset_channel,
+	.ata_exec_command = mvsata_exec_command,
+	.ata_get_params = ata_get_params,
+	.ata_addref = mvsata_addref,
+	.ata_delref = mvsata_delref,
+	.ata_killpending = mvsata_killpending,
+	.ata_recovery = mvsata_channel_recover,
 };
 
 #if NATAPIBUS > 0
@@ -741,8 +741,9 @@ mvsata_atapibus_attach(struct atabus_softc *ata_sc)
 	chan->chan_ntargets = 1;
 	chan->chan_nluns = 1;
 
-	chp->atapibus =
-	    config_found_ia(ata_sc->sc_dev, "atapi", chan, atapiprint);
+	chp->atapibus = config_found(ata_sc->sc_dev, chan, atapiprint,
+	    CFARG_IATTR, "atapi",
+	    CFARG_EOL);
 }
 
 static void

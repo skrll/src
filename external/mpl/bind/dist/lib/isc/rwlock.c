@@ -1,11 +1,11 @@
-/*	$NetBSD: rwlock.c,v 1.8 2020/05/24 19:46:26 christos Exp $	*/
+/*	$NetBSD: rwlock.c,v 1.10 2021/04/29 17:26:12 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -33,14 +33,13 @@
 #include <errno.h>
 #include <pthread.h>
 
-isc_result_t
+void
 isc_rwlock_init(isc_rwlock_t *rwl, unsigned int read_quota,
 		unsigned int write_quota) {
 	UNUSED(read_quota);
 	UNUSED(write_quota);
 	REQUIRE(pthread_rwlock_init(&rwl->rwlock, NULL) == 0);
 	atomic_init(&rwl->downgrade, false);
-	return (ISC_R_SUCCESS);
 }
 
 isc_result_t
@@ -182,7 +181,7 @@ isc__rwlock_lock(isc_rwlock_t *rwl, isc_rwlocktype_t type);
 static void
 print_lock(const char *operation, isc_rwlock_t *rwl, isc_rwlocktype_t type) {
 	fprintf(stderr,
-		"rwlock %p thread %lu %s(%s): "
+		"rwlock %p thread %" PRIuPTR " %s(%s): "
 		"write_requests=%u, write_completions=%u, "
 		"cnt_and_flag=0x%x, readers_waiting=%u, "
 		"write_granted=%u, write_quota=%u\n",
@@ -195,7 +194,7 @@ print_lock(const char *operation, isc_rwlock_t *rwl, isc_rwlocktype_t type) {
 }
 #endif			/* ISC_RWLOCK_TRACE */
 
-isc_result_t
+void
 isc_rwlock_init(isc_rwlock_t *rwl, unsigned int read_quota,
 		unsigned int write_quota) {
 	REQUIRE(rwl != NULL);
@@ -227,8 +226,6 @@ isc_rwlock_init(isc_rwlock_t *rwl, unsigned int read_quota,
 	isc_condition_init(&rwl->writeable);
 
 	rwl->magic = RWLOCK_MAGIC;
-
-	return (ISC_R_SUCCESS);
 }
 
 void

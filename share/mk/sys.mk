@@ -1,4 +1,4 @@
-#	$NetBSD: sys.mk,v 1.144 2020/11/09 16:15:05 christos Exp $
+#	$NetBSD: sys.mk,v 1.146 2021/03/23 22:02:44 christos Exp $
 #	@(#)sys.mk	8.2 (Berkeley) 3/21/94
 #
 # This file contains the basic rules for make(1) and is read first
@@ -19,10 +19,11 @@ MV?=		mv -f
 AS?=		as
 AFLAGS?=
 COMPILE.s?=	${CC} ${AFLAGS} ${AFLAGS.${<:T}} -c
-LINK.s?=	${CC} ${AFLAGS} ${AFLAGS.${<:T}} ${LDFLAGS}
+LINK.s?=	${CC} ${AFLAGS} ${AFLAGS.${<:T}} ${LDSTATIC} ${LDFLAGS}
 _ASM_TRADITIONAL_CPP=	-x assembler-with-cpp
 COMPILE.S?=	${CC} ${AFLAGS} ${AFLAGS.${<:T}} ${CPPFLAGS} ${_ASM_TRADITIONAL_CPP} -c
-LINK.S?=	${CC} ${AFLAGS} ${AFLAGS.${<:T}} ${CPPFLAGS} ${LDFLAGS}
+LINK.S?=	${CC} ${AFLAGS} ${AFLAGS.${<:T}} ${LDSTATIC} ${LDFLAGS}
+COMPILE_LINK.S?=${LINK.S} ${CPPFLAGS}
 
 CC?=		cc
 .if ${MACHINE_ARCH} == "sh3el" || ${MACHINE_ARCH} == "sh3eb"
@@ -42,12 +43,14 @@ DTRACE_OPTS?=	-fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-ipa-sra -
 CFLAGS?=	${DBG}
 LDFLAGS?=
 COMPILE.c?=	${CC} ${CFLAGS} ${DTRACE_OPTS} ${CPPFLAGS} -c
-LINK.c?=	${CC} ${CFLAGS} ${CPPFLAGS} ${LDFLAGS}
+LINK.c?=	${CC} ${CFLAGS} ${LDSTATIC} ${LDFLAGS}
+COMPILE_LINK.c?=${LINK.c} ${CPPFLAGS}
 
 # C Type Format data is required for DTrace
 CTFFLAGS	?=	-g -L VERSION
 CTFMFLAGS	?=	-t -g -L VERSION
 OBJECT_TARGET	?= -o ${.TARGET}${defined(CTFCONVERT):?.o:}
+EXEC_TARGET	?= -o ${.TARGET}
 CTFCONVERT_RUN	?= ${defined(CTFCONVERT):?${CTFCONVERT} ${CTFFLAGS} -o ${.TARGET} ${.TARGET}.o && rm -f ${.TARGET}.o:}
 
 CXX?=		c++
@@ -67,12 +70,14 @@ __BUILDSEED=	${BUILDSEED}/${__INITSEED}/${.TARGET}
 _CXXSEED?=	${BUILDSEED:D-frandom-seed=${__BUILDSEED:hash}}
 
 COMPILE.cc?=	${CXX} ${_CXXSEED} ${CXXFLAGS} ${DTRACE_OPTS} ${CPPFLAGS} -c
-LINK.cc?=	${CXX} ${CXXFLAGS} ${CPPFLAGS} ${LDFLAGS}
+LINK.cc?=	${CXX} ${CXXFLAGS} ${LDSTATIC} ${LDFLAGS}
+COMPILE_LINK.cc?=${LINK.cc} ${CPPFLAGS}
 
 OBJC?=		${CC}
 OBJCFLAGS?=	${CFLAGS}
 COMPILE.m?=	${OBJC} ${OBJCFLAGS} ${CPPFLAGS} -c
-LINK.m?=	${OBJC} ${OBJCFLAGS} ${CPPFLAGS} ${LDFLAGS}
+LINK.m?=	${OBJC} ${OBJCFLAGS} ${LDSTATIC} ${LDFLAGS}
+LINK.m?=	${LINK.m} ${CPPFLAGS}
 
 CPP?=		cpp
 CPPFLAGS?=
@@ -81,11 +86,14 @@ FC?=		f77
 FFLAGS?=	-O
 RFLAGS?=
 COMPILE.f?=	${FC} ${FFLAGS} -c
-LINK.f?=	${FC} ${FFLAGS} ${LDFLAGS}
+LINK.f?=	${FC} ${FFLAGS} ${LDSTATIC} ${LDFLAGS}
+COMPILE_LINK.f?=${LINK.f} ${CPPFLAGS}
 COMPILE.F?=	${FC} ${FFLAGS} ${CPPFLAGS} -c
-LINK.F?=	${FC} ${FFLAGS} ${CPPFLAGS} ${LDFLAGS}
+LINK.F?=	${FC} ${FFLAGS} ${LDSTATIC} ${LDFLAGS}
+COMPILE_LINK.F?=${LINK.F} ${CPPFLAGS}
 COMPILE.r?=	${FC} ${FFLAGS} ${RFLAGS} -c
-LINK.r?=	${FC} ${FFLAGS} ${RFLAGS} ${LDFLAGS}
+LINK.r?=	${FC} ${FFLAGS} ${RFLAGS} ${LDSTATIC} ${LDFLAGS}
+COMPILE_LINK.r?=${LINK.r}
 
 INSTALL?=	install
 
@@ -121,9 +129,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 
 # C
 .c:
-	${LINK.c} ${OBJECT_TARGET} ${.IMPSRC} ${LDLIBS}
-# XXX: disable for now
-#	${CTFCONVERT_RUN}
+	${COMPILE_LINK.c} ${EXEC_TARGET} ${.IMPSRC} ${LDLIBS}
 .c.o:
 	${COMPILE.c} ${.IMPSRC} ${OBJECT_TARGET}
 	${CTFCONVERT_RUN}
@@ -138,9 +144,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 
 # C++
 .cc .cpp .cxx .C:
-	${LINK.cc} ${OBJECT_TARGET} ${.IMPSRC} ${LDLIBS}
-# XXX: disable for now
-#	${CTFCONVERT_RUN}
+	${COMPILE_LINK.cc} ${EXEC_TARGET} ${.IMPSRC} ${LDLIBS}
 .cc.o .cpp.o .cxx.o .C.o:
 	${COMPILE.cc} ${.IMPSRC} ${OBJECT_TARGET}
 	${CTFCONVERT_RUN}
@@ -151,8 +155,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 
 # Fortran/Ratfor
 .f:
-	${LINK.f} ${OBJECT_TARGET} ${.IMPSRC} ${LDLIBS}
-	${CTFCONVERT_RUN}
+	${COMPILE_LINK.f} ${EXEC_TARGET} ${.IMPSRC} ${LDLIBS}
 .f.o:
 	${COMPILE.f} ${.IMPSRC} ${OBJECT_TARGET}
 	${CTFCONVERT_RUN}
@@ -162,8 +165,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 	rm -f ${.PREFIX}.o
 
 .F:
-	${LINK.F} ${OBJECT_TARGET} ${.IMPSRC} ${LDLIBS}
-	${CTFCONVERT_RUN}
+	${COMPILE_LINK.F} ${EXEC_TARGET} ${.IMPSRC} ${LDLIBS}
 .F.o:
 	${COMPILE.F} ${.IMPSRC} ${OBJECT_TARGET}
 	${CTFCONVERT_RUN}
@@ -173,8 +175,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 	rm -f ${.PREFIX}.o
 
 .r:
-	${LINK.r} ${OBJECT_TARGET} ${.IMPSRC} ${LDLIBS}
-	${CTFCONVERT_RUN}
+	${COMPILE_LINK.r} ${EXEC_TARGET} ${.IMPSRC} ${LDLIBS}
 .r.o:
 	${COMPILE.r} ${.IMPSRC} ${OBJECT_TARGET}
 	${CTFCONVERT_RUN}
@@ -185,8 +186,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 
 # Pascal
 .p:
-	${LINK.p} ${OBJECT_TARGET} ${.IMPSRC} ${LDLIBS}
-	${CTFCONVERT_RUN}
+	${COMPILE_LINK.p} ${EXEC_TARGET} ${.IMPSRC} ${LDLIBS}
 .p.o:
 	${COMPILE.p} ${.IMPSRC} ${OBJECT_TARGET}
 	${CTFCONVERT_RUN}
@@ -197,8 +197,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 
 # Assembly
 .s:
-	${LINK.s} ${OBJECT_TARGET} ${.IMPSRC} ${LDLIBS}
-	${CTFCONVERT_RUN}
+	${COMPILE_LINK.s} ${EXEC_TARGET} ${.IMPSRC} ${LDLIBS}
 .s.o:
 	${COMPILE.s} ${.IMPSRC} ${OBJECT_TARGET}
 	${CTFCONVERT_RUN}
@@ -207,8 +206,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 	${AR} ${ARFLAGS} ${.TARGET} ${.PREFIX}.o
 	rm -f ${.PREFIX}.o
 .S:
-	${LINK.S} ${OBJECT_TARGET} ${.IMPSRC} ${LDLIBS}
-	${CTFCONVERT_RUN}
+	${COMPILE_LINK.S} ${EXEC_TARGET} ${.IMPSRC} ${LDLIBS}
 .S.o:
 	${COMPILE.S} ${.IMPSRC} ${OBJECT_TARGET}
 	${CTFCONVERT_RUN}
@@ -220,8 +218,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 # Lex
 .l:
 	${LEX.l} ${.IMPSRC}
-	${LINK.c} ${OBJECT_TARGET} lex.yy.c ${LDLIBS} -ll
-	${CTFCONVERT_RUN}
+	${COMPILE_LINK.c} ${EXEC_TARGET} lex.yy.c ${LDLIBS} -ll
 	rm -f lex.yy.c
 .l.c:
 	${LEX.l} ${.IMPSRC}
@@ -235,8 +232,7 @@ YACC.y?=	${YACC} ${YFLAGS}
 # Yacc
 .y:
 	${YACC.y} ${.IMPSRC}
-	${LINK.c} ${OBJECT_TARGET} y.tab.c ${LDLIBS}
-	${CTFCONVERT_RUN}
+	${COMPILE_LINK.c} ${EXEC_TARGET} y.tab.c ${LDLIBS}
 	rm -f y.tab.c
 .y.c:
 	${YACC.y} ${.IMPSRC}

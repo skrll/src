@@ -1,4 +1,4 @@
-#	$NetBSD: BRANCHES,v 1.355 2020/11/01 15:41:56 thorpej Exp $
+#	$NetBSD: BRANCHES,v 1.359 2021/04/25 18:16:25 thorpej Exp $
 #
 # This file contains a list of branches that exist in the NetBSD CVS
 # tree and their current state.
@@ -723,6 +723,17 @@ Notes:		No longer active due to the lack of time. If you plan to
 		(before the merge to -current) with an interop IPv6 test.
 		More info at: http://www.tahi.org/
 
+Branch:		thorpej-cfargs
+Description:	Clean up how arguments are passed to various autoconfiguration
+		routines.
+Status:		Merged
+Start Date:	Sat March 20 2021
+End Date:	Sat April 24 2021
+Base Tag:	thorpej-cfargs-base
+Maintainer:	Jason Thorpe <thorpej@netbsd.org>
+Scope:		src/sys
+Notes:
+
 Branch:		thorpej-futex
 Description:	Overhaul of futex operations to fix thread priority issues
 Status:		Active
@@ -730,13 +741,25 @@ Start Date:	Sun Nov 1 2020
 End Date:
 Base Tag:	thorpej-futex-base
 Maintainer:	Jason Thorpe <thorpej@netbsd.org>
-Scope:		src/sys src/tests/lib/libc/sys
-Note:		Normal futex operataions pass the test suite, but there are
+Scope:		src/sys src/tests/lib/libc/sys src/distrib/sets/lists
+Notes:		Normal futex operataions pass the test suite, but there are
 		issues with Linux compatibility currently, that need to be
 		addressed before merging.  Also includes new NetBSD extensions
 		to the futex interface to support reader/writer locks.  Those
 		changes can be discounted in favor of fixing the standard
 		futex operations with respect to Linux compatibility.
+		Also includes implementations of eventfd and timerfd, as
+		well as some additional improvements to COMPAT_LINUX{,32}.
+
+Branch:		thorpej-i2c-spi-conf
+Description:	Improve device tree-based I2C and SPI enumeration.
+Status:		Active
+Start Date:	Sun April 25, 2021
+End Date:
+Base Tag:	thorpej-i2c-spi-conf-base
+Maintainer:	Jason Thorpe <thorpej@netbsd.org>
+Scope:		src/sys
+Notes:
 
 Branch:  	wrstuden-fixsa
 Description:	Fix a number of issues present with Scheduler Activations.

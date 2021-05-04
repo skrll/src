@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pool.c,v 1.274 2020/09/05 17:33:11 riastradh Exp $	*/
+/*	$NetBSD: subr_pool.c,v 1.276 2021/02/24 05:36:02 mrg Exp $	*/
 
 /*
  * Copyright (c) 1997, 1999, 2000, 2002, 2007, 2008, 2010, 2014, 2015, 2018,
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.274 2020/09/05 17:33:11 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.276 2021/02/24 05:36:02 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -1833,28 +1833,47 @@ pool_print1(struct pool *pp, const char *modif, void (*pr)(const char *, ...))
 	pool_cache_cpu_t *cc;
 	uint64_t cpuhit, cpumiss, pchit, pcmiss;
 	uint32_t nfull;
-	int i, print_log = 0, print_pagelist = 0, print_cache = 0;
+	int i;
+	bool print_log = false, print_pagelist = false, print_cache = false;
+	bool print_short = false, skip_empty = false;
 	char c;
 
 	while ((c = *modif++) != '\0') {
 		if (c == 'l')
-			print_log = 1;
+			print_log = true;
 		if (c == 'p')
-			print_pagelist = 1;
+			print_pagelist = true;
 		if (c == 'c')
-			print_cache = 1;
+			print_cache = true;
+		if (c == 's')
+			print_short = true;
+		if (c == 'S')
+			skip_empty = true;
 	}
 
+	if (skip_empty && pp->pr_nget == 0)
+		return;
+
 	if ((pc = pp->pr_cache) != NULL) {
-		(*pr)("POOL CACHE");
+		(*pr)("POOLCACHE");
 	} else {
 		(*pr)("POOL");
+	}
+
+	/* Single line output. */
+	if (print_short) {
+		(*pr)(" %s:%p:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u\n",
+		    pp->pr_wchan, pp, pp->pr_size, pp->pr_align, pp->pr_npages,
+		    pp->pr_nitems, pp->pr_nout, pp->pr_nget, pp->pr_nput,
+		    pp->pr_npagealloc, pp->pr_npagefree, pp->pr_nidle);
+		
+		return;
 	}
 
 	(*pr)(" %s: size %u, align %u, ioff %u, roflags 0x%08x\n",
 	    pp->pr_wchan, pp->pr_size, pp->pr_align, pp->pr_itemoffset,
 	    pp->pr_roflags);
-	(*pr)("\talloc %p\n", pp->pr_alloc);
+	(*pr)("\tpool %p, alloc %p\n", pp, pp->pr_alloc);
 	(*pr)("\tminitems %u, minpages %u, maxpages %u, npages %u\n",
 	    pp->pr_minitems, pp->pr_minpages, pp->pr_maxpages, pp->pr_npages);
 	(*pr)("\titemsperpage %u, nitems %u, nout %u, hardlimit %u\n",
@@ -1865,7 +1884,7 @@ pool_print1(struct pool *pp, const char *modif, void (*pr)(const char *, ...))
 	(*pr)("\tnpagealloc %lu, npagefree %lu, hiwat %u, nidle %lu\n",
 	    pp->pr_npagealloc, pp->pr_npagefree, pp->pr_hiwat, pp->pr_nidle);
 
-	if (print_pagelist == 0)
+	if (!print_pagelist)
 		goto skip_pagelist;
 
 	if ((ph = LIST_FIRST(&pp->pr_emptypages)) != NULL)
@@ -1884,7 +1903,7 @@ pool_print1(struct pool *pp, const char *modif, void (*pr)(const char *, ...))
 		(*pr)("\tcurpage %p\n", pp->pr_curpage->ph_page);
 
  skip_pagelist:
-	if (print_log == 0)
+	if (print_log)
 		goto skip_log;
 
 	(*pr)("\n");
@@ -3077,9 +3096,14 @@ pool_redzone_init(struct pool *pp, size_t requested_size)
 	/*
 	 * No space in the natural padding; check if we can extend a
 	 * bit the size of the pool.
+	 *
+	 * Avoid using redzone for allocations half of a page or larger.
+	 * For pagesize items, we'd waste a whole new page (could be
+	 * unmapped?), and for half pagesize items, approximately half
+	 * the space is lost (eg, 4K pages, you get one 2K allocation.)
 	 */
 	nsz = roundup(pp->pr_size + redzsz, pp->pr_align);
-	if (nsz <= pp->pr_alloc->pa_pagesz) {
+	if (nsz <= (pp->pr_alloc->pa_pagesz / 2)) {
 		/* Ok, we can */
 		pp->pr_size = nsz;
 		pp->pr_reqsize_with_redzone = requested_size + redzsz;

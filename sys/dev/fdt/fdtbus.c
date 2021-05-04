@@ -1,4 +1,4 @@
-/* $NetBSD: fdtbus.c,v 1.35 2020/09/20 11:25:36 jmcneill Exp $ */
+/* $NetBSD: fdtbus.c,v 1.41 2021/04/24 23:36:53 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdtbus.c,v 1.35 2020/09/20 11:25:36 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdtbus.c,v 1.41 2021/04/24 23:36:53 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -87,8 +87,10 @@ static u_int	fdt_get_order(int);
 static void	fdt_pre_attach(struct fdt_node *);
 static void	fdt_post_attach(struct fdt_node *);
 
-static const char * const fdtbus_compatible[] =
-    { "simple-bus", NULL };
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "simple-bus" },
+	DEVICE_COMPAT_EOL
+};
 
 CFATTACH_DECL2_NEW(simplebus, sizeof(struct fdt_softc),
     fdt_match, fdt_attach, NULL, NULL, fdt_rescan, fdt_childdet);
@@ -101,7 +103,7 @@ fdt_match(device_t parent, cfdata_t cf, void *aux)
 	int match;
 
 	/* Check compatible string */
-	match = of_match_compatible(phandle, fdtbus_compatible);
+	match = of_compatible_match(phandle, compat_data);
 	if (match)
 		return match;
 
@@ -343,7 +345,11 @@ fdt_scan_best(struct fdt_softc *sc, struct fdt_node *node)
 			[FDTCF_PASS] = pass
 		};
 		fdt_init_attach_args(&sc->sc_faa, node, true, &faa);
-		cf = config_search_loc(fdt_scan_submatch, node->n_bus, "fdt", locs, &faa);
+		cf = config_search(node->n_bus, &faa,
+		    CFARG_SUBMATCH, fdt_scan_submatch,
+		    CFARG_IATTR, "fdt",
+		    CFARG_LOCATORS, locs,
+		    CFARG_EOL);
 		if (cf == NULL)
 			continue;
 		match = config_match(node->n_bus, cf, &faa);
@@ -387,14 +393,22 @@ fdt_scan(struct fdt_softc *sc, int pass)
 		fdt_pre_attach(node);
 
 		if (quiet) {
-			node->n_dev = config_attach_loc(node->n_bus, node->n_cf, locs,
-			    &faa, fdtbus_print);
+			node->n_dev = config_attach(node->n_bus, node->n_cf,
+			    &faa, fdtbus_print,
+			    CFARG_LOCATORS, locs,
+			    CFARG_DEVHANDLE, devhandle_from_of(node->n_phandle),
+			    CFARG_EOL);
 		} else {
 			/*
 			 * Default pass.
 			 */
-			node->n_dev = config_found_sm_loc(node->n_bus, "fdt", locs,
-			    &faa, fdtbus_print, fdt_scan_submatch);
+			node->n_dev = config_found(node->n_bus, &faa,
+			    fdtbus_print,
+			    CFARG_SUBMATCH, fdt_scan_submatch,
+			    CFARG_IATTR, "fdt",
+			    CFARG_LOCATORS, locs,
+			    CFARG_DEVHANDLE, devhandle_from_of(node->n_phandle),
+			    CFARG_EOL);
 		}
 
 		if (node->n_dev != NULL)
@@ -474,7 +488,7 @@ fdt_remove_bycompat(const char *compatible[])
 	struct fdt_node *node, *next;
 
 	TAILQ_FOREACH_SAFE(node, &fdt_nodes, n_nodes, next) {
-		if (of_match_compatible(node->n_phandle, compatible)) {
+		if (of_compatible(node->n_phandle, compatible)) {
 			TAILQ_REMOVE(&fdt_nodes, node, n_nodes);
 		}
 	}

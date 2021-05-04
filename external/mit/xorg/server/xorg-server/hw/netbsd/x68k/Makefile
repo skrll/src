@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.9 2020/08/05 15:48:09 tsutsui Exp $
+#	$NetBSD: Makefile,v 1.11 2021/03/22 14:11:02 tsutsui Exp $
 
 .include <bsd.own.mk>
 
@@ -18,6 +18,7 @@ WARNS?=	2
 .PATH:	${X11SRCDIR.xorg-server}/hw/netbsd/x68k
 SRCS=	x68kInit.c x68kConfig.c x68kIo.c x68kMouse.c x68kKbd.c x68kKeyMap.c \
 	x68kFb.c x68kGraph.c x68kText.c
+SRCS+=	mouseEmu3btn.c
 
 .PATH:	${X11SRCDIR.xorg-server}/Xi
 SRCS+=	stubs.c
@@ -32,7 +33,6 @@ CPPFLAGS+=	-UXFree86LOADER -UXF86VIDMODE -UXFreeXDGA -UXF86MISC \
 		-UXF86DRI -UXF86BIGFONT
 
 CPPFLAGS+=	-UHAVE_XORG_CONFIG_H
-CPPFLAGS+=	-DHAVE_STRCASECMP
 
 CPPFLAGS.x68kConfig.c=	 -DX11_LIBDIR=\"${X11ETCDIR}\"
 

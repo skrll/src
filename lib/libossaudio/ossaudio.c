@@ -1,4 +1,4 @@
-/*	$NetBSD: ossaudio.c,v 1.64 2020/11/13 09:02:39 nia Exp $	*/
+/*	$NetBSD: ossaudio.c,v 1.66 2021/03/15 10:58:05 nia Exp $	*/
 
 /*-
  * Copyright (c) 1997, 2020 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: ossaudio.c,v 1.64 2020/11/13 09:02:39 nia Exp $");
+__RCSID("$NetBSD: ossaudio.c,v 1.66 2021/03/15 10:58:05 nia Exp $");
 
 /*
  * This is an Open Sound System compatibility layer, which provides
@@ -183,7 +183,6 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 		/* This call is merely advisory, and may be a nop. */
 		break;
 	case SNDCTL_DSP_SPEED:
-		AUDIO_INITINFO(&tmpinfo);
 		/*
 		 * In Solaris, 0 is used a special value to query the
 		 * current rate. This seems useful to support.
@@ -208,6 +207,7 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 			INTARG = 1000;
 		if (INTARG > 192000)
 			INTARG = 192000;
+		AUDIO_INITINFO(&tmpinfo);
 		tmpinfo.play.sample_rate =
 		tmpinfo.record.sample_rate = INTARG;
 		retval = ioctl(fd, AUDIO_SETINFO, &tmpinfo);
@@ -1442,6 +1442,7 @@ mixer_oss4_ioctl(int fd, unsigned long com, void *argp)
 			errno = tmperrno;
 			return retval;
 		}
+		mc.type = mdi.type;
 		switch (mdi.type) {
 		case AUDIO_MIXER_ENUM:
 			if (mv->value >= mdi.un.e.num_mem) {
@@ -1469,6 +1470,7 @@ mixer_oss4_ioctl(int fd, unsigned long com, void *argp)
 #endif
 			break;
 		case AUDIO_MIXER_VALUE:
+			mc.un.value.num_channels = mdi.un.v.num_channels;
 			if (mdi.un.v.num_channels != 2) {
 				for (i = 0; i < mdi.un.v.num_channels; ++i) {
 					mc.un.value.level[i] = mv->value;
@@ -1512,6 +1514,9 @@ mixer_oss4_ioctl(int fd, unsigned long com, void *argp)
 			return retval;
 		}
 		mc.dev = mdi.index;
+		mc.type = mdi.type;
+		if (mdi.type == AUDIO_MIXER_VALUE)
+			mc.un.value.num_channels = mdi.un.v.num_channels;
 		retval = ioctl(newfd, AUDIO_MIXER_READ, &mc);
 		if (retval < 0) {
 			tmperrno = errno;

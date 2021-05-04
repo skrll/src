@@ -1,18 +1,20 @@
-#	$NetBSD: Makefile,v 1.5 2020/09/05 14:24:26 mrg Exp $
+#	$NetBSD: Makefile,v 1.7 2021/04/14 12:20:59 christos Exp $
 
 PROG=		lto1
-SRCS=		lto-partition.c \
-		lto-object.c \
-		lto.c \
+SRCS=		attribs.c \
+		lto-common.c \
 		lto-lang.c \
+		lto-object.c \
+		lto-partition.c \
 		lto-symtab.c \
-		attribs.c \
+		lto.c \
 		main.c
 
 CPPFLAGS+=	-DPREFIX=\"/usr\"
 
 COPTS.lto.c+=		-Wno-stack-protector
 COPTS.lto-lang.c+=	-Wno-stack-protector
+COPTS.lto-common.c+=	-Wno-stack-protector
 
 .include "../Makefile.backend"
 .include "../Makefile.backtrace"

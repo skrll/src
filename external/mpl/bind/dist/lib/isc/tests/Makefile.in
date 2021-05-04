@@ -18,6 +18,7 @@ VERSION=@BIND9_VERSION@
 CINCLUDES =	-I. -Iinclude ${ISC_INCLUDES} \
 		${OPENSSL_CFLAGS} @CMOCKA_CFLAGS@ \
 		${JSON_C_CFLAGS} \
+		${LIBUV_CFLAGS} \
 		${LIBXML2_CFLAGS}
 CDEFINES =	-DTESTS="\"${top_builddir}/lib/isc/tests/\""
 
@@ -34,8 +35,13 @@ SRCS =		isctest.c aes_test.c buffer_test.c \
 		mem_test.c md_test.c netaddr_test.c parse_test.c pool_test.c \
 		quota_test.c radix_test.c random_test.c \
 		regex_test.c result_test.c safe_test.c siphash_test.c sockaddr_test.c \
-		socket_test.c socket_test.c symtab_test.c task_test.c \
-		taskpool_test.c time_test.c timer_test.c
+		socket_test.c symtab_test.c task_test.c \
+		taskpool_test.c time_test.c timer_test.c \
+		tcp_test.c \
+		tcp_quota_test.c \
+		tcpdns_test.c \
+		tlsdns_test.c \
+		udp_test.c
 
 SUBDIRS =
 TARGETS =	aes_test@EXEEXT@ buffer_test@EXEEXT@ \
@@ -47,9 +53,14 @@ TARGETS =	aes_test@EXEEXT@ buffer_test@EXEEXT@ \
 		netaddr_test@EXEEXT@ parse_test@EXEEXT@ pool_test@EXEEXT@ \
 		quota_test@EXEEXT@ radix_test@EXEEXT@ \
 		random_test@EXEEXT@ regex_test@EXEEXT@ result_test@EXEEXT@ \
-		safe_test@EXEEXT@ siphash_test@EXEEXT@ sockaddr_test@EXEEXT@ socket_test@EXEEXT@ \
+		safe_test@EXEEXT@ siphash_test@EXEEXT@ sockaddr_test@EXEEXT@ \
 		socket_test@EXEEXT@ symtab_test@EXEEXT@ task_test@EXEEXT@ \
-		taskpool_test@EXEEXT@ time_test@EXEEXT@ timer_test@EXEEXT@
+		taskpool_test@EXEEXT@ time_test@EXEEXT@ timer_test@EXEEXT@ \
+		tcp_test@EXEEXT@ \
+		tcp_quota_test@EXEEXT@ \
+		tcpdns_test@EXEEXT@ \
+		tlsdns_test@EXEEXT@ \
+		udp_test@EXEEXT@
 
 @BIND9_MAKE_RULES@
 
@@ -193,6 +204,26 @@ taskpool_test@EXEEXT@: taskpool_test.@O@ isctest.@O@ ${ISCDEPLIBS}
 		${LDFLAGS} -o $@ taskpool_test.@O@ isctest.@O@ \
 		${ISCLIBS} ${LIBS}
 
+tcp_test@EXEEXT@: tcp_test.@O@ isctest.@O@ ${ISCDEPLIBS}
+	${LIBTOOL_MODE_LINK} ${PURIFY} ${CC} ${CFLAGS} \
+		${LDFLAGS} -o $@ tcp_test.@O@ isctest.@O@ \
+		${ISCLIBS} ${LIBS} ${LIBUV_LIBS}
+
+tcp_quota_test@EXEEXT@: tcp_quota_test.@O@ isctest.@O@ ${ISCDEPLIBS}
+	${LIBTOOL_MODE_LINK} ${PURIFY} ${CC} ${CFLAGS} \
+		${LDFLAGS} -o $@ tcp_quota_test.@O@ isctest.@O@ \
+		${ISCLIBS} ${LIBS} ${LIBUV_LIBS}
+
+tcpdns_test@EXEEXT@: tcpdns_test.@O@ isctest.@O@ ${ISCDEPLIBS}
+	${LIBTOOL_MODE_LINK} ${PURIFY} ${CC} ${CFLAGS} \
+		${LDFLAGS} -o $@ tcpdns_test.@O@ isctest.@O@ \
+		${ISCLIBS} ${LIBS} ${LIBUV_LIBS}
+
+tlsdns_test@EXEEXT@: tlsdns_test.@O@ isctest.@O@ ${ISCDEPLIBS}
+	${LIBTOOL_MODE_LINK} ${PURIFY} ${CC} ${CFLAGS} \
+		${LDFLAGS} -o $@ tlsdns_test.@O@ isctest.@O@ \
+		${ISCLIBS} ${LIBS} ${LIBUV_LIBS} ${OPENSSL_LIBS}
+
 time_test@EXEEXT@: time_test.@O@ ${ISCDEPLIBS}
 	${LIBTOOL_MODE_LINK} ${PURIFY} ${CC} ${CFLAGS} \
 		${LDFLAGS} -o $@ time_test.@O@ \
@@ -202,6 +233,11 @@ timer_test@EXEEXT@: timer_test.@O@ isctest.@O@ ${ISCDEPLIBS}
 	${LIBTOOL_MODE_LINK} ${PURIFY} ${CC} ${CFLAGS} \
 		${LDFLAGS} -o $@ timer_test.@O@ isctest.@O@ \
 		${ISCLIBS} ${LIBS}
+
+udp_test@EXEEXT@: udp_test.@O@ isctest.@O@ ${ISCDEPLIBS}
+	${LIBTOOL_MODE_LINK} ${PURIFY} ${CC} ${CFLAGS} \
+		${LDFLAGS} -o $@ udp_test.@O@ isctest.@O@ \
+		${ISCLIBS} ${LIBS} ${LIBUV_LIBS}
 
 unit::
 	sh ${top_builddir}/unit/unittest.sh

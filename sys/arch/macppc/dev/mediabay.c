@@ -1,4 +1,4 @@
-/*	$NetBSD: mediabay.c,v 1.22 2011/07/26 08:36:02 macallan Exp $	*/
+/*	$NetBSD: mediabay.c,v 1.25 2021/04/24 23:36:41 thorpej Exp $	*/
 
 /*-
  * Copyright (C) 1999 Tsubai Masanari.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mediabay.c,v 1.22 2011/07/26 08:36:02 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mediabay.c,v 1.25 2021/04/24 23:36:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -132,7 +132,7 @@ mediabay_attach(device_t parent, device_t self, void *aux)
 	irq = ca->ca_intr[0];
 	itype = IST_EDGE;
 
-	if (of_compatible(ca->ca_node, mediabay_keylargo) != -1) {
+	if (of_compatible(ca->ca_node, mediabay_keylargo)) {
 		sc->sc_type = MB_CONTROLLER_KEYLARGO;
 		sc->sc_fcr = sc->sc_addr + 2;
 	} else {
@@ -145,7 +145,8 @@ mediabay_attach(device_t parent, device_t self, void *aux)
 
 	printf(" irq %d %s\n", irq, intr_typename(itype));
 
-	intr_establish(irq, itype, IPL_BIO, mediabay_intr, sc);
+	intr_establish_xname(irq, itype, IPL_BIO, mediabay_intr, sc,
+	    device_xname(self));
 
 	sc->sc_content = NULL;
 
@@ -242,7 +243,9 @@ mediabay_attach_content(struct mediabay_softc *sc)
 		ca.ca_reg = reg;
 		ca.ca_intr = intr;
 
-		content = config_found(sc->sc_dev, &ca, mediabay_print);
+		content = config_found(sc->sc_dev, &ca, mediabay_print,
+		    CFARG_DEVHANDLE, devhandle_from_of(child),
+		    CFARG_EOL);
 		if (content) {
 			sc->sc_content = content;
 			return;

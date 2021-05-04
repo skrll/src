@@ -1,11 +1,11 @@
-/*	$NetBSD: region.h,v 1.3 2020/05/24 19:46:26 christos Exp $	*/
+/*	$NetBSD: region.h,v 1.5 2021/04/05 11:27:03 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -55,7 +55,7 @@ struct isc_consttextregion {
 		INSIST(_r->length >= _l); \
 		_r->base += _l;           \
 		_r->length -= _l;         \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define isc_textregion_consume(r, l)        \
 	do {                                \
@@ -64,7 +64,7 @@ struct isc_consttextregion {
 		INSIST(_r->length >= _l);   \
 		_r->base += _l;             \
 		_r->length -= _l;           \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define isc_constregion_consume(r, l)        \
 	do {                                 \
@@ -73,7 +73,7 @@ struct isc_consttextregion {
 		INSIST(_r->length >= _l);    \
 		_r->base += _l;              \
 		_r->length -= _l;            \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 /*@}*/
 
 ISC_LANG_BEGINDECLS

@@ -1,4 +1,4 @@
-/*	$NetBSD: targ.c,v 1.155 2020/12/12 00:05:05 rillig Exp $	*/
+/*	$NetBSD: targ.c,v 1.168 2021/04/03 12:01:00 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -93,7 +93,7 @@
  *	Targ_FindList	Given a list of names, find nodes for all
  *			of them, creating them as necessary.
  *
- *	Targ_Precious	Return TRUE if the target is precious and
+ *	Targ_Precious	Return true if the target is precious and
  *			should not be removed if we are interrupted.
  *
  *	Targ_Propagate	Propagate information between related nodes.
@@ -113,7 +113,7 @@
 #include "dir.h"
 
 /*	"@(#)targ.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: targ.c,v 1.155 2020/12/12 00:05:05 rillig Exp $");
+MAKE_RCSID("$NetBSD: targ.c,v 1.168 2021/04/03 12:01:00 rillig Exp $");
 
 /*
  * All target nodes that appeared on the left-hand side of one of the
@@ -243,14 +243,14 @@ GNode_Free(void *gnp)
 	 * by this node.
 	 *
 	 * XXX: For the nodes that represent targets or sources (and not
-	 * VAR_GLOBAL), it should be safe to free the variables as well,
+	 * SCOPE_GLOBAL), it should be safe to free the variables as well,
 	 * since each node manages the memory for all its variables itself.
 	 *
-	 * XXX: The GNodes that are only used as variable contexts (VAR_CMD,
-	 * VAR_GLOBAL, VAR_INTERNAL) are not freed at all (see Var_End, where
-	 * they are not mentioned).  These might be freed at all, if their
-	 * variable values are indeed not used anywhere else (see Trace_Init
-	 * for the only suspicious use).
+	 * XXX: The GNodes that are only used as variable scopes (SCOPE_CMD,
+	 * SCOPE_GLOBAL, SCOPE_INTERNAL) are not freed at all (see Var_End,
+	 * where they are not mentioned).  These might be freed at all, if
+	 * their variable values are indeed not used anywhere else (see
+	 * Trace_Init for the only suspicious use).
 	 */
 	HashTable_Done(&gn->vars);
 
@@ -283,7 +283,7 @@ Targ_FindNode(const char *name)
 GNode *
 Targ_GetNode(const char *name)
 {
-	Boolean isNew;
+	bool isNew;
 	HashEntry *he = HashTable_CreateEntry(&allTargetsByName, name, &isNew);
 	if (!isNew)
 		return HashEntry_Get(he);
@@ -305,7 +305,7 @@ GNode *
 Targ_NewInternalNode(const char *name)
 {
 	GNode *gn = GNode_New(name);
-	Var_Append(".ALLTARGETS", name, VAR_GLOBAL);
+	Global_Append(".ALLTARGETS", name);
 	Lst_Append(&allTargets, gn);
 	DEBUG1(TARG, "Adding \"%s\" to all targets.\n", gn->name);
 	if (doing_depend)
@@ -317,7 +317,8 @@ Targ_NewInternalNode(const char *name)
  * Return the .END node, which contains the commands to be run when
  * everything else has been made.
  */
-GNode *Targ_GetEndNode(void)
+GNode *
+Targ_GetEndNode(void)
 {
 	/*
 	 * Save the node locally to avoid having to search for it all
@@ -346,7 +347,7 @@ Targ_FindList(GNodeList *gns, StringList *names)
 }
 
 /* See if the given target is precious. */
-Boolean
+bool
 Targ_Precious(const GNode *gn)
 {
 	/* XXX: Why are '::' targets precious? */
@@ -400,18 +401,16 @@ Targ_PrintCmds(GNode *gn)
 
 /*
  * Format a modification time in some reasonable way and return it.
- * The time is placed in a static area, so it is overwritten with each call.
+ * The formatted time is placed in a static area, so it is overwritten
+ * with each call.
  */
-char *
+const char *
 Targ_FmtTime(time_t tm)
 {
-	struct tm *parts;
 	static char buf[128];
 
-	/* TODO: Add special case for 0, which often means ENOENT, to make it
-	 * independent from time zones. */
-	parts = localtime(&tm);
-	(void)strftime(buf, sizeof buf, "%k:%M:%S %b %d, %Y", parts);
+	struct tm *parts = localtime(&tm);
+	(void)strftime(buf, sizeof buf, "%H:%M:%S %b %d, %Y", parts);
 	return buf;
 }
 
@@ -451,8 +450,8 @@ Targ_PrintType(int type)
 	}
 }
 
-static const char *
-made_name(GNodeMade made)
+const char *
+GNodeMade_Name(GNodeMade made)
 {
 	switch (made) {
 	case UNMADE:    return "unmade";
@@ -506,16 +505,16 @@ Targ_PrintNode(GNode *gn, int pass)
 			if (gn->mtime != 0) {
 				debug_printf("# last modified %s: %s\n",
 				    Targ_FmtTime(gn->mtime),
-				    made_name(gn->made));
+				    GNodeMade_Name(gn->made));
 			} else if (gn->made != UNMADE) {
-				debug_printf("# non-existent (maybe): %s\n",
-				    made_name(gn->made));
+				debug_printf("# nonexistent (maybe): %s\n",
+				    GNodeMade_Name(gn->made));
 			} else
 				debug_printf("# unmade\n");
 		}
 		PrintNodeNamesLine("implicit parents", &gn->implicitParents);
 	} else {
-		if (gn->unmade)
+		if (gn->unmade != 0)
 			debug_printf("# %d unmade children\n", gn->unmade);
 	}
 
@@ -578,10 +577,10 @@ Targ_PrintGraph(int pass)
 	PrintOnlySources();
 
 	debug_printf("#*** Global Variables:\n");
-	Var_Dump(VAR_GLOBAL);
+	Var_Dump(SCOPE_GLOBAL);
 
 	debug_printf("#*** Command-line Variables:\n");
-	Var_Dump(VAR_CMDLINE);
+	Var_Dump(SCOPE_CMDLINE);
 
 	debug_printf("\n");
 	Dir_PrintDirectories();

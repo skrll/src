@@ -1,4 +1,4 @@
-/* $NetBSD: dwiic_fdt.c,v 1.1 2018/09/26 19:06:33 jakllsch Exp $ */
+/* $NetBSD: dwiic_fdt.c,v 1.4 2021/01/27 03:10:21 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dwiic_fdt.c,v 1.1 2018/09/26 19:06:33 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dwiic_fdt.c,v 1.4 2021/01/27 03:10:21 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -41,9 +41,9 @@ __KERNEL_RCSID(0, "$NetBSD: dwiic_fdt.c,v 1.1 2018/09/26 19:06:33 jakllsch Exp $
 #include <dev/fdt/fdtvar.h>
 #include <dev/ic/dwiic_var.h>
 
-static const char * const compatible[] = {
-	"snps,designware-i2c",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "snps,designware-i2c" },
+	DEVICE_COMPAT_EOL
 };
 
 struct dwiic_fdt_softc {
@@ -52,11 +52,6 @@ struct dwiic_fdt_softc {
 
 static int	dwiic_fdt_match(device_t, cfdata_t, void *);
 static void	dwiic_fdt_attach(device_t, device_t, void *);
-static i2c_tag_t dwiic_fdt_i2c_get_tag(device_t);
-
-struct fdtbus_i2c_controller_func dwiic_fdt_i2c_funcs = {
-	.get_tag = dwiic_fdt_i2c_get_tag,
-};
 
 CFATTACH_DECL_NEW(dwiic_fdt, sizeof(struct dwiic_fdt_softc),
     dwiic_fdt_match, dwiic_fdt_attach, dwiic_detach, NULL);
@@ -66,7 +61,7 @@ dwiic_fdt_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 void
@@ -103,8 +98,8 @@ dwiic_fdt_attach(device_t parent, device_t self, void *aux)
 	}
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
-	sc->sc_dwiic.sc_ih = fdtbus_intr_establish(phandle, 0, IPL_VM, 0,
-		dwiic_intr, &sc->sc_dwiic);
+	sc->sc_dwiic.sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_VM, 0,
+		dwiic_intr, &sc->sc_dwiic, device_xname(self));
 	if (sc->sc_dwiic.sc_ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt\n");
 		goto out;
@@ -114,18 +109,10 @@ dwiic_fdt_attach(device_t parent, device_t self, void *aux)
 
 	pmf_device_register(self, dwiic_suspend, dwiic_resume);
 
-	fdtbus_register_i2c_controller(self, phandle, &dwiic_fdt_i2c_funcs);
+	fdtbus_register_i2c_controller(&sc->sc_dwiic.sc_i2c_tag, phandle);
 
 	fdtbus_attach_i2cbus(self, phandle, &sc->sc_dwiic.sc_i2c_tag, iicbus_print);
 
 out:
 	return;
-}
-
-static i2c_tag_t
-dwiic_fdt_i2c_get_tag(device_t dev)
-{
-	struct dwiic_fdt_softc * const sc = device_private(dev);
-
-	return &sc->sc_dwiic.sc_i2c_tag;
 }

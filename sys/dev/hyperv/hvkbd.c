@@ -1,4 +1,4 @@
-/*	$NetBSD: hvkbd.c,v 1.6 2019/11/22 12:40:07 nonaka Exp $	*/
+/*	$NetBSD: hvkbd.c,v 1.8 2021/04/24 23:36:54 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2017 Microsoft Corp.
@@ -36,7 +36,7 @@
 #endif /* _KERNEL_OPT */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hvkbd.c,v 1.6 2019/11/22 12:40:07 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hvkbd.c,v 1.8 2021/04/24 23:36:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -237,7 +237,7 @@ hvkbd_attach(device_t parent, device_t self, void *aux)
 	a.keymap = &hvkbd_keymapdata;
 	a.accessops = &hvkbd_accessops;
 	a.accesscookie = sc;
-	sc->sc_wskbddev = config_found(self, &a, wskbddevprint);
+	sc->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARG_EOL);
 	return;
 
 free_buf:
@@ -350,7 +350,8 @@ hvkbd_connect(struct hvkbd_softc *sc)
 			hvkbd_intr(sc);
 			splx(s);
 		} else
-			tsleep(sc, PRIBIO | PCATCH, "hvkbdcon", mstohz(1));
+			tsleep(sc, PRIBIO | PCATCH, "hvkbdcon",
+			    uimax(1, mstohz(1)));
 	} while (--timo > 0 && sc->sc_connected == 0);
 
 	if (timo == 0 && sc->sc_connected == 0) {

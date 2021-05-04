@@ -1,4 +1,4 @@
-/*	$NetBSD: exynos_i2c.c,v 1.19 2020/03/17 21:24:30 skrll Exp $ */
+/*	$NetBSD: exynos_i2c.c,v 1.22 2021/03/14 08:16:57 skrll Exp $ */
 
 /*
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_arm_debug.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: exynos_i2c.c,v 1.19 2020/03/17 21:24:30 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: exynos_i2c.c,v 1.22 2021/03/14 08:16:57 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -83,12 +83,6 @@ static int	exynos_i2c_wait(struct exynos_i2c_softc *, int);
 static int exynos_i2c_match(device_t, cfdata_t, void *);
 static void exynos_i2c_attach(device_t, device_t, void *);
 
-static i2c_tag_t exynos_i2c_get_tag(device_t);
-
-struct fdtbus_i2c_controller_func exynos_i2c_funcs = {
-	.get_tag = exynos_i2c_get_tag
-};
-
 CFATTACH_DECL_NEW(exynos_i2c, sizeof(struct exynos_i2c_softc),
     exynos_i2c_match, exynos_i2c_attach, NULL, NULL);
 
@@ -118,13 +112,17 @@ CFATTACH_DECL_NEW(exynos_i2c, sizeof(struct exynos_i2c_softc),
 
 #define READBIT     (1<<7)
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "samsung,s3c2440-i2c" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 exynos_i2c_match(device_t self, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = { "samsung,s3c2440-i2c", NULL };
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -161,8 +159,8 @@ exynos_i2c_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_VM,
-	    FDT_INTR_MPSAFE, exynos_i2c_intr, sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_VM,
+	    FDT_INTR_MPSAFE, exynos_i2c_intr, sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt on %s\n",
 		    intrstr);
@@ -178,17 +176,9 @@ exynos_i2c_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ic.ic_read_byte   = exynos_i2c_read_byte;
 	sc->sc_ic.ic_write_byte  = exynos_i2c_write_byte;
 
-	fdtbus_register_i2c_controller(self, phandle, &exynos_i2c_funcs);
+	fdtbus_register_i2c_controller(&sc->sc_ic, phandle);
 
 	fdtbus_attach_i2cbus(self, phandle, &sc->sc_ic, iicbus_print);
-}
-
-static i2c_tag_t
-exynos_i2c_get_tag(device_t dev)
-{
-	struct exynos_i2c_softc * const sc = device_private(dev);
-
-	return &sc->sc_ic;
 }
 
 static int

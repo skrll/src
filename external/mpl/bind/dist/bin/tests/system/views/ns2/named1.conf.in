@@ -37,7 +37,15 @@ zone "." {
 };
 
 zone "example" {
-	type master;
+	type primary;
 	file "example.db";
 	allow-update { any; };
+};
+
+zone "inline" {
+	type primary;
+	file "external/inline.db";
+	key-directory "external";
+	auto-dnssec maintain;
+	inline-signing yes;
 };

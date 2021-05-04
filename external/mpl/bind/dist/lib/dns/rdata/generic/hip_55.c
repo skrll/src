@@ -1,11 +1,11 @@
-/*	$NetBSD: hip_55.c,v 1.5 2020/05/24 19:46:24 christos Exp $	*/
+/*	$NetBSD: hip_55.c,v 1.7 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -167,7 +167,9 @@ totext_hip(ARGS_TOTEXT) {
 	region.length = key_len;
 	RETERR(isc_base64_totext(&region, 1, "", target));
 	region.length = length - key_len;
-	RETERR(str_totext(tctx->linebreak, target));
+	if (region.length > 0) {
+		RETERR(str_totext(tctx->linebreak, target));
+	}
 
 	/*
 	 * Rendezvous Servers.
@@ -194,6 +196,7 @@ fromwire_hip(ARGS_FROMWIRE) {
 	dns_name_t name;
 	uint8_t hit_len;
 	uint16_t key_len;
+	size_t len;
 
 	REQUIRE(type == dns_rdatatype_hip);
 
@@ -216,12 +219,13 @@ fromwire_hip(ARGS_FROMWIRE) {
 		RETERR(DNS_R_FORMERR);
 	}
 	isc_region_consume(&region, 2);
-	if (region.length < (unsigned)(hit_len + key_len)) {
+	len = hit_len + key_len;
+	if (len > region.length) {
 		RETERR(DNS_R_FORMERR);
 	}
 
-	RETERR(mem_tobuffer(target, rr.base, 4 + hit_len + key_len));
-	isc_buffer_forward(source, 4 + hit_len + key_len);
+	RETERR(mem_tobuffer(target, rr.base, 4 + len));
+	isc_buffer_forward(source, 4 + len);
 
 	dns_decompress_setmethods(dctx, DNS_COMPRESS_NONE);
 	while (isc_buffer_activelength(source) > 0) {
@@ -443,7 +447,7 @@ dns_rdata_hip_next(dns_rdata_hip_t *hip) {
 	dns_name_fromregion(&name, &region);
 	hip->offset += name.length;
 	INSIST(hip->offset <= hip->servers_len);
-	return (ISC_R_SUCCESS);
+	return (hip->offset < hip->servers_len ? ISC_R_SUCCESS : ISC_R_NOMORE);
 }
 
 void

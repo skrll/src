@@ -1,4 +1,4 @@
-/*	$NetBSD: ofisa.c,v 1.26 2018/09/03 16:29:32 riastradh Exp $	*/
+/*	$NetBSD: ofisa.c,v 1.33 2021/04/30 02:13:15 thorpej Exp $	*/
 
 /*
  * Copyright 1997, 1998
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofisa.c,v 1.26 2018/09/03 16:29:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofisa.c,v 1.33 2021/04/30 02:13:15 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -54,14 +54,17 @@ __KERNEL_RCSID(0, "$NetBSD: ofisa.c,v 1.26 2018/09/03 16:29:32 riastradh Exp $")
 static int	ofisamatch(device_t, cfdata_t, void *);
 static void	ofisaattach(device_t, device_t, void *);
 
+static int	ofisa_subclass_match(device_t, cfdata_t, void *);
+
 CFATTACH_DECL_NEW(ofisa, 0,
     ofisamatch, ofisaattach, NULL, NULL);
 
+CFATTACH_DECL_NEW(ofisa_subclass, 0,
+    ofisa_subclass_match, ofisaattach, NULL, NULL);
+
 extern struct cfdriver ofisa_cd;
 
-static int	ofisaprint(void *, const char *);
-
-static int
+int
 ofisaprint(void *aux, const char *pnp)
 {
 	struct ofbus_attach_args *oba = aux;
@@ -75,22 +78,31 @@ ofisaprint(void *aux, const char *pnp)
 	return UNCONF;
 }
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "pnpPNP,a00" },
+	DEVICE_COMPAT_EOL
+};
+
 int
 ofisamatch(device_t parent, cfdata_t cf, void *aux)
 {
 	struct ofbus_attach_args *oba = aux;
-	static const char *const compatible_strings[] = { "pnpPNP,a00", NULL };
-	int rv = 0;
+	int rv;
 
-	if (of_compatible(oba->oba_phandle, compatible_strings) != -1)
-		rv = 5;
-
+	rv = of_compatible_match(oba->oba_phandle, compat_data) ? 5 : 0;
 #ifdef _OFISA_MD_MATCH
 	if (!rv)
 		rv = ofisa_md_match(parent, cf, aux);
 #endif
 
 	return (rv);
+}
+
+int
+ofisa_subclass_match(device_t parent, cfdata_t cf, void *aux)
+{
+	/* We're attaching "ofisa" to something that knows what it's doing. */
+	return 5;
 }
 
 void
@@ -122,14 +134,16 @@ ofisaattach(device_t parent, device_t self, void *aux)
 
 		memset(&aa, 0, sizeof aa);
 
-		aa.oba.oba_busname = "ofw";			/* XXX */
+		aa.oba.oba_busname = "ofisa";
 		aa.oba.oba_phandle = child;
 		aa.iot = iba.iba_iot;
 		aa.memt = iba.iba_memt;
 		aa.dmat = iba.iba_dmat;
 		aa.ic = iba.iba_ic;
 
-		config_found(self, &aa, ofisaprint);
+		config_found(self, &aa, ofisaprint,
+		    CFARG_DEVHANDLE, devhandle_from_of(child),
+		    CFARG_EOL);
 	}
 }
 

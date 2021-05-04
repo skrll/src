@@ -1,4 +1,4 @@
-/*      $NetBSD: sv.c,v 1.58 2020/04/19 08:18:19 isaki Exp $ */
+/*      $NetBSD: sv.c,v 1.60 2021/04/24 23:36:57 thorpej Exp $ */
 /*      $OpenBSD: sv.c,v 1.2 1998/07/13 01:50:15 csapuntz Exp $ */
 
 /*
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sv.c,v 1.58 2020/04/19 08:18:19 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sv.c,v 1.60 2021/04/24 23:36:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -449,7 +449,7 @@ sv_attach(device_t parent, device_t self, void *aux)
 	arg.type = AUDIODEV_TYPE_OPL;
 	arg.hwif = 0;
 	arg.hdl = 0;
-	(void)config_found(self, &arg, audioprint);
+	(void)config_found(self, &arg, audioprint, CFARG_EOL);
 
 	sc->sc_pa = *pa;	/* for deferred setup */
 	config_defer(self, sv_defer);
@@ -1236,6 +1236,7 @@ sv_mixer_get_port(void *addr, mixer_ctrl_t *cp)
 			}
 		}
 
+		mutex_spin_exit(&sc->sc_intr_lock);
 		return error;
 	}
 

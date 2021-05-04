@@ -1,4 +1,4 @@
-/*	$NetBSD: mem.c,v 1.8 2020/02/10 04:54:01 christos Exp $	*/
+/*	$NetBSD: mem.c,v 1.12 2021/04/18 22:51:24 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: mem.c,v 1.8 2020/02/10 04:54:01 christos Exp $");
+__RCSID("$NetBSD: mem.c,v 1.12 2021/04/18 22:51:24 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -56,7 +56,7 @@ xmalloc(size_t s)
 
 	if ((p = malloc(s)) == NULL)
 		nomem();
-	return (p);
+	return p;
 }
 
 void *
@@ -66,7 +66,7 @@ xcalloc(size_t n, size_t s)
 
 	if ((p = calloc(n, s)) == NULL)
 		nomem();
-	return (p);
+	return p;
 }
 
 void *
@@ -79,7 +79,7 @@ xrealloc(void *p, size_t s)
 		nomem();
 	}
 	p = n;
-	return (p);
+	return p;
 }
 
 char *
@@ -89,10 +89,10 @@ xstrdup(const char *s)
 
 	if ((s2 = strdup(s)) == NULL)
 		nomem();
-	return (s2);
+	return s2;
 }
 
-void
+void __attribute__((noreturn))
 nomem(void)
 {
 

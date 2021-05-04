@@ -1,11 +1,11 @@
-/*	$NetBSD: peer.c,v 1.4 2020/05/24 19:46:23 christos Exp $	*/
+/*	$NetBSD: peer.c,v 1.8 2021/04/05 11:36:55 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -216,8 +216,6 @@ dns_peer_newprefix(isc_mem_t *mem, const isc_netaddr_t *addr,
 
 	peer = isc_mem_get(mem, sizeof(*peer));
 
-#ifndef __lint__
-// XXX: bug
 	*peer = (dns_peer_t){
 		.magic = DNS_PEER_MAGIC,
 		.address = *addr,
@@ -225,7 +223,6 @@ dns_peer_newprefix(isc_mem_t *mem, const isc_netaddr_t *addr,
 		.mem = mem,
 		.transfer_format = dns_one_answer,
 	};
-#endif
 
 	isc_refcount_init(&peer->refs, 1);
 

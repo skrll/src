@@ -1,4 +1,4 @@
-/*	$NetBSD: nvme.c,v 1.53 2020/12/04 23:03:11 kardel Exp $	*/
+/*	$NetBSD: nvme.c,v 1.55 2021/04/24 23:36:55 thorpej Exp $	*/
 /*	$OpenBSD: nvme.c,v 1.49 2016/04/18 05:59:50 dlg Exp $ */
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvme.c,v 1.53 2020/12/04 23:03:11 kardel Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvme.c,v 1.55 2021/04/24 23:36:55 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -41,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: nvme.c,v 1.53 2020/12/04 23:03:11 kardel Exp $");
 #include <dev/ic/nvmeio.h>
 
 #include "ioconf.h"
+#include "locators.h"
 
 #define	B4_CHK_RDY_DELAY_MS	2300	/* workaround controller bug */
 
@@ -447,7 +448,7 @@ nvme_attach(struct nvme_softc *sc)
 	/* probe subdevices */
 	sc->sc_namespaces = kmem_zalloc(sizeof(*sc->sc_namespaces) * sc->sc_nn,
 	    KM_SLEEP);
-	nvme_rescan(sc->sc_dev, "nvme", &i);
+	nvme_rescan(sc->sc_dev, NULL, NULL);
 
 	return 0;
 
@@ -467,7 +468,7 @@ free_admin_q:
 }
 
 int
-nvme_rescan(device_t self, const char *attr, const int *flags)
+nvme_rescan(device_t self, const char *ifattr, const int *locs)
 {
 	struct nvme_softc *sc = device_private(self);
 	struct nvme_attach_args naa;
@@ -475,7 +476,7 @@ nvme_rescan(device_t self, const char *attr, const int *flags)
 	struct nvme_namespace *ns;
 	uint64_t cap;
 	int ioq_entries = nvme_ioq_size;
-	int i;
+	int i, mlocs[NVMECF_NLOCS];
 	int error;
 
 	cap = nvme_read8(sc, NVME_CAP);
@@ -511,13 +512,18 @@ nvme_rescan(device_t self, const char *attr, const int *flags)
 			continue;
 		}
 
+		mlocs[NVMECF_NSID] = i;
+
 		memset(&naa, 0, sizeof(naa));
 		naa.naa_nsid = i;
 		naa.naa_qentries = (ioq_entries - 1) * sc->sc_nq;
 		naa.naa_maxphys = sc->sc_mdts;
 		naa.naa_typename = sc->sc_modelname;
-		sc->sc_namespaces[i - 1].dev = config_found(sc->sc_dev, &naa,
-		    nvme_print);
+		sc->sc_namespaces[i - 1].dev =
+		    config_found(sc->sc_dev, &naa, nvme_print,
+				 CFARG_SUBMATCH, config_stdsubmatch,
+				 CFARG_LOCATORS, mlocs,
+				 CFARG_EOL);
 	}
 	return 0;
 }
@@ -1925,11 +1931,13 @@ nvme_dmamem_alloc(struct nvme_softc *sc, size_t size)
 	if (bus_dmamem_map(sc->sc_dmat, &ndm->ndm_seg, nsegs, size,
 	    &ndm->ndm_kva, BUS_DMA_WAITOK) != 0)
 		goto free;
-	memset(ndm->ndm_kva, 0, size);
 
 	if (bus_dmamap_load(sc->sc_dmat, ndm->ndm_map, ndm->ndm_kva, size,
 	    NULL, BUS_DMA_WAITOK) != 0)
 		goto unmap;
+
+	memset(ndm->ndm_kva, 0, size);
+	bus_dmamap_sync(sc->sc_dmat, ndm->ndm_map, 0, size, BUS_DMASYNC_PREREAD);
 
 	return ndm;
 

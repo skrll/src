@@ -1,4 +1,4 @@
-/*	$NetBSD: diofb.c,v 1.4 2014/03/24 19:42:58 christos Exp $	*/
+/*	$NetBSD: diofb.c,v 1.6 2021/04/24 23:36:37 thorpej Exp $	*/
 /*	$OpenBSD: diofb.c,v 1.18 2010/12/26 15:40:59 miod Exp $	*/
 
 /*
@@ -145,6 +145,15 @@ diofb_fbinquire(struct diofb *fb, int scode, struct diofbreg *fbr)
 		fb->dwidth = fb->fbwidth;
 	if (fb->dheight > fb->fbheight)
 		fb->dheight = fb->fbheight;
+
+	/*
+	 * Some displays, such as the HP332 and HP340 internal video
+	 * appear to return a display width of 1024 instead of 512.
+	 */
+	if (fbr->num_planes == 1 || fbr->num_planes == 4) {
+		if (fb->dwidth == 1024 && fb->dheight == 400)
+			fb->dwidth = 512;
+	}
 
 	fb->planes = fbr->num_planes;
 	if (fb->planes > 8)
@@ -325,7 +334,7 @@ diofb_end_attach(device_t self, struct wsdisplay_accessops *accessops,
 	waa.accessops = accessops;
 	waa.accesscookie = fb;
 
-	config_found(self, &waa, wsemuldisplaydevprint);
+	config_found(self, &waa, wsemuldisplaydevprint, CFARG_EOL);
 }
 
 /*

@@ -1,4 +1,4 @@
-/*	$NetBSD: l2cc_fdt.c,v 1.2 2019/01/19 20:56:03 jmcneill Exp $	*/
+/*	$NetBSD: l2cc_fdt.c,v 1.4 2021/04/24 23:36:26 thorpej Exp $	*/
 /*
  * Copyright (c) 2018  Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: l2cc_fdt.c,v 1.2 2019/01/19 20:56:03 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: l2cc_fdt.c,v 1.4 2021/04/24 23:36:26 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -46,16 +46,17 @@ static void l2cc_fdt_attach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(l2cc_fdt, 0, l2cc_fdt_match, l2cc_fdt_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "arm,pl310-cache" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 l2cc_fdt_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"arm,pl310-cache",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_compatible(faa->faa_phandle, compatible) >= 0;
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -87,5 +88,5 @@ l2cc_fdt_attach(device_t parent, device_t self, void *aux)
 		.mpcaa_off2 = 0,
 	};
 
-	config_found(self, &mpcaa, NULL);
+	config_found(self, &mpcaa, NULL, CFARG_EOL);
 }

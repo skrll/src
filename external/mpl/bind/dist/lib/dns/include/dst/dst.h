@@ -1,11 +1,11 @@
-/*	$NetBSD: dst.h,v 1.5 2020/05/24 19:46:23 christos Exp $	*/
+/*	$NetBSD: dst.h,v 1.7 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -135,7 +135,8 @@ typedef enum dst_key_state {
 #define DST_TIME_ZRRSIG	     10
 #define DST_TIME_KRRSIG	     11
 #define DST_TIME_DS	     12
-#define DST_MAX_TIMES	     12
+#define DST_TIME_DSDELETE    13
+#define DST_MAX_TIMES	     13
 
 /* Numeric metadata definitions */
 #define DST_NUM_PREDECESSOR 0
@@ -564,7 +565,7 @@ dst_key_privatefrombuffer(dst_key_t *key, isc_buffer_t *buffer);
  *\li	If successful, key will contain a valid private key.
  */
 
-gss_ctx_id_t
+dns_gss_ctx_id_t
 dst_key_getgssctx(const dst_key_t *key);
 /*%<
  * Returns the opaque key data.
@@ -578,8 +579,8 @@ dst_key_getgssctx(const dst_key_t *key);
  */
 
 isc_result_t
-dst_key_fromgssapi(const dns_name_t *name, gss_ctx_id_t gssctx, isc_mem_t *mctx,
-		   dst_key_t **keyp, isc_region_t *intoken);
+dst_key_fromgssapi(const dns_name_t *name, dns_gss_ctx_id_t gssctx,
+		   isc_mem_t *mctx, dst_key_t **keyp, isc_region_t *intoken);
 /*%<
  * Converts a GSSAPI opaque context id into a DST key.
  *
@@ -1099,6 +1100,15 @@ bool
 dst_key_isexternal(dst_key_t *key);
 /*%<
  * Check if this is an external key.
+ *
+ * Requires:
+ *	'key' to be valid.
+ */
+
+bool
+dst_key_haskasp(dst_key_t *key);
+/*%<
+ * Check if this key has state (and thus uses KASP).
  *
  * Requires:
  *	'key' to be valid.

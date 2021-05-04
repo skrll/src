@@ -1,4 +1,4 @@
-/*	$NetBSD: uaudio.c,v 1.165 2020/03/14 02:35:33 christos Exp $	*/
+/*	$NetBSD: uaudio.c,v 1.169 2021/02/15 13:39:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 1999, 2012 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.165 2020/03/14 02:35:33 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.169 2021/02/15 13:39:18 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -343,6 +343,8 @@ Static int	uaudio_trigger_input
 	 const audio_params_t *);
 Static int	uaudio_halt_in_dma(void *);
 Static int	uaudio_halt_out_dma(void *);
+Static void	uaudio_halt_in_dma_unlocked(struct uaudio_softc *);
+Static void	uaudio_halt_out_dma_unlocked(struct uaudio_softc *);
 Static int	uaudio_getdev(void *, struct audio_device *);
 Static int	uaudio_mixer_set_port(void *, mixer_ctrl_t *);
 Static int	uaudio_mixer_get_port(void *, mixer_ctrl_t *);
@@ -519,10 +521,13 @@ uaudio_detach(device_t self, int flags)
 	struct uaudio_softc *sc = device_private(self);
 	int rv = 0;
 
+	sc->sc_dying = 1;
+
 	pmf_device_deregister(self);
 
 	/* Wait for outstanding requests to complete. */
-	usbd_delay_ms(sc->sc_udev, UAUDIO_NCHANBUFS * UAUDIO_NFRAMES);
+	uaudio_halt_out_dma_unlocked(sc);
+	uaudio_halt_in_dma_unlocked(sc);
 
 	if (sc->sc_audiodev != NULL)
 		rv = config_detach(sc->sc_audiodev, flags);
@@ -1541,7 +1546,7 @@ uaudio_process_as(struct uaudio_softc *sc, const char *tbuf, int *offsp,
 	if (asid->bDescriptorType != UDESC_CS_INTERFACE ||
 	    asid->bDescriptorSubtype != AS_GENERAL)
 		return USBD_INVAL;
-	DPRINTF("asid: bTerminakLink=%d wFormatTag=%d\n",
+	DPRINTF("asid: bTerminalLink=%d wFormatTag=%d\n",
 		 asid->bTerminalLink, UGETW(asid->wFormatTag));
 	offs += asid->bLength;
 	if (offs > size)
@@ -1781,7 +1786,7 @@ uaudio_identify_as(struct uaudio_softc *sc,
 			     id->bNumEndpoints);
 			break;
 		}
-		id = uaudio_find_iface(tbuf, size, &offs,UISUBCLASS_AUDIOSTREAM);
+		id = uaudio_find_iface(tbuf, size, &offs, UISUBCLASS_AUDIOSTREAM);
 		if (id == NULL)
 			break;
 	}
@@ -2167,15 +2172,21 @@ uaudio_halt_out_dma(void *addr)
 	DPRINTF("%s", "enter\n");
 
 	mutex_exit(&sc->sc_intr_lock);
+	uaudio_halt_out_dma_unlocked(sc);
+	mutex_enter(&sc->sc_intr_lock);
+
+	return 0;
+}
+
+Static void
+uaudio_halt_out_dma_unlocked(struct uaudio_softc *sc)
+{
 	if (sc->sc_playchan.pipe != NULL) {
 		uaudio_chan_abort(sc, &sc->sc_playchan);
 		uaudio_chan_free_buffers(sc, &sc->sc_playchan);
 		uaudio_chan_close(sc, &sc->sc_playchan);
 		sc->sc_playchan.intr = NULL;
 	}
-	mutex_enter(&sc->sc_intr_lock);
-
-	return 0;
 }
 
 Static int
@@ -2186,15 +2197,21 @@ uaudio_halt_in_dma(void *addr)
 	DPRINTF("%s", "enter\n");
 
 	mutex_exit(&sc->sc_intr_lock);
+	uaudio_halt_in_dma_unlocked(sc);
+	mutex_enter(&sc->sc_intr_lock);
+
+	return 0;
+}
+
+Static void
+uaudio_halt_in_dma_unlocked(struct uaudio_softc *sc)
+{
 	if (sc->sc_recchan.pipe != NULL) {
 		uaudio_chan_abort(sc, &sc->sc_recchan);
 		uaudio_chan_free_buffers(sc, &sc->sc_recchan);
 		uaudio_chan_close(sc, &sc->sc_recchan);
 		sc->sc_recchan.intr = NULL;
 	}
-	mutex_enter(&sc->sc_intr_lock);
-
-	return 0;
 }
 
 Static int
@@ -3003,7 +3020,8 @@ uaudio_set_format(void *addr, int setmode,
 		raltidx = audio_indexof_format(sc->sc_formats, sc->sc_nformats,
 		    AUMODE_RECORD, rec);
 		/* Transfer should have halted */
-		uaudio_chan_init(&sc->sc_recchan, raltidx, rec, 0);
+		uaudio_chan_init(&sc->sc_recchan, raltidx, rec,
+		    UGETW(sc->sc_alts[raltidx].edesc->wMaxPacketSize));
 	}
 
 	if ((setmode & AUMODE_PLAY) && sc->sc_playchan.altidx != -1) {

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.4 2019/05/26 02:49:12 christos Exp $
+# $NetBSD: Makefile,v 1.7 2021/03/15 20:15:36 christos Exp $
 
 .include <bsd.init.mk>
 
@@ -72,6 +72,7 @@ random.c \
 rbtree.c \
 regional.c \
 respip.c \
+rpz.c \
 rrdef.c \
 rrset.c \
 rtt.c \

@@ -1,5 +1,5 @@
-/*	$NetBSD: sftp.c,v 1.30 2020/12/04 18:42:50 christos Exp $	*/
-/* $OpenBSD: sftp.c,v 1.201 2020/08/03 02:43:41 djm Exp $ */
+/*	$NetBSD: sftp.c,v 1.32 2021/04/19 14:40:15 christos Exp $	*/
+/* $OpenBSD: sftp.c,v 1.209 2021/04/03 06:58:30 djm Exp $ */
 
 /*
  * Copyright (c) 2001-2004 Damien Miller <djm@openbsd.org>
@@ -18,7 +18,7 @@
  */
 
 #include "includes.h"
-__RCSID("$NetBSD: sftp.c,v 1.30 2020/12/04 18:42:50 christos Exp $");
+__RCSID("$NetBSD: sftp.c,v 1.32 2021/04/19 14:40:15 christos Exp $");
 
 #include <sys/param.h>	/* MIN MAX */
 #include <sys/types.h>
@@ -57,9 +57,6 @@ __RCSID("$NetBSD: sftp.c,v 1.30 2020/12/04 18:42:50 christos Exp $");
 #include "sftp-client.h"
 #include "fmt_scaled.h"
 
-#define DEFAULT_COPY_BUFLEN	32768	/* Size of buffer for up/download */
-#define DEFAULT_NUM_REQUESTS	256	/* # concurrent outstanding requests */
-
 /* File to read commands from */
 FILE* infile;
 
@@ -69,7 +66,7 @@ int batchmode = 0;
 /* PID of ssh transport process */
 static volatile pid_t sshpid = -1;
 
-/* Suppress diagnositic messages */
+/* Suppress diagnostic messages */
 int quiet = 0;
 
 /* This is set to 0 if the progressmeter is not desired. */
@@ -370,20 +367,6 @@ path_strip(const char *path, const char *strip)
 	return (xstrdup(path));
 }
 
-static char *
-make_absolute(char *p, const char *pwd)
-{
-	char *abs_str;
-
-	/* Derelativise */
-	if (p && !path_absolute(p)) {
-		abs_str = path_append(pwd, p);
-		free(p);
-		return(abs_str);
-	} else
-		return(p);
-}
-
 static int
 parse_getput_flags(const char *cmd, char **argv, int argc,
     int *aflag, int *fflag, int *pflag, int *rflag)
@@ -593,40 +576,6 @@ parse_no_flags(const char *cmd, char **argv, int argc)
 }
 
 static int
-is_dir(const char *path)
-{
-	struct stat sb;
-
-	/* XXX: report errors? */
-	if (stat(path, &sb) == -1)
-		return(0);
-
-	return(S_ISDIR(sb.st_mode));
-}
-
-static int
-remote_is_dir(struct sftp_conn *conn, const char *path)
-{
-	Attrib *a;
-
-	/* XXX: report errors? */
-	if ((a = do_stat(conn, path, 1)) == NULL)
-		return(0);
-	if (!(a->flags & SSH2_FILEXFER_ATTR_PERMISSIONS))
-		return(0);
-	return(S_ISDIR(a->perm));
-}
-
-/* Check whether path returned from glob(..., GLOB_MARK, ...) is a directory */
-static int
-pathname_is_dir(const char *pathname)
-{
-	size_t l = strlen(pathname);
-
-	return l > 0 && pathname[l - 1] == '/';
-}
-
-static int
 process_get(struct sftp_conn *conn, const char *src, const char *dst,
     const char *pwd, int pflag, int rflag, int resume, int fflag)
 {
@@ -655,7 +604,7 @@ process_get(struct sftp_conn *conn, const char *src, const char *dst,
 	 * If multiple matches then dst must be a directory or
 	 * unspecified.
 	 */
-	if (g.gl_matchc > 1 && dst != NULL && !is_dir(dst)) {
+	if (g.gl_matchc > 1 && dst != NULL && !local_is_dir(dst)) {
 		error("Multiple source paths, but destination "
 		    "\"%s\" is not a directory", dst);
 		err = -1;
@@ -672,7 +621,7 @@ process_get(struct sftp_conn *conn, const char *src, const char *dst,
 		}
 
 		if (g.gl_matchc == 1 && dst) {
-			if (is_dir(dst)) {
+			if (local_is_dir(dst)) {
 				abs_dst = path_append(dst, filename);
 			} else {
 				abs_dst = xstrdup(dst);
@@ -691,7 +640,7 @@ process_get(struct sftp_conn *conn, const char *src, const char *dst,
 		else if (!quiet && !resume)
 			mprintf("Fetching %s to %s\n",
 			    g.gl_pathv[i], abs_dst);
-		if (pathname_is_dir(g.gl_pathv[i]) && (rflag || global_rflag)) {
+		if (globpath_is_dir(g.gl_pathv[i]) && (rflag || global_rflag)) {
 			if (download_dir(conn, g.gl_pathv[i], abs_dst, NULL,
 			    pflag || global_pflag, 1, resume,
 			    fflag || global_fflag) == -1)
@@ -777,14 +726,14 @@ process_put(struct sftp_conn *conn, const char *src, const char *dst,
 		}
 		free(tmp);
 
-                resume |= global_aflag;
+		resume |= global_aflag;
 		if (!quiet && resume)
 			mprintf("Resuming upload of %s to %s\n",
 			    g.gl_pathv[i], abs_dst);
 		else if (!quiet && !resume)
 			mprintf("Uploading %s to %s\n",
 			    g.gl_pathv[i], abs_dst);
-		if (pathname_is_dir(g.gl_pathv[i]) && (rflag || global_rflag)) {
+		if (globpath_is_dir(g.gl_pathv[i]) && (rflag || global_rflag)) {
 			if (upload_dir(conn, g.gl_pathv[i], abs_dst,
 			    pflag || global_pflag, 1, resume,
 			    fflag || global_fflag) == -1)
@@ -930,15 +879,18 @@ sglob_comp(const void *aa, const void *bb)
 	int rmul = sort_flag & LS_REVERSE_SORT ? -1 : 1;
 
 #define NCMP(a,b) (a == b ? 0 : (a < b ? 1 : -1))
-	if (sort_flag & LS_NAME_SORT)
-		return (rmul * strcmp(ap, bp));
 #if 1
 	if (stat(ap, &ass) == -1 || stat(bp, &bss) == -1)
 		return 0;
 #endif
-	else if (sort_flag & LS_TIME_SORT)
-		return (rmul * timespeccmp(&as->st_mtim, &bs->st_mtim, <));
-	else if (sort_flag & LS_SIZE_SORT)
+	if (sort_flag & LS_NAME_SORT)
+		return (rmul * strcmp(ap, bp));
+	else if (sort_flag & LS_TIME_SORT) {
+		if (timespeccmp(&as->st_mtim, &bs->st_mtim, ==))
+			return 0;
+		return timespeccmp(&as->st_mtim, &bs->st_mtim, <) ?
+		    rmul : -rmul;
+	} else if (sort_flag & LS_SIZE_SORT)
 		return (rmul * NCMP(as->st_size, bs->st_size));
 
 	fatal("Unknown ls sort type");
@@ -1180,7 +1132,7 @@ undo_glob_escape(char *s)
  * last argument's quote has been properly terminated or 0 otherwise.
  * This parameter is only of use if "sloppy" is set.
  */
-#define MAXARGS 	128
+#define MAXARGS		128
 #define MAXARGLEN	8192
 static char **
 makeargv(const char *arg, int *argcp, int sloppy, char *lastquote,
@@ -1338,7 +1290,7 @@ parse_args(const char **cpp, int *ignore_errors, int *disable_echo, int *aflag,
 	const char *cmd, *cp = *cpp;
 	char *cp2, **argv;
 	int base = 0;
-	long l;
+	long long ll;
 	int path1_mandatory = 0, i, cmdnum, optidx, argc;
 
 	/* Skip leading whitespace */
@@ -1496,16 +1448,16 @@ parse_args(const char **cpp, int *ignore_errors, int *disable_echo, int *aflag,
 		if (argc - optidx < 1)
 			goto need_num_arg;
 		errno = 0;
-		l = strtol(argv[optidx], &cp2, base);
+		ll = strtoll(argv[optidx], &cp2, base);
 		if (cp2 == argv[optidx] || *cp2 != '\0' ||
-		    ((l == LONG_MIN || l == LONG_MAX) && errno == ERANGE) ||
-		    l < 0) {
+		    ((ll == LLONG_MIN || ll == LLONG_MAX) && errno == ERANGE) ||
+		    ll < 0 || ll > UINT32_MAX) {
  need_num_arg:
 			error("You must supply a numeric argument "
 			    "to the %s command.", cmd);
 			return -1;
 		}
-		*n_arg = l;
+		*n_arg = ll;
 		if (cmdnum == I_LUMASK)
 			break;
 		/* Get pathname (mandatory) */
@@ -2114,7 +2066,7 @@ complete(EditLine *el, int ch)
 
 	lf = el_line(el);
 	if (el_get(el, EL_CLIENTDATA, &complete_ctx) != 0)
-		fatal("%s: el_get failed", __func__);
+		fatal_f("el_get failed");
 
 	/* Figure out which argument the cursor points to */
 	cursor = lf->cursor - lf->buffer;
@@ -2371,9 +2323,9 @@ int
 main(int argc, char **argv)
 {
 	int in, out, ch, err, tmp, port = -1, noisy = 0;
-	char *host = NULL, *user, *cp, *file2 = NULL;
+	char *host = NULL, *user, *cp, *file2 = NULL, *file1 = NULL;
 	int debug_level = 0;
-	const char *file1 = NULL, *sftp_server = NULL;
+	const char *sftp_server = NULL;
 	const char *ssh_program = _PATH_SSH_PROGRAM, *sftp_direct = NULL;
 	const char *errstr;
 	LogLevel ll = SYSLOG_LEVEL_INFO;
@@ -2381,8 +2333,8 @@ main(int argc, char **argv)
 	extern int optind;
 	extern char *optarg;
 	struct sftp_conn *conn;
-	size_t copy_buffer_len = DEFAULT_COPY_BUFLEN;
-	size_t num_requests = DEFAULT_NUM_REQUESTS;
+	size_t copy_buffer_len = 0;
+	size_t num_requests = 0;
 	long long limit_kbps = 0;
 
 	/* Ensure that fds 0, 1 and 2 are open or directed to /dev/null */

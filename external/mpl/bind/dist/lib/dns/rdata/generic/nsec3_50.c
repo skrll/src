@@ -1,11 +1,11 @@
-/*	$NetBSD: nsec3_50.c,v 1.5 2020/05/24 19:46:24 christos Exp $	*/
+/*	$NetBSD: nsec3_50.c,v 1.7 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -214,7 +214,7 @@ fromwire_nsec3(ARGS_FROMWIRE) {
 	hashlen = sr.base[0];
 	isc_region_consume(&sr, 1);
 
-	if (sr.length < hashlen) {
+	if (hashlen < 1 || sr.length < hashlen) {
 		RETERR(DNS_R_FORMERR);
 	}
 	isc_region_consume(&sr, hashlen);
@@ -304,6 +304,7 @@ tostruct_nsec3(ARGS_TOSTRUCT) {
 	nsec3->iterations = uint16_consume_fromregion(&region);
 
 	nsec3->salt_length = uint8_consume_fromregion(&region);
+	INSIST(nsec3->salt_length <= region.length);
 	nsec3->salt = mem_maybedup(mctx, region.base, nsec3->salt_length);
 	if (nsec3->salt == NULL) {
 		return (ISC_R_NOMEMORY);
@@ -311,6 +312,7 @@ tostruct_nsec3(ARGS_TOSTRUCT) {
 	isc_region_consume(&region, nsec3->salt_length);
 
 	nsec3->next_length = uint8_consume_fromregion(&region);
+	INSIST(nsec3->next_length <= region.length);
 	nsec3->next = mem_maybedup(mctx, region.base, nsec3->next_length);
 	if (nsec3->next == NULL) {
 		goto cleanup;

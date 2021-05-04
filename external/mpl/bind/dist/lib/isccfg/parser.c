@@ -1,11 +1,11 @@
-/*	$NetBSD: parser.c,v 1.9 2020/08/03 17:23:43 christos Exp $	*/
+/*	$NetBSD: parser.c,v 1.11 2021/04/05 11:27:04 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -53,14 +53,14 @@
 		result = (op);               \
 		if (result != ISC_R_SUCCESS) \
 			goto cleanup;        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /* Clean up a configuration object if non-NULL. */
 #define CLEANUP_OBJ(obj)                               \
 	do {                                           \
 		if ((obj) != NULL)                     \
 			cfg_obj_destroy(pctx, &(obj)); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*
  * Forward declarations of static functions.

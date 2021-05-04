@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.kmodule.mk,v 1.72 2020/10/18 19:57:44 christos Exp $
+#	$NetBSD: bsd.kmodule.mk,v 1.76 2021/03/29 05:22:49 simonb Exp $
 
 # We are not building this with PIE
 MKPIE=no
@@ -57,10 +57,18 @@ CFLAGS+=	-fno-pic
 CFLAGS+=	-fPIC -Wa,-fno-pic
 .elif ${MACHINE_ARCH} == "mips64eb" && !defined(BSD_MK_COMPAT_FILE)
 CFLAGS+=	-mabi=64
+AFLAGS+=	-mabi=64
 LDFLAGS+=	-Wl,-m,elf64btsmip
 .elif ${MACHINE_ARCH} == "mips64el" && !defined(BSD_MK_COMPAT_FILE)
 CFLAGS+=	-mabi=64
+AFLAGS+=	-mabi=64
 LDFLAGS+=	-Wl,-m,elf64ltsmip
+.endif
+
+.if ${MACHINE_CPU} == "mips"
+# We can't use -msym32 with -mlong-calls as -msym32 forces all addresses
+# to be 32-bit which defeats the whole purpose of long calls.
+CFLAGS+=	-mlong-calls
 .endif
 
 .if ${MACHINE_CPU} == "sparc64"
@@ -78,15 +86,17 @@ PPC_INTR_IMPL=\"powerpc/intr.h\"
 . ifndef PPC_PCI_MACHDEP_IMPL
 PPC_PCI_MACHDEP_IMPL=\"powerpc/pci_machdep.h\"
 . endif
-CPPFLAGS+=      -DPPC_INTR_IMPL=${PPC_INTR_IMPL}
-CPPFLAGS+=      -DPPC_PCI_MACHDEP_IMPL=${DPPC_PCI_MACHDEP_IMPL}
+CPPFLAGS+=	-DPPC_INTR_IMPL=${PPC_INTR_IMPL}
+CPPFLAGS+=	-DPPC_PCI_MACHDEP_IMPL=${DPPC_PCI_MACHDEP_IMPL}
 
 . ifdef PPC_IBM4XX
-CPPFLAGS+=      -DPPC_IBM4XX
+CPPFLAGS+=	-DPPC_IBM4XX
 . elifdef PPC_BOOKE
-CPPFLAGS+=      -DPPC_BOOKE
+CPPFLAGS+=	-DPPC_BOOKE
+. elif ${MACHINE_ARCH} == "powerpc64"
+CPPFLAGS+=	-DPPC_OEA64
 . else
-CPPFLAGS+=      -DPPC_OEA
+CPPFLAGS+=	-DPPC_OEA
 . endif
 
 .endif

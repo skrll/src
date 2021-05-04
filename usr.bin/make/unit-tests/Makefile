@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.248 2020/12/13 05:13:38 sjg Exp $
+# $NetBSD: Makefile,v 1.277 2021/04/27 16:20:06 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -31,7 +31,10 @@
 # src/tests/usr.bin/make/t_make.sh.
 #
 
-# we use this below but we might be an older make
+.MAIN: all
+
+# we use these below but we might be an older make
+.MAKE.OS?= ${uname -s:L:sh}
 .MAKE.UID?= ${id -u:L:sh}
 
 # Each test is in a sub-makefile.
@@ -41,11 +44,14 @@
 TESTS+=		archive
 TESTS+=		archive-suffix
 TESTS+=		cmd-errors
+TESTS+=		cmd-errors-jobs
 TESTS+=		cmd-errors-lint
 TESTS+=		cmd-interrupt
 TESTS+=		cmdline
+TESTS+=		cmdline-redirect-stdin
 TESTS+=		cmdline-undefined
 TESTS+=		comment
+TESTS+=		compat-error
 TESTS+=		cond-cmp-numeric
 TESTS+=		cond-cmp-numeric-eq
 TESTS+=		cond-cmp-numeric-ge
@@ -55,6 +61,7 @@ TESTS+=		cond-cmp-numeric-lt
 TESTS+=		cond-cmp-numeric-ne
 TESTS+=		cond-cmp-string
 TESTS+=		cond-cmp-unary
+TESTS+=		cond-eof
 TESTS+=		cond-func
 TESTS+=		cond-func-commands
 TESTS+=		cond-func-defined
@@ -149,14 +156,20 @@ TESTS+=		directive-elifmake
 TESTS+=		directive-elifndef
 TESTS+=		directive-elifnmake
 TESTS+=		directive-else
+TESTS+=		directive-endfor
 TESTS+=		directive-endif
 TESTS+=		directive-error
 TESTS+=		directive-export
 TESTS+=		directive-export-env
+TESTS+=		directive-export-impl
 TESTS+=		directive-export-gmake
 TESTS+=		directive-export-literal
 TESTS+=		directive-for
+TESTS+=		directive-for-errors
+TESTS+=		directive-for-escape
 TESTS+=		directive-for-generating-endif
+TESTS+=		directive-for-lines
+TESTS+=		directive-for-null
 TESTS+=		directive-hyphen-include
 TESTS+=		directive-if
 TESTS+=		directive-if-nested
@@ -191,6 +204,8 @@ TESTS+=		impsrc
 TESTS+=		include-main
 TESTS+=		job-flags
 TESTS+=		job-output-long-lines
+TESTS+=		job-output-null
+TESTS+=		jobs-empty-commands
 TESTS+=		jobs-error-indirect
 TESTS+=		jobs-error-nested
 TESTS+=		jobs-error-nested-make
@@ -215,6 +230,7 @@ TESTS+=		opt-debug-curdir
 TESTS+=		opt-debug-cond
 TESTS+=		opt-debug-dir
 TESTS+=		opt-debug-errors
+TESTS+=		opt-debug-errors-jobs
 TESTS+=		opt-debug-file
 TESTS+=		opt-debug-for
 TESTS+=		opt-debug-graph1
@@ -247,6 +263,7 @@ TESTS+=		opt-m-include-dir
 TESTS+=		opt-no-action
 TESTS+=		opt-no-action-at-all
 TESTS+=		opt-no-action-runflags
+TESTS+=		opt-no-action-touch
 TESTS+=		opt-query
 TESTS+=		opt-raw
 TESTS+=		opt-silent
@@ -305,6 +322,7 @@ TESTS+=		var-class-env
 TESTS+=		var-class-global
 TESTS+=		var-class-local
 TESTS+=		var-class-local-legacy
+TESTS+=		var-eval-short
 TESTS+=		var-op
 TESTS+=		var-op-append
 TESTS+=		var-op-assign
@@ -331,6 +349,7 @@ TESTS+=		varmod-indirect
 TESTS+=		varmod-l-name-to-value
 TESTS+=		varmod-localtime
 TESTS+=		varmod-loop
+TESTS+=		varmod-loop-varname
 TESTS+=		varmod-match
 TESTS+=		varmod-match-escape
 TESTS+=		varmod-no-match
@@ -347,6 +366,7 @@ TESTS+=		varmod-select-words
 TESTS+=		varmod-shell
 TESTS+=		varmod-subst
 TESTS+=		varmod-subst-regex
+TESTS+=		varmod-sun-shell
 TESTS+=		varmod-sysv
 TESTS+=		varmod-tail
 TESTS+=		varmod-to-abs
@@ -428,16 +448,10 @@ TESTS+=		varquote
 #	escape-for-item.mk
 #	posix-*.mk (see posix.mk and posix1.mk)
 
-.if ${.OBJDIR} != ${.CURDIR}
-RO_OBJDIR:=	${.OBJDIR}/roobj
-.else
-RO_OBJDIR:=	${TMPDIR:U/tmp}/roobj
-.endif
 # Additional environment variables for some of the tests.
 # The base environment is -i PATH="$PATH".
 ENV.depsrc-optional+=   TZ=UTC
 ENV.envfirst=		FROM_ENV=value-from-env
-ENV.objdir-writable+=	RO_OBJDIR=${RO_OBJDIR}
 ENV.varmisc=		FROM_ENV=env
 ENV.varmisc+=		FROM_ENV_BEFORE=env
 ENV.varmisc+=		FROM_ENV_AFTER=env
@@ -473,8 +487,9 @@ SED_CMDS.job-output-long-lines= \
 	${:D marker should always be at the beginning of the line. } \
 	-e '/^aa*--- job-b ---$$/d' \
 	-e '/^bb*--- job-a ---$$/d'
-SED_CMDS.objdir-writable=	-e 's,${RO_OBJDIR},OBJDIR/roobj,g'
 SED_CMDS.opt-debug-graph1=	${STD_SED_CMDS.dg1}
+SED_CMDS.opt-debug-graph2=	${STD_SED_CMDS.dg2}
+SED_CMDS.opt-debug-graph3=	${STD_SED_CMDS.dg3}
 SED_CMDS.opt-debug-jobs=	-e 's,([0-9][0-9]*),(<pid>),'
 SED_CMDS.opt-debug-jobs+=	-e 's,pid [0-9][0-9]*,pid <pid>,'
 SED_CMDS.opt-debug-jobs+=	-e 's,Process [0-9][0-9]*,Process <pid>,'
@@ -482,11 +497,12 @@ SED_CMDS.opt-debug-jobs+=	-e 's,JobFinish: [0-9][0-9]*,JobFinish: <pid>,'
 SED_CMDS.opt-debug-jobs+=	-e 's,Command: ${.SHELL:T},Command: <shell>,'
 # The "-q" may be there or not, see jobs.c, variable shells.
 SED_CMDS.opt-debug-jobs+=	-e 's,^\(.Command: <shell>\) -q,\1,'
+SED_CMDS.opt-debug-lint+=	${STD_SED_CMDS.regex}
 SED_CMDS.opt-jobs-no-action=	${STD_SED_CMDS.hide-from-output}
 SED_CMDS.opt-no-action-runflags= ${STD_SED_CMDS.hide-from-output}
-# For Compat_RunCommand, useShell == FALSE.
+# For Compat_RunCommand, useShell == false.
 SED_CMDS.sh-dots=		-e 's,^.*\.\.\.:.*,<not found: ...>,'
-# For Compat_RunCommand, useShell == TRUE.
+# For Compat_RunCommand, useShell == true.
 SED_CMDS.sh-dots+=		-e 's,^make: exec(\(.*\)) failed (.*)$$,<not found: \1>,'
 SED_CMDS.sh-dots+=		-e 's,^\(\*\*\* Error code \)[1-9][0-9]*,\1<nonzero>,'
 SED_CMDS.sh-errctl=		${STD_SED_CMDS.dj}
@@ -494,29 +510,22 @@ SED_CMDS.sh-flags=		${STD_SED_CMDS.hide-from-output}
 SED_CMDS.suff-main+=		${STD_SED_CMDS.dg1}
 SED_CMDS.suff-main-several+=	${STD_SED_CMDS.dg1}
 SED_CMDS.suff-transform-debug+=	${STD_SED_CMDS.dg1}
-SED_CMDS.var-op-shell+=	\
-	-e 's,^${.SHELL:T}: [ 0-9:]*,,' \
-	-e '/command/s,No such.*,not found,'
-SED_CMDS.vardebug+=	-e 's,${.SHELL},</path/to/shell>,'
-SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
-SED_CMDS.varmod-gmtime+=	-e 's,Tue Jan 19 03:14:08 2038,<normalized>,'
-SED_CMDS.varmod-gmtime+=	${:D FreeBSD i386 still has 32-bit time_t. }
-SED_CMDS.varmod-gmtime+=	-e 's,Fri Dec 13 20:45:52 1901,<normalized>,'
-SED_CMDS.varmod-localtime+=	-e 's,Tue Jan 19 04:14:08 2038,<normalized>,'
-SED_CMDS.varmod-localtime+=	${:D FreeBSD i386 still has 32-bit time_t. }
-SED_CMDS.varmod-localtime+=	-e 's,Fri Dec 13 21:45:52 1901,<normalized>,'
-SED_CMDS.varmod-subst-regex+= \
-			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
+SED_CMDS.var-op-shell+=		${STD_SED_CMDS.shell}
+SED_CMDS.var-op-shell+=		-e '/command/s,No such.*,not found,'
+SED_CMDS.vardebug+=		-e 's,${.SHELL},</path/to/shell>,'
+SED_CMDS.varmod-subst-regex+=	${STD_SED_CMDS.regex}
 SED_CMDS.varname-dot-parsedir=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-parsefile=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-shell=	-e 's, = /[^ ]*, = (details omitted),g'
 SED_CMDS.varname-dot-shell+=	-e 's,"/[^" ]*","(details omitted)",g'
 SED_CMDS.varname-dot-shell+=	-e 's,\[/[^] ]*\],[(details omitted)],g'
+SED_CMDS.varname-empty=		-e 's,${.CURDIR},<curdir>,g'
+SED_CMDS.varname-empty+=	-e '/\.PARSEDIR/d'
+SED_CMDS.varname-empty+=	-e '/\.SHELL/d'
 
 # Some tests need an additional round of postprocessing.
 POSTPROC.deptgt-suffixes=	awk '/^\#\*\*\* Suffixes/,/^never-stop/'
 POSTPROC.gnode-submake=		awk '/Input graph/, /^$$/'
-POSTPROC.varname-empty=		${TOOL_SED} -n -e '/^Var_Set/p' -e '/^out:/p'
 
 # Some tests reuse other tests, which makes them unnecessarily fragile.
 export-all.rawout: export.mk
@@ -534,6 +543,11 @@ STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE\.[A-Z_]* *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(MACHINE[_ARCH]* *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(MAKE *=\) .*,\1 <details omitted>,'
+STD_SED_CMDS.dg1+=	-e 's,^\(\.SHELL *=\) .*,\1 <details omitted>,'
+
+STD_SED_CMDS.dg2=	${STD_SED_CMDS.dg1}
+STD_SED_CMDS.dg2+=	-e 's,\(last modified\) ..:..:.. ... ..\, ....,\1 <timestamp>,'
+STD_SED_CMDS.dg3=	${STD_SED_CMDS.dg2}
 
 # Omit details such as process IDs from the output of the -dj option.
 STD_SED_CMDS.dj= \
@@ -550,9 +564,39 @@ STD_SED_CMDS.hide-from-output= \
 	-e 's,hide-from-output ,,' \
 	-e 's,hide-from-output,,'
 
-# End of the configuration helpers section.
+# Normalize the output for error messages from the shell.
+#
+# $shell -c '...'
+#	NetBSD sh	...: not found
+#	NetBSD ksh	ksh: ...: not found
+#	bash 5.0.18	bash: ...: command not found
+#	bash 5.1.0	bash: line 1: ...: command not found
+#	dash		dash: 1: ...: not found
+#
+# $shell -c '< /nonexistent'
+#	NetBSD sh	sh: cannot open /nonexistent: no such file
+#	NetBSD ksh	ksh: cannot open /nonexistent: No such file or directory
+#	bash 5.0.18	bash: /nonexistent: No such file or directory
+#	bash 5.1.0	bash: line 1: /nonexistent: No such file or directory
+#	dash		dash: 1: cannot open /nonexistent: No such file
+#
+# echo '< /nonexistent' | $shell
+#	NetBSD sh	sh: cannot open /nonexistent: no such file
+#	NetBSD ksh	ksh: <stdin>[1]: cannot open /nonexistent: No such file or directory
+#	bash 5.0.18	bash: line 1: /nonexistent: No such file or directory
+#	bash 5.1.0	bash: line 1: /nonexistent: No such file or directory
+#	dash		dash: 1: cannot open /nonexistent: No such file
+#
+STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: line [0-9][0-9]*: ,,'
+STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: [0-9][0-9]*: ,,'
+STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: ,,'
 
-.MAIN: all
+# The actual error messages for a failed regcomp or regexec differ between the
+# implementations.
+STD_SED_CMDS.regex= \
+	-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
+
+# End of the configuration helpers section.
 
 UNIT_TESTS:=	${.PARSEDIR}
 .PATH: ${UNIT_TESTS}
@@ -582,9 +626,26 @@ LC_ALL=		C
 LANG=		C
 .export LANG LC_ALL
 
-MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
 
-.if ${.MAKE.OS:U${uname -s:L:sh}} == "NetBSD"
+# for many tests we need a TMPDIR that will not collide
+# with other users.
+.if ${.OBJDIR} != ${.CURDIR}
+# easy
+TMPDIR:=	${.OBJDIR}/tmp
+.elif defined(TMPDIR)
+TMPDIR:=	${TMPDIR}/uid${.MAKE.UID}
+.else
+TMPDIR:=	/tmp/uid${.MAKE.UID}
+.endif
+# make sure it exists
+.if !exist(${TMPDIR})
+x!= echo; mkdir -p ${TMPDIR}
+.endif
+
+MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
+MAKE_TEST_ENV+= TMPDIR=${TMPDIR}
+
+.if ${.MAKE.OS} == "NetBSD"
 LIMIT_RESOURCES?=	ulimit -v 200000
 .endif
 LIMIT_RESOURCES?=	:
@@ -616,6 +677,7 @@ _SED_CMDS+=	-e 's,${TEST_MAKE:T:S,.,\\.,g}[][0-9]* warning,make warning,'
 _SED_CMDS+=	-e 's,^usage: ${TEST_MAKE:T:S,.,\\.,g} ,usage: make ,'
 # replace anything after 'stopped in' with unit-tests
 _SED_CMDS+=	-e '/stopped/s, /.*, unit-tests,'
+_SED_CMDS+=	-e 's,${TMPDIR},TMPDIR,g'
 # strip ${.CURDIR}/ from the output
 _SED_CMDS+=	-e 's,${.CURDIR:S,.,\\.,g}/,,g'
 _SED_CMDS+=	-e 's,${UNIT_TESTS:S,.,\\.,g}/,,g'

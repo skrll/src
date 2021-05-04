@@ -1,11 +1,11 @@
-/*	$NetBSD: rdata.c,v 1.8 2020/08/03 17:23:41 christos Exp $	*/
+/*	$NetBSD: rdata.c,v 1.10 2021/04/05 11:27:02 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -50,7 +50,7 @@
 		isc_result_t _r = (x);   \
 		if (_r != ISC_R_SUCCESS) \
 			return ((_r));   \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define RETTOK(x)                                          \
 	do {                                               \
@@ -59,14 +59,14 @@
 			isc_lex_ungettoken(lexer, &token); \
 			return (_r);                       \
 		}                                          \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define CHECK(op)                            \
 	do {                                 \
 		result = (op);               \
 		if (result != ISC_R_SUCCESS) \
 			goto cleanup;        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define CHECKTOK(op)                                       \
 	do {                                               \
@@ -75,7 +75,7 @@
 			isc_lex_ungettoken(lexer, &token); \
 			goto cleanup;                      \
 		}                                          \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define DNS_AS_STR(t) ((t).value.as_textregion.base)
 
@@ -1288,7 +1288,7 @@ dns_rdata_checknames(dns_rdata_t *rdata, const dns_name_t *owner,
 unsigned int
 dns_rdatatype_attributes(dns_rdatatype_t type) {
 	RDATATYPE_ATTRIBUTE_SW
-	if (type >= (dns_rdatatype_t)128 && type < (dns_rdatatype_t)255) {
+	if (type >= (dns_rdatatype_t)128 && type <= (dns_rdatatype_t)255) {
 		return (DNS_RDATATYPEATTR_UNKNOWN | DNS_RDATATYPEATTR_META);
 	}
 	return (DNS_RDATATYPEATTR_UNKNOWN);
@@ -1779,7 +1779,8 @@ inet_totext(int af, uint32_t flags, isc_region_t *src, isc_buffer_t *target) {
 			if (isc_buffer_availablelength(target) == 0) {
 				return (ISC_R_NOSPACE);
 			}
-			isc_buffer_putmem(target, "0", 1);
+			isc_buffer_putmem(target, (const unsigned char *)"0",
+					  1);
 		}
 	}
 

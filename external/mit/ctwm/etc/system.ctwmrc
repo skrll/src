@@ -1,5 +1,5 @@
 #
-# $NetBSD: system.ctwmrc,v 1.10 2020/11/16 14:12:46 nia Exp $
+# $NetBSD: system.ctwmrc,v 1.13 2021/04/11 11:05:49 nia Exp $
 #
 # ctwmrc by nia
 #
@@ -14,6 +14,8 @@
 
 # don't use the default buttons or key bindings, we define our own
 NoDefaults
+
+DontShowWelcomeWindow
 
 ShowWorkSpaceManager
 ShowIconManager
@@ -111,8 +113,6 @@ DontPaintRootWindow
 NoOpaqueMove
 NoOpaqueResize
 
-SloppyFocus
-
 AutoOccupy
 AutoRelativeResize
 
@@ -150,7 +150,7 @@ StayUpMenus
 WarpToDefaultMenuEntry
 MenuShadowDepth      1
 
-NoTitleFocus
+TitleFocus
 
 # warp through all windows in the current workspace
 WindowRing

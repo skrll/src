@@ -27,6 +27,9 @@
 #include "gdbarch.h"
 
 #include <sys/types.h>
+/* Use <sys/ptrace.h> directly, instead of "nat/gdb_ptrace.h".  Otherwise,
+   PT_STEP will be defined unintentionally, which breaks platforms without
+   PT_STEP support.  */
 #include <sys/ptrace.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
@@ -458,7 +461,7 @@ nbsd_nat_target::info_proc (const char *args, enum info_proc_what what)
   return true;
 }
 
-#if defined(PT_STEP) && !defined(__arm__)
+#ifdef PT_STEP
 /* Resume execution of a specified PTID, that points to a process or a thread
    within a process.  If one thread is specified, all other threads are
    suspended.  If STEP is nonzero, single-step it.  If SIGNAL is nonzero,
@@ -530,7 +533,7 @@ nbsd_resume(nbsd_nat_target *target, ptid_t ptid, int step,
 void
 nbsd_nat_target::resume (ptid_t ptid, int step, enum gdb_signal signal)
 {
-#if defined(PT_STEP) && !defined(__arm__)
+#ifdef PT_STEP
   if (minus_one_ptid != ptid)
     nbsd_resume (this, ptid, step, signal);
   else
@@ -539,6 +542,7 @@ nbsd_nat_target::resume (ptid_t ptid, int step, enum gdb_signal signal)
 	nbsd_resume (this, ptid_t (inf->pid, 0, 0), step, signal);
     }
 #else
+    gdb_assert(step == 0);
     if (ptid.pid () == -1)
       ptid = inferior_ptid;
     inf_ptrace_target::resume (ptid, step, signal); 

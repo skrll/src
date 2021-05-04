@@ -1,4 +1,4 @@
-/* $NetBSD: subr_autoconf.c,v 1.274 2020/10/03 22:32:50 riastradh Exp $ */
+/* $NetBSD: subr_autoconf.c,v 1.280 2021/04/28 03:21:57 thorpej Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -76,8 +76,10 @@
  *	@(#)subr_autoconf.c	8.3 (Berkeley) 5/17/94
  */
 
+#define	__SUBR_AUTOCONF_PRIVATE	/* see <sys/device.h> */
+
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.274 2020/10/03 22:32:50 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.280 2021/04/28 03:21:57 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -107,6 +109,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.274 2020/10/03 22:32:50 riastrad
 #include <sys/devmon.h>
 #include <sys/cpu.h>
 #include <sys/sysctl.h>
+#include <sys/stdarg.h>
 
 #include <sys/disk.h>
 
@@ -167,7 +170,6 @@ struct alldevs_foray {
 
 static char *number(char *, int);
 static void mapply(struct matchinfo *, cfdata_t);
-static device_t config_devalloc(const device_t, const cfdata_t, const int *);
 static void config_devdelete(device_t);
 static void config_devunlink(device_t, struct devicelist *);
 static void config_makeroom(int, struct cfdriver *);
@@ -808,6 +810,23 @@ cfdriver_get_iattr(const struct cfdriver *cd, const char *ia)
 	return 0;
 }
 
+#if defined(DIAGNOSTIC)
+static int
+cfdriver_iattr_count(const struct cfdriver *cd)
+{
+	const struct cfiattrdata * const *cpp;
+	int i;
+
+	if (cd->cd_attrs == NULL)
+		return 0;
+
+	for (i = 0, cpp = cd->cd_attrs; *cpp; cpp++) {
+		i++;
+	}
+	return i;
+}
+#endif /* DIAGNOSTIC */
+
 /*
  * Lookup an interface attribute description by name.
  * If the driver is given, consider only its supported attributes.
@@ -985,7 +1004,7 @@ config_cfdata_detach(cfdata_t cf)
 
 /*
  * Invoke the "match" routine for a cfdata entry on behalf of
- * an external caller, usually a "submatch" routine.
+ * an external caller, usually a direct config "submatch" routine.
  */
 int
 config_match(device_t parent, cfdata_t cf, void *aux)
@@ -1002,6 +1021,88 @@ config_match(device_t parent, cfdata_t cf, void *aux)
 }
 
 /*
+ * Invoke the "probe" routine for a cfdata entry on behalf of
+ * an external caller, usually an indirect config "search" routine.
+ */
+int
+config_probe(device_t parent, cfdata_t cf, void *aux)
+{
+	/*
+	 * This is currently a synonym for config_match(), but this
+	 * is an implementation detail; "match" and "probe" routines
+	 * have different behaviors.
+	 *
+	 * XXX config_probe() should return a bool, because there is
+	 * XXX no match score for probe -- it's either there or it's
+	 * XXX not, but some ports abuse the return value as a way
+	 * XXX to attach "critical" devices before "non-critical"
+	 * XXX devices.
+	 */
+	return config_match(parent, cf, aux);
+}
+
+static void
+config_get_cfargs(cfarg_t tag,
+		  cfsubmatch_t *fnp,		/* output */
+		  const char **ifattrp,		/* output */
+		  const int **locsp,		/* output */
+		  devhandle_t *handlep,		/* output */
+		  va_list ap)
+{
+	cfsubmatch_t fn = NULL;
+	const char *ifattr = NULL;
+	const int *locs = NULL;
+	devhandle_t handle;
+
+	devhandle_invalidate(&handle);
+
+	while (tag != CFARG_EOL) {
+		switch (tag) {
+		/*
+		 * CFARG_SUBMATCH and CFARG_SEARCH are synonyms, but this
+		 * is merely an implementation detail.  They are distinct
+		 * from the caller's point of view.
+		 */
+		case CFARG_SUBMATCH:
+		case CFARG_SEARCH:
+			/* Only allow one function to be specified. */
+			if (fn != NULL) {
+				panic("%s: caller specified both "
+				    "SUBMATCH and SEARCH", __func__);
+			}
+			fn = va_arg(ap, cfsubmatch_t);
+			break;
+
+		case CFARG_IATTR:
+			ifattr = va_arg(ap, const char *);
+			break;
+
+		case CFARG_LOCATORS:
+			locs = va_arg(ap, const int *);
+			break;
+
+		case CFARG_DEVHANDLE:
+			handle = va_arg(ap, devhandle_t);
+			break;
+
+		default:
+			panic("%s: unknown cfarg tag: %d\n",
+			    __func__, tag);
+		}
+		tag = va_arg(ap, cfarg_t);
+	}
+
+	if (fnp != NULL)
+		*fnp = fn;
+	if (ifattrp != NULL)
+		*ifattrp = ifattr;
+	if (locsp != NULL)
+		*locsp = locs;
+	if (handlep != NULL)
+		*handlep = handle;
+}
+
+/*
  * Iterate over all potential children of some device, calling the given
  * function (default being the child's match function) for each one.
  * Nonzero returns are matches; the highest value returned is considered
@@ -1013,15 +1114,20 @@ config_match(device_t parent, cfdata_t cf, void *aux)
  * can be ignored).
  */
 cfdata_t
-config_search_loc(cfsubmatch_t fn, device_t parent,
-		  const char *ifattr, const int *locs, void *aux)
+config_vsearch(device_t parent, void *aux, cfarg_t tag, va_list ap)
 {
+	cfsubmatch_t fn;
+	const char *ifattr;
+	const int *locs;
 	struct cftable *ct;
 	cfdata_t cf;
 	struct matchinfo m;
 
+	config_get_cfargs(tag, &fn, &ifattr, &locs, NULL, ap);
+
 	KASSERT(config_initialized);
 	KASSERT(!ifattr || cfdriver_get_iattr(parent->dv_cfdriver, ifattr));
+	KASSERT(ifattr || cfdriver_iattr_count(parent->dv_cfdriver) < 2);
 
 	m.fn = fn;
 	m.parent = parent;
@@ -1064,11 +1170,16 @@ config_search_loc(cfsubmatch_t fn, device_t parent,
 }
 
 cfdata_t
-config_search_ia(cfsubmatch_t fn, device_t parent, const char *ifattr,
-    void *aux)
+config_search(device_t parent, void *aux, cfarg_t tag, ...)
 {
+	cfdata_t cf;
+	va_list ap;
 
-	return config_search_loc(fn, parent, ifattr, NULL, aux);
+	va_start(ap, tag);
+	cf = config_vsearch(parent, aux, tag, ap);
+	va_end(ap);
+
+	return cf;
 }
 
 /*
@@ -1103,7 +1214,11 @@ config_rootsearch(cfsubmatch_t fn, const char *rootname, void *aux)
 	return m.match;
 }
 
-static const char * const msgs[3] = { "", " not configured\n", " unsupported\n" };
+static const char * const msgs[] = {
+[QUIET]		=	"",
+[UNCONF]	=	" not configured\n",
+[UNSUPP]	=	" unsupported\n",
+};
 
 /*
  * The given `aux' argument describes a device that has been found
@@ -1114,18 +1229,29 @@ static const char * const msgs[3] = { "", " not configured\n", " unsupported\n" 
  * not configured, call the given `print' function and return NULL.
  */
 device_t
-config_found_sm_loc(device_t parent,
-		const char *ifattr, const int *locs, void *aux,
-		cfprint_t print, cfsubmatch_t submatch)
+config_vfound(device_t parent, void *aux, cfprint_t print, cfarg_t tag,
+    va_list ap)
 {
 	cfdata_t cf;
+	va_list nap;
 
-	if ((cf = config_search_loc(submatch, parent, ifattr, locs, aux)))
-		return(config_attach_loc(parent, cf, locs, aux, print));
+	va_copy(nap, ap);
+	cf = config_vsearch(parent, aux, tag, nap);
+	va_end(nap);
+
+	if (cf != NULL) {
+		return config_vattach(parent, cf, aux, print, tag, ap);
+	}
+
 	if (print) {
 		if (config_do_twiddle && cold)
 			twiddle();
-		aprint_normal("%s", msgs[(*print)(aux, device_xname(parent))]);
+
+		const int pret = (*print)(aux, device_xname(parent));
+		KASSERT(pret >= 0);
+		KASSERT(pret < __arraycount(msgs));
+		KASSERT(msgs[pret] != NULL);
+		aprint_normal("%s", msgs[pret]);
 	}
 
 	/*
@@ -1140,18 +1266,16 @@ config_found_sm_loc(device_t parent,
 }
 
 device_t
-config_found_ia(device_t parent, const char *ifattr, void *aux,
-    cfprint_t print)
+config_found(device_t parent, void *aux, cfprint_t print, cfarg_t tag, ...)
 {
+	device_t dev;
+	va_list ap;
 
-	return config_found_sm_loc(parent, ifattr, NULL, aux, print, NULL);
-}
+	va_start(ap, tag);
+	dev = config_vfound(parent, aux, print, tag, ap);
+	va_end(ap);
 
-device_t
-config_found(device_t parent, void *aux, cfprint_t print)
-{
-
-	return config_found_sm_loc(parent, NULL, NULL, aux, print, NULL);
+	return dev;
 }
 
 /*
@@ -1163,7 +1287,7 @@ config_rootfound(const char *rootname, void *aux)
 	cfdata_t cf;
 
 	if ((cf = config_rootsearch(NULL, rootname, aux)) != NULL)
-		return config_attach(ROOT, cf, aux, NULL);
+		return config_attach(ROOT, cf, aux, NULL, CFARG_EOL);
 	aprint_error("root device %s not configured\n", rootname);
 	return NULL;
 }
@@ -1379,7 +1503,8 @@ config_unit_alloc(device_t dev, cfdriver_t cd, cfdata_t cf)
 }
 
 static device_t
-config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
+config_vdevalloc(const device_t parent, const cfdata_t cf, cfarg_t tag,
+    va_list ap)
 {
 	cfdriver_t cd;
 	cfattach_t ca;
@@ -1391,6 +1516,7 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 	void *dev_private;
 	const struct cfiattrdata *ia;
 	device_lock_t dvl;
+	const int *locs;
 
 	cd = config_cfdriver_lookup(cf->cf_name);
 	if (cd == NULL)
@@ -1408,6 +1534,13 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 		dev_private = NULL;
 	}
 	dev = kmem_zalloc(sizeof(*dev), KM_SLEEP);
+
+	/*
+	 * If a handle was supplied to config_attach(), we'll get it
+	 * assigned automatically here.  If not, then we'll get the
+	 * default invalid handle.
+	 */
+	config_get_cfargs(tag, NULL, NULL, &locs, &dev->dv_handle, ap);
 
 	dev->dv_class = cd->cd_class;
 	dev->dv_cfdata = cf;
@@ -1429,7 +1562,7 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 	xunit = number(&num[sizeof(num)], myunit);
 	lunit = &num[sizeof(num)] - xunit;
 	if (lname + lunit > sizeof(dev->dv_xname))
-		panic("config_devalloc: device name too long");
+		panic("config_vdevalloc: device name too long");
 
 	dvl = device_getlock(dev);
 
@@ -1466,6 +1599,19 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 
 	if (dev->dv_cfdriver->cd_attrs != NULL)
 		config_add_attrib_dict(dev);
+
+	return dev;
+}
+
+static device_t
+config_devalloc(const device_t parent, const cfdata_t cf, cfarg_t tag, ...)
+{
+	device_t dev;
+	va_list ap;
+
+	va_start(ap, tag);
+	dev = config_vdevalloc(parent, cf, tag, ap);
+	va_end(ap);
 
 	return dev;
 }
@@ -1553,14 +1699,14 @@ config_add_attrib_dict(device_t dev)
  * Attach a found device.
  */
 device_t
-config_attach_loc(device_t parent, cfdata_t cf,
-	const int *locs, void *aux, cfprint_t print)
+config_vattach(device_t parent, cfdata_t cf, void *aux, cfprint_t print,
+    cfarg_t tag, va_list ap)
 {
 	device_t dev;
 	struct cftable *ct;
 	const char *drvname;
 
-	dev = config_devalloc(parent, cf, locs);
+	dev = config_vdevalloc(parent, cf, tag, ap);
 	if (!dev)
 		panic("config_attach: allocation of device softc failed");
 
@@ -1626,10 +1772,17 @@ config_attach_loc(device_t parent, cfdata_t cf,
 }
 
 device_t
-config_attach(device_t parent, cfdata_t cf, void *aux, cfprint_t print)
+config_attach(device_t parent, cfdata_t cf, void *aux, cfprint_t print,
+    cfarg_t tag, ...)
 {
+	device_t dev;
+	va_list ap;
 
-	return config_attach_loc(parent, cf, NULL, aux, print);
+	va_start(ap, tag);
+	dev = config_vattach(parent, cf, aux, print, tag, ap);
+	va_end(ap);
+
+	return dev;
 }
 
 /*
@@ -1646,7 +1799,7 @@ config_attach_pseudo(cfdata_t cf)
 {
 	device_t dev;
 
-	dev = config_devalloc(ROOT, cf, NULL);
+	dev = config_devalloc(ROOT, cf, CFARG_EOL);
 	if (!dev)
 		return NULL;
 
@@ -2324,43 +2477,316 @@ device_find_by_driver_unit(const char *name, int unit)
 	return device_lookup(cd, unit);
 }
 
-/*
- * device_compatible_match:
- *
- *	Match a driver's "compatible" data against a device's
- *	"compatible" strings.  If a match is found, we return
- *	a weighted match result, and optionally the matching
- *	entry.
- */
-int
-device_compatible_match(const char **device_compats, int ndevice_compats,
-			const struct device_compatible_entry *driver_compats,
-			const struct device_compatible_entry **matching_entryp)
+static bool
+match_strcmp(const char * const s1, const char * const s2)
+{
+	return strcmp(s1, s2) == 0;
+}
+
+static bool
+match_pmatch(const char * const s1, const char * const s2)
+{
+	return pmatch(s1, s2, NULL) == 2;
+}
+
+static bool
+strarray_match_internal(const char ** const strings,
+    unsigned int const nstrings, const char * const str,
+    unsigned int * const indexp,
+    bool (*match_fn)(const char *, const char *))
+{
+	unsigned int i;
+
+	if (strings == NULL || nstrings == 0) {
+		return false;
+	}
+
+	for (i = 0; i < nstrings; i++) {
+		if ((*match_fn)(strings[i], str)) {
+			*indexp = i;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static int
+strarray_match(const char ** const strings, unsigned int const nstrings,
+    const char * const str)
+{
+	unsigned int idx;
+
+	if (strarray_match_internal(strings, nstrings, str, &idx,
+				    match_strcmp)) {
+		return (int)(nstrings - idx);
+	}
+	return 0;
+}
+
+static int
+strarray_pmatch(const char ** const strings, unsigned int const nstrings,
+    const char * const pattern)
+{
+	unsigned int idx;
+
+	if (strarray_match_internal(strings, nstrings, pattern, &idx,
+				    match_pmatch)) {
+		return (int)(nstrings - idx);
+	}
+	return 0;
+}
+
+static int
+device_compatible_match_strarray_internal(
+    const char **device_compats, int ndevice_compats,
+    const struct device_compatible_entry *driver_compats,
+    const struct device_compatible_entry **matching_entryp,
+    int (*match_fn)(const char **, unsigned int, const char *))
 {
 	const struct device_compatible_entry *dce = NULL;
-	int i, match_weight;
+	int rv;
 
 	if (ndevice_compats == 0 || device_compats == NULL ||
 	    driver_compats == NULL)
 		return 0;
-	
-	/*
-	 * We take the first match because we start with the most-specific
-	 * device compatible string.
-	 */
-	for (i = 0, match_weight = ndevice_compats - 1;
-	     i < ndevice_compats;
-	     i++, match_weight--) {
-		for (dce = driver_compats; dce->compat != NULL; dce++) {
-			if (strcmp(dce->compat, device_compats[i]) == 0) {
-				KASSERT(match_weight >= 0);
-				if (matching_entryp)
-					*matching_entryp = dce;
-				return 1 + match_weight;
+
+	for (dce = driver_compats; dce->compat != NULL; dce++) {
+		rv = (*match_fn)(device_compats, ndevice_compats, dce->compat);
+		if (rv != 0) {
+			if (matching_entryp != NULL) {
+				*matching_entryp = dce;
 			}
+			return rv;
 		}
 	}
 	return 0;
+}
+
+/*
+ * device_compatible_match:
+ *
+ *	Match a driver's "compatible" data against a device's
+ *	"compatible" strings.  Returns resulted weighted by
+ *	which device "compatible" string was matched.
+ */
+int
+device_compatible_match(const char **device_compats, int ndevice_compats,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, NULL, strarray_match);
+}
+
+/*
+ * device_compatible_pmatch:
+ *
+ *	Like device_compatible_match(), but uses pmatch(9) to compare
+ *	the device "compatible" strings against patterns in the
+ *	driver's "compatible" data.
+ */
+int
+device_compatible_pmatch(const char **device_compats, int ndevice_compats,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, NULL, strarray_pmatch);
+}
+
+static int
+device_compatible_match_strlist_internal(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats,
+    const struct device_compatible_entry **matching_entryp,
+    int (*match_fn)(const char *, size_t, const char *))
+{
+	const struct device_compatible_entry *dce = NULL;
+	int rv;
+
+	if (device_compats == NULL || device_compatsize == 0 ||
+	    driver_compats == NULL)
+		return 0;
+
+	for (dce = driver_compats; dce->compat != NULL; dce++) {
+		rv = (*match_fn)(device_compats, device_compatsize,
+		    dce->compat);
+		if (rv != 0) {
+			if (matching_entryp != NULL) {
+				*matching_entryp = dce;
+			}
+			return rv;
+		}
+	}
+	return 0;
+}
+
+/*
+ * device_compatible_match_strlist:
+ *
+ *	Like device_compatible_match(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+int
+device_compatible_match_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, NULL, strlist_match);
+}
+
+/*
+ * device_compatible_pmatch_strlist:
+ *
+ *	Like device_compatible_pmatch(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+int
+device_compatible_pmatch_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, NULL, strlist_pmatch);
+}
+
+static int
+device_compatible_match_id_internal(
+    uintptr_t const id, uintptr_t const mask, uintptr_t const sentinel_id,
+    const struct device_compatible_entry *driver_compats,
+    const struct device_compatible_entry **matching_entryp)
+{
+	const struct device_compatible_entry *dce = NULL;
+
+	if (mask == 0)
+		return 0;
+
+	for (dce = driver_compats; dce->id != sentinel_id; dce++) {
+		if ((id & mask) == dce->id) {
+			if (matching_entryp != NULL) {
+				*matching_entryp = dce;
+			}
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/*
+ * device_compatible_match_id:
+ *
+ *	Like device_compatible_match(), but takes a single
+ *	unsigned integer device ID.
+ */
+int
+device_compatible_match_id(
+    uintptr_t const id, uintptr_t const sentinel_id,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_id_internal(id, (uintptr_t)-1,
+	    sentinel_id, driver_compats, NULL);
+}
+
+/*
+ * device_compatible_lookup:
+ *
+ *	Look up and return the device_compatible_entry, using the
+ *	same matching criteria used by device_compatible_match().
+ */
+const struct device_compatible_entry *
+device_compatible_lookup(const char **device_compats, int ndevice_compats,
+			 const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, &dce, strarray_match)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_plookup:
+ *
+ *	Look up and return the device_compatible_entry, using the
+ *	same matching criteria used by device_compatible_pmatch().
+ */
+const struct device_compatible_entry *
+device_compatible_plookup(const char **device_compats, int ndevice_compats,
+			  const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, &dce, strarray_pmatch)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_lookup_strlist:
+ *
+ *	Like device_compatible_lookup(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+const struct device_compatible_entry *
+device_compatible_lookup_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, &dce, strlist_match)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_plookup_strlist:
+ *
+ *	Like device_compatible_plookup(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+const struct device_compatible_entry *
+device_compatible_plookup_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, &dce, strlist_pmatch)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_lookup_id:
+ *
+ *	Like device_compatible_lookup(), but takes a single
+ *	unsigned integer device ID.
+ */
+const struct device_compatible_entry *
+device_compatible_lookup_id(
+    uintptr_t const id, uintptr_t const sentinel_id,
+    const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_id_internal(id, (uintptr_t)-1,
+	    sentinel_id, driver_compats, &dce)) {
+		return dce;
+	}
+	return NULL;
 }
 
 /*

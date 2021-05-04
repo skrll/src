@@ -1,4 +1,4 @@
-/* $NetBSD: vexpress_platform.c,v 1.19 2020/10/30 18:54:36 skrll Exp $ */
+/* $NetBSD: vexpress_platform.c,v 1.22 2021/04/24 23:36:29 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "opt_console.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.19 2020/10/30 18:54:36 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.22 2021/04/24 23:36:29 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

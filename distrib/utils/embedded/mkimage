@@ -1,5 +1,5 @@
 #!/bin/sh
-# $NetBSD: mkimage,v 1.75 2020/07/17 15:16:34 jmcneill Exp $
+# $NetBSD: mkimage,v 1.77 2020/12/23 10:35:18 rin Exp $
 #
 # Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -261,15 +261,16 @@ fi
 
 if [ "${size}" = 0 ]; then
 	size="$(getsize "${image}")"
+	# Round up to a multiple of 4m and add 1m of slop.
+	alignunit=$((4*1024*1024))
+	alignsize=$((alignunit*((size + alignunit - 1)/alignunit)))
+	alignsize=$((alignsize + 1024*1024))
+	if [ "${size}" -lt "${alignsize}" ]; then
+		dd bs=1 count="$((alignsize - size))" if=/dev/zero \
+			>> "${image}" 2> /dev/null
+		size="${alignsize}"
+	fi
 fi
-newsize=$((${size} / 2 / 1024))
-compare=$((${newsize} * 2 * 1024))
-while [ "${compare}" != "${size}" ]
-do    
-	size="$((size + size - compare))"  
-	newsize="$((${size} / 2 / 1024))"
-	compare="$((${newsize} * 2 * 1024))"
-done                      
 
 if $gpt; then
 	if $gpt_hybrid; then

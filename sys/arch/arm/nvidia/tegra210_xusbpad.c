@@ -1,4 +1,4 @@
-/* $NetBSD: tegra210_xusbpad.c,v 1.13 2019/10/13 06:11:31 skrll Exp $ */
+/* $NetBSD: tegra210_xusbpad.c,v 1.15 2021/04/24 23:36:27 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra210_xusbpad.c,v 1.13 2019/10/13 06:11:31 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra210_xusbpad.c,v 1.15 2021/04/24 23:36:27 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -765,7 +765,7 @@ tegra210_xusbpad_configure_pads(struct tegra210_xusbpad_softc *sc,
 			.paa_xusbpad = sc,
 			.paa_phandle = child
 		};
-		config_found(sc->sc_dev, &paa, NULL);
+		config_found(sc->sc_dev, &paa, NULL, CFARG_EOL);
 	}
 }
 
@@ -964,16 +964,17 @@ static const struct tegra_xusbpad_ops tegra210_xusbpad_ops = {
 	.xhci_enable = tegra210_xusbpad_xhci_enable,
 };
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "nvidia,tegra210-xusb-padctl" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 tegra210_xusbpad_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"nvidia,tegra210-xusb-padctl",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void

@@ -1,4 +1,4 @@
-/* $NetBSD: acpipchb.c,v 1.22 2020/12/06 12:40:58 jmcneill Exp $ */
+/* $NetBSD: acpipchb.c,v 1.24 2021/04/24 23:36:25 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.22 2020/12/06 12:40:58 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.24 2021/04/24 23:36:25 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -150,6 +150,8 @@ acpipchb_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal(": PCI Express Host Bridge\n");
 
+	acpi_claim_childdevs(self, aa->aa_node);
+
 	if (acpi_pci_ignore_boot_config(sc->sc_handle)) {
 		if (acpimcfg_configure_bus(self, aa->aa_pc, sc->sc_handle,
 		    sc->sc_bus, PCIHOST_CACHELINE_SIZE) != 0) {
@@ -172,7 +174,7 @@ acpipchb_attach(device_t parent, device_t self, void *aux)
 	acpipchb_setup_ranges(sc, &pba);
 	acpipchb_setup_quirks(sc, &pba);
 
-	config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint, CFARG_EOL);
 }
 
 struct acpipchb_setup_ranges_args {

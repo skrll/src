@@ -1,4 +1,4 @@
-/* $NetBSD: axp20x.c,v 1.16 2020/02/16 22:43:27 thorpej Exp $ */
+/* $NetBSD: axp20x.c,v 1.20 2021/04/24 23:36:54 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: axp20x.c,v 1.16 2020/02/16 22:43:27 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: axp20x.c,v 1.20 2021/04/24 23:36:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -211,8 +211,8 @@ CFATTACH_DECL_NEW(axp20x, sizeof(struct axp20x_softc),
     axp20x_match, axp20x_attach, NULL, NULL);
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "x-powers,axp209",		0 },
-	{ NULL,				0 }
+	{ .compat = "x-powers,axp209" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -813,6 +813,6 @@ axp20x_fdt_attach(struct axp20x_softc *sc)
 
 	for (child = OF_child(regulators_phandle); child; child = OF_peer(child)) {
 		struct axp20xreg_attach_args reg = { .reg_phandle = child };
-		config_found(sc->sc_dev, &reg, NULL);
+		config_found(sc->sc_dev, &reg, NULL, CFARG_EOL);
 	}
 }

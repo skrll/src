@@ -1,4 +1,4 @@
-/* $NetBSD: meson_pinctrl.c,v 1.6 2019/10/01 23:32:52 jmcneill Exp $ */
+/* $NetBSD: meson_pinctrl.c,v 1.12 2021/04/24 23:36:26 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_soc.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: meson_pinctrl.c,v 1.6 2019/10/01 23:32:52 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_pinctrl.c,v 1.12 2021/04/24 23:36:26 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -71,20 +71,32 @@ struct meson_pinctrl_gpio_pin {
 	bool				pin_actlo;
 };
 
-static const struct of_compat_data compat_data[] = {
+static const struct device_compatible_entry compat_data[] = {
 #ifdef SOC_MESON8B
-	{ "amlogic,meson8b-aobus-pinctrl",	(uintptr_t)&meson8b_aobus_pinctrl_config },
-	{ "amlogic,meson8b-cbus-pinctrl",	(uintptr_t)&meson8b_cbus_pinctrl_config },
+	{ .compat = "amlogic,meson8b-aobus-pinctrl",
+	  .data = &meson8b_aobus_pinctrl_config },
+	{ .compat = "amlogic,meson8b-cbus-pinctrl",
+	  .data = &meson8b_cbus_pinctrl_config },
 #endif
 #ifdef SOC_MESONGXBB
-	{ "amlogic,meson-gxbb-aobus-pinctrl",	(uintptr_t)&mesongxbb_aobus_pinctrl_config },
-	{ "amlogic,meson-gxbb-periphs-pinctrl",	(uintptr_t)&mesongxbb_periphs_pinctrl_config },
+	{ .compat = "amlogic,meson-gxbb-aobus-pinctrl",
+	  .data = &mesongxbb_aobus_pinctrl_config },
+	{ .compat = "amlogic,meson-gxbb-periphs-pinctrl",
+	  .data = &mesongxbb_periphs_pinctrl_config },
 #endif
 #ifdef SOC_MESONGXL
-	{ "amlogic,meson-gxl-aobus-pinctrl",	(uintptr_t)&mesongxl_aobus_pinctrl_config },
-	{ "amlogic,meson-gxl-periphs-pinctrl",	(uintptr_t)&mesongxl_periphs_pinctrl_config },
+	{ .compat = "amlogic,meson-gxl-aobus-pinctrl",
+	  .data = &mesongxl_aobus_pinctrl_config },
+	{ .compat = "amlogic,meson-gxl-periphs-pinctrl",
+	  .data = &mesongxl_periphs_pinctrl_config },
 #endif
-	{ NULL, 0 }
+#ifdef SOC_MESONG12
+	{ .compat = "amlogic,meson-g12a-aobus-pinctrl",
+	  .data = &mesong12a_aobus_pinctrl_config },
+	{ .compat = "amlogic,meson-g12a-periphs-pinctrl",
+	  .data = &mesong12a_periphs_pinctrl_config },
+#endif
+	DEVICE_COMPAT_EOL
 };
 
 #define	MUX_READ(sc, reg)				\
@@ -129,10 +141,16 @@ meson_pinctrl_set_group(struct meson_pinctrl_softc *sc,
 	uint32_t val;
 
 	val = MUX_READ(sc, group->reg);
-	if (enable)
-		val |= __BIT(group->bit);
-	else
-		val &= ~__BIT(group->bit);
+	if (group->mask == 0) {
+		if (enable)
+			val |= __BIT(group->bit);
+		else
+			val &= ~__BIT(group->bit);
+	} else {
+		val &= ~group->mask;
+		if (enable)
+			val |= __SHIFTIN(group->func, group->mask);
+	}
 	MUX_WRITE(sc, group->reg, val);
 }
 
@@ -432,17 +450,19 @@ meson_pinctrl_initres(struct meson_pinctrl_softc *sc)
 				aprint_error(": couldn't map mux registers\n");
 				return ENXIO;
 			}
-			if (fdtbus_get_reg_byname(child, "pull", &addr, &size) != 0 ||
-			    bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh_pull) != 0) {
-				aprint_error(": couldn't map pull registers\n");
-				return ENXIO;
-			}
 			if (fdtbus_get_reg_byname(child, "gpio", &addr, &size) != 0 ||
 			    bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh_gpio) != 0) {
 				aprint_error(": couldn't map gpio registers\n");
 				return ENXIO;
 			}
 
+			/* pull register is optional */
+			if (fdtbus_get_reg_byname(child, "pull", &addr, &size) == 0) {
+				if (bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh_pull) != 0) {
+					aprint_error(": couldn't map pull registers\n");
+					return ENXIO;
+				}
+			}
 			/* pull-enable register is optional */
 			if (fdtbus_get_reg_byname(child, "pull-enable", &addr, &size) == 0) {
 				if (bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh_pull_enable) != 0) {
@@ -546,7 +566,7 @@ meson_pinctrl_initgpio(struct meson_pinctrl_softc *sc)
 	gba.gba_gc = gp;
 	gba.gba_pins = sc->sc_pins;
 	gba.gba_npins = npins;
-	config_found_ia(sc->sc_dev, "gpiobus", &gba, NULL);
+	config_found(sc->sc_dev, &gba, NULL, CFARG_EOL);
 }
 
 static int
@@ -554,7 +574,7 @@ meson_pinctrl_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -566,7 +586,7 @@ meson_pinctrl_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_phandle = faa->faa_phandle;
 	sc->sc_bst = faa->faa_bst;
-	sc->sc_conf = (void *)of_search_compatible(sc->sc_phandle, compat_data)->data;
+	sc->sc_conf = of_compatible_lookup(sc->sc_phandle, compat_data)->data;
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
 
 	if (meson_pinctrl_initres(sc) != 0)

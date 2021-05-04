@@ -1,11 +1,11 @@
-/*	$NetBSD: kasp.c,v 1.2 2020/05/24 19:46:23 christos Exp $	*/
+/*	$NetBSD: kasp.c,v 1.4 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -16,7 +16,9 @@
 #include <string.h>
 
 #include <isc/assertions.h>
+#include <isc/buffer.h>
 #include <isc/file.h>
+#include <isc/hex.h>
 #include <isc/log.h>
 #include <isc/mem.h>
 #include <isc/util.h>
@@ -53,15 +55,15 @@ dns_kasp_create(isc_mem_t *mctx, const char *name, dns_kasp_t **kaspp) {
 	kasp->dnskey_ttl = DNS_KASP_KEY_TTL;
 	kasp->publish_safety = DNS_KASP_PUBLISH_SAFETY;
 	kasp->retire_safety = DNS_KASP_RETIRE_SAFETY;
+	kasp->purge_keys = DNS_KASP_PURGE_KEYS;
 
 	kasp->zone_max_ttl = DNS_KASP_ZONE_MAXTTL;
 	kasp->zone_propagation_delay = DNS_KASP_ZONE_PROPDELAY;
 
 	kasp->parent_ds_ttl = DNS_KASP_DS_TTL;
 	kasp->parent_propagation_delay = DNS_KASP_PARENT_PROPDELAY;
-	kasp->parent_registration_delay = DNS_KASP_PARENT_REGDELAY;
 
-	/* TODO: The rest of the KASP configuration */
+	kasp->nsec3 = false;
 
 	kasp->magic = DNS_KASP_MAGIC;
 	*kaspp = kasp;
@@ -185,7 +187,7 @@ dns_kasp_setsigvalidity_dnskey(dns_kasp_t *kasp, uint32_t value) {
 	REQUIRE(DNS_KASP_VALID(kasp));
 	REQUIRE(!kasp->frozen);
 
-	kasp->signatures_validity = value;
+	kasp->signatures_validity_dnskey = value;
 }
 
 dns_ttl_t
@@ -202,6 +204,22 @@ dns_kasp_setdnskeyttl(dns_kasp_t *kasp, dns_ttl_t ttl) {
 	REQUIRE(!kasp->frozen);
 
 	kasp->dnskey_ttl = ttl;
+}
+
+uint32_t
+dns_kasp_purgekeys(dns_kasp_t *kasp) {
+	REQUIRE(DNS_KASP_VALID(kasp));
+	REQUIRE(kasp->frozen);
+
+	return (kasp->purge_keys);
+}
+
+void
+dns_kasp_setpurgekeys(dns_kasp_t *kasp, uint32_t value) {
+	REQUIRE(DNS_KASP_VALID(kasp));
+	REQUIRE(!kasp->frozen);
+
+	kasp->purge_keys = value;
 }
 
 uint32_t
@@ -298,22 +316,6 @@ dns_kasp_setparentpropagationdelay(dns_kasp_t *kasp, uint32_t value) {
 	REQUIRE(!kasp->frozen);
 
 	kasp->parent_propagation_delay = value;
-}
-
-uint32_t
-dns_kasp_parentregistrationdelay(dns_kasp_t *kasp) {
-	REQUIRE(DNS_KASP_VALID(kasp));
-	REQUIRE(kasp->frozen);
-
-	return (kasp->parent_registration_delay);
-}
-
-void
-dns_kasp_setparentregistrationdelay(dns_kasp_t *kasp, uint32_t value) {
-	REQUIRE(DNS_KASP_VALID(kasp));
-	REQUIRE(!kasp->frozen);
-
-	kasp->parent_registration_delay = value;
 }
 
 isc_result_t
@@ -413,7 +415,7 @@ dns_kasp_key_size(dns_kasp_key_t *key) {
 	case DNS_KEYALG_NSEC3RSASHA1:
 	case DNS_KEYALG_RSASHA256:
 	case DNS_KEYALG_RSASHA512:
-		min = DNS_KEYALG_RSASHA512 ? 1024 : 512;
+		min = (key->algorithm == DNS_KEYALG_RSASHA512) ? 1024 : 512;
 		if (key->length > -1) {
 			size = (unsigned int)key->length;
 			if (size < min) {
@@ -433,10 +435,10 @@ dns_kasp_key_size(dns_kasp_key_t *key) {
 		size = 384;
 		break;
 	case DNS_KEYALG_ED25519:
-		size = 32;
+		size = 256;
 		break;
 	case DNS_KEYALG_ED448:
-		size = 57;
+		size = 456;
 		break;
 	default:
 		/* unsupported */
@@ -464,4 +466,62 @@ dns_kasp_key_zsk(dns_kasp_key_t *key) {
 	REQUIRE(key != NULL);
 
 	return (key->role & DNS_KASP_KEY_ROLE_ZSK);
+}
+
+uint8_t
+dns_kasp_nsec3iter(dns_kasp_t *kasp) {
+	REQUIRE(kasp != NULL);
+	REQUIRE(kasp->frozen);
+	REQUIRE(kasp->nsec3);
+
+	return (kasp->nsec3param.iterations);
+}
+
+uint8_t
+dns_kasp_nsec3flags(dns_kasp_t *kasp) {
+	REQUIRE(kasp != NULL);
+	REQUIRE(kasp->frozen);
+	REQUIRE(kasp->nsec3);
+
+	if (kasp->nsec3param.optout) {
+		return (0x01);
+	}
+	return (0x00);
+}
+
+uint8_t
+dns_kasp_nsec3saltlen(dns_kasp_t *kasp) {
+	REQUIRE(kasp != NULL);
+	REQUIRE(kasp->frozen);
+	REQUIRE(kasp->nsec3);
+
+	return (kasp->nsec3param.saltlen);
+}
+
+bool
+dns_kasp_nsec3(dns_kasp_t *kasp) {
+	REQUIRE(kasp != NULL);
+	REQUIRE(kasp->frozen);
+
+	return kasp->nsec3;
+}
+
+void
+dns_kasp_setnsec3(dns_kasp_t *kasp, bool nsec3) {
+	REQUIRE(kasp != NULL);
+	REQUIRE(!kasp->frozen);
+
+	kasp->nsec3 = nsec3;
+}
+
+void
+dns_kasp_setnsec3param(dns_kasp_t *kasp, uint8_t iter, bool optout,
+		       uint8_t saltlen) {
+	REQUIRE(kasp != NULL);
+	REQUIRE(!kasp->frozen);
+	REQUIRE(kasp->nsec3);
+
+	kasp->nsec3param.iterations = iter;
+	kasp->nsec3param.optout = optout;
+	kasp->nsec3param.saltlen = saltlen;
 }

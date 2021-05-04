@@ -1,4 +1,4 @@
-/*	$NetBSD: tyname.c,v 1.13 2018/09/07 15:16:15 christos Exp $	*/
+/*	$NetBSD: tyname.c,v 1.40 2021/04/18 17:47:32 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2005 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tyname.c,v 1.13 2018/09/07 15:16:15 christos Exp $");
+__RCSID("$NetBSD: tyname.c,v 1.40 2021/04/18 17:47:32 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -43,23 +43,120 @@ __RCSID("$NetBSD: tyname.c,v 1.13 2018/09/07 15:16:15 christos Exp $");
 #include <stdlib.h>
 #include <err.h>
 
-#include PASS
-
-#ifndef LERROR
-#define LERROR(fmt, args...) 	do { \
-    (void)warnx("%s, %d: " fmt, __FILE__, __LINE__, ##args); \
-    abort(); \
-} while (/*CONSTCOND*/0)
+#if defined(IS_LINT1)
+#include "lint1.h"
+#else
+#include "lint2.h"
 #endif
 
+#ifndef INTERNAL_ERROR
+#define INTERNAL_ERROR(fmt, args...) \
+	do { \
+		(void)warnx("%s, %d: " fmt, __FILE__, __LINE__, ##args); \
+		abort(); \
+	} while (false)
+#endif
+
+/* A tree of strings. */
+typedef struct name_tree_node {
+	char *ntn_name;
+	struct name_tree_node *ntn_less;
+	struct name_tree_node *ntn_greater;
+} name_tree_node;
+
+/* A growable string buffer. */
+typedef struct buffer {
+	size_t	len;
+	size_t	cap;
+	char *	data;
+} buffer;
+
+static name_tree_node *type_names;
+
+static name_tree_node *
+new_name_tree_node(const char *name)
+{
+	name_tree_node *n;
+
+	n = xmalloc(sizeof(*n));
+	n->ntn_name = xstrdup(name);
+	n->ntn_less = NULL;
+	n->ntn_greater = NULL;
+	return n;
+}
+
+/* Return the canonical instance of the string, with unlimited life time. */
+static const char *
+intern(const char *name)
+{
+	name_tree_node *n = type_names, **next;
+	int cmp;
+
+	if (n == NULL) {
+		n = new_name_tree_node(name);
+		type_names = n;
+		return n->ntn_name;
+	}
+
+	while ((cmp = strcmp(name, n->ntn_name)) != 0) {
+		next = cmp < 0 ? &n->ntn_less : &n->ntn_greater;
+		if (*next == NULL) {
+			*next = new_name_tree_node(name);
+			return (*next)->ntn_name;
+		}
+		n = *next;
+	}
+	return n->ntn_name;
+}
+
+static void
+buf_init(buffer *buf)
+{
+	buf->len = 0;
+	buf->cap = 128;
+	buf->data = xmalloc(buf->cap);
+	buf->data[0] = '\0';
+}
+
+static void
+buf_done(buffer *buf)
+{
+	free(buf->data);
+}
+
+static void
+buf_add(buffer *buf, const char *s)
+{
+	size_t len = strlen(s);
+
+	while (buf->len + len + 1 >= buf->cap) {
+		buf->data = xrealloc(buf->data, 2 * buf->cap);
+		buf->cap = 2 * buf->cap;
+	}
+
+	memcpy(buf->data + buf->len, s, len + 1);
+	buf->len += len;
+}
+
+static void
+buf_add_int(buffer *buf, int n)
+{
+	char num[1 + sizeof(n) * CHAR_BIT + 1];
+
+	snprintf(num, sizeof(num), "%d", n);
+	buf_add(buf, num);
+}
+
 const char *
-basictyname(tspec_t t)
+tspec_name(tspec_t t)
 {
 	switch (t) {
+	case SIGNED:	return "signed";
+	case UNSIGN:	return "unsigned";
 	case BOOL:	return "_Bool";
 	case CHAR:	return "char";
-	case UCHAR:	return "unsigned char";
 	case SCHAR:	return "signed char";
+	case UCHAR:	return "unsigned char";
 	case SHORT:	return "short";
 	case USHORT:	return "unsigned short";
 	case INT:	return "int";
@@ -76,29 +173,29 @@ basictyname(tspec_t t)
 	case DOUBLE:	return "double";
 	case LDOUBLE:	return "long double";
 	case VOID:	return "void";
-	case PTR:	return "pointer";
-	case ENUM:	return "enum";
 	case STRUCT:	return "struct";
 	case UNION:	return "union";
-	case FUNC:	return "function";
+	case ENUM:	return "enum";
+	case PTR:	return "pointer";
 	case ARRAY:	return "array";
+	case FUNC:	return "function";
+	case COMPLEX:	return "_Complex";
 	case FCOMPLEX:	return "float _Complex";
 	case DCOMPLEX:	return "double _Complex";
 	case LCOMPLEX:	return "long double _Complex";
-	case COMPLEX:	return "_Complex";
 	default:
-		LERROR("basictyname(%d)", t);
+		INTERNAL_ERROR("tspec_name(%d)", t);
 		return NULL;
 	}
 }
 
-int
+bool
 sametype(const type_t *t1, const type_t *t2)
 {
 	tspec_t	t;
 
 	if (t1->t_tspec != t2->t_tspec)
-		return 0;
+		return false;
 
 	/* Ignore const/void */
 
@@ -128,54 +225,144 @@ sametype(const type_t *t1, const type_t *t2)
 	case FCOMPLEX:
 	case DCOMPLEX:
 	case LCOMPLEX:
-		return 1;
+		return true;
 	case ARRAY:
 		if (t1->t_dim != t2->t_dim)
-			return 0;
+			return false;
 		/*FALLTHROUGH*/
 	case PTR:
 		return sametype(t1->t_subt, t2->t_subt);
 	case ENUM:
 #ifdef t_enum
-		return strcmp(t1->t_enum->etag->s_name,
-		    t2->t_enum->etag->s_name) == 0;
+		return strcmp(t1->t_enum->en_tag->s_name,
+		    t2->t_enum->en_tag->s_name) == 0;
 #else
-		return 1;
+		return true;
 #endif
 	case STRUCT:
 	case UNION:
 #ifdef t_str
-		return strcmp(t1->t_str->stag->s_name,
-		    t2->t_str->stag->s_name) == 0;
+		return strcmp(t1->t_str->sou_tag->s_name,
+		    t2->t_str->sou_tag->s_name) == 0;
 #else
-		return 1;
+		return true;
 #endif
 	default:
-		LERROR("tyname(%d)", t);
-		return 0;
+		INTERNAL_ERROR("tyname(%d)", t);
+		return false;
 	}
 }
 
-const char *
-tyname(char *buf, size_t bufsiz, const type_t *tp)
+static void
+type_name_of_function(buffer *buf, const type_t *tp)
 {
-	tspec_t	t;
-	const	char *s;
-	char lbuf[64];
-	char cv[20];
+	const char *sep = "";
+
+	buf_add(buf, "(");
+	if (tp->t_proto) {
+#ifdef t_enum /* lint1 */
+		sym_t *arg;
+
+		for (arg = tp->t_args; arg != NULL; arg = arg->s_next) {
+			buf_add(buf, sep), sep = ", ";
+			buf_add(buf, type_name(arg->s_type));
+		}
+#else /* lint2 */
+		type_t **argtype;
+
+		for (argtype = tp->t_args; *argtype != NULL; argtype++) {
+			buf_add(buf, sep), sep = ", ";
+			buf_add(buf, type_name(*argtype));
+		}
+#endif
+	}
+	if (tp->t_vararg) {
+		buf_add(buf, sep);
+		buf_add(buf, "...");
+	}
+	buf_add(buf, ") returning ");
+	buf_add(buf, type_name(tp->t_subt));
+}
+
+static void
+type_name_of_struct_or_union(buffer *buf, const type_t *tp)
+{
+	buf_add(buf, " ");
+#ifdef t_str
+	if (tp->t_str->sou_tag->s_name == unnamed &&
+	    tp->t_str->sou_first_typedef != NULL) {
+		buf_add(buf, "typedef ");
+		buf_add(buf, tp->t_str->sou_first_typedef->s_name);
+	} else {
+		buf_add(buf, tp->t_str->sou_tag->s_name);
+	}
+#else
+	buf_add(buf, tp->t_isuniqpos ? "*anonymous*" : tp->t_tag->h_name);
+#endif
+}
+
+static void
+type_name_of_enum(buffer *buf, const type_t *tp)
+{
+	buf_add(buf, " ");
+#ifdef t_enum
+	if (tp->t_enum->en_tag->s_name == unnamed &&
+	    tp->t_enum->en_first_typedef != NULL) {
+		buf_add(buf, "typedef ");
+		buf_add(buf, tp->t_enum->en_first_typedef->s_name);
+	} else {
+		buf_add(buf, tp->t_enum->en_tag->s_name);
+	}
+#else
+	buf_add(buf, tp->t_isuniqpos ? "*anonymous*" : tp->t_tag->h_name);
+#endif
+}
+
+static void
+type_name_of_array(buffer *buf, const type_t *tp)
+{
+	buf_add(buf, "[");
+#ifdef t_str /* lint1 */
+	if (tp->t_incomplete_array)
+		buf_add(buf, "unknown_size");
+	else
+		buf_add_int(buf, tp->t_dim);
+#else
+	buf_add_int(buf, tp->t_dim);
+#endif
+	buf_add(buf, "]");
+	buf_add(buf, " of ");
+	buf_add(buf, type_name(tp->t_subt));
+}
+
+const char *
+type_name(const type_t *tp)
+{
+	tspec_t t;
+	buffer buf;
+	const char *name;
 
 	if (tp == NULL)
 		return "(null)";
-	if ((t = tp->t_tspec) == INT && tp->t_isenum)
+
+	/*
+	 * XXX: Why is this necessary, and in which cases does this apply?
+	 * Shouldn't the type be an ENUM from the beginning?
+	 */
+	if ((t = tp->t_tspec) == INT && tp->t_is_enum)
 		t = ENUM;
 
-	s = basictyname(t);
-
-	cv[0] = '\0';
+	buf_init(&buf);
 	if (tp->t_const)
-		(void)strcat(cv, "const ");
+		buf_add(&buf, "const ");
 	if (tp->t_volatile)
-		(void)strcat(cv, "volatile ");
+		buf_add(&buf, "volatile ");
+
+#ifdef t_str
+	if ((t == STRUCT || t == UNION) && tp->t_str->sou_incomplete)
+		buf_add(&buf, "incomplete ");
+#endif
+	buf_add(&buf, tspec_name(t));
 
 	switch (t) {
 	case BOOL:
@@ -198,42 +385,35 @@ tyname(char *buf, size_t bufsiz, const type_t *tp)
 	case DOUBLE:
 	case LDOUBLE:
 	case VOID:
-	case FUNC:
 	case COMPLEX:
 	case FCOMPLEX:
 	case DCOMPLEX:
 	case LCOMPLEX:
-		(void)snprintf(buf, bufsiz, "%s%s", cv, s);
+	case SIGNED:
+	case UNSIGN:
 		break;
 	case PTR:
-		(void)snprintf(buf, bufsiz, "%s%s to %s", cv, s,
-		    tyname(lbuf, sizeof(lbuf), tp->t_subt));
+		buf_add(&buf, " to ");
+		buf_add(&buf, type_name(tp->t_subt));
 		break;
 	case ENUM:
-		(void)snprintf(buf, bufsiz, "%s%s %s", cv, s,
-#ifdef t_enum
-		    tp->t_enum->etag->s_name
-#else
-		    tp->t_isuniqpos ? "*anonymous*" : tp->t_tag->h_name
-#endif
-		    );
+		type_name_of_enum(&buf, tp);
 		break;
 	case STRUCT:
 	case UNION:
-		(void)snprintf(buf, bufsiz, "%s%s %s", cv, s,
-#ifdef t_str
-		    tp->t_str->stag->s_name
-#else
-		    tp->t_isuniqpos ? "*anonymous*" : tp->t_tag->h_name
-#endif
-		    );
+		type_name_of_struct_or_union(&buf, tp);
 		break;
 	case ARRAY:
-		(void)snprintf(buf, bufsiz, "%s%s of %s[%d]", cv, s,
-		    tyname(lbuf, sizeof(lbuf), tp->t_subt), tp->t_dim);
+		type_name_of_array(&buf, tp);
+		break;
+	case FUNC:
+		type_name_of_function(&buf, tp);
 		break;
 	default:
-		LERROR("tyname(%d)", t);
+		INTERNAL_ERROR("type_name(%d)", t);
 	}
-	return (buf);
+
+	name = intern(buf.data);
+	buf_done(&buf);
+	return name;
 }

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.286 2020/10/29 20:11:17 nia Exp $
+#	$NetBSD: Makefile,v 1.292 2021/04/25 23:43:48 christos Exp $
 #	from: @(#)Makefile	5.25.1.1 (Berkeley) 5/7/91
 
 .include <bsd.own.mk>
@@ -27,7 +27,7 @@ SUBDIR+=	libarch \
 		libossaudio libpci libposix libprop libpthread \
 		libpuffs libresolv librmt librpcsvc librt \
 		libtelnet libterminfo \
-		libusbhid libutil libwrap liby libz
+		libusbhid libutil liby libz
 
 .if !defined(BSD_MK_COMPAT_FILE)
 SUBDIR+=	libkern
@@ -40,7 +40,7 @@ LIBC_MACHINE_CPU?=${MACHINE_CPU}
 SUBDIR+=	libc_vfp
 .endif
 .endif
-.if ${MACHINE_ARCH} == "mips64el" || ${MACHINE_ARCH} == "mips64eb"
+.if ${MACHINE_MIPS64}
 SUBDIR+=	libc_fp
 .endif
 .if (${MKRUMP} != "no")
@@ -62,7 +62,7 @@ SUBDIR+=	../external/bsd/am-utils/lib
 
 SUBDIR+=	../external/bsd/flex/lib
 SUBDIR+=	../external/bsd/tre/lib
-SUBDIR+=	../external/bsd/elftoolchain/lib/libelf
+SUBDIR+=	../external/bsd/elftoolchain/lib
 SUBDIR+=	../external/bsd/liblzf/lib
 SUBDIR+=	../external/bsd/libpcap/lib
 
@@ -118,7 +118,6 @@ SUBDIR+=	../external/public-domain/xz/lib	# depends on libpthread
 SUBDIR+=	../crypto/external/bsd/netpgp/libmj
 SUBDIR+=	../crypto/external/bsd/netpgp/lib/verify # depends on libz
 SUBDIR+=	../external/bsd/blocklist/lib		# depends on libpthread
-SUBDIR+=	../external/bsd/elftoolchain/lib/libdwarf # depends on libelf
 SUBDIR+=	../external/mit/lua/lib # depends on libm
 SUBDIR+=	../external/public-domain/sqlite/lib # depends on libm
 SUBDIR+=	libcurses	# depends on libterminfo
@@ -177,6 +176,8 @@ SUBDIR+=	../external/mit/libcbor/lib
 SUBDIR+=	../external/mit/libuv/lib
 #==================== 2nd library dependency barrier ====================
 SUBDIR+=	.WAIT
+
+SUBDIR+=	libwrap
 
 .if (${MKGCC} != "no" && ${MKCXX} != "no" && ${MKLIBSTDCXX} != "no")
 .for sanitizer in asan lsan ubsan

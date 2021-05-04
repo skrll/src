@@ -1,4 +1,4 @@
-/* $NetBSD: rk_platform.c,v 1.10 2020/09/28 11:54:23 jmcneill Exp $ */
+/* $NetBSD: rk_platform.c,v 1.12 2021/04/24 23:36:28 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_console.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rk_platform.c,v 1.10 2020/09/28 11:54:23 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk_platform.c,v 1.12 2021/04/24 23:36:28 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

@@ -1,11 +1,11 @@
-/*	$NetBSD: statschannel.c,v 1.8 2020/08/03 17:23:37 christos Exp $	*/
+/*	$NetBSD: statschannel.c,v 1.11 2021/04/05 11:29:49 rillig Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -177,7 +177,7 @@ static const char *gluecachestats_xmldesc[dns_gluecachestatscounter_max];
 		xmlrc = (a);        \
 		if (xmlrc < 0)      \
 			goto error; \
-	} while(/*CONSTCOND*/0)
+	} while (0)
 
 /*%
  * Mapping arrays to represent statistics counters in the order of our
@@ -234,7 +234,7 @@ init_desc(void) {
 		set_desc(ns_statscounter_##counterid, ns_statscounter_max, \
 			 desc, nsstats_desc, xmldesc, nsstats_xmldesc);    \
 		nsstats_index[i++] = ns_statscounter_##counterid;          \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 	i = 0;
 	SET_NSSTATDESC(requestv4, "IPv4 requests received", "Requestv4");
@@ -356,7 +356,7 @@ init_desc(void) {
 			 dns_resstatscounter_max, desc, resstats_desc, \
 			 xmldesc, resstats_xmldesc);                   \
 		resstats_index[i++] = dns_resstatscounter_##counterid; \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 	i = 0;
 	SET_RESSTATDESC(queryv4, "IPv4 queries sent", "Queryv4");
@@ -446,7 +446,7 @@ init_desc(void) {
 		set_desc(dns_adbstats_##id, dns_adbstats_max, desc, \
 			 adbstats_desc, xmldesc, adbstats_xmldesc); \
 		adbstats_index[i++] = dns_adbstats_##id;            \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 	i = 0;
 	SET_ADBSTATDESC(nentries, "Address hash table size", "nentries");
 	SET_ADBSTATDESC(entriescnt, "Addresses in hash table", "entriescnt");
@@ -471,7 +471,7 @@ init_desc(void) {
 			 dns_zonestatscounter_max, desc, zonestats_desc, \
 			 xmldesc, zonestats_xmldesc);                    \
 		zonestats_index[i++] = dns_zonestatscounter_##counterid; \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 	i = 0;
 	SET_ZONESTATDESC(notifyoutv4, "IPv4 notifies sent", "NotifyOutv4");
@@ -506,7 +506,7 @@ init_desc(void) {
 			 isc_sockstatscounter_max, desc, sockstats_desc, \
 			 xmldesc, sockstats_xmldesc);                    \
 		sockstats_index[i++] = isc_sockstatscounter_##counterid; \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 	i = 0;
 	SET_SOCKSTATDESC(udp4open, "UDP/IPv4 sockets opened", "UDP4Open");
@@ -627,7 +627,7 @@ init_desc(void) {
 			 desc, dnssecstats_desc, xmldesc,                  \
 			 dnssecstats_xmldesc);                             \
 		dnssecstats_index[i++] = dns_dnssecstats_##counterid;      \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 	i = 0;
 	SET_DNSSECSTATDESC(asis,
@@ -2409,12 +2409,12 @@ generatexml(named_server_t *server, uint32_t flags, int *buflen,
 	TRY0(xmlTextWriterEndElement(writer)); /* /statistics */
 	TRY0(xmlTextWriterEndDocument(writer));
 
-	xmlFreeTextWriter(writer);
-
 	xmlDocDumpFormatMemoryEnc(doc, buf, buflen, "UTF-8", 0);
 	if (*buf == NULL) {
 		goto error;
 	}
+
+	xmlFreeTextWriter(writer);
 	xmlFreeDoc(doc);
 	return (ISC_R_SUCCESS);
 
@@ -2580,7 +2580,7 @@ render_xml_traffic(const char *url, isc_httpdurl_t *urlinfo,
 		result = (m);                \
 		if (result != ISC_R_SUCCESS) \
 			goto error;          \
-	} while(/*CONSTCOND*/0)
+	} while (0)
 
 #define CHECKMEM(m)                              \
 	do {                                     \
@@ -2588,7 +2588,7 @@ render_xml_traffic(const char *url, isc_httpdurl_t *urlinfo,
 			result = ISC_R_NOMEMORY; \
 			goto error;              \
 		}                                \
-	} while(/*CONSTCOND*/0)
+	} while (0)
 
 static void
 wrap_jsonfree(isc_buffer_t *buffer, void *arg) {

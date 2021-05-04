@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3etsec.c,v 1.50 2020/07/06 09:34:16 rin Exp $	*/
+/*	$NetBSD: pq3etsec.c,v 1.54 2021/04/24 23:36:46 thorpej Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.50 2020/07/06 09:34:16 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.54 2021/04/24 23:36:46 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -57,6 +57,8 @@ __KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.50 2020/07/06 09:34:16 rin Exp $");
 #include <sys/atomic.h>
 #include <sys/callout.h>
 #include <sys/sysctl.h>
+
+#include <sys/rndsource.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -237,6 +239,8 @@ struct pq3etsec_softc {
 	int sc_ic_rx_count;
 	int sc_ic_tx_time;
 	int sc_ic_tx_count;
+
+	krndsource_t rnd_source;
 };
 
 #define	ETSEC_IC_RX_ENABLED(sc)						\
@@ -713,9 +717,12 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	 */
 	if (mdio == CPUNODECF_MDIO_DEFAULT) {
 		aprint_normal("\n");
-		cfdata_t mdio_cf = config_search_ia(pq3mdio_find, self, NULL, cna);
+		cfdata_t mdio_cf = config_search(self, cna,
+						 CFARG_SUBMATCH, pq3mdio_find,
+						 CFARG_EOL);
 		if (mdio_cf != NULL) {
-			sc->sc_mdio_dev = config_attach(self, mdio_cf, cna, NULL);
+			sc->sc_mdio_dev =
+			    config_attach(self, mdio_cf, cna, NULL, CFARG_EOL);
 		}
 	} else {
 		sc->sc_mdio_dev = device_find_by_driver_unit("mdio", mdio);
@@ -804,8 +811,12 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 		goto fail_10;
 	}
 	pq3etsec_sysctl_setup(NULL, sc);
+	if_attach(ifp);
+	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, enaddr);
-	if_register(ifp);
+
+	rnd_attach_source(&sc->rnd_source, xname, RND_TYPE_NET,
+	    RND_FLAG_DEFAULT);
 
 	pq3etsec_ifstop(ifp, true);
 
@@ -1613,9 +1624,7 @@ pq3etsec_rx_input(
 	/*
 	 * Let's give it to the network subsystm to deal with.
 	 */
-	int s = splnet();
-	if_input(ifp, m);
-	splx(s);
+	if_percpuq_enqueue(ifp->if_percpuq, m);
 }
 
 static void
@@ -1634,14 +1643,14 @@ pq3etsec_rxq_consume(
 			rxq->rxq_consumer = consumer;
 			rxq->rxq_inuse -= rxconsumed;
 			KASSERT(rxq->rxq_inuse == 0);
-			return;
+			break;
 		}
 		pq3etsec_rxq_desc_postsync(sc, rxq, consumer, 1);
 		const uint16_t rxbd_flags = consumer->rxbd_flags;
 		if (rxbd_flags & RXBD_E) {
 			rxq->rxq_consumer = consumer;
 			rxq->rxq_inuse -= rxconsumed;
-			return;
+			break;
 		}
 		KASSERT(rxq->rxq_mconsumer != NULL);
 #ifdef ETSEC_DEBUG
@@ -1715,6 +1724,9 @@ pq3etsec_rxq_consume(
 		KASSERT(rxq->rxq_mbufs[consumer - rxq->rxq_first] == rxq->rxq_mconsumer);
 #endif
 	}
+
+	if (rxconsumed != 0)
+		rnd_add_uint32(&sc->rnd_source, rxconsumed);
 }
 
 static void
@@ -2169,6 +2181,7 @@ pq3etsec_txq_consume(
 	struct ifnet * const ifp = &sc->sc_if;
 	volatile struct txbd *consumer = txq->txq_consumer;
 	size_t txfree = 0;
+	bool ret;
 
 #if 0
 	printf("%s: entry: free=%zu\n", __func__, txq->txq_free);
@@ -2180,13 +2193,11 @@ pq3etsec_txq_consume(
 			txq->txq_consumer = consumer;
 			txq->txq_free += txfree;
 			txq->txq_lastintr -= uimin(txq->txq_lastintr, txfree);
-#if 0
-			printf("%s: empty: freed %zu descriptors going form %zu to %zu\n",
-			    __func__, txfree, txq->txq_free - txfree, txq->txq_free);
-#endif
 			KASSERT(txq->txq_lastintr == 0);
-			KASSERT(txq->txq_free == txq->txq_last - txq->txq_first - 1);
-			return true;
+			KASSERT(txq->txq_free ==
+			    txq->txq_last - txq->txq_first - 1);
+			ret = true;
+			break;
 		}
 		pq3etsec_txq_desc_postsync(sc, txq, consumer, 1);
 		const uint16_t txbd_flags = consumer->txbd_flags;
@@ -2194,11 +2205,8 @@ pq3etsec_txq_consume(
 			txq->txq_consumer = consumer;
 			txq->txq_free += txfree;
 			txq->txq_lastintr -= uimin(txq->txq_lastintr, txfree);
-#if 0
-			printf("%s: freed %zu descriptors\n",
-			    __func__, txfree);
-#endif
-			return pq3etsec_txq_fillable_p(sc, txq);
+			ret = pq3etsec_txq_fillable_p(sc, txq);
+			break;
 		}
 
 		/*
@@ -2262,6 +2270,10 @@ pq3etsec_txq_consume(
 			KASSERT(consumer < txq->txq_last);
 		}
 	}
+
+	if (txfree != 0)
+		rnd_add_uint32(&sc->rnd_source, txfree);
+	return ret;
 }
 
 static void

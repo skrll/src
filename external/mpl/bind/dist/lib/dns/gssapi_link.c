@@ -1,11 +1,11 @@
-/*	$NetBSD: gssapi_link.c,v 1.5 2020/05/24 19:46:22 christos Exp $	*/
+/*	$NetBSD: gssapi_link.c,v 1.8 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -35,13 +35,13 @@
 	do {                              \
 		(gb).length = (r).length; \
 		(gb).value = (r).base;    \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define GBUFFER_TO_REGION(gb, r)                        \
 	do {                                            \
 		(r).length = (unsigned int)(gb).length; \
 		(r).base = (gb).value;                  \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 struct dst_gssapi_signverifyctx {
 	isc_buffer_t *buffer;
@@ -284,7 +284,7 @@ gssapi_restore(dst_key_t *key, const char *keystr) {
 	isc_buffer_remainingregion(b, &r);
 	REGION_TO_GBUFFER(r, gssbuffer);
 	major = gss_import_sec_context(&minor, &gssbuffer,
-				       &key->keydata.gssctx);
+				       (gss_ctx_id_t *)&key->keydata.gssctx);
 	if (major != GSS_S_COMPLETE) {
 		isc_buffer_free(&b);
 		return (ISC_R_FAILURE);
@@ -304,8 +304,8 @@ gssapi_dump(dst_key_t *key, isc_mem_t *mctx, char **buffer, int *length) {
 	isc_region_t r;
 	isc_result_t result;
 
-	major = gss_export_sec_context(&minor, &key->keydata.gssctx,
-				       &gssbuffer);
+	major = gss_export_sec_context(
+		&minor, (gss_ctx_id_t *)&key->keydata.gssctx, &gssbuffer);
 	if (major != GSS_S_COMPLETE) {
 		fprintf(stderr, "gss_export_sec_context -> %u, %u\n", major,
 			minor);

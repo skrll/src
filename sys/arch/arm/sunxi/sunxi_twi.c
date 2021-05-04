@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_twi.c,v 1.11 2020/01/12 17:48:42 thorpej Exp $ */
+/* $NetBSD: sunxi_twi.c,v 1.17 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: sunxi_twi.c,v 1.11 2020/01/12 17:48:42 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_twi.c,v 1.17 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -72,26 +72,14 @@ static const struct sunxi_twi_config sun6i_a31_i2c_config = {
 	.iflg_rwc = true,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "allwinner,sun4i-a10-i2c",	(uintptr_t)&sun4i_a10_i2c_config },
-	{ "allwinner,sun6i-a31-i2c",	(uintptr_t)&sun6i_a31_i2c_config },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun4i-a10-i2c",	.data = &sun4i_a10_i2c_config },
+	{ .compat = "allwinner,sun6i-a31-i2c",	.data = &sun6i_a31_i2c_config },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(sunxi_twi, sizeof(struct gttwsi_softc),
 	sunxi_twi_match, sunxi_twi_attach, NULL, NULL);
-
-static i2c_tag_t
-sunxi_twi_get_tag(device_t dev)
-{
-	struct gttwsi_softc * const sc = device_private(dev);
-
-	return &sc->sc_i2c;
-}
-
-const struct fdtbus_i2c_controller_func sunxi_twi_funcs = {
-	.get_tag = sunxi_twi_get_tag,
-};
 
 static u_int
 sunxi_twi_calc_rate(u_int parent_rate, u_int n, u_int m)
@@ -128,7 +116,7 @@ sunxi_twi_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -173,7 +161,7 @@ sunxi_twi_attach(device_t parent, device_t self, void *aux)
 			return;
 		}
 
-	conf = (void *)of_search_compatible(phandle, compat_data)->data;
+	conf = of_compatible_lookup(phandle, compat_data)->data;
 	prop_dictionary_set_bool(device_properties(self), "iflg-rwc",
 	    conf->iflg_rwc);
 
@@ -186,7 +174,8 @@ sunxi_twi_attach(device_t parent, device_t self, void *aux)
 	if (clk != NULL)
 		sunxi_twi_set_clock(sc, clk_get_rate(clk), 100000);
 
-	ih = fdtbus_intr_establish(phandle, 0, IPL_VM, 0, gttwsi_intr, sc);
+	ih = fdtbus_intr_establish_xname(phandle, 0, IPL_VM, 0, gttwsi_intr,
+	    sc, device_xname(self));
 	if (ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt on %s\n",
 		    intrstr);
@@ -194,7 +183,7 @@ sunxi_twi_attach(device_t parent, device_t self, void *aux)
 	}
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
-	fdtbus_register_i2c_controller(self, phandle, &sunxi_twi_funcs);
+	fdtbus_register_i2c_controller(&sc->sc_i2c, phandle);
 
 	fdtbus_attach_i2cbus(self, phandle, &sc->sc_i2c, iicbus_print);
 }

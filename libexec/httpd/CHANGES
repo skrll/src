@@ -1,4 +1,20 @@
-$NetBSD: CHANGES,v 1.44 2020/10/15 04:21:53 mrg Exp $
+$NetBSD: CHANGES,v 1.48 2021/04/04 18:14:26 mrg Exp $
+
+changes in bozohttpd 20210403:
+	o  fix a denial of service attack against initial request contents,
+           now bounded at 16KiB.  reported by Justin Parrott in PR#56085
+
+changes in bozohttpd 20210227:
+	o  new support for content types: .tar.bz2, .tar.xz, .tar.lz,
+	   .tar.zst, .tbz2, .txz, .tlz, .zipx, .xz, .zst, .sz, .lz, .lzma,
+	   .lzo, .7z, .lzo, .cab, .dmg, .jar, and .rar.  should fix
+	   netbsd PR#56026:
+	   MIME type of .tar.xz file on ny{cdn,ftp}.NetBSD.org is invalid
+
+changes in bozohttpd 20210211:
+	o  fix various NULL derefs from malformed headers.  mostly from
+	   <emily@ingalls.rocks>.
+	o  fix memory leaks in library interface: add bozo_cleanup().
 
 changes in bozohttpd 20201014:
 	o  also set -D_GNU_SOURCE in Makefile.boot.  from

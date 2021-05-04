@@ -1,4 +1,4 @@
-/*	$NetBSD: compat_defs.h,v 1.116 2019/06/19 23:33:07 kamil Exp $	*/
+/*	$NetBSD: compat_defs.h,v 1.118 2021/02/25 13:41:58 christos Exp $	*/
 
 #ifndef	__NETBSD_COMPAT_DEFS_H__
 #define	__NETBSD_COMPAT_DEFS_H__
@@ -462,11 +462,10 @@ int __nbcompat_gettemp(char *, int *, int);
 ssize_t pread(int, void *, size_t, off_t);
 #endif
 
+#define heapsort __nbcompat_heapsort
 #if !HAVE_DECL_HEAPSORT
 int heapsort (void *, size_t, size_t, int (*)(const void *, const void *));
 #endif
-/* Make them use our version */
-#  define heapsort __nbcompat_heapsort
 
 char	       *flags_to_string(unsigned long, const char *);
 int		string_to_flags(char **, unsigned long *, unsigned long *);
@@ -555,6 +554,10 @@ int raise_default_signal(int);
 
 #if !HAVE_DECL_REALLOCARR
 int reallocarr(void *, size_t, size_t);
+#endif
+
+#if !HAVE_DECL_REALLOCARRAY
+void *reallocarray(void *, size_t, size_t);
 #endif
 
 #if !HAVE_DECL_SETENV

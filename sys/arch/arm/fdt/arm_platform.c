@@ -1,4 +1,4 @@
-/* $NetBSD: arm_platform.c,v 1.3 2020/09/28 11:54:23 jmcneill Exp $ */
+/* $NetBSD: arm_platform.c,v 1.5 2021/04/24 23:36:26 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2020 Jared McNeill <jmcneill@invisible.ca>
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm_platform.c,v 1.3 2020/09/28 11:54:23 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_platform.c,v 1.5 2021/04/24 23:36:26 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

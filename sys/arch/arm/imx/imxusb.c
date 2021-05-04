@@ -1,4 +1,4 @@
-/*	$NetBSD: imxusb.c,v 1.15 2019/07/26 06:57:54 skrll Exp $	*/
+/*	$NetBSD: imxusb.c,v 1.17 2021/04/24 23:36:27 thorpej Exp $	*/
 /*
  * Copyright (c) 2009, 2010  Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi and Hiroyuki Bessho for Genetec Corporation.
@@ -25,9 +25,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imxusb.c,v 1.15 2019/07/26 06:57:54 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imxusb.c,v 1.17 2021/04/24 23:36:27 thorpej Exp $");
 
 #include "locators.h"
+#include "opt_imx.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -213,7 +214,8 @@ imxehci_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* Attach usb device. */
-	hsc->sc_child = config_found(self, &hsc->sc_bus, usbctlprint);
+	hsc->sc_child = config_found(self, &hsc->sc_bus, usbctlprint,
+	    CFARG_EOL);
 }
 
 static void

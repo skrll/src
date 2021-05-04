@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.344 2020/12/12 03:03:14 pgoyette Exp $
+# $NetBSD: mi,v 1.351 2021/04/23 22:50:06 mrg Exp $
 ./etc/mtree/set.debug                           comp-sys-root
 ./usr/lib					comp-sys-usr		compatdir
 ./usr/lib/i18n/libBIG5_g.a			comp-c-debuglib		debuglib,compatfile
@@ -264,6 +264,7 @@
 ./usr/lib/libtpm_unseal_g.a			comp-c-debuglib		debuglib,compatfile,tpm
 ./usr/lib/libtre_g.a				comp-c-debuglib		debuglib,compatfile
 ./usr/lib/libtsan_g.a				comp-c-debuglib		debuglib,arch64,cxx,gcc=9,machine=amd64
+./usr/lib/libtsan_g.a				comp-c-debuglib		debuglib,arch64,cxx,gcc=10,machine=amd64
 ./usr/lib/libtspi_g.a				comp-c-debuglib		debuglib,compatfile,tpm
 ./usr/lib/libubsan_g.a				comp-c-debuglib		debuglib,compatfile,cxx,gcc
 ./usr/lib/libukfs_g.a				comp-c-debuglib		debuglib,compatfile,rump
@@ -320,6 +321,7 @@
 ./usr/libdata/debug/bin/tar.debug		comp-util-debug		debug,bsdtar
 ./usr/libdata/debug/bin/test.debug		comp-util-debug		debug
 ./usr/libdata/debug/libexec/lfs_cleanerd.debug	comp-sysutil-debug	debug
+./usr/libdata/debug/netbsd			comp-sysutil-debug	debug,kernel_dir
 ./usr/libdata/debug/sbin/amrctl.debug		comp-sysutil-debug	debug
 ./usr/libdata/debug/sbin/apmlabel.debug		comp-sysutil-debug	debug
 ./usr/libdata/debug/sbin/atactl.debug		comp-sysutil-debug	debug
@@ -657,6 +659,7 @@
 ./usr/libdata/debug/usr/bin/lpq.debug		comp-lpr-debug		debug
 ./usr/libdata/debug/usr/bin/lpr.debug		comp-lpr-debug		debug
 ./usr/libdata/debug/usr/bin/lprm.debug		comp-lpr-debug		debug
+./usr/libdata/debug/usr/bin/lto-dump.debug	comp-c-debug		gcccmds,gcc=10,debug
 ./usr/libdata/debug/usr/bin/lua.debug		comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/luac.debug		comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/lzf.debug		comp-util-debug		debug
@@ -750,6 +753,7 @@
 ./usr/libdata/debug/usr/bin/quota.debug		comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/radioctl.debug	comp-audio-debug	debug
 ./usr/libdata/debug/usr/bin/ranlib.debug	comp-util-debug		binutils,debug
+./usr/libdata/debug/usr/bin/resize.debug	comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/rcs.debug		comp-rcs-debug		debug
 ./usr/libdata/debug/usr/bin/rcsclean.debug	comp-rcs-debug		debug
 ./usr/libdata/debug/usr/bin/rcsdiff.debug	comp-rcs-debug		debug
@@ -936,6 +940,7 @@
 ./usr/libdata/debug/usr/games/snscore.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/strfile.debug	comp-utils-debug	debug
 ./usr/libdata/debug/usr/games/teachgammon.debug	comp-games-debug	debug
+./usr/libdata/debug/usr/games/testpat.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/tetris.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/trek.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/unstr.debug	comp-utils-debug	debug
@@ -952,6 +957,7 @@
 ./usr/libdata/debug/usr/libexec/bozohttpd.debug	comp-netutil-debug	debug
 ./usr/libdata/debug/usr/libexec/cc1.debug	comp-c-debug		gcccmds,debug
 ./usr/libdata/debug/usr/libexec/cc1obj.debug	comp-objc-debug		gcccmds,debug
+./usr/libdata/debug/usr/libexec/cc1objplus.debug	comp-objc-debug		gcccmds,gcc=10,debug
 ./usr/libdata/debug/usr/libexec/cc1plus.debug	comp-cxx-debug		gcccmds,debug
 ./usr/libdata/debug/usr/libexec/ccom.debug	comp-c-debug		pcc,debug
 ./usr/libdata/debug/usr/libexec/ching/castching.debug	comp-games-debug	debug

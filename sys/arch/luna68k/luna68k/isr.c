@@ -1,4 +1,4 @@
-/*	$NetBSD: isr.c,v 1.23 2019/11/10 21:16:29 chs Exp $	*/
+/*	$NetBSD: isr.c,v 1.25 2021/04/02 12:11:41 rin Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: isr.c,v 1.23 2019/11/10 21:16:29 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isr.c,v 1.25 2021/04/02 12:11:41 rin Exp $");
 
 /*
  * Link and dispatch interrupts.
@@ -39,7 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: isr.c,v 1.23 2019/11/10 21:16:29 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/vmmeter.h>
 #include <sys/cpu.h>
 
@@ -51,7 +51,7 @@ isr_autovec_list_t isr_autovec[NISRAUTOVEC];
 struct	isr_vectored isr_vectored[NISRVECTORED];
 int	idepth;
 
-extern	int intrcnt[];		/* from locore.s */
+extern	u_int intrcnt[];	/* from locore.s */
 extern	void (*vectab[])(void);
 extern	void badtrap(void);
 extern	void intrhand_vectored(void);
@@ -82,7 +82,7 @@ isrlink_autovec(int (*func)(void *), void *arg, int ipl, int priority)
 	if ((ipl < 0) || (ipl >= NISRAUTOVEC))
 		panic("isrlink_autovec: bad ipl %d", ipl);
 
-	newisr = malloc(sizeof(struct isr_autovec), M_DEVBUF, M_WAITOK);
+	newisr = kmem_alloc(sizeof(*newisr), KM_SLEEP);
 	newisr->isr_func = func;
 	newisr->isr_arg = arg;
 	newisr->isr_ipl = ipl;

@@ -1,9 +1,9 @@
-/*	$NetBSD: cgi-bozo.c,v 1.51 2020/10/15 04:21:53 mrg Exp $	*/
+/*	$NetBSD: cgi-bozo.c,v 1.54 2021/04/08 07:02:12 rillig Exp $	*/
 
 /*	$eterna: cgi-bozo.c,v 1.40 2011/11/18 09:21:15 mrg Exp $	*/
 
 /*
- * Copyright (c) 1997-2020 Matthew R. Green
+ * Copyright (c) 1997-2021 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -289,7 +289,8 @@ parse_search_string(bozo_httpreq_t *request, const char *query, size_t *args_len
 			goto parse_err;
 		while (*s) {
 			/* check if it's unreserved */
-			if (isalpha((int)*s) || isdigit((int)*s) ||
+			if (isalpha((unsigned char)*s) ||
+			    isdigit((unsigned char)*s) ||
 			    strchr(UNRESERVED_CHAR, *s)) {
 				s++;
 				continue;
@@ -299,8 +300,8 @@ parse_search_string(bozo_httpreq_t *request, const char *query, size_t *args_len
 			if (*s == '%') {
 				if (s[1] == '\0' || s[2] == '\0')
 					goto parse_err;
-				if (!isxdigit((int)s[1]) ||
-				    !isxdigit((int)s[2]))
+				if (!isxdigit((unsigned char)s[1]) ||
+				    !isxdigit((unsigned char)s[2]))
 					goto parse_err;
 				s += 3;
 				continue;
@@ -517,8 +518,8 @@ bozo_process_cgi(bozo_httpreq_t *request)
 		strcpy(t, "HTTP_");
 		t += strlen(t);
 		for (s2 = headp->h_header; *s2; t++, s2++)
-			if (islower((unsigned)*s2))
-				*t = toupper((unsigned)*s2);
+			if (islower((unsigned char)*s2))
+				*t = toupper((unsigned char)*s2);
 			else if (*s2 == '-')
 				*t = '_';
 			else
@@ -610,10 +611,16 @@ bozo_process_cgi(bozo_httpreq_t *request)
 		bozo_daemon_closefds(httpd);
 
 		if (-1 == execve(path, argv, envp)) {
+			int saveerrno = errno;
 			bozo_http_error(httpd, 404, request,
 				"Cannot execute CGI");
-			bozoerr(httpd, 1, "child exec failed: %s: %s",
-			      path, strerror(errno));
+			/* don't log easy to trigger events */
+			if (saveerrno != ENOENT &&
+			    saveerrno != EISDIR &&
+			    saveerrno != EACCES)
+				bozoerr(httpd, 1, "child exec failed: %s: %s",
+				      path, strerror(saveerrno));
+			_exit(1);
 		}
 		/* NOT REACHED */
 		bozoerr(httpd, 1, "child execve returned?!");

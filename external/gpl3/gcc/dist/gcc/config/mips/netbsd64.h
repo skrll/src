@@ -22,11 +22,19 @@ Boston, MA 02110-1301, USA.  */
 /* Force the default endianness and ABI flags onto the command line
    in order to make the other specs easier to write.  */
 
+#if MIPS_ABI_DEFAULT == ABI_N32
+# define MIPS64_ABI "%{!mabi=*: -mabi=n32}"
+# elif MIPS_ABI_DEFAULT == ABI_64
+# define MIPS64_ABI "%{!mabi=*: -mabi=64}"
+#else
+# error "Missing MIPS_ABI_DEFAULT " # MIPS_ABI_DEFAULT
+#endif
+
 #undef DRIVER_SELF_SPECS
 #define DRIVER_SELF_SPECS \
   BASE_DRIVER_SELF_SPECS \
   "%{!EB:%{!EL:%(endian_spec)}}", \
-  "%{!mabi=*: -mabi=n32}"
+  MIPS64_ABI
 
 /* Define default target values.  */
 
@@ -45,3 +53,5 @@ Boston, MA 02110-1301, USA.  */
    %{mips32} %{mips32r2} %{mips64} %{mips64r2} \
    %{bestGnum} %{call_shared} %{no_archive} %{exact_version} \
    %(netbsd_link_spec)"
+
+#define	MIPS_USE_GCC_DEFAULT_OUTPUT_SOURCE_FILENAME

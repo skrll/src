@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.44 2020/04/04 03:04:58 christos Exp $
+# $NetBSD: Makefile,v 1.46 2021/04/13 04:59:00 mrg Exp $
 
 # Link the gallium mega driver.
 
@@ -1114,8 +1114,8 @@ CPPFLAGS.streaming-load-memcpy.c+= -msse4.1
 CPPFLAGS.i386+= -march=i586
 CPPFLAGS+=	${CPPFLAGS.${XORG_MACHINE_ARCH:U${MACHINE_ARCH}}}
 
-CPPFLAGS.r600_pipe_common.c+=	-DMESA_LLVM_VERSION_STRING=\"9.0.0\"
-CPPFLAGS.si_get.c+=	-DMESA_LLVM_VERSION_STRING=\"9.0.0\"
+CPPFLAGS.r600_pipe_common.c+=	-DMESA_LLVM_VERSION_STRING=\"${LLVM_VERSION}\"
+CPPFLAGS.si_get.c+=	-DMESA_LLVM_VERSION_STRING=\"${LLVM_VERSION}\"
 
 .include "../driver.mk"
 
@@ -1198,6 +1198,8 @@ COPTS+=	${${ACTIVE_CC} == "clang":? -Wa,-Av8plus  :}
 .if ${MACHINE_ARCH} == "vax"
 COPTS.nir.c += -O1
 .endif
+
+COPTS.u_atomic.c+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 10:? -Wno-builtin-declaration-mismatch :}
 
 .include <bsd.lib.mk>
 # Don't regenerate c files

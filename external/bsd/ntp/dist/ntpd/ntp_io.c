@@ -1,4 +1,4 @@
-/*	$NetBSD: ntp_io.c,v 1.27 2020/05/25 20:47:25 christos Exp $	*/
+/*	$NetBSD: ntp_io.c,v 1.31 2021/01/31 08:27:49 roy Exp $	*/
 
 /*
  * ntp_io.c - input/output routines for ntpd.	The socket-opening code
@@ -455,8 +455,13 @@ init_io(void)
 {
 	/* Init buffer free list and stat counters */
 	init_recvbuff(RECV_INIT);
+#ifdef SO_RERROR
+	/* route(4) overflow can be observed */
+	interface_interval = 0;
+#else
 	/* update interface every 5 minutes as default */
 	interface_interval = 300;
+#endif
 
 #ifdef WORK_PIPE
 	addremove_io_fd = &ntpd_addremove_io_fd;
@@ -4725,9 +4730,18 @@ process_routing_msgs(struct asyncio_reader *reader)
 
 	if (cnt < 0) {
 		if (errno == ENOBUFS) {
-			msyslog(LOG_ERR,
-				"routing socket reports: %m");
-		} else {
+			msyslog(LOG_DEBUG,
+				"routing socket overflowed"
+				" - will update interfaces");
+			/*
+			 * drain the routing socket as we need to update
+			 * the interfaces anyway
+			 */
+			do {
+				cnt = read(reader->fd, buffer, sizeof(buffer));
+			} while (cnt != -1 || errno == ENOBUFS);
+			timer_interfacetimeout(current_time + UPDATE_GRACE);
+		} else if (errno != EINTR) {
 			msyslog(LOG_ERR,
 				"routing socket reports: %m - disabling");
 			remove_asyncio_reader(reader);
@@ -4779,14 +4793,8 @@ process_routing_msgs(struct asyncio_reader *reader)
 #ifdef RTM_CHANGE
 		case RTM_CHANGE:
 #endif
-#ifdef RTM_LOSING
-		case RTM_LOSING:
-#endif
 #ifdef RTM_IFINFO
 		case RTM_IFINFO:
-#endif
-#ifdef RTM_IFANNOUNCE
-		case RTM_IFANNOUNCE:
 #endif
 #ifdef RTM_NEWLINK
 		case RTM_NEWLINK:
@@ -4837,6 +4845,9 @@ init_async_notifications()
 	struct sockaddr_nl sa;
 #else
 	int fd = socket(PF_ROUTE, SOCK_RAW, 0);
+#ifdef SO_RERROR
+	int on = 1;
+#endif
 #endif
 #ifdef RO_MSGFILTER
 	unsigned char msgfilter[] = {
@@ -4858,14 +4869,8 @@ init_async_notifications()
 #ifdef RTM_CHANGE
 		RTM_CHANGE,
 #endif
-#ifdef RTM_LOSING
-		RTM_LOSING,
-#endif
 #ifdef RTM_IFINFO
 		RTM_IFINFO,
-#endif
-#ifdef RTM_IFANNOUNCE
-		RTM_IFANNOUNCE,
 #endif
 #ifdef RTM_NEWLINK
 		RTM_NEWLINK,
@@ -4906,6 +4911,10 @@ init_async_notifications()
 	if (setsockopt(fd, PF_ROUTE, RO_MSGFILTER,
 	    &msgfilter, sizeof(msgfilter)) == -1)
 		msyslog(LOG_ERR, "RO_MSGFILTER: %m");
+#endif
+#ifdef SO_RERROR
+	if (setsockopt(fd, SOL_SOCKET, SO_RERROR, &on, sizeof(on)) == -1)
+		msyslog(LOG_ERR, "SO_RERROR: %m");
 #endif
 	make_socket_nonblocking(fd);
 #if defined(HAVE_SIGNALED_IO)

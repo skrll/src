@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.91 2020/08/23 03:21:57 simonb Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.93 2021/04/12 02:23:41 mrg Exp $	*/
 
 /*
  * Mach Operating System
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.91 2020/08/23 03:21:57 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.93 2021/04/12 02:23:41 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_multiprocessor.h"
@@ -74,7 +74,9 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.91 2020/08/23 03:21:57 simonb Exp
 volatile u_int ddb_cpu = NOCPU;
 
 int		db_active = 0;
+#ifdef _KERNEL
 db_regs_t	ddb_regs;
+#endif
 
 #if (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0
 static void db_watch_cmd(db_expr_t, bool, db_expr_t, const char *);
@@ -827,7 +829,7 @@ const struct db_command db_machine_command_table[] = {
 		"delete cp0 watchpoint",
 		"address", NULL) },
 #endif	/* (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0 */
-	{ DDB_ADD_CMD(NULL,     NULL,               0,  NULL,NULL,NULL) }
+	{ DDB_END_CMD },
 };
 #endif	/* !KGDB */
 

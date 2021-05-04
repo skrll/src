@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.262 2020/12/11 05:01:19 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.281 2021/04/30 06:55:32 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -63,10 +63,14 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: ixgbe.c,v 1.281 2021/04/30 06:55:32 msaitoh Exp $");
+
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
 #include "opt_inet6.h"
 #include "opt_net_mpsafe.h"
+#include "opt_ixgbe.h"
 #endif
 
 #include "ixgbe.h"
@@ -175,7 +179,7 @@ static void	ixgbe_init_locked(struct adapter *);
 static void	ixgbe_ifstop(struct ifnet *, int);
 static void	ixgbe_stop_locked(void *);
 static void	ixgbe_init_device_features(struct adapter *);
-static void	ixgbe_check_fan_failure(struct adapter *, u32, bool);
+static int	ixgbe_check_fan_failure(struct adapter *, u32, bool);
 static void	ixgbe_add_media_types(struct adapter *);
 static void	ixgbe_media_status(struct ifnet *, struct ifmediareq *);
 static int	ixgbe_media_change(struct ifnet *);
@@ -258,18 +262,17 @@ static int	ixgbe_sysctl_debug(SYSCTLFN_PROTO);
 static int	ixgbe_sysctl_wol_enable(SYSCTLFN_PROTO);
 static int	ixgbe_sysctl_wufc(SYSCTLFN_PROTO);
 
-/* Legacy (single vector) interrupt handler */
-static int	ixgbe_legacy_irq(void *);
-
-/* The MSI/MSI-X Interrupt handlers */
+/* Interrupt functions */
 static int	ixgbe_msix_que(void *);
 static int	ixgbe_msix_admin(void *);
+static void	ixgbe_intr_admin_common(struct adapter *, u32, u32 *);
+static int	ixgbe_legacy_irq(void *);
 
 /* Event handlers running on workqueue */
 static void	ixgbe_handle_que(void *);
 static void	ixgbe_handle_link(void *);
 static void	ixgbe_handle_msf(void *);
-static void	ixgbe_handle_mod(void *);
+static void	ixgbe_handle_mod(void *, bool);
 static void	ixgbe_handle_phy(void *);
 
 /* Deferred workqueue handlers */
@@ -983,6 +986,8 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	} else
 		adapter->num_rx_desc = ixgbe_rxd;
 
+	adapter->num_jcl = adapter->num_rx_desc * IXGBE_JCLNUM_MULTI;
+
 	/* Allocate our TX/RX Queues */
 	if (ixgbe_allocate_queues(adapter)) {
 		error = ENOMEM;
@@ -1566,9 +1571,9 @@ ixgbe_config_link(struct adapter *adapter)
 	if (sfp) {
 		if (hw->phy.multispeed_fiber) {
 			ixgbe_enable_tx_laser(hw);
-			task_requests |= IXGBE_REQUEST_TASK_MSF;
+			task_requests |= IXGBE_REQUEST_TASK_MSF_WOI;
 		}
-		task_requests |= IXGBE_REQUEST_TASK_MOD;
+		task_requests |= IXGBE_REQUEST_TASK_MOD_WOI;
 
 		mutex_enter(&adapter->admin_mtx);
 		adapter->task_requests |= task_requests;
@@ -1692,17 +1697,20 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 		stats->gorc.ev_count += IXGBE_READ_REG(hw, IXGBE_GORCL) +
 		    ((u64)IXGBE_READ_REG(hw, IXGBE_GORCH) << 32);
 		stats->gotc.ev_count += IXGBE_READ_REG(hw, IXGBE_GOTCL) +
-		    ((u64)IXGBE_READ_REG(hw, IXGBE_GOTCH) << 32) - total * ETHER_MIN_LEN;
+		    ((u64)IXGBE_READ_REG(hw, IXGBE_GOTCH) << 32)
+		    - total * ETHER_MIN_LEN;
 		stats->tor.ev_count += IXGBE_READ_REG(hw, IXGBE_TORL) +
 		    ((u64)IXGBE_READ_REG(hw, IXGBE_TORH) << 32);
 		stats->lxonrxc.ev_count += IXGBE_READ_REG(hw, IXGBE_LXONRXCNT);
-		stats->lxoffrxc.ev_count += IXGBE_READ_REG(hw, IXGBE_LXOFFRXCNT);
+		stats->lxoffrxc.ev_count
+		    += IXGBE_READ_REG(hw, IXGBE_LXOFFRXCNT);
 	} else {
 		stats->lxonrxc.ev_count += IXGBE_READ_REG(hw, IXGBE_LXONRXC);
 		stats->lxoffrxc.ev_count += IXGBE_READ_REG(hw, IXGBE_LXOFFRXC);
 		/* 82598 only has a counter in the high register */
 		stats->gorc.ev_count += IXGBE_READ_REG(hw, IXGBE_GORCH);
-		stats->gotc.ev_count += IXGBE_READ_REG(hw, IXGBE_GOTCH) - total * ETHER_MIN_LEN;
+		stats->gotc.ev_count += IXGBE_READ_REG(hw, IXGBE_GOTCH)
+		    - total * ETHER_MIN_LEN;
 		stats->tor.ev_count += IXGBE_READ_REG(hw, IXGBE_TORH);
 	}
 
@@ -1903,7 +1911,7 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 		    NULL, adapter->queues[i].evnamebuf, "TSO");
 		evcnt_attach_dynamic(&txr->no_desc_avail, EVCNT_TYPE_MISC,
 		    NULL, adapter->queues[i].evnamebuf,
-		    "Queue No Descriptor Available");
+		    "TX Queue No Descriptor Available");
 		evcnt_attach_dynamic(&txr->total_packets, EVCNT_TYPE_MISC,
 		    NULL, adapter->queues[i].evnamebuf,
 		    "Queue Packets Transmitted");
@@ -1914,42 +1922,35 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 #endif
 
 		if (sysctl_createv(log, 0, &rnode, &cnode,
-		    CTLFLAG_READONLY,
-		    CTLTYPE_INT,
-		    "rxd_nxck", SYSCTL_DESCR("Receive Descriptor next to check"),
-			ixgbe_sysctl_next_to_check_handler, 0, (void *)rxr, 0,
+		    CTLFLAG_READONLY, CTLTYPE_INT, "rxd_nxck",
+		    SYSCTL_DESCR("Receive Descriptor next to check"),
+		    ixgbe_sysctl_next_to_check_handler, 0, (void *)rxr, 0,
 		    CTL_CREATE, CTL_EOL) != 0)
 			break;
 
 		if (sysctl_createv(log, 0, &rnode, &cnode,
-		    CTLFLAG_READONLY,
-		    CTLTYPE_INT,
-		    "rxd_head", SYSCTL_DESCR("Receive Descriptor Head"),
+		    CTLFLAG_READONLY, CTLTYPE_INT, "rxd_head",
+		    SYSCTL_DESCR("Receive Descriptor Head"),
 		    ixgbe_sysctl_rdh_handler, 0, (void *)rxr, 0,
 		    CTL_CREATE, CTL_EOL) != 0)
 			break;
 
 		if (sysctl_createv(log, 0, &rnode, &cnode,
-		    CTLFLAG_READONLY,
-		    CTLTYPE_INT,
-		    "rxd_tail", SYSCTL_DESCR("Receive Descriptor Tail"),
+		    CTLFLAG_READONLY, CTLTYPE_INT, "rxd_tail",
+		    SYSCTL_DESCR("Receive Descriptor Tail"),
 		    ixgbe_sysctl_rdt_handler, 0, (void *)rxr, 0,
 		    CTL_CREATE, CTL_EOL) != 0)
 			break;
 
 		if (i < __arraycount(stats->qprc)) {
-			evcnt_attach_dynamic(&stats->qprc[i],
-			    EVCNT_TYPE_MISC, NULL, adapter->queues[i].evnamebuf,
-			    "qprc");
-			evcnt_attach_dynamic(&stats->qptc[i],
-			    EVCNT_TYPE_MISC, NULL, adapter->queues[i].evnamebuf,
-			    "qptc");
-			evcnt_attach_dynamic(&stats->qbrc[i],
-			    EVCNT_TYPE_MISC, NULL, adapter->queues[i].evnamebuf,
-			    "qbrc");
-			evcnt_attach_dynamic(&stats->qbtc[i],
-			    EVCNT_TYPE_MISC, NULL, adapter->queues[i].evnamebuf,
-			    "qbtc");
+			evcnt_attach_dynamic(&stats->qprc[i], EVCNT_TYPE_MISC,
+			    NULL, adapter->queues[i].evnamebuf, "qprc");
+			evcnt_attach_dynamic(&stats->qptc[i], EVCNT_TYPE_MISC,
+			    NULL, adapter->queues[i].evnamebuf, "qptc");
+			evcnt_attach_dynamic(&stats->qbrc[i], EVCNT_TYPE_MISC,
+			    NULL, adapter->queues[i].evnamebuf, "qbrc");
+			evcnt_attach_dynamic(&stats->qbtc[i], EVCNT_TYPE_MISC,
+			    NULL, adapter->queues[i].evnamebuf, "qbtc");
 			if (hw->mac.type >= ixgbe_mac_82599EB)
 				evcnt_attach_dynamic(&stats->qprdc[i],
 				    EVCNT_TYPE_MISC, NULL,
@@ -1957,9 +1958,11 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 		}
 
 		evcnt_attach_dynamic(&rxr->rx_packets, EVCNT_TYPE_MISC,
-		    NULL, adapter->queues[i].evnamebuf, "Queue Packets Received");
+		    NULL, adapter->queues[i].evnamebuf,
+		    "Queue Packets Received");
 		evcnt_attach_dynamic(&rxr->rx_bytes, EVCNT_TYPE_MISC,
-		    NULL, adapter->queues[i].evnamebuf, "Queue Bytes Received");
+		    NULL, adapter->queues[i].evnamebuf,
+		    "Queue Bytes Received");
 		evcnt_attach_dynamic(&rxr->rx_copies, EVCNT_TYPE_MISC,
 		    NULL, adapter->queues[i].evnamebuf, "Copied RX Frames");
 		evcnt_attach_dynamic(&rxr->no_jmbuf, EVCNT_TYPE_MISC,
@@ -3089,24 +3092,51 @@ ixgbe_msix_admin(void *arg)
 {
 	struct adapter	*adapter = arg;
 	struct ixgbe_hw *hw = &adapter->hw;
-	u32		eicr, eicr_mask;
-	u32		task_requests = 0;
-	s32		retval;
+	u32		eicr;
+	u32		eims_orig;
+	u32		eims_disable = 0;
 
 	++adapter->admin_irqev.ev_count;
 
-	/* First get the cause */
+	eims_orig = IXGBE_READ_REG(hw, IXGBE_EIMS);
+	/* Pause other interrupts */
+	IXGBE_WRITE_REG(hw, IXGBE_EIMC, IXGBE_MSIX_OTHER_CLEAR_MASK);
+
 	/*
+	 * First get the cause.
+	 *
 	 * The specifications of 82598, 82599, X540 and X550 say EICS register
 	 * is write only. However, Linux says it is a workaround for silicon
-	 * errata to read EICS instead of EICR to get interrupt cause. It seems
-	 * there is a problem about read clear mechanism for EICR register.
+	 * errata to read EICS instead of EICR to get interrupt cause.
+	 * At least, reading EICR clears lower 16bits of EIMS on 82598.
 	 */
 	eicr = IXGBE_READ_REG(hw, IXGBE_EICS);
 	/* Be sure the queue bits are not cleared */
 	eicr &= ~IXGBE_EICR_RTX_QUEUE;
-	/* Clear interrupt with write */
+	/* Clear all OTHER interrupts with write */
 	IXGBE_WRITE_REG(hw, IXGBE_EICR, eicr);
+
+	ixgbe_intr_admin_common(adapter, eicr, &eims_disable);
+
+	/* Re-enable some OTHER interrupts */
+	IXGBE_WRITE_REG(hw, IXGBE_EIMS, eims_orig & ~eims_disable);
+
+	return 1;
+} /* ixgbe_msix_admin */
+
+static void
+ixgbe_intr_admin_common(struct adapter *adapter, u32 eicr, u32 *eims_disable)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	u32		eicr_mask;
+	u32		task_requests = 0;
+	s32		retval;
+
+	/* Link status change */
+	if (eicr & IXGBE_EICR_LSC) {
+		task_requests |= IXGBE_REQUEST_TASK_LSC;
+		*eims_disable |= IXGBE_EIMS_LSC;
+	}
 
 	if (ixgbe_is_sfp(hw)) {
 		/* Pluggable optics-related interrupt */
@@ -3124,39 +3154,32 @@ ixgbe_msix_admin(void *arg)
 		if ((eicr & eicr_mask)
 		    || ((hw->phy.sfp_type == ixgbe_sfp_type_not_present)
 			&& (eicr & IXGBE_EICR_LSC))) {
-			IXGBE_WRITE_REG(hw, IXGBE_EICR, eicr_mask);
 			task_requests |= IXGBE_REQUEST_TASK_MOD;
+			*eims_disable |= IXGBE_EIMS_LSC;
 		}
 
 		if ((hw->mac.type == ixgbe_mac_82599EB) &&
 		    (eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw))) {
-			IXGBE_WRITE_REG(hw, IXGBE_EICR,
-			    IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
 			task_requests |= IXGBE_REQUEST_TASK_MSF;
+			*eims_disable |= IXGBE_EIMS_GPI_SDP1_BY_MAC(hw);
 		}
-	}
-
-	/* Link status change */
-	if (eicr & IXGBE_EICR_LSC) {
-		IXGBE_WRITE_REG(hw, IXGBE_EIMC, IXGBE_EIMC_LSC);
-		task_requests |= IXGBE_REQUEST_TASK_LSC;
 	}
 
 	if (adapter->hw.mac.type != ixgbe_mac_82598EB) {
 		if ((adapter->feat_en & IXGBE_FEATURE_FDIR) &&
 		    (eicr & IXGBE_EICR_FLOW_DIR)) {
-			/* This is probably overkill :) */
-			if (!atomic_cas_uint(&adapter->fdir_reinit, 0, 1))
-				return 1;
-			/* Disable the interrupt */
-			IXGBE_WRITE_REG(hw, IXGBE_EIMC, IXGBE_EIMC_FLOW_DIR);
-			task_requests |= IXGBE_REQUEST_TASK_FDIR;
+			if (!atomic_cas_uint(&adapter->fdir_reinit, 0, 1)) {
+				task_requests |= IXGBE_REQUEST_TASK_FDIR;
+				/* Disable the interrupt */
+				*eims_disable |= IXGBE_EIMS_FLOW_DIR;
+			}
 		}
 
 		if (eicr & IXGBE_EICR_ECC) {
 			device_printf(adapter->dev,
 			    "CRITICAL: ECC ERROR!! Please Reboot!!\n");
-			IXGBE_WRITE_REG(hw, IXGBE_EICR, IXGBE_EICR_ECC);
+			/* Disable interrupt to prevent log spam */
+			*eims_disable |= IXGBE_EICR_ECC;
 		}
 
 		/* Check for over temp condition */
@@ -3165,25 +3188,32 @@ ixgbe_msix_admin(void *arg)
 			case ixgbe_mac_X550EM_a:
 				if (!(eicr & IXGBE_EICR_GPI_SDP0_X550EM_a))
 					break;
-				IXGBE_WRITE_REG(hw, IXGBE_EIMC,
-				    IXGBE_EICR_GPI_SDP0_X550EM_a);
-				IXGBE_WRITE_REG(hw, IXGBE_EICR,
-				    IXGBE_EICR_GPI_SDP0_X550EM_a);
+				/* Disable interrupt to prevent log spam */
+				*eims_disable |= IXGBE_EICR_GPI_SDP0_X550EM_a;
+
 				retval = hw->phy.ops.check_overtemp(hw);
 				if (retval != IXGBE_ERR_OVERTEMP)
 					break;
-				device_printf(adapter->dev, "CRITICAL: OVER TEMP!! PHY IS SHUT DOWN!!\n");
-				device_printf(adapter->dev, "System shutdown required!\n");
+				device_printf(adapter->dev,
+				    "CRITICAL: OVER TEMP!! "
+				    "PHY IS SHUT DOWN!!\n");
+				device_printf(adapter->dev,
+				    "System shutdown required!\n");
 				break;
 			default:
 				if (!(eicr & IXGBE_EICR_TS))
 					break;
+				/* Disable interrupt to prevent log spam */
+				*eims_disable |= IXGBE_EIMS_TS;
+
 				retval = hw->phy.ops.check_overtemp(hw);
 				if (retval != IXGBE_ERR_OVERTEMP)
 					break;
-				device_printf(adapter->dev, "CRITICAL: OVER TEMP!! PHY IS SHUT DOWN!!\n");
-				device_printf(adapter->dev, "System shutdown required!\n");
-				IXGBE_WRITE_REG(hw, IXGBE_EICR, IXGBE_EICR_TS);
+				device_printf(adapter->dev,
+				    "CRITICAL: OVER TEMP!! "
+				    "PHY IS SHUT DOWN!!\n");
+				device_printf(adapter->dev,
+				    "System shutdown required!\n");
 				break;
 			}
 		}
@@ -3192,34 +3222,34 @@ ixgbe_msix_admin(void *arg)
 		if ((adapter->feat_en & IXGBE_FEATURE_SRIOV) &&
 		    (eicr & IXGBE_EICR_MAILBOX)) {
 			task_requests |= IXGBE_REQUEST_TASK_MBX;
+			*eims_disable |= IXGBE_EIMS_MAILBOX;
 		}
 	}
 
 	/* Check for fan failure */
 	if (adapter->feat_en & IXGBE_FEATURE_FAN_FAIL) {
-		ixgbe_check_fan_failure(adapter, eicr, TRUE);
-		IXGBE_WRITE_REG(hw, IXGBE_EICR, IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
+		retval = ixgbe_check_fan_failure(adapter, eicr, true);
+		if (retval == IXGBE_ERR_FAN_FAILURE) {
+			/* Disable interrupt to prevent log spam */
+			*eims_disable |= IXGBE_EIMS_GPI_SDP1_BY_MAC(hw);
+		}
 	}
 
 	/* External PHY interrupt */
 	if ((hw->phy.type == ixgbe_phy_x550em_ext_t) &&
 	    (eicr & IXGBE_EICR_GPI_SDP0_X540)) {
-		IXGBE_WRITE_REG(hw, IXGBE_EICR, IXGBE_EICR_GPI_SDP0_X540);
 		task_requests |= IXGBE_REQUEST_TASK_PHY;
+		*eims_disable |= IXGBE_EICR_GPI_SDP0_X540;
 	}
 
 	if (task_requests != 0) {
-		/* Re-enabling other interrupts is done in the admin task */
-		task_requests |= IXGBE_REQUEST_TASK_NEED_ACKINTR;
-
 		mutex_enter(&adapter->admin_mtx);
 		adapter->task_requests |= task_requests;
 		ixgbe_schedule_admin_tasklet(adapter);
 		mutex_exit(&adapter->admin_mtx);
 	}
 
-	return 1;
-} /* ixgbe_msix_admin */
+}
 
 static void
 ixgbe_eitr_write(struct adapter *adapter, uint32_t index, uint32_t itr)
@@ -3336,13 +3366,21 @@ ixgbe_add_device_sysctls(struct adapter *adapter)
 	if (sysctl_createv(log, 0, &rnode, &cnode,
 	    CTLFLAG_READWRITE, CTLTYPE_INT,
 	    "debug", SYSCTL_DESCR("Debug Info"),
-	    ixgbe_sysctl_debug, 0, (void *)adapter, 0, CTL_CREATE, CTL_EOL) != 0)
+	    ixgbe_sysctl_debug, 0, (void *)adapter, 0, CTL_CREATE, CTL_EOL)
+	    != 0)
 		aprint_error_dev(dev, "could not create sysctl\n");
 
 	if (sysctl_createv(log, 0, &rnode, &cnode,
 	    CTLFLAG_READONLY, CTLTYPE_INT,
 	    "num_rx_desc", SYSCTL_DESCR("Number of rx descriptors"),
 	    NULL, 0, &adapter->num_rx_desc, 0, CTL_CREATE, CTL_EOL) != 0)
+		aprint_error_dev(dev, "could not create sysctl\n");
+
+	if (sysctl_createv(log, 0, &rnode, &cnode,
+	    CTLFLAG_READONLY, CTLTYPE_INT, "num_jcl_per_queue",
+	    SYSCTL_DESCR("Number of jumbo buffers per queue"),
+	    NULL, 0, &adapter->num_jcl, 0, CTL_CREATE,
+	    CTL_EOL) != 0)
 		aprint_error_dev(dev, "could not create sysctl\n");
 
 	if (sysctl_createv(log, 0, &rnode, &cnode,
@@ -3383,8 +3421,10 @@ ixgbe_add_device_sysctls(struct adapter *adapter)
 	 */
 	adapter->txrx_use_workqueue = ixgbe_txrx_workqueue;
 	if (sysctl_createv(log, 0, &rnode, &cnode, CTLFLAG_READWRITE,
-	    CTLTYPE_BOOL, "txrx_workqueue", SYSCTL_DESCR("Use workqueue for packet processing"),
-	    NULL, 0, &adapter->txrx_use_workqueue, 0, CTL_CREATE, CTL_EOL) != 0)
+	    CTLTYPE_BOOL, "txrx_workqueue",
+	    SYSCTL_DESCR("Use workqueue for packet processing"),
+	    NULL, 0, &adapter->txrx_use_workqueue, 0, CTL_CREATE,
+	    CTL_EOL) != 0)
 		aprint_error_dev(dev, "could not create sysctl\n");
 
 #ifdef IXGBE_DEBUG
@@ -3447,7 +3487,8 @@ ixgbe_add_device_sysctls(struct adapter *adapter)
 
 		if (sysctl_createv(log, 0, &phy_node, &cnode, CTLFLAG_READONLY,
 		    CTLTYPE_INT, "overtemp_occurred",
-		    SYSCTL_DESCR("External PHY High Temperature Event Occurred"),
+		    SYSCTL_DESCR(
+			    "External PHY High Temperature Event Occurred"),
 		    ixgbe_sysctl_phy_overtemp_occurred, 0, (void *)adapter, 0,
 		    CTL_CREATE, CTL_EOL) != 0)
 			aprint_error_dev(dev, "could not create sysctl\n");
@@ -4529,7 +4570,7 @@ ixgbe_handle_timer(struct work *wk, void *context)
 		}
 		if (sched_mod_task) {
 			mutex_enter(&adapter->admin_mtx);
-			adapter->task_requests |= IXGBE_REQUEST_TASK_MOD;
+			adapter->task_requests |= IXGBE_REQUEST_TASK_MOD_WOI;
 			ixgbe_schedule_admin_tasklet(adapter);
 			mutex_exit(&adapter->admin_mtx);
 		}
@@ -4667,9 +4708,10 @@ ixgbe_handle_recovery_mode_timer(struct work *wk, void *context)
 
 /************************************************************************
  * ixgbe_handle_mod - Tasklet for SFP module interrupts
+ * bool int_en: true if it's called when the interrupt is enabled.
  ************************************************************************/
 static void
-ixgbe_handle_mod(void *context)
+ixgbe_handle_mod(void *context, bool int_en)
 {
 	struct adapter	*adapter = context;
 	struct ixgbe_hw *hw = &adapter->hw;
@@ -4742,7 +4784,10 @@ out:
 	 */
 	if (hw->mac.type != ixgbe_mac_82598EB) {
 		mutex_enter(&adapter->admin_mtx);
-		adapter->task_requests |= IXGBE_REQUEST_TASK_MSF;
+		if (int_en)
+			adapter->task_requests |= IXGBE_REQUEST_TASK_MSF;
+		else
+			adapter->task_requests |= IXGBE_REQUEST_TASK_MSF_WOI;
 		mutex_exit(&adapter->admin_mtx);
 	}
 
@@ -4803,7 +4848,9 @@ ixgbe_handle_admin(struct work *wk, void *context)
 {
 	struct adapter	*adapter = context;
 	struct ifnet	*ifp = adapter->ifp;
+	struct ixgbe_hw *hw = &adapter->hw;
 	u32		task_requests;
+	u32		eims_enable = 0;
 
 	mutex_enter(&adapter->admin_mtx);
 	adapter->admin_pending = 0;
@@ -4822,32 +4869,40 @@ ixgbe_handle_admin(struct work *wk, void *context)
 	IXGBE_CORE_LOCK(adapter);
 	if ((task_requests & IXGBE_REQUEST_TASK_LSC) != 0) {
 		ixgbe_handle_link(adapter);
+		eims_enable |= IXGBE_EIMS_LSC;
+	}
+	if ((task_requests & IXGBE_REQUEST_TASK_MOD_WOI) != 0) {
+		ixgbe_handle_mod(adapter, false);
 	}
 	if ((task_requests & IXGBE_REQUEST_TASK_MOD) != 0) {
-		ixgbe_handle_mod(adapter);
+		ixgbe_handle_mod(adapter, true);
+		if (hw->mac.type >= ixgbe_mac_X540)
+			eims_enable |= IXGBE_EICR_GPI_SDP0_X540;
+		else
+			eims_enable |= IXGBE_EICR_GPI_SDP2_BY_MAC(hw);
 	}
-	if ((task_requests & IXGBE_REQUEST_TASK_MSF) != 0) {
+	if ((task_requests
+	    & (IXGBE_REQUEST_TASK_MSF_WOI | IXGBE_REQUEST_TASK_MSF)) != 0) {
 		ixgbe_handle_msf(adapter);
+		if (((task_requests & IXGBE_REQUEST_TASK_MSF) != 0) &&
+		    (hw->mac.type == ixgbe_mac_82599EB))
+		    eims_enable |= IXGBE_EIMS_GPI_SDP1_BY_MAC(hw);
 	}
 	if ((task_requests & IXGBE_REQUEST_TASK_PHY) != 0) {
 		ixgbe_handle_phy(adapter);
+		eims_enable |= IXGBE_EICR_GPI_SDP0_X540;
 	}
 	if ((task_requests & IXGBE_REQUEST_TASK_FDIR) != 0) {
 		ixgbe_reinit_fdir(adapter);
+		eims_enable |= IXGBE_EIMS_FLOW_DIR;
 	}
 #if 0 /* notyet */
 	if ((task_requests & IXGBE_REQUEST_TASK_MBX) != 0) {
 		ixgbe_handle_mbx(adapter);
+		eims_enable |= IXGBE_EIMS_MAILBOX;
 	}
 #endif
-	if ((task_requests & IXGBE_REQUEST_TASK_NEED_ACKINTR) != 0) {
-		/*
-		 * XXX FIXME.
-		 * ixgbe_enable_intr() enables all interrupts. It might enable
-		 * an interrupt which should not be enabled.
-		 */
-		ixgbe_enable_intr(adapter);
-	}
+	IXGBE_WRITE_REG(hw, IXGBE_EIMS, eims_enable);
 
 	IXGBE_CORE_UNLOCK(adapter);
 	IFNET_UNLOCK(ifp);
@@ -5094,13 +5149,11 @@ ixgbe_enable_intr(struct adapter *adapter)
 
 	/* With MSI-X we use auto clear */
 	if (adapter->msix_mem) {
-		mask = IXGBE_EIMS_ENABLE_MASK;
-		/* Don't autoclear Link */
-		mask &= ~IXGBE_EIMS_OTHER;
-		mask &= ~IXGBE_EIMS_LSC;
-		if (adapter->feat_cap & IXGBE_FEATURE_SRIOV)
-			mask &= ~IXGBE_EIMS_MAILBOX;
-		IXGBE_WRITE_REG(hw, IXGBE_EIAC, mask);
+		/*
+		 * It's not required to set TCP_TIMER because we don't use
+		 * it.
+		 */
+		IXGBE_WRITE_REG(hw, IXGBE_EIAC, IXGBE_EIMS_RTX_QUEUE);
 	}
 
 	/*
@@ -5165,39 +5218,38 @@ ixgbe_legacy_irq(void *arg)
 	struct ix_queue *que = arg;
 	struct adapter	*adapter = que->adapter;
 	struct ixgbe_hw	*hw = &adapter->hw;
-	struct ifnet	*ifp = adapter->ifp;
 	struct		tx_ring *txr = adapter->tx_rings;
-	bool		more = false;
-	bool		reenable_intr = true;
-	u32		eicr, eicr_mask;
-	u32		task_requests = 0;
+	u32		eicr;
+	u32		eims_orig;
+	u32		eims_enable = 0;
+	u32		eims_disable = 0;
 
-	/* Silicon errata #26 on 82598 */
+	eims_orig = IXGBE_READ_REG(hw, IXGBE_EIMS);
+	/*
+	 * Silicon errata #26 on 82598. Disable all interrupts before reading
+	 * EICR.
+	 */
 	IXGBE_WRITE_REG(hw, IXGBE_EIMC, IXGBE_IRQ_CLEAR_MASK);
 
+	/* Read and clear EICR */
 	eicr = IXGBE_READ_REG(hw, IXGBE_EICR);
 
 	adapter->stats.pf.legint.ev_count++;
-	++que->irqs.ev_count;
 	if (eicr == 0) {
 		adapter->stats.pf.intzero.ev_count++;
-		if ((ifp->if_flags & IFF_UP) != 0)
-			ixgbe_enable_intr(adapter);
+		IXGBE_WRITE_REG(hw, IXGBE_EIMS, eims_orig);
 		return 0;
 	}
 
-	if ((ifp->if_flags & IFF_RUNNING) != 0) {
+	/* Queue (0) intr */
+	if ((eicr & IXGBE_EIMC_RTX_QUEUE) != 0) {
+		++que->irqs.ev_count;
+
 		/*
-		 * The same as ixgbe_msix_que() about "que->txrx_use_workqueue".
+		 * The same as ixgbe_msix_que() about
+		 * "que->txrx_use_workqueue".
 		 */
 		que->txrx_use_workqueue = adapter->txrx_use_workqueue;
-
-#ifdef __NetBSD__
-		/* Don't run ixgbe_rxeof in interrupt context */
-		more = true;
-#else
-		more = ixgbe_rxeof(que);
-#endif
 
 		IXGBE_TX_LOCK(txr);
 		ixgbe_txeof(txr);
@@ -5206,70 +5258,20 @@ ixgbe_legacy_irq(void *arg)
 			ixgbe_start_locked(ifp, txr);
 #endif
 		IXGBE_TX_UNLOCK(txr);
-	}
 
-	/* Check for fan failure */
-	if (adapter->feat_en & IXGBE_FEATURE_FAN_FAIL) {
-		ixgbe_check_fan_failure(adapter, eicr, true);
-		IXGBE_WRITE_REG(hw, IXGBE_EIMS, IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
-	}
-
-	if (ixgbe_is_sfp(hw)) {
-		/* Pluggable optics-related interrupt */
-		if (hw->mac.type >= ixgbe_mac_X540)
-			eicr_mask = IXGBE_EICR_GPI_SDP0_X540;
-		else
-			eicr_mask = IXGBE_EICR_GPI_SDP2_BY_MAC(hw);
-
-		/*
-		 *  An interrupt might not arrive when a module is inserted.
-		 * When an link status change interrupt occurred and the driver
-		 * still regard SFP as unplugged, issue the module softint
-		 * and then issue LSC interrupt.
-		 */
-		if ((eicr & eicr_mask)
-		    || ((hw->phy.sfp_type == ixgbe_sfp_type_not_present)
-			&& (eicr & IXGBE_EICR_LSC))) {
-			IXGBE_WRITE_REG(hw, IXGBE_EICR, eicr_mask);
-			task_requests |= IXGBE_REQUEST_TASK_MOD;
-		}
-
-		if ((hw->mac.type == ixgbe_mac_82599EB) &&
-		    (eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw))) {
-			IXGBE_WRITE_REG(hw, IXGBE_EICR,
-			    IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
-			task_requests |= IXGBE_REQUEST_TASK_MSF;
-		}
-	}
-
-	/* Link status change */
-	if (eicr & IXGBE_EICR_LSC)
-		task_requests |= IXGBE_REQUEST_TASK_LSC;
-
-	/* External PHY interrupt */
-	if ((hw->phy.type == ixgbe_phy_x550em_ext_t) &&
-	    (eicr & IXGBE_EICR_GPI_SDP0_X540))
-		task_requests |= IXGBE_REQUEST_TASK_PHY;
-
-	if (more) {
 		que->req.ev_count++;
 		ixgbe_sched_handle_que(adapter, que);
-		reenable_intr = false;
-	}
-	if (task_requests != 0) {
-		/* Re-enabling other interrupts is done in the admin task */
-		task_requests |= IXGBE_REQUEST_TASK_NEED_ACKINTR;
+		/* Disable queue 0 interrupt */
+		eims_disable |= 1UL << 0;
 
-		mutex_enter(&adapter->admin_mtx);
-		adapter->task_requests |= task_requests;
-		ixgbe_schedule_admin_tasklet(adapter);
-		mutex_exit(&adapter->admin_mtx);
+	} else
+		eims_enable |= IXGBE_EIMC_RTX_QUEUE;
 
-		reenable_intr = false;
-	}
+	ixgbe_intr_admin_common(adapter, eicr, &eims_disable);
 
-	if (reenable_intr == true)
-		ixgbe_enable_intr(adapter);
+	/* Re-enable some interrupts */
+	IXGBE_WRITE_REG(hw, IXGBE_EIMS,
+	    (eims_orig & ~eims_disable) | eims_enable);
 
 	return 1;
 } /* ixgbe_legacy_irq */
@@ -5546,8 +5548,7 @@ ixgbe_set_advertise(struct adapter *adapter, int advertise)
 	}
 
 	if (advertise < 0x0 || advertise > 0x3f) {
-		device_printf(dev,
-		    "Invalid advertised speed; valid modes are 0x0 through 0x3f\n");
+		device_printf(dev, "Invalid advertised speed; valid modes are 0x0 through 0x3f\n");
 		return (EINVAL);
 	}
 
@@ -6144,6 +6145,8 @@ ixgbe_print_debug_info(struct adapter *adapter)
 		device_printf(dev, "EIMS_EX(1):\t%08x\n",
 			      IXGBE_READ_REG(hw, IXGBE_EIMS_EX(1)));
 	}
+	device_printf(dev, "EIAM:\t%08x\n", IXGBE_READ_REG(hw, IXGBE_EIAM));
+	device_printf(dev, "EIAC:\t%08x\n", IXGBE_READ_REG(hw, IXGBE_EIAC));
 } /* ixgbe_print_debug_info */
 
 /************************************************************************
@@ -6523,7 +6526,7 @@ ixgbe_ioctl(struct ifnet *ifp, u_long command, void *data)
 /************************************************************************
  * ixgbe_check_fan_failure
  ************************************************************************/
-static void
+static int
 ixgbe_check_fan_failure(struct adapter *adapter, u32 reg, bool in_interrupt)
 {
 	u32 mask;
@@ -6531,8 +6534,13 @@ ixgbe_check_fan_failure(struct adapter *adapter, u32 reg, bool in_interrupt)
 	mask = (in_interrupt) ? IXGBE_EICR_GPI_SDP1_BY_MAC(&adapter->hw) :
 	    IXGBE_ESDP_SDP1;
 
-	if (reg & mask)
-		device_printf(adapter->dev, "\nCRITICAL: FAN FAILURE!! REPLACE IMMEDIATELY!!\n");
+	if (reg & mask) {
+		device_printf(adapter->dev,
+		    "\nCRITICAL: FAN FAILURE!! REPLACE IMMEDIATELY!!\n");
+		return IXGBE_ERR_FAN_FAILURE;
+	}
+
+	return IXGBE_SUCCESS;
 } /* ixgbe_check_fan_failure */
 
 /************************************************************************
@@ -6568,10 +6576,12 @@ ixgbe_handle_que(void *context)
 		que->req.ev_count++;
 		ixgbe_sched_handle_que(adapter, que);
 	} else if (que->res != NULL) {
-		/* Re-enable this interrupt */
+		/* MSIX: Re-enable this interrupt */
 		ixgbe_enable_queue(adapter, que->msix);
-	} else
-		ixgbe_enable_intr(adapter);
+	} else {
+		/* INTx or MSI */
+		ixgbe_enable_queue(adapter, 0);
+	}
 
 	return;
 } /* ixgbe_handle_que */
@@ -6673,7 +6683,8 @@ alloc_retry:
 		    softint_establish(SOFTINT_NET | IXGBE_SOFTINT_FLAGS,
 			ixgbe_deferred_mq_start, txr);
 
-		snprintf(wqname, sizeof(wqname), "%sdeferTx", device_xname(dev));
+		snprintf(wqname, sizeof(wqname), "%sdeferTx",
+		    device_xname(dev));
 		defertx_error = workqueue_create(&adapter->txr_wq, wqname,
 		    ixgbe_deferred_mq_start_work, adapter, IXGBE_WORKQUEUE_PRI,
 		    IPL_NET, IXGBE_WORKQUEUE_FLAGS);
@@ -6843,7 +6854,8 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	    ixgbe_deferred_mq_start_work, adapter, IXGBE_WORKQUEUE_PRI, IPL_NET,
 	    IXGBE_WORKQUEUE_FLAGS);
 	if (error) {
-		aprint_error_dev(dev, "couldn't create workqueue for deferred Tx\n");
+		aprint_error_dev(dev,
+		    "couldn't create workqueue for deferred Tx\n");
 		goto err_out;
 	}
 	adapter->txr_wq_enqueued = percpu_alloc(sizeof(u_int));

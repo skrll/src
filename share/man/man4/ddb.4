@@ -1,4 +1,4 @@
-.\"	$NetBSD: ddb.4,v 1.196 2020/10/31 22:43:01 uwe Exp $
+.\"	$NetBSD: ddb.4,v 1.199 2021/03/11 10:34:34 ryo Exp $
 .\"
 .\" Copyright (c) 1997 - 2019 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -56,7 +56,7 @@
 .\" any improvements or extensions that they make and grant Carnegie Mellon
 .\" the rights to redistribute these changes.
 .\"
-.Dd August 23, 2020
+.Dd March 11, 2021
 .Dt DDB 4
 .Os
 .Sh NAME
@@ -584,7 +584,7 @@ is specified, the complete vnode list is printed.
 Display basic information about all physical pages managed by the VM system.
 For more detailed information about a single page, use
 .Ic show page .
-.It Ic show all pools Ns Op Cm /clp
+.It Ic show all pools Ns Op Cm /clpsS
 Display all pool information.
 Modifiers are the same as
 .Ic show pool .
@@ -721,7 +721,7 @@ If
 is specified, the complete page is printed.
 .It Ic show panic
 Print the current "panic" string.
-.It Ic show pool Ns Oo Cm /clp Oc Ar address
+.It Ic show pool Ns Oo Cm /clpsS Oc Ar address
 Print the pool at
 .Ar address .
 Valid modifiers:
@@ -732,6 +732,13 @@ Print the cachelist and its statistics for this pool.
 Print the log entries for this pool.
 .It Cm /p
 Print the pagelist for this pool.
+.It Cm /s
+Print a short (one line) list per pool, showing the wait channel, pool
+address, allocation size, alignment, allocated pages, allocated items,
+consumed items, allocation requests, allocation frees, pages allocated,
+pages freed, and currently idle pages, respectively.
+.It Cm /S
+Skip pools with zero allocations.
 .El
 .It Ic show proc Ns Oo Cm /ap Oc Ar address | pid
 Show information about a process and its LWPs.
@@ -939,7 +946,7 @@ an unrecoverable error in some systems such as i386.
 Watchpoints on user addresses work the best.
 .It Ic whatis Ar address
 Describe what an address is.
-.It Ic write Ns Oo Cm /bhlBHL Oc Ar address Ar expression Oo Ar expression ... Oc
+.It Ic write Ns Oo Cm /bhlqBHLQ Oc Ar address Ar expression Oo Ar expression ... Oc
 Write the
 .Ar expression Ns s
 at succeeding locations.
@@ -948,8 +955,9 @@ The unit size is specified with a modifier character, as per
 Valid modifiers are:
 .Cm /b ,
 .Cm /h ,
+.Cm /l ,
 and
-.Cm /l .
+.Cm /q .
 If no modifier is specified,
 .Cm /l
 is used.
@@ -958,6 +966,7 @@ Specifying the modifiers in upper case,
 .Cm /B ,
 .Cm /H ,
 .Cm /L ,
+.Cm /Q ,
 will prevent
 .Nm
 from reading the memory location first, which is useful for avoiding
@@ -1008,6 +1017,8 @@ set (e.g.
 Some of these commands are:
 .Ss AARCH64
 .Bl -tag -width "traptrace" -compact
+.It Ic break
+Set or clear a hardware breakpoint.
 .It Ic cpu
 Switch to another CPU.
 .It Ic cpuinfo
@@ -1026,26 +1037,18 @@ Print system registers.
 Set or clear a hardware watchpoint.
 Pass the address to be watched, or watchpoint number to clear the watchpoint.
 Optional modifiers are
-.Dq l
-for load access,
-.Dq s
-for store access,
-.Dq 1
+.Dq r
+for read access,
+.Dq w
+for write access (default: trap on read or write access),
+.Dq b
 for 8 bit width,
-.Dq 2
+.Dq h
 for 16 bit,
-.Dq 3
-for 24 bit,
-.Dq 4
-for 32 bit,
-.Dq 5
-for 40 bit,
-.Dq 6
-for 48 bit,
-.Dq 7
-for 56 bit,
-.Dq 8
-for 64 bit.
+.Dq l
+for 32 bit or,
+.Dq q
+for 64 bit (default: 32 bit).
 .El
 .Ss ALPHA
 .Bl -tag -width "traptrace" -compact

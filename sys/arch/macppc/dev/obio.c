@@ -1,4 +1,4 @@
-/*	$NetBSD: obio.c,v 1.47 2020/10/25 16:39:00 nia Exp $	*/
+/*	$NetBSD: obio.c,v 1.49 2021/04/24 23:36:41 thorpej Exp $	*/
 
 /*-
  * Copyright (C) 1998	Internet Research Institute, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: obio.c,v 1.47 2020/10/25 16:39:00 nia Exp $");
+__KERNEL_RCSID(0, "$NetBSD: obio.c,v 1.49 2021/04/24 23:36:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -271,7 +271,9 @@ obio_attach(device_t parent, device_t self, void *aux)
 		ca.ca_reg = reg;
 		ca.ca_intr = intr;
 
-		config_found(self, &ca, obio_print);
+		config_found(self, &ca, obio_print,
+		    CFARG_DEVHANDLE, devhandle_from_of(child),
+		    CFARG_EOL);
 	}
 }
 
@@ -368,7 +370,7 @@ obio_setup_gpios(struct obio_softc *sc, int node)
 	char name[32];
 	int child, use_dfs, cpunode, hiclock;
 
-	if (of_compatible(sc->sc_node, keylargo) == -1)
+	if (! of_compatible(sc->sc_node, keylargo))
 		return;
 
 	if (OF_getprop(node, "reg", reg, sizeof(reg)) < 4)

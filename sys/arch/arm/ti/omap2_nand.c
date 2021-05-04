@@ -1,4 +1,4 @@
-/*	$NetBSD: omap2_nand.c,v 1.2 2019/11/03 13:45:57 jmcneill Exp $	*/
+/*	$NetBSD: omap2_nand.c,v 1.4 2021/04/24 23:36:29 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2010 Department of Software Engineering,
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: omap2_nand.c,v 1.2 2019/11/03 13:45:57 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omap2_nand.c,v 1.4 2021/04/24 23:36:29 thorpej Exp $");
 
 /* TODO move to opt_* */
 #undef OMAP2_NAND_HARDWARE_ECC
@@ -124,10 +124,10 @@ struct omap2_nand_softc {
 	bus_size_t		sc_data_reg;
 };
 
-static const char * compatible[] = {
-	"ti,omap2-nand",
-	"ti,omap2-onenand",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "ti,omap2-nand" },
+	{ .compat = "ti,omap2-onenand" },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(omapnand, sizeof(struct omap2_nand_softc), omap2_nand_match,
@@ -185,7 +185,7 @@ omap2_nand_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -314,7 +314,7 @@ omap2_nand_attach(device_t parent, device_t self, void *aux)
 		if (flash.partinfo.part_name == NULL)
 			flash.partinfo.part_name = fdtbus_get_string(child, "name");
 
-		config_found_ia(sc->sc_nanddev, "flashbus", &flash, flash_print);
+		config_found(sc->sc_nanddev, &flash, flash_print, CFARG_EOL);
 	}
 }
 

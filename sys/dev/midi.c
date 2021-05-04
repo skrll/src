@@ -1,4 +1,4 @@
-/*	$NetBSD: midi.c,v 1.90 2020/05/23 23:42:42 ad Exp $	*/
+/*	$NetBSD: midi.c,v 1.93 2021/04/26 21:54:56 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: midi.c,v 1.90 2020/05/23 23:42:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: midi.c,v 1.93 2021/04/26 21:54:56 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "midi.h"
@@ -1743,7 +1743,7 @@ filt_midirdetach(struct knote *kn)
 	struct midi_softc *sc = kn->kn_hook;
 
 	mutex_enter(sc->lock);
-	SLIST_REMOVE(&sc->rsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->rsel, kn);
 	mutex_exit(sc->lock);
 }
 
@@ -1776,7 +1776,7 @@ filt_midiwdetach(struct knote *kn)
 	struct midi_softc *sc = kn->kn_hook;
 
 	mutex_enter(sc->lock);
-	SLIST_REMOVE(&sc->wsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->wsel, kn);
 	mutex_exit(sc->lock);
 }
 
@@ -1823,36 +1823,37 @@ midikqfilter(dev_t dev, struct knote *kn)
 {
 	struct midi_softc *sc =
 	    device_lookup_private(&midi_cd, MIDIUNIT(dev));
-	struct klist *klist;
+	struct selinfo *sip;
+	int error = 0;
 
-	mutex_exit(sc->lock);
-	sc->refcnt++;
 	mutex_enter(sc->lock);
+	sc->refcnt++;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->rsel.sel_klist;
+		sip = &sc->rsel;
 		kn->kn_fop = &midiread_filtops;
 		break;
 
 	case EVFILT_WRITE:
-		klist = &sc->wsel.sel_klist;
+		sip = &sc->wsel;
 		kn->kn_fop = &midiwrite_filtops;
 		break;
 
 	default:
-		return (EINVAL);
+		error = EINVAL;
+		goto out;
 	}
 
 	kn->kn_hook = sc;
 
-	mutex_enter(sc->lock);
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(sip, kn);
+ out:
 	if (--sc->refcnt < 0)
 		cv_broadcast(&sc->detach_cv);
 	mutex_exit(sc->lock);
 
-	return (0);
+	return (error);
 }
 
 void
@@ -1894,7 +1895,9 @@ midi_attach_mi(const struct midi_hw_if *mhwp, void *hdlp, device_t dev)
 	arg.type = AUDIODEV_TYPE_MIDI;
 	arg.hwif = mhwp;
 	arg.hdl = hdlp;
-	return (config_found(dev, &arg, audioprint));
+	return (config_found(dev, &arg, audioprint,
+			     CFARG_IATTR, "midibus",
+			     CFARG_EOL));
 }
 
 #endif /* NMIDI > 0 || NMIDIBUS > 0 */

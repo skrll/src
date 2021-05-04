@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.166 2020/12/07 10:57:41 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.177 2021/03/01 18:12:58 jakllsch Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -13,6 +13,7 @@ maxusers	64
 options 	CPU_CORTEX
 options 	CPU_THUNDERX
 options 	SOC_BCM2837
+options 	SOC_MESONG12
 options 	SOC_MESONGXBB
 options 	SOC_MESONGXL
 options 	SOC_RK3328
@@ -33,6 +34,7 @@ pseudo-device 	openfirm	# /dev/openfirm
 options 	INCLUDE_CONFIG_FILE
 #options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	UVMHIST_PRINT,KERNHIST_DELAY=0
+#options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
 
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
 #options 	EARLYCONS=bcm2837, CONSADDR=0x3f215040
@@ -69,6 +71,15 @@ options 	ARMV81_PAN
 #options 	POOL_QUARANTINE	# optional
 #options 	KASAN_PANIC	# optional
 
+# These options enable verbose messages for several subsystems.
+# Warning, these may compile large string tables into the kernel!
+#options 	ACPIVERBOSE	# verbose ACPI configuration messages
+#options 	MIIVERBOSE	# verbose PHY autoconfig messages
+#options 	PCIVERBOSE	# verbose PCI device autoconfig messages
+#options 	PCMCIAVERBOSE	# verbose PCMCIA configuration messages
+#options 	SCSIVERBOSE	# human readable SCSI error messages
+#options 	USBVERBOSE	# verbose USB device autoconfig messages
+
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
 
@@ -90,8 +101,9 @@ acpi*		at acpifdt?
 acpiacad*	at acpi?
 acpibat*	at acpi?
 acpibut*	at acpi?
+acpicppc*	at acpi?
 acpipcd*	at acpi?
-acpicpu*	at acpi?
+acpipcc*	at acpi?
 acpifan*	at acpi?
 acpiged*	at acpi?
 acpilid*	at acpi?
@@ -118,6 +130,7 @@ fclock*		at fdt? pass 1
 ffclock*	at fdt? pass 1
 fregulator*	at fdt? pass 4
 gregulator*	at fdt? pass 4
+pregulator*	at fdt? pass 4
 gpiokeys*	at fdt?
 wskbd*		at gpiokeys? console ? mux 1
 gpioleds*	at fdt?
@@ -175,6 +188,8 @@ tegrapmc*	at fdt? pass 4		# NVIDIA Tegra PMC
 # Clock and Reset controller
 bcmcprman*	at fdt? pass 1		# Broadcom BCM283x Clock Manager
 bcmaux*		at fdt? pass 1		# Broadcom BCM283x Aux Periph Clocks
+g12aoclkc*	at fdt? pass 2		# Amlogic Meson G12 AO clock controller
+g12clkc*	at fdt? pass 2		# Amlogic Meson G12 EE clock controller
 gxbbaoclkc*	at fdt? pass 2		# Amlogic Meson GXBB AO clock controller
 gxbbclkc*	at fdt? pass 2		# Amlogic Meson GXBB/GXL EE clock controller
 imx8mqccm*	at fdt? pass 2		# NXP iMX8MQ CCM
@@ -204,6 +219,7 @@ rkgpio*		at rkiomux?		# Rockchip GPIO
 gpio*		at gpiobus?
 
 # PWM controller
+mesonpwm*	at fdt? pass 3		# Amlogic PWM
 rkpwm*		at fdt? pass 3		# Rockchip PWM
 sunxipwm*	at fdt? pass 3		# Allwinner PWM
 
@@ -240,6 +256,7 @@ mcx*		at pci? dev ? function ?	# Mellanox 5th generation Ethernet
 mskc*		at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*		at mskc?
 re*		at pci? dev ? function ?	# Realtek RTL8111GS
+rge*		at pci? dev ? function ?	# Realtek 8125
 vmx*		at pci? dev ? function ?	# VMware VMXNET3
 wm*		at pci? dev ? function ?	# Intel Gigabit Ethernet
 
@@ -295,12 +312,14 @@ bsciic*		at acpi?
 dwiic*		at fdt?			# Designware I2C
 dwiic*		at acpi?
 imxi2c*		at fdt? pass 4		# IMX I2C
+nxpiic*		at acpi?		# NXP Layerscape I2C
 rkiic*		at fdt? pass 4		# Rockchip I2C
 sunxirsb*	at fdt?	pass 4		# Allwinner RSB
 sunxitwi*	at fdt?			# Allwinner TWI
 tegrai2c*	at fdt? pass 4		# NVIDIA Tegra I2C
 #sniiic*	at fdt?			# Socionext SC2A11 I2C
 #sniiic*	at acpi?
+iicmux*		at fdt? pass 5		# I2C mux virtual controllers
 iic*		at i2cbus?
 
 # I2C devices
@@ -315,6 +334,7 @@ cwfg*		at iic?			# CellWise CW2015 Fuel Gauge IC
 es8316ac*	at iic?			# Everest Semi ES8316 Audio CODEC
 fan53555reg*	at iic?			# FAN53555 / SY82x regulator
 max77620pmic*	at iic?
+pcaiicmux*	at iic?			# PCA954x / PCA984x I2C switch / mux
 pcf8563rtc*	at iic?			# PCF8563 RTC
 rkpmic*		at iic?			# Rockchip Power Management IC
 rkreg*		at rkpmic?
@@ -372,6 +392,10 @@ sun6ispi*	at fdt?			# Allwinner SPI
 spi*		at spibus?
 m25p*		at spi?
 spiflash*	at spiflashbus?
+
+# Broadcom VCHIQ, etc
+vchiq0 		at fdt?
+vcaudio0 	at vchiq0
 
 # Audio support
 hdaudio*	at fdt?			# Intel HDA
@@ -436,8 +460,8 @@ options 	FONT_BOLD16x32
 
 # GPU
 #nouveau*	at fdt?			# NVIDIA GPU
-nouveau*	at pci? dev ? function ?
-nouveaufb*	at nouveaufbbus?
+#nouveau*	at pci? dev ? function ?
+#nouveaufb*	at nouveaufbbus?
 radeon*		at pci? dev ? function ? # AMD Radeon
 radeondrmkmsfb*	at radeonfbbus?
 
@@ -448,13 +472,17 @@ pwmbacklight*	at fdt?			# PWM Backlight controls
 pwmfan*		at fdt?			# PWM Fan controls
 
 # Thermal throttling controller
+mesonthermal*	at fdt?			# Amlogic thermal sensor controller
 sunxithermal*	at fdt?			# Allwinner thermal sensor controller
 tegrasoctherm*	at fdt?			# NVIDIA Tegra SOC_THERM
 rktsadc*	at fdt?			# RockChip TSASC
 
 # USB
 imx8mqusbphy*	at fdt? pass 9		# IMX USB PHY
+mesonusbctrl*	at fdt?			# Amlogic Meson USB-Glue (dwc2 and dwc3)
 mesonusbphy*	at fdt? pass 9		# Amlogic Meson USB2 PHY
+mesong12u2phy*	at fdt? pass 9		# Amlogic Meson G12 USB2 PHY
+mesong12u3pphy*	at fdt? pass 9		# Amlogic Meson G12 USB3/PCIe PHY
 mesongxlu2phy*	at fdt? pass 9		# Amlogic Meson GXL USB2 PHY
 mesongxlu3phy*	at fdt? pass 9		# Amlogic Meson GXL USB3 PHY
 rkusb*		at fdt? pass 9		# Rockchip USB PHY

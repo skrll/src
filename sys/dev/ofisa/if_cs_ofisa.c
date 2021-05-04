@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cs_ofisa.c,v 1.27 2016/12/09 17:18:35 christos Exp $	*/
+/*	$NetBSD: if_cs_ofisa.c,v 1.32 2021/04/28 03:34:02 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cs_ofisa.c,v 1.27 2016/12/09 17:18:35 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cs_ofisa.c,v 1.32 2021/04/28 03:34:02 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -66,20 +66,20 @@ static void	cs_ofisa_attach(device_t, device_t, void *);
 CFATTACH_DECL_NEW(cs_ofisa, sizeof(struct cs_softc_isa),
     cs_ofisa_match, cs_ofisa_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "CRUS,CS8900" },
+	/* XXX CS8920, CS8920M? */
+	/* XXX PNP names? */
+	DEVICE_COMPAT_EOL
+};
+
 int
 cs_ofisa_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct ofisa_attach_args *aa = aux;
-	static const char *const compatible_strings[] = {
-		"CRUS,CS8900",
-		/* XXX CS8920, CS8920M? */
-		/* XXX PNP names? */
-		NULL,
-	};
-	int rv = 0;
+	int rv;
 
-	if (of_compatible(aa->oba.oba_phandle, compatible_strings) != -1)
-		rv = 5;
+	rv = of_compatible_match(aa->oba.oba_phandle, compat_data) ? 5 : 0;
 #ifdef _CS_OFISA_MD_MATCH
 	if (rv == 0)
 		rv = cs_ofisa_md_match(parent, cf, aux);
@@ -217,9 +217,9 @@ cs_ofisa_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	ofisa_print_model(self, aa->oba.oba_phandle);
+	ofisa_print_model(NULL, aa->oba.oba_phandle);
 	if (message != NULL)
-		aprint_normal(": %s\n", message);
+		aprint_normal_dev(self, "%s\n", message);
 
 	if (defmedia == -1) {
 		aprint_error_dev(self, "unable to get default media\n");

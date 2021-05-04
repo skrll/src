@@ -1,11 +1,11 @@
-/*	$NetBSD: util.h,v 1.9 2020/08/03 17:23:42 christos Exp $	*/
+/*	$NetBSD: util.h,v 1.12 2021/04/29 17:26:12 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -50,6 +50,14 @@
 #define ISC_NONSTRING
 #endif /* __GNUC__ */
 
+#if HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR && HAVE_FUNC_ATTRIBUTE_DESTRUCTOR
+#define ISC_CONSTRUCTOR(priority) __attribute__((constructor(priority)))
+#define ISC_DESTRUCTOR(priority)  __attribute__((destructor(priority)))
+#elif WIN32
+#define ISC_CONSTRUCTOR(priority)
+#define ISC_DESTRUCTOR(priority)
+#endif
+
 /*%
  * The opposite: silent warnings about stored values which are never read.
  */
@@ -76,7 +84,7 @@
 		} _u;                  \
 		_u.k = konst;          \
 		var = _u.v;            \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 
@@ -109,13 +117,13 @@
 		RUNTIME_CHECK(isc_mutex_lock((lp)) == ISC_R_SUCCESS);      \
 		ISC_UTIL_TRACE(fprintf(stderr, "LOCKED %p %s %d\n", (lp),  \
 				       __FILE__, __LINE__));               \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define UNLOCK(lp)                                                          \
 	do {                                                                \
 		RUNTIME_CHECK(isc_mutex_unlock((lp)) == ISC_R_SUCCESS);     \
 		ISC_UTIL_TRACE(fprintf(stderr, "UNLOCKED %p %s %d\n", (lp), \
 				       __FILE__, __LINE__));                \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define BROADCAST(cvp)                                                        \
 	do {                                                                  \
@@ -123,13 +131,13 @@
 				       __FILE__, __LINE__));                  \
 		RUNTIME_CHECK(isc_condition_broadcast((cvp)) ==               \
 			      ISC_R_SUCCESS);                                 \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define SIGNAL(cvp)                                                          \
 	do {                                                                 \
 		ISC_UTIL_TRACE(fprintf(stderr, "SIGNAL %p %s %d\n", (cvp),   \
 				       __FILE__, __LINE__));                 \
 		RUNTIME_CHECK(isc_condition_signal((cvp)) == ISC_R_SUCCESS); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define WAIT(cvp, lp)                                                         \
 	do {                                                                  \
 		ISC_UTIL_TRACE(fprintf(stderr, "WAIT %p LOCK %p %s %d\n",     \
@@ -138,7 +146,7 @@
 			      ISC_R_SUCCESS);                                 \
 		ISC_UTIL_TRACE(fprintf(stderr, "WAITED %p LOCKED %p %s %d\n", \
 				       (cvp), (lp), __FILE__, __LINE__));     \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*
  * isc_condition_waituntil can return ISC_R_TIMEDOUT, so we
@@ -156,13 +164,13 @@
 		RUNTIME_CHECK(isc_rwlock_lock((lp), (t)) == ISC_R_SUCCESS);   \
 		ISC_UTIL_TRACE(fprintf(stderr, "RWLOCKED %p, %d %s %d\n",     \
 				       (lp), (t), __FILE__, __LINE__));       \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define RWUNLOCK(lp, t)                                                       \
 	do {                                                                  \
 		ISC_UTIL_TRACE(fprintf(stderr, "RWUNLOCK %p, %d %s %d\n",     \
 				       (lp), (t), __FILE__, __LINE__));       \
 		RUNTIME_CHECK(isc_rwlock_unlock((lp), (t)) == ISC_R_SUCCESS); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*
  * List Macros.
@@ -212,9 +220,9 @@
 #endif /* if __has_feature(thread_sanitizer) */
 
 #if __SANITIZE_THREAD__
-#define ISC_NO_SANITIZE __attribute__((no_sanitize("thread")))
+#define ISC_NO_SANITIZE_THREAD __attribute__((no_sanitize("thread")))
 #else /* if __SANITIZE_THREAD__ */
-#define ISC_NO_SANITIZE
+#define ISC_NO_SANITIZE_THREAD
 #endif /* if __SANITIZE_THREAD__ */
 
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR >= 6)
@@ -332,6 +340,8 @@ mock_assert(const int result, const char *const expression,
  * Time
  */
 #define TIME_NOW(tp) RUNTIME_CHECK(isc_time_now((tp)) == ISC_R_SUCCESS)
+#define TIME_NOW_HIRES(tp) \
+	RUNTIME_CHECK(isc_time_now_hires((tp)) == ISC_R_SUCCESS)
 
 /*%
  * Alignment

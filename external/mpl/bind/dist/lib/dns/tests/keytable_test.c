@@ -1,11 +1,11 @@
-/*	$NetBSD: keytable_test.c,v 1.5 2020/05/24 19:46:25 christos Exp $	*/
+/*	$NetBSD: keytable_test.c,v 1.7 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -357,7 +357,7 @@ add_test(void **state) {
 	assert_int_equal(
 		dns_keytable_find(keytable, str2name("null.example"), &keynode),
 		ISC_R_SUCCESS);
-	assert_int_equal(keynode, null_keynode); /* should be the same node */
+	assert_ptr_equal(keynode, null_keynode); /* should be the same node */
 	dns_keytable_detachkeynode(keytable, &null_keynode);
 
 	/*
@@ -372,7 +372,7 @@ add_test(void **state) {
 	assert_int_equal(dns_keytable_find(keytable, str2name("null.example"),
 					   &null_keynode),
 			 ISC_R_SUCCESS);
-	assert_int_equal(keynode, null_keynode);
+	assert_ptr_equal(keynode, null_keynode);
 	dns_keytable_detachkeynode(keytable, &null_keynode);
 
 	dns_keytable_detachkeynode(keytable, &keynode);
@@ -714,7 +714,7 @@ main(void) {
 int
 main(void) {
 	printf("1..0 # Skipped: cmocka not available\n");
-	return (0);
+	return (SKIPPED_TEST_EXIT_CODE);
 }
 
 #endif /* if HAVE_CMOCKA */

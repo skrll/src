@@ -4,7 +4,7 @@
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
@@ -36,14 +36,16 @@ nextpart ns3/named.run > /dev/null
 rndc_reload ns2 10.53.0.2
 rndc_reload ns3 10.53.0.3
 
-echo_i "wait for reload"
-a=0 b=0
-for i in 1 2 3 4 5 6 7 8 9 0; do
-        nextpart ns2/named.run | grep "all zones loaded" > /dev/null && a=1
-        nextpart ns3/named.run | grep "all zones loaded" > /dev/null && b=1
-        [ $a -eq 1 -a $b -eq 1 ] && break
-        sleep 1
-done
+echo_i "wait for reload to complete"
+ret=0
+_check_reload() (
+  nextpartpeek ns2/named.run | grep "all zones loaded" > /dev/null && \
+  nextpartpeek ns3/named.run | grep "all zones loaded" > /dev/null && \
+  nextpartpeek ns3/named.run | grep "zone_dump: zone example/IN: enter" > /dev/null
+)
+retry_quiet 10 _check_reload || ret=1
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=`expr $status + $ret`
 
 echo_i "fetching a.example from ns2's 10.53.0.4, source address 10.53.0.4"
 $DIG $DIGOPTS -b 10.53.0.4 a.example. @10.53.0.4 any > dig.out.ns4.2 || status=1
@@ -86,7 +88,7 @@ ret=0
 one=`$DIG $SHORTOPTS -b 10.53.0.2 @10.53.0.2 b.clone a`
 two=`$DIG $SHORTOPTS -b 10.53.0.4 @10.53.0.2 b.clone a`
 if [ "$one" != "$two" ]; then
-        echo "'$one' does not match '$two'"
+        echo_i "'$one' does not match '$two'"
         ret=1
 fi
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -98,18 +100,18 @@ one=`$DIG $SHORTOPTS -b 10.53.0.2 @10.53.0.2 child.clone txt`
 two=`$DIG $SHORTOPTS -b 10.53.0.4 @10.53.0.2 child.clone txt`
 three=`$DIG $SHORTOPTS @10.53.0.3 child.clone txt`
 four=`$DIG $SHORTOPTS @10.53.0.5 child.clone txt`
-echo "$three" | grep NS3 > /dev/null || { ret=1; echo "expected response from NS3 got '$three'"; }
-echo "$four" | grep NS5 > /dev/null || { ret=1; echo "expected response from NS5 got '$four'"; }
+echo "$three" | grep NS3 > /dev/null || { ret=1; echo_i "expected response from NS3 got '$three'"; }
+echo "$four" | grep NS5 > /dev/null || { ret=1; echo_i "expected response from NS5 got '$four'"; }
 if [ "$one" = "$two" ]; then
-        echo "'$one' matches '$two'"
+        echo_i "'$one' matches '$two'"
         ret=1
 fi
 if [ "$one" != "$three" ]; then
-        echo "'$one' does not match '$three'"
+        echo_i "'$one' does not match '$three'"
         ret=1
 fi
 if [ "$two" != "$four" ]; then
-        echo "'$two' does not match '$four'"
+        echo_i "'$two' does not match '$four'"
         ret=1
 fi
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -129,6 +131,47 @@ int=`awk '$4 == "DNSKEY" { print $8 }' dig.out.internal | sort`
 ext=`awk '$4 == "DNSKEY" { print $8 }' dig.out.external | sort`
 test "$int" != "$ext" || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
+status=`expr $status + $ret`
+
+echo_i "verifying adding of multiple inline zones followed by reconfiguration works"
+
+[ ! -f ns2/zones.conf ] && touch ns2/zones.conf
+copy_setports ns2/named3.conf.in ns2/named.conf
+
+for i in `seq 1 50`; do
+	ret=0
+	zone_name=`printf "example%03d.com" $i`
+
+# Add a new zone to the configuration.
+	cat >> ns2/zones.conf << EOF
+zone "${zone_name}" {
+    type master;
+    file "db.${zone_name}";
+    dnssec-dnskey-kskonly yes;
+    auto-dnssec maintain;
+    inline-signing yes;
+};
+EOF
+
+# Create a master file for the zone.
+	cat > "ns2/db.${zone_name}" <<EOF
+\$TTL   86400
+@      IN  SOA localhost. hostmaster.localhost (
+                1612542642  ; serial
+                12H ; refresh
+                1H  ; retry
+                2w  ; expiry
+                1h  ; minimum
+        )
+
+        IN      NS      localhost
+localhost       IN      A       127.0.0.1
+EOF
+
+    $KEYGEN -q -Kns2 -fk -aecdsa256 ${zone_name} > /dev/null
+    $RNDCCMD 10.53.0.2 reconfig || ret=1
+    if [ $ret != 0 ]; then echo_i "failed"; break; fi
+done # end for #
 status=`expr $status + $ret`
 
 echo_i "exit status: $status"

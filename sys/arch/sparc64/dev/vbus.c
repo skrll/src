@@ -1,4 +1,4 @@
-/*	$NetBSD: vbus.c,v 1.4 2019/11/10 21:16:33 chs Exp $	*/
+/*	$NetBSD: vbus.c,v 1.6 2021/04/24 23:36:49 thorpej Exp $	*/
 /*	$OpenBSD: vbus.c,v 1.8 2015/09/27 11:29:20 kettenis Exp $	*/
 /*
  * Copyright (c) 2008 Mark Kettenis
@@ -19,6 +19,7 @@
 #include <sys/param.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 
 #include <machine/autoconf.h>
@@ -95,13 +96,13 @@ vbus_attach(device_t parent, device_t self, void *aux)
 			     &va.va_nreg, (void **)&va.va_reg);
 		prom_getprop(node, "interrupts", sizeof(*va.va_intr),
 			     &va.va_nintr, (void **)&va.va_intr);
-		config_found(self, &va, vbus_print);
+		config_found(self, &va, vbus_print, CFARG_EOL);
 	}
 
 	struct vbus_attach_args va;
 	bzero(&va, sizeof(va));
 	va.va_name = "rtc";
-	config_found(self, &va, vbus_print);
+	config_found(self, &va, vbus_print, CFARG_EOL);
 
 }
 
@@ -261,7 +262,7 @@ vbus_alloc_bus_tag(struct vbus_softc *sc, bus_space_tag_t parent)
 {
 	struct sparc_bus_space_tag *bt;
 
-	bt = malloc(sizeof(*bt), M_DEVBUF, M_WAITOK | M_ZERO);
+	bt = kmem_zalloc(sizeof(*bt), KM_SLEEP);
 	bt->cookie = sc;
 	bt->parent = parent;
 	bt->sparc_bus_map = parent->sparc_bus_map;

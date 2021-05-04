@@ -1,11 +1,11 @@
-/*	$NetBSD: dnstap_test.c,v 1.7 2020/05/24 19:46:25 christos Exp $	*/
+/*	$NetBSD: dnstap_test.c,v 1.9 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * file, you can obtain one at https://mozilla.org/MPL/2.0/.
  *
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
@@ -38,6 +38,8 @@
 #include "dnstest.h"
 
 #ifdef HAVE_DNSTAP
+
+#include <fstrm.h>
 
 #include <protobuf-c/protobuf-c.h>
 
@@ -382,7 +384,8 @@ main(void) {
 
 	return (cmocka_run_group_tests(tests, NULL, NULL));
 #else  /* if HAVE_DNSTAP */
-	print_message("1..0 # Skip dnstap not enabled\n");
+	print_message("1..0 # Skipped: dnstap not enabled\n");
+	return (SKIPPED_TEST_EXIT_CODE);
 #endif /* HAVE_DNSTAP */
 }
 
@@ -393,7 +396,7 @@ main(void) {
 int
 main(void) {
 	printf("1..0 # Skipped: cmocka not available\n");
-	return (0);
+	return (SKIPPED_TEST_EXIT_CODE);
 }
 
 #endif /* HAVE_CMOCKA */
