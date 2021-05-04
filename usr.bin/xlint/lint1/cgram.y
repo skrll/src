@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.224 2021/05/01 07:25:07 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.226 2021/05/03 05:24:44 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.224 2021/05/01 07:25:07 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.226 2021/05/03 05:24:44 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -123,7 +123,7 @@ anonymize(sym_t *s)
 }
 %}
 
-%expect 189
+%expect 181
 
 %union {
 	val_t	*y_val;
@@ -323,8 +323,8 @@ anonymize(sym_t *s)
 %type	<y_sym>		parameter_type_list
 %type	<y_sym>		parameter_declaration
 %type	<y_tnode>	expr
-%type	<y_tnode>	expr_statement_val
-%type	<y_tnode>	expr_statement_list
+%type	<y_tnode>	gcc_statement_expr_list
+%type	<y_tnode>	gcc_statement_expr_item
 %type	<y_tnode>	term
 %type	<y_tnode>	generic_expr
 %type	<y_tnode>	func_arg_list
@@ -553,60 +553,60 @@ type_attribute_bounded_type:
 
 type_attribute_spec:
 	  /* empty */
-	| T_AT_DEPRECATED T_LPAREN string T_RPAREN
-	| T_AT_DEPRECATED
+	| T_AT_ALWAYS_INLINE
+	| T_AT_ALIAS T_LPAREN string T_RPAREN
 	| T_AT_ALIGNED T_LPAREN constant_expr T_RPAREN
+	| T_AT_ALIGNED
 	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_COMMA constant_expr T_RPAREN
 	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_RPAREN
 	| T_AT_BOUNDED T_LPAREN type_attribute_bounded_type
 	  T_COMMA constant_expr T_COMMA constant_expr T_RPAREN
-	| T_AT_SENTINEL T_LPAREN constant_expr T_RPAREN
-	| T_AT_SENTINEL
-	| T_AT_FORMAT_ARG T_LPAREN constant_expr T_RPAREN
-	| T_AT_NONNULL
-	| T_AT_NONNULL T_LPAREN constant_expr_list_opt T_RPAREN
-	| T_AT_NONSTRING
-	| T_AT_MODE T_LPAREN T_NAME T_RPAREN
-	| T_AT_ALIAS T_LPAREN string T_RPAREN
-	| T_AT_OPTIMIZE T_LPAREN string T_RPAREN
-	| T_AT_PCS T_LPAREN string T_RPAREN
-	| T_AT_SECTION T_LPAREN string T_RPAREN
-	| T_AT_TLS_MODEL T_LPAREN string T_RPAREN
-	| T_AT_ALIGNED
-	| T_AT_CONSTRUCTOR T_LPAREN constant_expr T_RPAREN
-	| T_AT_CONSTRUCTOR
-	| T_AT_DESTRUCTOR T_LPAREN constant_expr T_RPAREN
-	| T_AT_DESTRUCTOR
-	| T_AT_MALLOC
-	| T_AT_MAY_ALIAS
-	| T_AT_NO_INSTRUMENT_FUNCTION
-	| T_AT_NOINLINE
-	| T_AT_NORETURN
-	| T_AT_NOTHROW
 	| T_AT_COLD
 	| T_AT_COMMON
-	| T_AT_RETURNS_TWICE
-	| T_AT_PACKED {
-		addpacked();
-	  }
-	| T_AT_PURE
-	| T_AT_TUNION
-	| T_AT_GNU_INLINE
-	| T_AT_ALWAYS_INLINE
-	| T_AT_FORMAT T_LPAREN type_attribute_format_type T_COMMA
-	    constant_expr T_COMMA constant_expr T_RPAREN
-	| T_AT_USED {
-		add_attr_used();
-	  }
-	| T_AT_UNUSED {
-		add_attr_used();
-	  }
-	| T_AT_WARN_UNUSED_RESULT
-	| T_AT_WEAK
-	| T_AT_VISIBILITY T_LPAREN constant_expr T_RPAREN
+	| T_AT_CONSTRUCTOR T_LPAREN constant_expr T_RPAREN
+	| T_AT_CONSTRUCTOR
+	| T_AT_DEPRECATED T_LPAREN string T_RPAREN
+	| T_AT_DEPRECATED
+	| T_AT_DESTRUCTOR T_LPAREN constant_expr T_RPAREN
+	| T_AT_DESTRUCTOR
 	| T_AT_FALLTHROUGH {
 		fallthru(1);
 	}
+	| T_AT_FORMAT T_LPAREN type_attribute_format_type T_COMMA
+	    constant_expr T_COMMA constant_expr T_RPAREN
+	| T_AT_FORMAT_ARG T_LPAREN constant_expr T_RPAREN
+	| T_AT_GNU_INLINE
+	| T_AT_MALLOC
+	| T_AT_MAY_ALIAS
+	| T_AT_MODE T_LPAREN T_NAME T_RPAREN
+	| T_AT_NOINLINE
+	| T_AT_NONNULL T_LPAREN constant_expr_list_opt T_RPAREN
+	| T_AT_NONNULL
+	| T_AT_NONSTRING
+	| T_AT_NORETURN
+	| T_AT_NOTHROW
+	| T_AT_NO_INSTRUMENT_FUNCTION
+	| T_AT_OPTIMIZE T_LPAREN string T_RPAREN
+	| T_AT_PACKED {
+		addpacked();
+	  }
+	| T_AT_PCS T_LPAREN string T_RPAREN
+	| T_AT_PURE
+	| T_AT_RETURNS_TWICE
+	| T_AT_SECTION T_LPAREN string T_RPAREN
+	| T_AT_SENTINEL T_LPAREN constant_expr T_RPAREN
+	| T_AT_SENTINEL
+	| T_AT_TLS_MODEL T_LPAREN string T_RPAREN
+	| T_AT_TUNION
+	| T_AT_UNUSED {
+		add_attr_used();
+	  }
+	| T_AT_USED {
+		add_attr_used();
+	  }
+	| T_AT_VISIBILITY T_LPAREN constant_expr T_RPAREN
+	| T_AT_WARN_UNUSED_RESULT
+	| T_AT_WEAK
 	| T_QUAL {
 		if ($1 != CONST)
 			yyerror("Bad attribute");
@@ -1614,33 +1614,6 @@ expr_statement:
 	  }
 	;
 
-/*
- * The following two productions are used to implement
- * ({ [[decl-list] stmt-list] }).
- * XXX: This is not well tested.
- */
-expr_statement_val:
-	  expr T_SEMI {
-		/* XXX: We should really do that only on the last name */
-		if ($1->tn_op == NAME)
-			$1->tn_sym->s_used = true;
-		$$ = $1;
-		expr($1, false, false, false, false);
-		seen_fallthrough = false;
-	  }
-	| non_expr_statement {
-		$$ = expr_zalloc_tnode();
-		$$->tn_type = gettyp(VOID);
-	  }
-	;
-
-expr_statement_list:
-	  expr_statement_val
-	| expr_statement_list expr_statement_val {
-		$$ = $2;
-	  }
-	;
-
 selection_statement:		/* C99 6.8.4 */
 	  if_without_else {
 		save_warning_flags();
@@ -1831,20 +1804,6 @@ read_until_rparen:
 	  }
 	;
 
-declaration_list_opt:
-	  /* empty */
-	| declaration_list
-	;
-
-declaration_list:
-	  declaration {
-		clear_warning_flags();
-	  }
-	| declaration_list declaration {
-		clear_warning_flags();
-	  }
-	;
-
 constant_expr_list_opt:
 	  /* empty */
 	| constant_expr_list
@@ -1933,11 +1892,10 @@ term:
 			$2->tn_parenthesized = true;
 		$$ = $2;
 	  }
-	| T_LPAREN compound_statement_lbrace declaration_list_opt
-	    expr_statement_list {
+	| T_LPAREN compound_statement_lbrace gcc_statement_expr_list {
 		block_level--;
 		mem_block_level--;
-		begin_initialization(mktempsym(dup_type($4->tn_type)));
+		begin_initialization(mktempsym(dup_type($3->tn_type)));
 		mem_block_level++;
 		block_level++;
 		/* ({ }) is a GCC extension */
@@ -2041,6 +1999,37 @@ term:
 		$$ = new_name_node(*current_initsym(), 0);
 		end_initialization();
 	  }
+	;
+
+/*
+ * The inner part of a GCC statement-expression of the form ({ ... }).
+ *
+ * https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html
+ */
+gcc_statement_expr_list:
+	  gcc_statement_expr_item
+	| gcc_statement_expr_list gcc_statement_expr_item {
+		$$ = $2;
+	  }
+	;
+
+gcc_statement_expr_item:
+	  declaration {
+		clear_warning_flags();
+		$$ = NULL;
+	  }
+	| non_expr_statement {
+		$$ = expr_zalloc_tnode();
+		$$->tn_type = gettyp(VOID);
+	  }
+	| expr T_SEMI {
+		/* XXX: We should really do that only on the last name */
+		if ($1->tn_op == NAME)
+			$1->tn_sym->s_used = true;
+		$$ = $1;
+		expr($1, false, false, false, false);
+		seen_fallthrough = false;
+	}
 	;
 
 string:

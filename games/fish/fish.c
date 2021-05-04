@@ -1,4 +1,4 @@
-/*	$NetBSD: fish.c,v 1.23 2018/03/05 04:59:54 eadler Exp $	*/
+/*	$NetBSD: fish.c,v 1.26 2021/05/02 12:25:55 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -42,7 +42,7 @@ __COPYRIGHT("@(#) Copyright (c) 1990, 1993\
 #if 0
 static char sccsid[] = "@(#)fish.c	8.1 (Berkeley) 5/31/93";
 #else
-__RCSID("$NetBSD: fish.c,v 1.23 2018/03/05 04:59:54 eadler Exp $");
+__RCSID("$NetBSD: fish.c,v 1.26 2021/05/02 12:25:55 rillig Exp $");
 #endif
 #endif /* not lint */
 
@@ -54,7 +54,6 @@ __RCSID("$NetBSD: fish.c,v 1.23 2018/03/05 04:59:54 eadler Exp $");
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <time.h>
 #include <err.h>
 #include "pathnames.h"
 
@@ -87,7 +86,6 @@ static int gofish(int, int, int *);
 static void goodmove(int, int, int *, int *);
 static void init(void);
 static void instructions(void);
-static int nrandom(int);
 static void printhand(const int *);
 static void printplayer(int);
 static int promove(void);
@@ -112,18 +110,17 @@ main(int argc, char **argv)
 			usage();
 		}
 
-	srandom(time(NULL));
 	instructions();
 	init();
 
-	if (nrandom(2) == 1) {
+	if (arc4random_uniform(2) == 1) {
 		printplayer(COMPUTER);
 		(void)printf("get to start.\n");
 		goto istart;
 	}
 	printplayer(USER);
 	(void)printf("get to start.\n");
-	
+
 	for (;;) {
 		move = usermove();
 		if (!comphand[move]) {
@@ -200,11 +197,11 @@ usermove(void)
 			continue;
 		}
 
-		if (nrandom(3) == 1)
+		if (arc4random_uniform(3) == 1)
 			(void)printf("You don't have any of those!\n");
 		else
 			(void)printf("You don't have any %s's!\n", cards[n]);
-		if (nrandom(4) == 1)
+		if (arc4random_uniform(4) == 1)
 			(void)printf("No cheating!\n");
 		(void)printf("Guess again.\n");
 	}
@@ -240,19 +237,19 @@ promove(void)
 			userasked[i] = 0;
 			return(i);
 		}
-	if (nrandom(3) == 1) {
+	if (arc4random_uniform(3) == 1) {
 		for (i = 0;; ++i)
 			if (comphand[i] && comphand[i] != CARDS) {
 				max = i;
 				break;
 			}
-		while (++i < RANKS) 
+		while (++i < RANKS)
 			if (comphand[i] != CARDS &&
 			    comphand[i] > comphand[max])
 				max = i;
 		return(max);
-	} 
-	if (nrandom(1024) == 0723) {
+	}
+	if (arc4random_uniform(1024) == 0723) {
 		for (i = 0; i < RANKS; ++i)
 			if (userhand[i] && comphand[i])
 				return(i);
@@ -341,11 +338,11 @@ chkwinner(int player, const int *hand)
 	(void)printf("\nI have %d, you have %d.\n", cb, ub);
 	if (ub > cb) {
 		(void)printf("\nYou win!!!\n");
-		if (nrandom(1024) == 0723)
+		if (arc4random_uniform(1024) == 0723)
 			(void)printf("Cheater, cheater, pumpkin eater!\n");
 	} else if (cb > ub) {
 		(void)printf("\nI win!!!\n");
-		if (nrandom(1024) == 0723)
+		if (arc4random_uniform(1024) == 0723)
 			(void)printf("Hah!  Stupid peasant!\n");
 	} else
 		(void)printf("\nTie!\n");
@@ -372,7 +369,7 @@ printhand(const int *hand)
 
 	for (book = i = 0; i < RANKS; i++)
 		if (hand[i] < CARDS)
-			for (j = hand[i]; --j >= 0;) 
+			for (j = hand[i]; --j >= 0;)
 				PRC(i);
 		else
 			++book;
@@ -419,7 +416,7 @@ init(void)
 	for (i = 0; i < TOTCARDS; ++i)
 		deck[i] = i % RANKS;
 	for (i = 0; i < TOTCARDS - 1; ++i) {
-		j = nrandom(TOTCARDS-i);
+		j = arc4random_uniform(TOTCARDS-i);
 		if (j == 0)
 			continue;
 		temp = deck[i];
@@ -430,13 +427,6 @@ init(void)
 		++userhand[deck[--curcard]];
 		++comphand[deck[--curcard]];
 	}
-}
-
-static int
-nrandom(int n)
-{
-
-	return((int)random() % n);
 }
 
 static void
