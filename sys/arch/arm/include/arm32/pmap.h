@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.169 2020/10/30 18:54:36 skrll Exp $	*/
+/*	$NetBSD: pmap.h,v 1.170 2021/05/04 09:02:21 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003 Wasabi Systems, Inc.
