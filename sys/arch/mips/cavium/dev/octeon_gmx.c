@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_gmx.c,v 1.17 2021/04/24 23:36:42 thorpej Exp $	*/
+/*	$NetBSD: octeon_gmx.c,v 1.19 2021/05/14 13:36:28 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_gmx.c,v 1.17 2021/04/24 23:36:42 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_gmx.c,v 1.19 2021/05/14 13:36:28 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -138,33 +138,33 @@ static const int	octgmx_rx_adr_cam_regs[] = {
 	GMX0_RX0_ADR_CAM3, GMX0_RX0_ADR_CAM4, GMX0_RX0_ADR_CAM5
 };
 
-struct octgmx_port_ops octgmx_port_ops_mii = {
+static struct octgmx_port_ops octgmx_port_ops_mii = {
 	/* XXX not implemented */
 };
 
-struct octgmx_port_ops octgmx_port_ops_gmii = {
+static struct octgmx_port_ops octgmx_port_ops_gmii = {
 	.port_ops_enable = octgmx_rgmii_enable,
 	.port_ops_speed = octgmx_rgmii_speed,
 	.port_ops_timing = octgmx_rgmii_timing,
 };
 
-struct octgmx_port_ops octgmx_port_ops_rgmii = {
+static struct octgmx_port_ops octgmx_port_ops_rgmii = {
 	.port_ops_enable = octgmx_rgmii_enable,
 	.port_ops_speed = octgmx_rgmii_speed,
 	.port_ops_timing = octgmx_rgmii_timing,
 };
 
-struct octgmx_port_ops octgmx_port_ops_sgmii = {
+static struct octgmx_port_ops octgmx_port_ops_sgmii = {
 	.port_ops_enable = octgmx_sgmii_enable,
 	.port_ops_speed = octgmx_sgmii_speed,
 	.port_ops_timing = octgmx_sgmii_timing,
 };
 
-struct octgmx_port_ops octgmx_port_ops_spi42 = {
+static struct octgmx_port_ops octgmx_port_ops_spi42 = {
 	/* XXX not implemented */
 };
 
-struct octgmx_port_ops *octgmx_port_ops[] = {
+static struct octgmx_port_ops *octgmx_port_ops[] = {
 	[GMX_MII_PORT] = &octgmx_port_ops_mii,
 	[GMX_GMII_PORT] = &octgmx_port_ops_gmii,
 	[GMX_RGMII_PORT] = &octgmx_port_ops_rgmii,
@@ -834,7 +834,7 @@ octgmx_rgmii_speed_speed(struct octgmx_port_softc *sc)
 
 	prt_cfg = _GMX_PORT_RD8(sc, GMX0_PRT0_CFG);
 
-	switch (sc->sc_link & RXN_RX_INBND_SPEED) {
+	switch (__SHIFTOUT(sc->sc_link, RXN_RX_INBND_SPEED)) {
 	case RXN_RX_INBND_SPEED_2_5:
 		/* 10Mbps */
 		/*

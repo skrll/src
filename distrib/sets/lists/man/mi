@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1718 2021/04/27 21:13:38 nia Exp $
+# $NetBSD: mi,v 1.1720 2021/05/17 04:07:42 yamaguchi Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -41,6 +41,7 @@
 ./usr/share/man/cat1/Mail.0			man-obsolete		obsolete
 ./usr/share/man/cat1/[.0			man-util-catman		.cat
 ./usr/share/man/cat1/agrep.0			man-util-catman		.cat
+./usr/share/man/cat1/aiomixer.0			man-audio-catman	.cat
 ./usr/share/man/cat1/alias.0			man-util-catman		.cat
 ./usr/share/man/cat1/altqstat.0			man-router-catman	.cat
 ./usr/share/man/cat1/amq.0			man-obsolete		obsolete
@@ -1412,6 +1413,7 @@
 ./usr/share/man/cat4/kttcp.0			man-sys-catman		.cat
 ./usr/share/man/cat4/kue.0			man-sys-catman		.cat
 ./usr/share/man/cat4/l2tp.0			man-sys-catman		.cat
+./usr/share/man/cat4/lagg.0			man-sys-catman		.cat
 ./usr/share/man/cat4/lc.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ld.0			man-sys-catman		.cat
 ./usr/share/man/cat4/le.0			man-sys-catman		.cat
@@ -3353,6 +3355,7 @@
 ./usr/share/man/html1/Mail.html			man-obsolete		obsolete
 ./usr/share/man/html1/[.html			man-util-htmlman	html
 ./usr/share/man/html1/agrep.html		man-util-htmlman	html
+./usr/share/man/html1/aiomixer.html		man-audio-htmlman	html
 ./usr/share/man/html1/alias.html		man-util-htmlman	html
 ./usr/share/man/html1/altqstat.html		man-router-htmlman	html
 ./usr/share/man/html1/apply.html		man-util-htmlman	html
@@ -4608,6 +4611,7 @@
 ./usr/share/man/html4/kttcp.html		man-sys-htmlman		html
 ./usr/share/man/html4/kue.html			man-sys-htmlman		html
 ./usr/share/man/html4/l2tp.html			man-sys-htmlman		html
+./usr/share/man/html4/lagg.html			man-sys-htmlman		html
 ./usr/share/man/html4/lc.html			man-sys-htmlman		html
 ./usr/share/man/html4/ld.html			man-sys-htmlman		html
 ./usr/share/man/html4/le.html			man-sys-htmlman		html
@@ -6274,6 +6278,7 @@
 ./usr/share/man/man1/Mail.1			man-obsolete		obsolete
 ./usr/share/man/man1/[.1			man-util-man		.man
 ./usr/share/man/man1/agrep.1			man-util-man		.man
+./usr/share/man/man1/aiomixer.1			man-audio-man		.man
 ./usr/share/man/man1/alias.1			man-util-man		.man
 ./usr/share/man/man1/altqstat.1			man-router-man		.man
 ./usr/share/man/man1/amq.1			man-obsolete		obsolete
@@ -7645,6 +7650,7 @@
 ./usr/share/man/man4/kttcp.4			man-sys-man		.man
 ./usr/share/man/man4/kue.4			man-sys-man		.man
 ./usr/share/man/man4/l2tp.4			man-sys-man		.man
+./usr/share/man/man4/lagg.4			man-sys-man		.man
 ./usr/share/man/man4/lc.4			man-sys-man		.man
 ./usr/share/man/man4/ld.4			man-sys-man		.man
 ./usr/share/man/man4/le.4			man-sys-man		.man

@@ -1,4 +1,4 @@
-/* $NetBSD: ix_txrx.c,v 1.71 2021/04/30 06:55:32 msaitoh Exp $ */
+/* $NetBSD: ix_txrx.c,v 1.78 2021/05/20 22:36:08 ryo Exp $ */
 
 /******************************************************************************
 
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ix_txrx.c,v 1.71 2021/04/30 06:55:32 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ix_txrx.c,v 1.78 2021/05/20 22:36:08 ryo Exp $");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
@@ -485,6 +485,7 @@ retry:
 		return (error);
 	}
 
+#ifdef IXGBE_FDIR
 	/* Do the flow director magic */
 	if ((adapter->feat_en & IXGBE_FEATURE_FDIR) &&
 	    (txr->atr_sample) && (!adapter->fdir_reinit)) {
@@ -494,12 +495,13 @@ retry:
 			txr->atr_count = 0;
 		}
 	}
+#endif
 
 	olinfo_status |= IXGBE_ADVTXD_CC;
 	i = txr->next_avail_desc;
 	for (j = 0; j < map->dm_nsegs; j++) {
 		bus_size_t seglen;
-		bus_addr_t segaddr;
+		uint64_t segaddr;
 
 		txbuf = &txr->tx_buffers[i];
 		txd = &txr->tx_base[i];
@@ -1123,7 +1125,7 @@ ixgbe_txeof(struct tx_ring *txr)
 		 *   or the slot has the DD bit set.
 		 */
 		if (kring->nr_kflags < kring->nkr_num_slots &&
-		    txd[kring->nr_kflags].wb.status & IXGBE_TXD_STAT_DD) {
+		    le32toh(txd[kring->nr_kflags].wb.status) & IXGBE_TXD_STAT_DD) {
 			netmap_tx_irq(ifp, txr->me);
 		}
 		return false;
@@ -1148,7 +1150,7 @@ ixgbe_txeof(struct tx_ring *txr)
 		if (eop == NULL) /* No work */
 			break;
 
-		if ((eop->wb.status & IXGBE_TXD_STAT_DD) == 0)
+		if ((le32toh(eop->wb.status) & IXGBE_TXD_STAT_DD) == 0)
 			break;	/* I/O not complete */
 
 		if (buf->m_head) {
@@ -1554,8 +1556,16 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 		/* Get the memory mapping */
 		error = bus_dmamap_load_mbuf(rxr->ptag->dt_dmat, rxbuf->pmap,
 		    mp, BUS_DMA_NOWAIT);
-		if (error != 0)
+		if (error != 0) {
+			/*
+			 * Clear this entry for later cleanup in
+			 * ixgbe_discard() which is called via
+			 * ixgbe_free_receive_ring().
+			 */
+			m_freem(mp);
+			rxbuf->buf = NULL;
                         goto fail;
+		}
 		bus_dmamap_sync(rxr->ptag->dt_dmat, rxbuf->pmap,
 		    0, adapter->rx_mbuf_sz, BUS_DMASYNC_PREREAD);
 		/* Update the descriptor and the cached value */
@@ -1766,16 +1776,17 @@ ixgbe_rx_discard(struct rx_ring *rxr, int i)
 	if (rbuf->fmp != NULL) {/* Partial chain ? */
 		bus_dmamap_sync(rxr->ptag->dt_dmat, rbuf->pmap, 0,
 		    rbuf->buf->m_pkthdr.len, BUS_DMASYNC_POSTREAD);
+		ixgbe_dmamap_unload(rxr->ptag, rbuf->pmap);
 		m_freem(rbuf->fmp);
 		rbuf->fmp = NULL;
 		rbuf->buf = NULL; /* rbuf->buf is part of fmp's chain */
 	} else if (rbuf->buf) {
 		bus_dmamap_sync(rxr->ptag->dt_dmat, rbuf->pmap, 0,
 		    rbuf->buf->m_pkthdr.len, BUS_DMASYNC_POSTREAD);
+		ixgbe_dmamap_unload(rxr->ptag, rbuf->pmap);
 		m_free(rbuf->buf);
 		rbuf->buf = NULL;
 	}
-	ixgbe_dmamap_unload(rxr->ptag, rbuf->pmap);
 
 	rbuf->flags = 0;
 
@@ -1946,7 +1957,6 @@ ixgbe_rxeof(struct ix_queue *que)
 		 * buffer struct and pass this along from one
 		 * descriptor to the next, until we get EOP.
 		 */
-		mp->m_len = len;
 		/*
 		 * See if there is a stored head
 		 * that determines what we are
@@ -1955,6 +1965,7 @@ ixgbe_rxeof(struct ix_queue *que)
 		if (sendmp != NULL) {  /* secondary frag */
 			rbuf->buf = newmp;
 			rbuf->fmp = NULL;
+			mp->m_len = len;
 			mp->m_flags &= ~M_PKTHDR;
 			sendmp->m_pkthdr.len += mp->m_len;
 		} else {
@@ -1980,12 +1991,13 @@ ixgbe_rxeof(struct ix_queue *que)
 			if (sendmp == NULL) {
 				rbuf->buf = newmp;
 				rbuf->fmp = NULL;
+				mp->m_len = len;
 				sendmp = mp;
 			}
 
 			/* first desc of a non-ps chain */
 			sendmp->m_flags |= M_PKTHDR;
-			sendmp->m_pkthdr.len = mp->m_len;
+			sendmp->m_pkthdr.len = len;
 		}
 		++processed;
 
@@ -2196,7 +2208,7 @@ ixgbe_dma_malloc(struct adapter *adapter, const bus_size_t size,
 	}
 
 	r = bus_dmamem_map(dma->dma_tag->dt_dmat, &dma->dma_seg, rsegs,
-	    size, &dma->dma_vaddr, BUS_DMA_NOWAIT);
+	    size, &dma->dma_vaddr, BUS_DMA_NOWAIT | BUS_DMA_COHERENT);
 	if (r != 0) {
 		aprint_error_dev(dev, "%s: bus_dmamem_map failed; error %d\n",
 		    __func__, r);
