@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.h,v 1.46 2021/03/20 14:30:50 skrll Exp $ */
+/* $NetBSD: pmap.h,v 1.48 2021/05/19 12:16:01 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -130,6 +130,11 @@ struct vm_page_md {
 #define LX_BLKPAG_OS_BOOT		LX_BLKPAG_OS_3
 #define LX_BLKPAG_OS_RWMASK		(LX_BLKPAG_OS_WRITE|LX_BLKPAG_OS_READ)
 
+#define PMAP_PTE_OS0	"read"
+#define PMAP_PTE_OS1	"write"
+#define PMAP_PTE_OS2	"wired"
+#define PMAP_PTE_OS3	"boot"
+
 /* memory attributes are configured MAIR_EL1 in locore */
 #define LX_BLKPAG_ATTR_NORMAL_WB	__SHIFTIN(0, LX_BLKPAG_ATTR_INDX)
 #define LX_BLKPAG_ATTR_NORMAL_NC	__SHIFTIN(1, LX_BLKPAG_ATTR_INDX)
@@ -172,11 +177,43 @@ void pmap_bootstrap(vaddr_t, vaddr_t);
 bool pmap_fault_fixup(struct pmap *, vaddr_t, vm_prot_t, bool user);
 
 /* for ddb */
-void pmap_db_pteinfo(vaddr_t, void (*)(const char *, ...) __printflike(1, 2));
-void pmap_db_ttbrdump(bool, vaddr_t, void (*)(const char *, ...)
-    __printflike(1, 2));
 pt_entry_t *kvtopte(vaddr_t);
-pt_entry_t pmap_kvattr(vaddr_t, vm_prot_t);
+void pmap_db_pmap_print(struct pmap *, void (*)(const char *, ...) __printflike(1, 2));
+void pmap_db_mdpg_print(struct vm_page *, void (*)(const char *, ...) __printflike(1, 2));
+
+pd_entry_t *pmap_l0table(struct pmap *);
+
+/* change attribute of kernel segment */
+static inline pt_entry_t
+pmap_kvattr(pt_entry_t *ptep, vm_prot_t prot)
+{
+	pt_entry_t pte = *ptep;
+	const pt_entry_t opte = pte;
+
+	pte &= ~(LX_BLKPAG_AF|LX_BLKPAG_AP);
+	switch (prot & (VM_PROT_READ|VM_PROT_WRITE)) {
+	case 0:
+		break;
+	case VM_PROT_READ:
+		pte |= (LX_BLKPAG_AF|LX_BLKPAG_AP_RO);
+		break;
+	case VM_PROT_WRITE:
+	case VM_PROT_READ|VM_PROT_WRITE:
+		pte |= (LX_BLKPAG_AF|LX_BLKPAG_AP_RW);
+		break;
+	}
+
+	if ((prot & VM_PROT_EXECUTE) == 0) {
+		pte |= LX_BLKPAG_PXN;
+	} else {
+		pte |= LX_BLKPAG_AF;
+		pte &= ~LX_BLKPAG_PXN;
+	}
+
+	*ptep = pte;
+
+	return opte;
+}
 
 /* pmapboot.c */
 pd_entry_t *pmapboot_pagealloc(void);
@@ -185,14 +222,11 @@ void pmapboot_enter(vaddr_t, paddr_t, psize_t, psize_t, pt_entry_t,
 void pmapboot_enter_range(vaddr_t, paddr_t, psize_t, pt_entry_t,
     void (*)(const char *, ...) __printflike(1, 2));
 int pmapboot_protect(vaddr_t, vaddr_t, vm_prot_t);
-void pmap_db_pte_print(pt_entry_t, int,
-    void (*pr)(const char *, ...) __printflike(1, 2));
 
 /* Hooks for the pool allocator */
 paddr_t vtophys(vaddr_t);
 #define VTOPHYS_FAILED		((paddr_t)-1L)	/* POOL_PADDR_INVALID */
 #define POOL_VTOPHYS(va)	vtophys((vaddr_t) (va))
-
 
 /* devmap */
 struct pmap_devmap {

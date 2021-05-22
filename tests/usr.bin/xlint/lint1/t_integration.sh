@@ -1,4 +1,4 @@
-# $NetBSD: t_integration.sh,v 1.44 2021/04/22 22:43:26 rillig Exp $
+# $NetBSD: t_integration.sh,v 1.50 2021/05/16 11:11:37 rillig Exp $
 #
 # Copyright (c) 2008, 2010 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -158,9 +158,6 @@ test_case d_gcc_compound_statements1
 test_case d_gcc_compound_statements2
 test_case d_gcc_compound_statements3
 
-# XXX: Because of polymorphic __builtin_isnan and expression has null effect
-# test_case gcc_extension "Checks GCC __extension__ and __typeof__"
-
 test_case d_cvt_in_ternary
 test_case d_cvt_constant
 test_case d_ellipsis_in_switch
@@ -178,7 +175,11 @@ test_case d_incorrect_array_size
 test_case d_long_double_int
 
 test_case emit
+test_case expr_range
 
+test_case gcc_attribute
+test_case gcc_attribute_aligned
+test_case gcc_bit_field_types
 test_case gcc_init_compound_literal
 test_case gcc_typeof_after_statement
 
@@ -193,7 +194,7 @@ all_messages_body()
 
 	failed=""
 
-	for msg in $(seq 0 343); do
+	for msg in $(seq 0 344); do
 		name="$(printf 'msg_%03d.c' "${msg}")"
 		check_lint1 "${name}" \
 		|| failed="$failed${failed:+ }$name"

@@ -1,7 +1,7 @@
-# $NetBSD: Makefile,v 1.52 2021/04/22 22:43:26 rillig Exp $
+# $NetBSD: Makefile,v 1.58 2021/05/16 11:11:37 rillig Exp $
 
 NOMAN=		# defined
-MAX_MESSAGE=	343		# see lint1/err.c
+MAX_MESSAGE=	344		# see lint1/err.c
 
 .include <bsd.own.mk>
 
@@ -103,8 +103,16 @@ FILES+=		d_zero_sized_arrays.c
 FILES+=		emit.c
 FILES+=		emit.exp
 FILES+=		emit.ln
+FILES+=		expr_range.c
+FILES+=		expr_range.exp
 FILES+=		feat_stacktrace.c
 FILES+=		feat_stacktrace.exp
+FILES+=		gcc_attribute.c
+FILES+=		gcc_attribute.exp
+FILES+=		gcc_attribute_aligned.c
+FILES+=		gcc_attribute_aligned.exp
+FILES+=		gcc_bit_field_types.c
+FILES+=		gcc_bit_field_types.exp
 FILES+=		gcc_init_compound_literal.c
 FILES+=		gcc_init_compound_literal.exp
 FILES+=		gcc_typeof_after_statement.c
