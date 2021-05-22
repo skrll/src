@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2385 2021/04/28 02:15:03 rin Exp $
+#	$NetBSD: mi,v 1.2387 2021/05/17 04:07:41 yamaguchi Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -2479,6 +2479,7 @@
 ./usr/include/net/if_ieee80211.h		comp-obsolete		obsolete
 ./usr/include/net/if_ipsec.h			comp-c-include
 ./usr/include/net/if_l2tp.h			comp-c-include
+./usr/include/net/if_lagg.h			comp-c-include
 ./usr/include/net/if_llc.h			comp-c-include
 ./usr/include/net/if_media.h			comp-c-include
 ./usr/include/net/if_mpls.h			comp-c-include
@@ -3935,6 +3936,8 @@
 ./usr/lib/librumpnet_ipsec_p.a			comp-c-proflib		rump,profile
 ./usr/lib/librumpnet_l2tp.a			comp-c-lib		rump
 ./usr/lib/librumpnet_l2tp_p.a			comp-c-proflib		rump,profile
+./usr/lib/librumpnet_lagg.a			comp-c-lib		rump
+./usr/lib/librumpnet_lagg_p.a			comp-c-proflib		rump,profile
 ./usr/lib/librumpnet_local.a			comp-c-lib		rump
 ./usr/lib/librumpnet_local_p.a			comp-c-proflib		rump,profile
 ./usr/lib/librumpnet_net.a			comp-c-lib		rump
@@ -5779,6 +5782,10 @@
 ./usr/share/man/cat3/allocaddrinfo.0		comp-c-catman		.cat
 ./usr/share/man/cat3/alphasort.0		comp-c-catman		.cat
 ./usr/share/man/cat3/arc4random.0		comp-c-catman		.cat
+./usr/share/man/cat3/arc4random_addrandom.0	comp-c-catman		.cat
+./usr/share/man/cat3/arc4random_buf.0		comp-c-catman		.cat
+./usr/share/man/cat3/arc4random_stir.0		comp-c-catman		.cat
+./usr/share/man/cat3/arc4random_uniform.0	comp-c-catman		.cat
 ./usr/share/man/cat3/archive.0			comp-c-catman		.cat
 ./usr/share/man/cat3/archive_clear_error.0	comp-c-catman		.cat
 ./usr/share/man/cat3/archive_compression.0	comp-c-catman		.cat
@@ -14103,6 +14110,10 @@
 ./usr/share/man/html3/allocaddrinfo.html	comp-c-htmlman		html
 ./usr/share/man/html3/alphasort.html		comp-c-htmlman		html
 ./usr/share/man/html3/arc4random.html		comp-c-htmlman		html
+./usr/share/man/html3/arc4random_addrandom.html	comp-c-htmlman		html
+./usr/share/man/html3/arc4random_buf.html	comp-c-htmlman		html
+./usr/share/man/html3/arc4random_stir.html	comp-c-htmlman		html
+./usr/share/man/html3/arc4random_uniform.html	comp-c-htmlman		html
 ./usr/share/man/html3/archive.html		comp-c-htmlman		html
 ./usr/share/man/html3/archive_clear_error.html	comp-c-htmlman		html
 ./usr/share/man/html3/archive_compression.html	comp-c-htmlman		html
@@ -22264,6 +22275,10 @@
 ./usr/share/man/man3/allocaddrinfo.3		comp-c-man		.man
 ./usr/share/man/man3/alphasort.3		comp-c-man		.man
 ./usr/share/man/man3/arc4random.3		comp-c-man		.man
+./usr/share/man/man3/arc4random_addrandom.3	comp-c-man		.man
+./usr/share/man/man3/arc4random_buf.3		comp-c-man		.man
+./usr/share/man/man3/arc4random_stir.3		comp-c-man		.man
+./usr/share/man/man3/arc4random_uniform.3	comp-c-man		.man
 ./usr/share/man/man3/archive.3			comp-c-man		.man
 ./usr/share/man/man3/archive_clear_error.3	comp-c-man		.man
 ./usr/share/man/man3/archive_compression.3	comp-c-man		.man
