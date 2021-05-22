@@ -1844,7 +1844,7 @@ uhci_alloc_std(uhci_softc_t *sc)
 		DPRINTFN(2, "allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
 
-		int err = usb_allocmem(&sc->sc_bus, UHCI_STD_SIZE * UHCI_STD_CHUNK,
+		int err = usb_allocmem(&sc->sc_bus, UHCI_TD_SIZE * UHCI_TD_CHUNK,
 		    UHCI_TD_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
 			return NULL;
@@ -1916,7 +1916,7 @@ uhci_alloc_sqh(uhci_softc_t *sc)
 		DPRINTFN(2, "allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
 
-		int err = usb_allocmem(&sc->sc_bus, UHCI_SQH_SIZE * UHCI_SQH_CHUNK,
+		int err = usb_allocmem(&sc->sc_bus, UHCI_QH_SIZE * UHCI_QH_CHUNK,
 		    UHCI_QH_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
 			return NULL;
