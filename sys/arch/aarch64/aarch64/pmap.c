@@ -31,6 +31,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.107 2021/04/30 20:07:22 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
+#include "opt_efi.h"
 #include "opt_modular.h"
 #include "opt_multiprocessor.h"
 #include "opt_pmap.h"
@@ -203,6 +204,7 @@ static int _pmap_get_pdp(struct pmap *, vaddr_t, bool, int, paddr_t *,
     struct vm_page **, bool *);
 
 static struct pmap kernel_pmap __cacheline_aligned;
+static struct pmap efi_pmap __cacheline_aligned;
 
 struct pmap * const kernel_pmap_ptr = &kernel_pmap;
 static vaddr_t pmap_maxkvaddr;
@@ -292,33 +294,32 @@ phys_to_pp(paddr_t pa)
 #define IN_MODULE_VA(va)	false
 #endif
 
-#ifdef XXXDIAGNOSTIC
-#define KASSERT_PM_ADDR(pm,va)								\
-    do {										\
-	int space = aarch64_addressspace(va);						\
-	if ((pm) == pmap_kernel()) {							\
-		KASSERTMSG(space == AARCH64_ADDRSPACE_UPPER,				\
-		    "%s: kernel pm %p: va=%016lx"					\
-		    " is out of upper address space\n",					\
-		    __func__, (pm), (va));						\
-		KASSERTMSG(								\
-		    IN_RANGE((va), VM_MIN_KERNEL_ADDRESS, VM_MAX_KERNEL_ADDRESS) ||	\
-		    IN_RANGE((va), EFI_RUNTIME_VA, EFI_RUNTIME_SIZE),			\
-		    "%s: kernel pm %p: va=%016lx"		\
-		    " is not kernel address\n",			\
-		    __func__, (pm), (va));			\
-	} else {						\
-		KASSERTMSG(space == AARCH64_ADDRSPACE_LOWER,	\
-		    "%s: user pm %p: va=%016lx"			\
-		    " is out of lower address space\n",		\
-		    __func__, (pm), (va));			\
-		KASSERTMSG(IN_RANGE((va),			\
-		    VM_MIN_ADDRESS, VM_MAX_ADDRESS),		\
-		    "%s: user pm %p: va=%016lx"			\
-		    " is not user address\n",			\
-		    __func__, (pm), (va));			\
-	}							\
-    } while (0 /* CONSTCOND */)
+#ifdef DIAGNOSTIC
+#define KASSERT_PM_ADDR(pm,va)						\
+	do {								\
+		int space = aarch64_addressspace(va);			\
+		if ((pm) == pmap_kernel()) {				\
+			KASSERTMSG(space == AARCH64_ADDRSPACE_UPPER,	\
+			    "%s: kernel pm %p: va=%016lx"		\
+			    " is out of upper address space\n",		\
+			    __func__, (pm), (va));			\
+			KASSERTMSG(IN_RANGE((va), VM_MIN_KERNEL_ADDRESS, \
+			    VM_MAX_KERNEL_ADDRESS),			\
+			    "%s: kernel pm %p: va=%016lx"		\
+			    " is not kernel address\n",			\
+			    __func__, (pm), (va));			\
+		} else {						\
+			KASSERTMSG(space == AARCH64_ADDRSPACE_LOWER,	\
+			    "%s: user pm %p: va=%016lx"			\
+			    " is out of lower address space\n",		\
+			    __func__, (pm), (va));			\
+			KASSERTMSG(IN_RANGE((va),			\
+			    VM_MIN_ADDRESS, VM_MAX_ADDRESS),		\
+			    "%s: user pm %p: va=%016lx"			\
+			    " is not user address\n",			\
+			    __func__, (pm), (va));			\
+		}							\
+	} while (0 /* CONSTCOND */)
 #else /* DIAGNOSTIC */
 #define KASSERT_PM_ADDR(pm,va)
 #endif /* DIAGNOSTIC */
@@ -490,6 +491,23 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 
 	CTASSERT(sizeof(kpm->pm_stats.wired_count) == sizeof(long));
 	CTASSERT(sizeof(kpm->pm_stats.resident_count) == sizeof(long));
+
+#if defined(EFI_RUNTIME)
+	memset(&efirt_pmap, 0, sizeof(efirt_pmap);
+	struct pmap * const efipm = &efirt_pmap;
+	efipm->pm_asid = __BIT(16) - 1;
+	efipm->pm_refcnt = 1;
+
+	pm->pm_l0table_pa = pmap_alloc_pdp(pm, NULL, 0, true);
+	KASSERT(pm->pm_l0table_pa != POOL_PADDR_INVALID);
+	pm->pm_l0table = (pd_entry_t *)AARCH64_PA_TO_KVA(pm->pm_l0table_pa);
+	KASSERT(((vaddr_t)pm->pm_l0table & (PAGE_SIZE - 1)) == 0);
+
+	efipm->pm_activated = false;
+	LIST_INIT(&efipm->pm_vmlist);
+	LIST_INIT(&efipm->pm_pvlist);	/* not used for efi pmap */
+	mutex_init(&efipm->pm_lock, MUTEX_DEFAULT, IPL_NONE);
+#endif
 }
 
 static inline void
@@ -1424,7 +1442,12 @@ pmap_protect(struct pmap *pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 int
 cpu_maxproc(void)
 {
-	return 65535;
+	int maxproc = __BIT(16) - 1;
+#if defined(EFI_RUNTIME)
+	maxproc--;
+#endif
+
+	return maxproc;
 }
 
 void
@@ -1691,7 +1714,7 @@ _pmap_get_pdp(struct pmap *pm, vaddr_t va, bool kenter, int flags,
 	idx = l0pde_index(va);
 	pde = l0[idx];
 	if (!l0pde_valid(pde)) {
-//		KASSERT(!kenter || IN_MODULE_VA(va));
+		KASSERT(!kenter || IN_MODULE_VA(va));
 		/* no need to increment L0 occupancy. L0 page never freed */
 		pdppa = pmap_alloc_pdp(pm, &pdppg, flags, false);  /* L1 pdp */
 		if (pdppa == POOL_PADDR_INVALID) {
@@ -1709,7 +1732,7 @@ _pmap_get_pdp(struct pmap *pm, vaddr_t va, bool kenter, int flags,
 	idx = l1pde_index(va);
 	pde = l1[idx];
 	if (!l1pde_valid(pde)) {
-//		KASSERT(!kenter || IN_MODULE_VA(va));
+		KASSERT(!kenter || IN_MODULE_VA(va));
 		pdppa0 = pdppa;
 		pdppg0 = pdppg;
 		pdppa = pmap_alloc_pdp(pm, &pdppg, flags, false);  /* L2 pdp */
@@ -1729,7 +1752,7 @@ _pmap_get_pdp(struct pmap *pm, vaddr_t va, bool kenter, int flags,
 	idx = l2pde_index(va);
 	pde = l2[idx];
 	if (!l2pde_valid(pde)) {
-//		KASSERT(!kenter || IN_MODULE_VA(va));
+		KASSERT(!kenter || IN_MODULE_VA(va));
 		pdppa0 = pdppa;
 		pdppg0 = pdppg;
 		pdppa = pmap_alloc_pdp(pm, &pdppg, flags, false);  /* L3 pdp */

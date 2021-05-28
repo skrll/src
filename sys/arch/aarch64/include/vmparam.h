@@ -130,7 +130,7 @@
  *   0xffff_0000_0000_0000  -   64T  direct mapping
  *   0xffff_4000_0000_0000  -   32T  (KASAN SHADOW MAP)
  *   0xffff_6000_0000_0000  -   32T  (not used)
- *   0xffff_8000_0000_0000  -    1G  EFI_RUNTIME
+ *   0xffff_8000_0000_0000  -    1G  (previously EFI_RUNTIME)
  *   0xffff_8000_4000_0000  -   64T  (not used)
  *   0xffff_c000_0000_0000  -   64T  KERNEL VM Space (including text/data/bss)
  *  (0xffff_c000_4000_0000     -1GB) KERNEL VM start of KVM
@@ -149,11 +149,6 @@
 
 #define VM_KERNEL_VM_BASE	(0xffffc00040000000L)
 #define VM_KERNEL_VM_SIZE	(VM_KERNEL_IO_ADDRESS - VM_KERNEL_VM_BASE)
-/*
- * Reserved space for EFI runtime services
- */
-#define	EFI_RUNTIME_VA		0xffff800000000000L
-#define	EFI_RUNTIME_SIZE	0x0000000040000000L
 
 /* virtual sizes (bytes) for various kernel submaps */
 #define USRIOSIZE		(PAGE_SIZE / 8)

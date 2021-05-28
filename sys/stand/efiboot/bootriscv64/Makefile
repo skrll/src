@@ -12,6 +12,8 @@ COPTS+=		-mcmodel=medany
 AFLAGS+=	-x assembler-with-cpp
 CFLAGS+=	-DEFIBOOT_ALIGN=0x200000
 CFLAGS+=	-DEFIBOOT_MODULE_MACHINE=\"riscv\"
+CFLAGS+=	-DEFIBOOT_RUNTIME_ADDRESS=0x00010000U
+CFLAGS+=	-DEFIBOOT_RUNTIME_SIZE=0x7ff0000U
 
 .include "${.CURDIR}/../Makefile.efiboot"
 

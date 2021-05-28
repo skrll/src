@@ -41,6 +41,11 @@ __KERNEL_RCSID(0, "$NetBSD: efi_machdep.c,v 1.10 2021/03/21 07:09:54 skrll Exp $
 
 #include <aarch64/machdep.h>
 
+static struct pmap pmap_efirt = {
+
+};
+
+
 static struct {
 	struct faultbuf	faultbuf;
 	bool		fpu_used;

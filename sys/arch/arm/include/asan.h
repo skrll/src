@@ -55,11 +55,6 @@ kasan_md_addr_to_shad(const void *addr)
 static inline bool
 kasan_md_unsupported(vaddr_t addr)
 {
-#ifdef EFI_RUNTIME
-	if (addr >= EFI_RUNTIME_VA &&
-	    addr <= EFI_RUNTIME_VA + EFI_RUNTIME_SIZE)
-		return true;
-#endif
 	return addr < VM_MIN_KERNEL_ADDRESS ||
 	    addr >= KASAN_MD_SHADOW_START;
 }

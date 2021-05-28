@@ -146,16 +146,6 @@
 #define VM_KERNEL_VM_BASE	0x90000000
 #endif
 
-/*
- * Reserved space for EFI runtime services
- */
-#define	EFI_RUNTIME_VA		0x88000000U
-#define	EFI_RUNTIME_SIZE	0x08000000U
-
-/*
- * No need to adjust VM_KERNEL_ADDR_SIZE for EFI_RUNTIME.  It is used by
- * KASAN
- */
 #define VM_KERNEL_ADDR_SIZE	(VM_KERNEL_VM_END - KERNEL_BASE)
 #define VM_KERNEL_VM_SIZE	(VM_KERNEL_VM_END - VM_KERNEL_VM_BASE)
 
