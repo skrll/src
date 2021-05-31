@@ -38,6 +38,7 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.59 2021/03/09 16:44:27 ryo Exp $");
 #include <sys/param.h>
 #include <sys/atomic.h>
 #include <sys/cpu.h>
+#include <sys/csan.h>
 #include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/reboot.h>
@@ -167,6 +168,8 @@ cpu_attach(device_t dv, cpuid_t id)
 	cpu_identify2(dv, ci);
 
 	cpu_init_counter(ci);
+
+	kcsan_cpu_init(ci);
 
 	cpu_setup_sysctl(dv, ci);
 	cpu_setup_rng(dv, ci);
@@ -700,6 +703,8 @@ cpu_hatch(struct cpu_info *ci)
 #ifdef MD_CPU_HATCH
 	MD_CPU_HATCH(ci);	/* for non-fdt arch? */
 #endif
+
+	kcsan_cpu_init(ci);
 
 	/*
 	 * clear my bit of arm_cpu_mbox to tell cpu_boot_secondary_processors().

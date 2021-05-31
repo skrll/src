@@ -71,6 +71,11 @@ options 	ARMV81_PAN
 #options 	POOL_QUARANTINE	# optional
 #options 	KASAN_PANIC	# optional
 
+# Kernel Concurrency Sanitizer (kCSan).
+#makeoptions 	KCSAN=1		# mandatory
+#options 	KCSAN		# mandatory
+#options 	KCSAN_PANIC	# optional
+
 # These options enable verbose messages for several subsystems.
 # Warning, these may compile large string tables into the kernel!
 #options 	ACPIVERBOSE	# verbose ACPI configuration messages

@@ -67,6 +67,15 @@ KASANFLAGS.${f}=	# empty
 CFLAGS+=	${KASANFLAGS.${.IMPSRC:T}:U${KASANFLAGS}}
 .endif
 
+.if ${KCSAN:U0} > 0 && ${HAVE_GCC:U0} > 0
+KCSANFLAGS=	-fsanitize=thread
+# clock.c lapic.c equivalent?
+.for f in subr_csan.c subr_kcov.c
+KCSANFLAGS.${f}=	# empty
+.endfor
+CFLAGS+=	${KCSANFLAGS.${.IMPSRC:T}:U${KCSANFLAGS}}
+.endif
+
 ##
 ## (3) libkern and compat
 ##

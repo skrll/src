@@ -32,6 +32,7 @@
 __KERNEL_RCSID(0, "$NetBSD: subr_csan.c,v 1.10 2020/09/10 14:04:45 maxv Exp $");
 
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
 #include <sys/param.h>
@@ -621,6 +622,7 @@ kcsan_atomic_store(volatile void *p, const void *v, int size)
 
 /* -------------------------------------------------------------------------- */
 
+#if defined(__HAVE_KCSAN_INTR_BUS)
 #include <sys/bus.h>
 
 #undef bus_space_read_multi_1
@@ -765,3 +767,5 @@ CSAN_BUS_WRITE_FUNC(1, 8)
 CSAN_BUS_WRITE_FUNC(2, 16)
 CSAN_BUS_WRITE_FUNC(4, 32)
 CSAN_BUS_WRITE_FUNC(8, 64)
+
+#endif
