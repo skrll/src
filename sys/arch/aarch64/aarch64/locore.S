@@ -515,7 +515,7 @@ mp_vstart:
 	mov	x0, x28
 	mov	x1, x29
 	bl	_C_LABEL(atomic_or_ulong)	/* hatched! */
-	dsb	sy
+	dsb	ishst
 	sev
 
 	/* x28 = &arm_cpu_mbox[cpuindex / (sizeof(u_long) * NBBY)] */
@@ -526,7 +526,7 @@ mp_vstart:
 
 	/* wait for the mailbox start bit to become true */
 1:
-	dmb	sy
+	dmb	ish
 	ldr	x20, [x28]
 	tst	x20, x29
 	bne	9f
