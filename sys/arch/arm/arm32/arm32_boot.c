@@ -262,7 +262,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		}
 		VPRINTF("\n");
 		paddr_t segend = end;
-		for (size_t j = 0; j < nbp; j++ /*, start = segend, segend = end */) {
+		for (size_t j = 0; j < nbp; j++) {
 			paddr_t bp_start = bp[j].bp_start;
 			paddr_t bp_end = bp_start + bp[j].bp_pages;
 
