@@ -1,8 +1,7 @@
 # $NetBSD: Makefile.inc,v 1.4 2021/04/27 09:14:24 skrll Exp $
 
-.if defined(LIB) && (${LIB} == "kern" || ${LIB} == "c" || ${LIB} == "pthread" \
-	|| ${LIB} == "rump")
-
+.if defined(LIB)
+.if  (${LIB} == "c" || ${LIB} == "pthread" || ${LIB} == "rump" || ${LIB} == "kern")
 .for op in add and cas nand or sub swap xor
 .for sz in 8 16 32 64
 SRCS.atomic+=	atomic_${op}_${sz}.S
@@ -12,6 +11,7 @@ SRCS.atomic+=	atomic_dec_32.S atomic_dec_64.S
 SRCS.atomic+=	atomic_inc_32.S atomic_inc_64.S
 SRCS.atomic+=	membar_ops.S
 #and cas nand or sub swap xor
+.if  (${LIB} == "kern")
 .for op in swp cas clr set eor add
 .for sz in 1 2 4 8
 .for ar in _relax _acq _rel _acq_rel
@@ -30,6 +30,7 @@ __aarch64_${op}${ar}.S: __aarch64_lse.S
 SRCS.gen+=	__aarch64_${op}${ar}.S
 .endfor
 .endfor
+.endif
 #.for op in add and nand or sub xor
 #SRCS.atomic+=	sync_fetch_and_${op}_8.S
 #.endfor
@@ -37,6 +38,7 @@ SRCS.gen+=	__aarch64_${op}${ar}.S
 #SRCS.atomic+=	sync_bool_compare_and_swap_${sz}.S
 #.endfor
 
+.endif
 .endif
 
 SRCS.atomic+=	atomic_init_cas.c

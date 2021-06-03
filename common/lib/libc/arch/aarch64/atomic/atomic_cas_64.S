@@ -48,9 +48,16 @@ ATOMIC_OP_ALIAS(atomic_cas_ptr,_atomic_cas_64)
 ATOMIC_OP_ALIAS(atomic_cas_64_ni,_atomic_cas_64)
 ATOMIC_OP_ALIAS(atomic_cas_ulong_ni,_atomic_cas_64)
 ATOMIC_OP_ALIAS(atomic_cas_ptr_ni,_atomic_cas_64)
-STRONG_ALIAS(__sync_val_compare_and_swap_8,_atomic_cas_64)
 STRONG_ALIAS(_atomic_cas_ulong,_atomic_cas_64)
 STRONG_ALIAS(_atomic_cas_ptr,_atomic_cas_64)
 STRONG_ALIAS(_atomic_cas_64_ni,_atomic_cas_64)
 STRONG_ALIAS(_atomic_cas_ulong_ni,_atomic_cas_64)
 STRONG_ALIAS(_atomic_cas_ptr_ni,_atomic_cas_64)
+
+ENTRY_NP(__sync_val_compare_and_swap_8)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_cas_64
+	dmb	ish
+	ret	x5
+END(__sync_val_compare_and_swap_8)

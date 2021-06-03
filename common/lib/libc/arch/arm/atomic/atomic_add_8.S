@@ -73,25 +73,28 @@ ENTRY_NP(_atomic_add_8_nv)
 	strexb	r2, r0, [ip]		/* try to store */
 	cmp	r2, #0			/*   succeed? */
 	bne	1b			/*     no, try again? */
-#ifdef _ARM_ARCH_7
-	dmb
-#else
-	mcr	p15, 0, r2, c7, c10, 5	/* data memory barrier */
-#endif
 	RET				/* return new value */
 END(_atomic_add_8_nv)
 END(_atomic_sub_8_nv)
 ATOMIC_OP_ALIAS(atomic_add_8_nv,_atomic_add_8_nv)
 ATOMIC_OP_ALIAS(atomic_add_char_nv,_atomic_add_8_nv)
 ATOMIC_OP_ALIAS(atomic_add_uchar_nv,_atomic_add_8_nv)
-CRT_ALIAS(__sync_add_and_fetch_1,_atomic_add_8_nv)
 STRONG_ALIAS(_atomic_add_char_nv,_atomic_add_8_nv)
 STRONG_ALIAS(_atomic_add_uchar_nv,_atomic_add_8_nv)
+
+
+CRT_ALIAS(__sync_add_and_fetch_1,_atomic_add_8_nv)
+
 
 ATOMIC_OP_ALIAS(atomic_sub_8_nv,_atomic_sub_8_nv)
 ATOMIC_OP_ALIAS(atomic_sub_char_nv,_atomic_sub_8_nv)
 ATOMIC_OP_ALIAS(atomic_sub_uchar_nv,_atomic_sub_8_nv)
-CRT_ALIAS(__sync_sub_and_fetch_1,_atomic_sub_8_nv)
 STRONG_ALIAS(_atomic_sub_char_nv,_atomic_sub_8_nv)
 STRONG_ALIAS(_atomic_sub_uchar_nv,_atomic_sub_8_nv)
+
+
+CRT_ALIAS(__sync_sub_and_fetch_1,_atomic_sub_8_nv)
+
+
+
 #endif /* _ARM_ARCH_6 */

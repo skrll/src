@@ -35,12 +35,26 @@ ATOMIC_OP32(and, and)
 
 ATOMIC_OP_ALIAS(atomic_and_32,_atomic_and_32)
 ATOMIC_OP_ALIAS(atomic_and_uint,_atomic_and_32)
-STRONG_ALIAS(__sync_fetch_and_and_4,_atomic_and_32)
 STRONG_ALIAS(_atomic_and_uint,_atomic_and_32)
+
+ENTRY_NP(__sync_fetch_and_and_4)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_and_32
+	dmb	ish
+	ret	x5
+END(__sync_fetch_and_and_4)
 
 ATOMIC_OP32_NV(and, and)
 
 ATOMIC_OP_ALIAS(atomic_and_32_nv,_atomic_and_32_nv)
 ATOMIC_OP_ALIAS(atomic_and_uint_nv,_atomic_and_32_nv)
-STRONG_ALIAS(__sync_and_and_fetch_4,_atomic_and_32_nv)
 STRONG_ALIAS(_atomic_and_uint_nv,_atomic_and_32_nv)
+
+ENTRY_NP(__sync_and_and_fetch_4)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_and_32_nv
+	dmb	ish
+	ret	x5
+END(__sync_and_and_fetch_4)

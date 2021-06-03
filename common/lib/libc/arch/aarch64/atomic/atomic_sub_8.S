@@ -35,12 +35,26 @@ ATOMIC_OP8(sub, sub)
 
 ATOMIC_OP_ALIAS(atomic_sub_8,_atomic_sub_8)
 ATOMIC_OP_ALIAS(atomic_sub_char,_atomic_sub_8)
-STRONG_ALIAS(__sync_fetch_and_sub_1,_atomic_sub_8)
 STRONG_ALIAS(_atomic_sub_char,_atomic_sub_8)
+
+ENTRY_NP(__sync_fetch_and_sub_1)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_sub_8
+	dmb	ish
+	ret	x5
+END(__sync_fetch_and_sub_1)
 
 ATOMIC_OP8_NV(sub, sub)
 
 ATOMIC_OP_ALIAS(atomic_sub_8_nv,_atomic_sub_8_nv)
 ATOMIC_OP_ALIAS(atomic_sub_char_nv,_atomic_sub_8_nv)
-STRONG_ALIAS(__sync_sub_and_fetch_1,_atomic_sub_8_nv)
 STRONG_ALIAS(_atomic_sub_char_nv,_atomic_sub_8_nv)
+
+ENTRY_NP(__sync_sub_and_fetch_1)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_sub_8_nv
+	dmb	ish
+	ret	x5
+END(__sync_sub_and_fetch_1)

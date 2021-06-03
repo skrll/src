@@ -35,12 +35,26 @@ ATOMIC_OP16(xor, eor)
 
 ATOMIC_OP_ALIAS(atomic_xor_16,_atomic_xor_16)
 ATOMIC_OP_ALIAS(atomic_xor_ushort,_atomic_xor_16)
-STRONG_ALIAS(__sync_fetch_and_xor_2,_atomic_xor_16)
 STRONG_ALIAS(_atomic_xor_ushort,_atomic_xor_16)
+
+ENTRY_NP(__sync_fetch_and_xor_2)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_xor_16
+	dmb	ish
+	ret	x5
+END(__sync_fetch_and_xor_2)
 
 ATOMIC_OP16_NV(xor, eor)
 
 ATOMIC_OP_ALIAS(atomic_xor_16_nv,_atomic_xor_16_nv)
 ATOMIC_OP_ALIAS(atomic_xor_ushort_nv,_atomic_xor_16_nv)
-STRONG_ALIAS(__sync_xor_and_fetch_2,_atomic_xor_16_nv)
 STRONG_ALIAS(_atomic_xor_ushort_nv,_atomic_xor_16_nv)
+
+ENTRY_NP(__sync_xor_and_fetch_2)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_xor_16_nv
+	dmb	ish
+	ret	x5
+END(__sync_xor_and_fetch_2)

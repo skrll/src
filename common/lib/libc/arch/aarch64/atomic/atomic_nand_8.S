@@ -44,8 +44,16 @@ END(_atomic_nand_8)
 
 ATOMIC_OP_ALIAS(atomic_nand_8,_atomic_nand_8)
 ATOMIC_OP_ALIAS(atomic_nand_uchar,_atomic_nand_8)
-STRONG_ALIAS(__sync_fetch_and_nand_1,_atomic_nand_8)
 STRONG_ALIAS(_atomic_nand_uchar,_atomic_nand_8)
+
+ENTRY_NP(__sync_fetch_and_nand_1)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_nand_8
+	dmb	ish
+	ret	x5
+END(__sync_fetch_and_nand_1)
+
 
 ENTRY_NP(_atomic_nand_8_nv)
 	mov	x4, x0			/* need r0 for return value */
@@ -60,5 +68,12 @@ END(_atomic_nand_8_nv)
 
 ATOMIC_OP_ALIAS(atomic_nand_8_nv,_atomic_nand_8_nv)
 ATOMIC_OP_ALIAS(atomic_nand_uchar_nv,_atomic_nand_8_nv)
-STRONG_ALIAS(__sync_nand_and_fetch_1,_atomic_nand_8_nv)
 STRONG_ALIAS(_atomic_nand_uchar_nv,_atomic_nand_8_nv)
+
+ENTRY_NP(__sync_nand_and_fetch_1)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_nand_8_nv
+	dmb	ish
+	ret	x5
+END(__sync_nand_and_fetch_1)

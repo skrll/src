@@ -46,3 +46,11 @@ ATOMIC_OP_ALIAS(atomic_cas_16,_atomic_cas_16)
 STRONG_ALIAS(_atomic_cas_short,_atomic_cas_16)
 STRONG_ALIAS(_atomic_cas_ushort,_atomic_cas_16)
 STRONG_ALIAS(__sync_val_compare_and_swap_2,_atomic_cas_16)
+
+ENTRY_NP(__sync_val_compare_and_swap_2)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_cas_16
+	dmb	ish
+	ret	x5
+END(__sync_val_compare_and_swap_2)

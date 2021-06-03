@@ -392,12 +392,15 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		 * order.
 		 */
 		paddr_t segend = end;
-		for (size_t j = 0; j < nbp; j++) {
+		for (size_t j = 0; j < nbp && start < end; j++) {
 			paddr_t bp_start = bp[j].bp_start;
 			paddr_t bp_end = bp_start + bp[j].bp_pages;
 
+			VPRINTF("   bp %2zu start %08lx  end %08lx\n",
+			    j, ptoa(bp_start), ptoa(bp_end));
+
 			KASSERT(bp_start < bp_end);
-			if (start > bp_end || segend < bp_start)
+			if (start >= bp_end || segend < bp_start)
 				continue;
 
 			if (start < bp_start)
@@ -415,6 +418,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 
 				uvm_page_physload(start, segend, start, segend,
 				    vm_freelist);
+
 				memsize_total += ptoa(segend - start);
 				start = segend;
 				segend = end;

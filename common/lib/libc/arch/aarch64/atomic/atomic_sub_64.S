@@ -38,7 +38,14 @@ ATOMIC_OP_ALIAS(atomic_sub_ptr_nv,_atomic_sub_64_nv)
 ATOMIC_OP_ALIAS(atomic_sub_long_nv,_atomic_sub_64_nv)
 STRONG_ALIAS(_atomic_sub_ptr_nv,_atomic_sub_64_nv)
 STRONG_ALIAS(_atomic_sub_long_nv,_atomic_sub_64_nv)
-STRONG_ALIAS(__sync_sub_and_fetch_8,_atomic_sub_64_nv)
+
+ENTRY_NP(__sync_sub_and_fetch_8)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_sub_64_nv
+	dmb	ish
+	ret	x5
+END(__sync_sub_and_fetch_8)
 
 ATOMIC_OP64_NV(sub, sub)
 
@@ -47,4 +54,11 @@ ATOMIC_OP_ALIAS(atomic_sub_ptr,_atomic_sub_64)
 ATOMIC_OP_ALIAS(atomic_sub_long,_atomic_sub_64)
 STRONG_ALIAS(_atomic_sub_ptr,_atomic_sub_64)
 STRONG_ALIAS(_atomic_sub_long,_atomic_sub_64)
-STRONG_ALIAS(__sync_fetch_and_sub_8,_atomic_sub_64)
+
+ENTRY_NP(__sync_fetch_and_sub_8)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_sub_64
+	dmb	ish
+	ret	x5
+END(__sync_fetch_and_sub_8)

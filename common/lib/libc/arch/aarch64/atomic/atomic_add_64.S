@@ -38,7 +38,14 @@ ATOMIC_OP_ALIAS(atomic_add_ptr_nv,_atomic_add_64_nv)
 ATOMIC_OP_ALIAS(atomic_add_long_nv,_atomic_add_64_nv)
 STRONG_ALIAS(_atomic_add_ptr_nv,_atomic_add_64_nv)
 STRONG_ALIAS(_atomic_add_long_nv,_atomic_add_64_nv)
-STRONG_ALIAS(__sync_add_and_fetch_8,_atomic_add_64_nv)
+
+ENTRY_NP(__sync_add_and_fetch_8)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_add_64_nv
+	dmb	ish
+	ret	x5
+END(__sync_add_and_fetch_8)
 
 ATOMIC_OP64_NV(add, add)
 
@@ -47,4 +54,11 @@ ATOMIC_OP_ALIAS(atomic_add_ptr,_atomic_add_64)
 ATOMIC_OP_ALIAS(atomic_add_long,_atomic_add_64)
 STRONG_ALIAS(_atomic_add_ptr,_atomic_add_64)
 STRONG_ALIAS(_atomic_add_long,_atomic_add_64)
-STRONG_ALIAS(__sync_fetch_and_add_8,_atomic_add_64)
+
+ENTRY_NP(__sync_fetch_and_add_8)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_add_64
+	dmb	ish
+	ret	x5
+END(__sync_fetch_and_add_8)

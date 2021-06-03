@@ -45,4 +45,11 @@ END(_atomic_cas_8)
 ATOMIC_OP_ALIAS(atomic_cas_8,_atomic_cas_8)
 STRONG_ALIAS(_atomic_cas_char,_atomic_cas_8)
 STRONG_ALIAS(_atomic_cas_uchar,_atomic_cas_8)
-STRONG_ALIAS(__sync_val_compare_and_swap_1,_atomic_cas_8)
+
+ENTRY_NP(__sync_val_compare_and_swap_1)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_cas_8
+	dmb	ish
+	ret	x5
+END(__sync_val_compare_and_swap_1)

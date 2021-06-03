@@ -61,7 +61,7 @@ KASANFLAGS=	-fsanitize=kernel-address \
 		--param asan-instrument-allocas=1 \
 		-fsanitize-address-use-after-scope \
 		-fasan-shadow-offset=0xDFFF600000000000
-.for f in subr_asan.c
+.for f in subr_asan.c subr_kcov.v
 KASANFLAGS.${f}=	# empty
 .endfor
 CFLAGS+=	${KASANFLAGS.${.IMPSRC:T}:U${KASANFLAGS}}
@@ -75,6 +75,15 @@ KCSANFLAGS.${f}=	# empty
 .endfor
 CFLAGS+=	${KCSANFLAGS.${.IMPSRC:T}:U${KCSANFLAGS}}
 .endif
+
+.if ${KMSAN:U0} > 0 && ${HAVE_LLVM:Uno} == "yes"
+KMSANFLAGS=	-fsanitize=kernel-memory
+.for f in subr_msan.c
+KMSANFLAGS.${f}=	# empty
+.endfor
+CFLAGS+=	${KMSANFLAGS.${.IMPSRC:T}:U${KMSANFLAGS}}
+.endif
+
 
 ##
 ## (3) libkern and compat

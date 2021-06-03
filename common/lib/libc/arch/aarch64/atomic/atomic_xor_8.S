@@ -35,12 +35,26 @@ ATOMIC_OP8(xor, eor)
 
 ATOMIC_OP_ALIAS(atomic_xor_8,_atomic_xor_8)
 ATOMIC_OP_ALIAS(atomic_xor_uchar,_atomic_xor_8)
-STRONG_ALIAS(__sync_fetch_and_xor_1,_atomic_xor_8)
 STRONG_ALIAS(_atomic_xor_uchar,_atomic_xor_8)
 
 ATOMIC_OP8_NV(xor, eor)
 
+ENTRY_NP(__sync_fetch_and_xor_1)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_xor_8
+	dmb	ish
+	ret	x5
+END(__sync_fetch_and_xor_1)
+
 ATOMIC_OP_ALIAS(atomic_xor_8_nv,_atomic_xor_8_nv)
 ATOMIC_OP_ALIAS(atomic_xor_uchar_nv,_atomic_xor_8_nv)
-STRONG_ALIAS(__sync_xor_and_fetch_1,_atomic_xor_8_nv)
 STRONG_ALIAS(_atomic_xor_uchar_nv,_atomic_xor_8_nv)
+
+ENTRY_NP(__sync_xor_and_fetch_1)
+	mov	x5, lr
+	dmb	ish
+	bl	_atomic_xor_8_nv
+	dmb	ish
+	ret	x5
+END(__sync_xor_and_fetch_1)
