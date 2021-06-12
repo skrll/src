@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.107 2021/04/30 20:07:22 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.108 2021/05/29 06:54:20 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.107 2021/04/30 20:07:22 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.108 2021/05/29 06:54:20 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
@@ -204,7 +204,7 @@ static int _pmap_get_pdp(struct pmap *, vaddr_t, bool, int, paddr_t *,
     struct vm_page **, bool *);
 
 static struct pmap kernel_pmap __cacheline_aligned;
-static struct pmap efi_pmap __cacheline_aligned;
+static struct pmap efirt_pmap __cacheline_aligned;
 
 struct pmap * const kernel_pmap_ptr = &kernel_pmap;
 static vaddr_t pmap_maxkvaddr;
@@ -493,15 +493,16 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	CTASSERT(sizeof(kpm->pm_stats.resident_count) == sizeof(long));
 
 #if defined(EFI_RUNTIME)
-	memset(&efirt_pmap, 0, sizeof(efirt_pmap);
+	memset(&efirt_pmap, 0, sizeof(efirt_pmap));
 	struct pmap * const efipm = &efirt_pmap;
-	efipm->pm_asid = __BIT(16) - 1;
+	efipm->pm_asid = __BIT(16) - 1;		// XXXNH pmap_asid_reserve or similar
 	efipm->pm_refcnt = 1;
 
-	pm->pm_l0table_pa = pmap_alloc_pdp(pm, NULL, 0, true);
-	KASSERT(pm->pm_l0table_pa != POOL_PADDR_INVALID);
-	pm->pm_l0table = (pd_entry_t *)AARCH64_PA_TO_KVA(pm->pm_l0table_pa);
-	KASSERT(((vaddr_t)pm->pm_l0table & (PAGE_SIZE - 1)) == 0);
+	vaddr_t efi_l0va = uvm_pageboot_alloc(Ln_TABLE_SIZE);
+
+	efipm->pm_l0table = (pd_entry_t *)efi_l0va;
+	KASSERT(((vaddr_t)efipm->pm_l0table & (PAGE_SIZE - 1)) == 0);
+	efipm->pm_l0table_pa = AARCH64_KVA_TO_PA(efi_l0va);
 
 	efipm->pm_activated = false;
 	LIST_INIT(&efipm->pm_vmlist);
@@ -572,6 +573,10 @@ pmap_init(void)
 	pool_cache_bootstrap(&_pmap_pv_pool, sizeof(struct pv_entry),
 	    32, 0, PR_LARGECACHE, "pvpl", NULL, IPL_NONE, _pmap_pv_ctor,
 	    NULL, NULL);
+
+	int nmaxproc = cpu_maxproc();
+	if (maxproc > nmaxproc)
+		maxproc = nmaxproc;
 }
 
 void
@@ -1438,17 +1443,6 @@ pmap_protect(struct pmap *pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 	pm_unlock(pm);
 }
 
-/* XXX: due to the current implementation of pmap depends on 16bit ASID */
-int
-cpu_maxproc(void)
-{
-	int maxproc = __BIT(16) - 1;
-#if defined(EFI_RUNTIME)
-	maxproc--;
-#endif
-
-	return maxproc;
-}
 
 void
 pmap_activate(struct lwp *l)

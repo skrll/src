@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.29 2020/12/06 04:08:53 christos Exp $
+#	$NetBSD: Makefile,v 1.31 2021/05/31 22:33:19 rin Exp $
 
 NOCTF=
 HOSTPROG_CXX=   1
@@ -47,7 +47,7 @@ CWARNFLAGS.clang+=	-Wno-switch
 CWARNFLAGS.clang+=	-Wno-deprecated
 HOST_CC:=		${HOST_CXX}
 CC:=			${CXX}
-CFLAGS:=		${CXXFLAGS} -std=gnu++11 -Wno-error=stack-protector
+CFLAGS:=		${CXXFLAGS} -std=gnu++17 -Wno-error=stack-protector
 
 .PATH: ${DIST}/gdb ${DIST}/gdb/arch ${DIST}/gdb/mi ${DIST}/gdb/cli  \
     ${DIST}/gdb/tui ${DIST}/gdb/python ${DIST}/gdb/common ${DIST}/gdb/target \
@@ -58,17 +58,6 @@ CFLAGS:=		${CXXFLAGS} -std=gnu++11 -Wno-error=stack-protector
 #
 
 ada-exp.c: ada-lex.c
-
-.if ${MACHINE_CPU} == "arm"
-. if ${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8
-# XXX taken from GDB 8.3; not tested for GDB 11:
-# GCC 8.4/9.3 miscompile this with -O[21] for earmv7hf{,eb}.
-# GCC 9.3 miscompile this with -O2 for earmv5hf{,eb}.
-COPTS.expr.c+=	-O0
-# GCC 9.3 miscompile this with -O2 for earmv5hf{,eb}.
-COPTS.loc.c+=	-O0
-. endif
-.endif
 
 .if ${MACHINE} == "vax"
 . if ${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8

@@ -1,4 +1,4 @@
-/*	$NetBSD: ping6.c,v 1.103 2018/04/24 07:22:32 maxv Exp $	*/
+/*	$NetBSD: ping6.c,v 1.105 2021/06/07 22:13:34 dholland Exp $	*/
 /*	$KAME: ping6.c,v 1.164 2002/11/16 14:05:37 itojun Exp $	*/
 
 /*
@@ -77,7 +77,7 @@ static char sccsid[] = "@(#)ping.c	8.1 (Berkeley) 6/5/93";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: ping6.c,v 1.103 2018/04/24 07:22:32 maxv Exp $");
+__RCSID("$NetBSD: ping6.c,v 1.105 2021/06/07 22:13:34 dholland Exp $");
 #endif
 #endif
 
@@ -201,7 +201,7 @@ static struct sockaddr_in6 src;	/* src addr of this packet */
 static socklen_t srclen;
 static int datalen = DEFDATALEN;
 static int s;				/* socket file descriptor */
-static u_char outpack[MAXPACKETLEN];
+static u_char outpack[MAXPACKETLEN] __aligned(sizeof(u_long));
 static char BSPACE = '\b';		/* characters written for flood */
 static char DOT = '.';
 static char *hostname;
@@ -569,6 +569,10 @@ main(int argc, char *argv[])
 	} else
 		target = argv[argc - 1];
 
+	if ((options & F_PINGFILLED) != 0 && datalen <= (int)ICMP6ECHOTMLEN) {
+		warnx("-p: No fill space; increase packet size with -s");
+	}
+
 	/* getaddrinfo */
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_flags = AI_CANONNAME;
@@ -923,7 +927,7 @@ doit(u_char *packet, u_int packlen)
 
 	for (;;) {
 		struct msghdr m;
-		u_char buf[1024];
+		u_long buf[1024 / sizeof(u_long)];
 		struct iovec iov[2];
 
 		clock_gettime(CLOCK_MONOTONIC, &now);
