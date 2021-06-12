@@ -123,7 +123,6 @@
 
 #include "opt_arm_debug.h"
 #include "opt_arm_start.h"
-#include "opt_efi.h"
 #include "opt_fdt.h"
 #include "opt_multiprocessor.h"
 
@@ -186,13 +185,6 @@ extern char _end[];
 
 /* Page tables for mapping kernel VM */
 #define KERNEL_L2PT_VMDATA_NUM	8	/* start with 32MB of KVM */
-
-#ifdef EFI_RUNTIME
-#define	KERNEL_L2PT_EFIRT_NUM	howmany(EFI_RUNTIME_SIZE, L2_S_SEGSIZE)
-pv_addr_t efirt_l2pt[KERNEL_L2PT_EFIRT_NUM];
-#else
-#define KERNEL_L2PT_EFIRT_NUM	0
-#endif
 
 #ifdef KASAN
 vaddr_t kasan_kernelstart;
@@ -493,7 +485,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	kernel_size += L1_TABLE_SIZE;
 	kernel_size += PAGE_SIZE * KERNEL_L2PT_VMDATA_NUM;
 	kernel_size += PAGE_SIZE * KERNEL_L2PT_KASAN_NUM;
-	kernel_size += PAGE_SIZE * KERNEL_L2PT_EFIRT_NUM;
 	if (map_vectors_p) {
 		kernel_size += PAGE_SIZE;	/* L2PT for VECTORS */
 	}
@@ -590,19 +581,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		    VM_PROT_READ | VM_PROT_WRITE, PTE_PAGETABLE, true);
 		add_pages(bmi, &vmdata_l2pt[idx]);
 	}
-
-#ifdef EFI_RUNTIME
-	/*
-	 * Now allocate L2 pages for the EFI_RUNTIME l2pt VA space.
-	 */
-	VPRINTF(" efirt");
-	for (size_t idx = 0; idx < KERNEL_L2PT_EFIRT_NUM; ++idx) {
-		valloc_pages(bmi, &efirt_l2pt[idx], 1,
-		    VM_PROT_READ | VM_PROT_WRITE, PTE_PAGETABLE, true);
-		add_pages(bmi, &efirt_l2pt[idx]);
-	}
-
-#endif
 
 #ifdef KASAN
 	/*
@@ -761,21 +739,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		    __func__, bmi->bmi_io_l2pt.pv_va, bmi->bmi_io_l2pt.pv_pa,
 		    va, "(io)");
 	}
-
-#ifdef EFI_RUNTIME
-	VPRINTF("%s: efi runtime %x KERNEL_L2PT_EFIRT_NUM %d\n", __func__,
-	    EFI_RUNTIME_VA, KERNEL_L2PT_EFIRT_NUM);
-
-	for (size_t idx = 0; idx < KERNEL_L2PT_EFIRT_NUM; idx++) {
-		const vaddr_t va = EFI_RUNTIME_VA  + idx * L2_S_SEGSIZE;
-
-		pmap_link_l2pt(l1pt_va, va, &efirt_l2pt[idx]);
-
-		VPRINTF("%s: adding L2 pt (VA %#lx, PA %#lx) for VA %#lx %s\n",
-		    __func__, efirt_l2pt[idx].pv_va, efirt_l2pt[idx].pv_pa,
-		    va, "(efirt)");
-	}
-#endif
 
 #ifdef KASAN
 	VPRINTF("%s: kasan_shadow_base %x KERNEL_L2PT_KASAN_NUM %d\n", __func__,
