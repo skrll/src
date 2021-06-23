@@ -113,16 +113,12 @@ ENTRY_NP(start)
 
 	/*
 	 * Calculate the difference between the VA and PA for start and
-	 * store in kern_vtopdiff
+	 * keep in s8.  Store this in kern_vtopdiff once the MMU is on.
 	 */
 	PTR_LA	s11, start
 	PTR_L	s8, .Lstart
 
 	sub	s8, s8, s11
-
-	/* address of kern_vtopdiff (relative) */
-	PTR_LA	s11, _C_LABEL(kern_vtopdiff)
-	PTR_S	s8, 0(s11)	/* kern_vtopdiff = start(virt) - start(phys) */
 
 	/*
 	 * Our load address is not fixed, but our VA is.  We need to construct
@@ -173,6 +169,9 @@ ENTRY_NP(start)
 	VPRINTXNL(s5)
 	VPRINTS("bootstk: ")
 	VPRINTXNL(s6)
+
+	VPRINTS("vtopdiff:")
+	VPRINTXNL(s8)
 
 	VPRINTS("\n\r")
 
@@ -330,6 +329,16 @@ vstart:
 	PTR_S	t2, PM_PDETAB(t1)	// VA of kernel PDETAB
 	PTR_S	t3, PM_MD_PPN(t1)	// PPN of kernel PDETAB
 
+	/*
+	 * Store kern_vtopdiff (the difference between the physical
+	 * and virtual address of the "start" symbol).
+	 *
+	 * XXX For some reason doing this store to the physical
+	 * XXX address of kern_vtopdiff before the MMU is enabled
+	 * XXX doesn't work on the AllWinner D1.
+	 */
+  	PTR_LA	s11, _C_LABEL(kern_vtopdiff)
+ 	PTR_S	s8, 0(s11)	/* kern_vtopdiff = start(virt) - start(phys) */
 
 #if notyet
 	mv	a0, s1			// dtb
