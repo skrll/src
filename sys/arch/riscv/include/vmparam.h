@@ -175,16 +175,17 @@
 /* virtual sizes (bytes) for various kernel submaps */
 #define VM_PHYS_SIZE		(USRIOSIZE*PAGE_SIZE)
 
-/* VM_PHYSSEG_MAX defined by platform-dependent code. */
-#ifndef VM_PHYSSEG_MAX
-#define VM_PHYSSEG_MAX		1
-#endif
-#if VM_PHYSSEG_MAX == 1
-#define	VM_PHYSSEG_STRAT	VM_PSTRAT_BIGFIRST
-#else
+/*
+ * max number of non-contig chunks of physical RAM you can have
+ */
+#define VM_PHYSSEG_MAX		64
+
+/*
+ * when converting a physical address to a vm_page structure, we
+ * want to use a binary search on the chunks of physical memory
+ * to find our RAM
+ */
 #define	VM_PHYSSEG_STRAT	VM_PSTRAT_BSEARCH
-#endif
-#define	VM_PHYSSEG_NOADD	/* can add RAM after vm_mem_init */
 
 #ifndef VM_NFREELIST
 #define	VM_NFREELIST		2	/* 2 distinct memory segments */
