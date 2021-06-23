@@ -1,4 +1,4 @@
-# $NetBSD: HACKS,v 1.218 2021/05/31 22:33:19 rin Exp $
+# $NetBSD: HACKS,v 1.220 2021/06/23 07:11:41 rillig Exp $
 #
 # This file is intended to document workarounds for currently unsolved
 # (mostly) compiler bugs.
@@ -997,4 +997,18 @@ file	src/external/gpl3/gdb/dist/gnulib/import/canonicalize-lgpl.c: 1.2
 descr	For alpha gcc-9 and gcc-10 miscompile the malloca macro leading to
         allocation from the stack and freeing with regular free which causes
 	a crash.
+kcah
+
+port	sh3
+
+	hack	gcc9-sh3-lint
+	cdate	Tue Jun 22 14:59:52 CEST 2021
+	mdate	Tue Jun 22 14:59:52 CEST 2021
+	who	martin
+	file	usr.bin/xlint/lint1/Makefile	: 1.70
+	descr
+		The in-tree gcc 9 crashes with an internal invalid
+		opcode exception when using any kind of optimization
+		on the lex.c file. Force -O0 for this file.
+		https://gcc.gnu.org/bugzilla/show_bug.cgi?id=101177
 kcah

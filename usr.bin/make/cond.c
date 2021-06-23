@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.262 2021/04/19 23:51:42 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.269 2021/06/21 21:10:01 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -95,7 +95,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.262 2021/04/19 23:51:42 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.269 2021/06/21 21:10:01 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -171,6 +171,7 @@ static CondResult CondParser_Or(CondParser *par, bool);
 static unsigned int cond_depth = 0;	/* current .if nesting level */
 static unsigned int cond_min_depth = 0;	/* depth at makefile open */
 
+/* Names for ComparisonOp. */
 static const char *opname[] = { "<", "<=", ">", ">=", "==", "!=" };
 
 /*
@@ -309,7 +310,7 @@ FuncDefined(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 	return result;
 }
 
-/* See if the given target is being made. */
+/* See if the given target is requested to be made. */
 /*ARGSUSED*/
 static bool
 FuncMake(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
@@ -400,7 +401,8 @@ TryParseNumber(const char *str, double *out_value)
 static bool
 is_separator(char ch)
 {
-	return ch == '\0' || ch_isspace(ch) || strchr("!=><)", ch) != NULL;
+	return ch == '\0' || ch_isspace(ch) || ch == '!' || ch == '=' ||
+	       ch == '>' || ch == '<' || ch == ')' /* but not '(' */;
 }
 
 /*
@@ -467,15 +469,16 @@ CondParser_StringExpr(CondParser *par, const char *start,
 }
 
 /*
- * Parse a string from a variable reference or an optionally quoted
- * string.  This is called for the lhs and rhs of string comparisons.
+ * Parse a string from a variable expression or an optionally quoted
+ * string.  This is called for the left-hand and right-hand sides of
+ * comparisons.
  *
  * Results:
  *	Returns the string, absent any quotes, or NULL on error.
- *	Sets out_quoted if the string was quoted.
+ *	Sets out_quoted if the leaf was a quoted string literal.
  */
 static void
-CondParser_String(CondParser *par, bool doEval, bool strictLHS,
+CondParser_Leaf(CondParser *par, bool doEval, bool strictLHS,
 		  FStr *out_str, bool *out_quoted)
 {
 	Buffer buf;
@@ -540,12 +543,12 @@ CondParser_String(CondParser *par, bool doEval, bool strictLHS,
 got_str:
 	str = FStr_InitOwn(buf.data);
 cleanup:
-	Buf_DoneData(&buf);
+	Buf_DoneData(&buf);	/* XXX: memory leak on failure? */
 	*out_str = str;
 }
 
 static bool
-If_Eval(const CondParser *par, const char *arg, size_t arglen)
+EvalBare(const CondParser *par, const char *arg, size_t arglen)
 {
 	bool res = par->evalBare(arglen, arg);
 	return par->negateEvalBare ? !res : res;
@@ -575,7 +578,7 @@ EvalNotEmpty(CondParser *par, const char *value, bool quoted)
 	if (par->plain)
 		return value[0] != '\0';
 
-	return If_Eval(par, value, strlen(value));
+	return EvalBare(par, value, strlen(value));
 }
 
 /* Evaluate a numerical comparison, such as in ".if ${VAR} >= 9". */
@@ -680,11 +683,7 @@ CondParser_Comparison(CondParser *par, bool doEval)
 	ComparisonOp op;
 	bool lhsQuoted, rhsQuoted;
 
-	/*
-	 * Parse the variable spec and skip over it, saving its
-	 * value in lhs.
-	 */
-	CondParser_String(par, doEval, lhsStrict, &lhs, &lhsQuoted);
+	CondParser_Leaf(par, doEval, lhsStrict, &lhs, &lhsQuoted);
 	if (lhs.str == NULL)
 		goto done_lhs;
 
@@ -700,12 +699,12 @@ CondParser_Comparison(CondParser *par, bool doEval)
 
 	if (par->p[0] == '\0') {
 		Parse_Error(PARSE_FATAL,
-		    "Missing right-hand-side of operator '%s'", opname[op]);
+		    "Missing right-hand side of operator '%s'", opname[op]);
 		par->printedError = true;
 		goto done_lhs;
 	}
 
-	CondParser_String(par, doEval, false, &rhs, &rhsQuoted);
+	CondParser_Leaf(par, doEval, false, &rhs, &rhsQuoted);
 	if (rhs.str == NULL)
 		goto done_rhs;
 
@@ -773,8 +772,9 @@ FuncEmpty(size_t arglen, const char *arg MAKE_ATTR_UNUSED)
 	return arglen == 1;
 }
 
+/* Parse a function call expression, such as 'defined(${file})'. */
 static bool
-CondParser_Func(CondParser *par, bool doEval, Token *out_token)
+CondParser_FuncCall(CondParser *par, bool doEval, Token *out_token)
 {
 	static const struct fn_def {
 		const char *fn_name;
@@ -823,20 +823,17 @@ CondParser_Func(CondParser *par, bool doEval, Token *out_token)
 }
 
 /*
- * Parse a function call, a number, a variable expression or a string
- * literal.
+ * Parse a comparison such as '${VAR} == "value"', or a simple leaf without
+ * operator, which is a number, a variable expression or a string literal.
  */
 static Token
-CondParser_LeafToken(CondParser *par, bool doEval)
+CondParser_ComparisonOrLeaf(CondParser *par, bool doEval)
 {
 	Token t;
 	char *arg = NULL;
 	size_t arglen;
 	const char *cp;
 	const char *cp1;
-
-	if (CondParser_Func(par, doEval, &t))
-		return t;
 
 	/* Push anything numeric through the compare expression */
 	cp = par->p;
@@ -851,6 +848,10 @@ CondParser_LeafToken(CondParser *par, bool doEval)
 	 * syntax would be invalid if we did "defined(a)" - so instead treat
 	 * as an expression.
 	 */
+	/*
+	 * XXX: Is it possible to have a variable expression evaluated twice
+	 *  at this point?
+	 */
 	arglen = ParseFuncArg(par, &cp, doEval, NULL, &arg);
 	cp1 = cp;
 	cpp_skip_whitespace(&cp1);
@@ -864,7 +865,7 @@ CondParser_LeafToken(CondParser *par, bool doEval)
 	 * after .if must have been taken literally, so the argument cannot
 	 * be empty - even if it contained a variable expansion.
 	 */
-	t = ToToken(!doEval || If_Eval(par, arg, arglen));
+	t = ToToken(!doEval || EvalBare(par, arg, arglen));
 	free(arg);
 	return t;
 }
@@ -930,7 +931,9 @@ CondParser_Token(CondParser *par, bool doEval)
 		return CondParser_Comparison(par, doEval);
 
 	default:
-		return CondParser_LeafToken(par, doEval);
+		if (CondParser_FuncCall(par, doEval, &t))
+			return t;
+		return CondParser_ComparisonOrLeaf(par, doEval);
 	}
 }
 

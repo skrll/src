@@ -1,4 +1,4 @@
-/*	$NetBSD: print.c,v 1.11 2021/03/20 20:56:58 rillig Exp $	*/
+/*	$NetBSD: print.c,v 1.15 2021/06/20 20:59:08 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -35,55 +35,21 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: print.c,v 1.11 2021/03/20 20:56:58 rillig Exp $");
+__RCSID("$NetBSD: print.c,v 1.15 2021/06/20 20:59:08 rillig Exp $");
 #endif
-
-#include <stdio.h>
 
 #include "lint1.h"
 
-char *
-print_tnode(char *buf, size_t bufsiz, const tnode_t *tn)
+/* Return the name of the "storage class" in the wider sense. */
+const char *
+scl_name(scl_t scl)
 {
-	strg_t *st;
-	val_t *v;
-	sym_t *s;
-	switch (tn->tn_op) {
-	case NAME:
-		s = tn->tn_sym;
-		(void)snprintf(buf, bufsiz, "%s", s->s_name);
-		break;
-	case CON:
-		v = tn->tn_val;
-		switch (v->v_tspec) {
-		case FLOAT:
-		case DOUBLE:
-		case LDOUBLE:
-			(void)snprintf(buf, bufsiz, "%Lg", v->v_ldbl);
-			break;
-		default:
-			(void)snprintf(buf, bufsiz, v->v_ansiu ? "%llu" :
-			    "%lld", (unsigned long long)v->v_quad);
-			break;
-		}
-		break;
+	static const char *const names[] = {
+	    "none", "extern", "static", "auto", "register", "typedef",
+	    "struct", "union", "enum", "member of struct", "member of union",
+	    "compile-time constant", "abstract", "argument",
+	    "prototype argument", "inline"
+	};
 
-	case STRING:
-		st = tn->tn_string;
-		switch (st->st_tspec) {
-		case CHAR:
-		case SCHAR:
-		case UCHAR:
-			(void)snprintf(buf, bufsiz, "\"%s\"", st->st_cp);
-			break;
-		default:
-			(void)snprintf(buf, bufsiz, "\"*wide string*\"");
-			break;
-		}
-		break;
-	default:
-		(void)snprintf(buf, bufsiz, "%s", modtab[tn->tn_op].m_name);
-		break;
-	}
-	return buf;
+	return names[scl];
 }
