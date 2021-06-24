@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.108 2021/05/15 19:12:14 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.111 2021/06/19 19:59:02 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.108 2021/05/15 19:12:14 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.111 2021/06/19 19:59:02 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -173,7 +173,9 @@ end_control_statement(control_statement_kind kind)
 	case_label_t *cl, *next;
 
 	lint_assert(cstmt != NULL);
-	lint_assert(cstmt->c_kind == kind);
+
+	while (cstmt->c_kind != kind)
+		cstmt = cstmt->c_surrounding;
 
 	ci = cstmt;
 	cstmt = ci->c_surrounding;
@@ -412,6 +414,10 @@ funcend(void)
 		    cstmt->c_had_return_value, funcsym->s_osdef,
 		    dcs->d_func_args);
 	}
+
+	/* clean up after syntax errors, see test stmt_for.c. */
+	while (dcs->d_next != NULL)
+		dcs = dcs->d_next;
 
 	/*
 	 * remove all symbols declared during argument declaration from
@@ -1049,7 +1055,14 @@ do_return(tnode_t *tn)
 	cstk_t	*ci;
 	op_t	op;
 
-	for (ci = cstmt; ci->c_surrounding != NULL; ci = ci->c_surrounding)
+	ci = cstmt;
+	if (ci == NULL) {
+		/* syntax error '%s' */
+		error(249, "return outside function");
+		return;
+	}
+
+	for (; ci->c_surrounding != NULL; ci = ci->c_surrounding)
 		continue;
 
 	if (tn != NULL)
