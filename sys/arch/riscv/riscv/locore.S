@@ -339,8 +339,8 @@ vstart:
 	 * XXX address of kern_vtopdiff before the MMU is enabled
 	 * XXX doesn't work on the AllWinner D1.
 	 */
-  	PTR_LA	s11, _C_LABEL(kern_vtopdiff)
- 	PTR_S	s8, 0(s11)	/* kern_vtopdiff = start(virt) - start(phys) */
+	PTR_LA	s11, _C_LABEL(kern_vtopdiff)
+	PTR_S	s8, 0(s11)	/* kern_vtopdiff = start(virt) - start(phys) */
 
 #if notyet
 	mv	a0, s1			// dtb
@@ -646,7 +646,7 @@ END(cpu_fast_switchto_cleanup)
 /*
  * void
  * cpu_fast_switchto(struct lwp *, int s);
-*/
+ */
 ENTRY_NP(cpu_fast_switchto)
 	addi	sp, sp, -(TF_LEN + CALLFRAME_SIZ)
 	REG_S	a0, (TF_LEN + CALLFRAME_S0)(sp)
@@ -704,7 +704,7 @@ END(cpu_fast_switchto)
 /*
  * RISC-V only has a simple exception handler handles both synchronous traps
  * and interrupts.
-*/
+ */
 ENTRY_NP(cpu_exception_handler)
 	csrrw	tp, sscratch, tp	// swap scratch and thread pointer
 	beqz	tp, .Lexception_kernel	//   tp == 0, already on kernel stack
