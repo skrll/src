@@ -239,6 +239,7 @@ ENTRY_NP(start)
 	srli	s0, s0, (PGSHIFT - PTE_PPN_SHIFT)
 	or	s0, s0, s7
 .Lfill:
+	VPRINTS("kern ")
 	VPRINTX(s2)
 	VPRINTS(": ")
 	VPRINTXNL(s0)
@@ -257,6 +258,7 @@ ENTRY_NP(start)
 	slli	s0, s0, (SEGSHIFT - PGSHIFT + PTE_PPN_SHIFT)	// ... to PPN
 	or	s0, s0, s7
 
+	VPRINTS("dtb  ")
 	VPRINTX(s2)
 	VPRINTS(": ")
 	VPRINTXNL(s0)
