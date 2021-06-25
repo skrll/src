@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.16 2018/12/31 11:58:43 mrg Exp $
+#	$NetBSD: Makefile,v 1.19 2021/06/03 07:37:00 rin Exp $
 
 DRIVER=		xf86-input-keyboard
 DRIVER_NAME=	kbd_drv
@@ -13,10 +13,15 @@ CPPFLAGS+=	-DPCVT_SUPPORT
 # turns out we can't use wskbd everywhere without a couple more translation
 # tables in the X driver so make it the default only where we know it will work
 
-.if ${MACHINE_ARCH} == "powerpc" || ${MACHINE} == "sparc" || \
-    ${MACHINE} == "sparc64" || ${MACHINE} == "sgimips" || \
-    ${MACHINE} == "shark" || ${MACHINE} == "vax" || \
-    ${MACHINE} == "evbarm"
+.if ${MACHINE_ARCH} == "powerpc" || \
+    ${MACHINE} == "amiga" || \
+    ${MACHINE} == "evbarm" || \
+    ${MACHINE} == "mac68k" || \
+    ${MACHINE} == "sgimips" || \
+    ${MACHINE} == "shark" || \
+    ${MACHINE} == "sparc" || \
+    ${MACHINE} == "sparc64" || \
+    ${MACHINE} == "vax"
 CPPFLAGS+=	-DDEFAULT_TO_WSKBD
 .endif
 

@@ -1,4 +1,4 @@
-#	$NetBSD: t_misc.sh,v 1.7 2020/11/05 20:03:56 martin Exp $
+#	$NetBSD: t_misc.sh,v 1.10 2021/06/17 12:45:58 riastradh Exp $
 #
 # Copyright (c) 2018 Ryota Ozaki <ozaki.ryota@gmail.com>
 # All rights reserved.
@@ -86,6 +86,8 @@ wg_rekey_body()
 
 	$ping $ip_wg_peer
 
+	atf_expect_fail "PR kern/56252"
+
 	# No reinitiation is performed
 	atf_check -s exit:0 -o match:"$latest_handshake" \
 	    $HIJACKING wgconfig wg0 show peer peer0
@@ -113,6 +115,8 @@ wg_rekey_body()
 	    $HIJACKING wgconfig wg0 show peer peer0
 
 	destroy_wg_interfaces
+
+	atf_fail "failed to trigger PR kern/56252"
 }
 
 wg_rekey_cleanup()
@@ -202,6 +206,8 @@ wg_handshake_timeout_body()
 	export RUMP_SERVER=$SOCK_LOCAL
 
 	destroy_wg_interfaces
+
+	atf_fail "failed to trigger PR kern/56252"
 }
 
 wg_handshake_timeout_cleanup()
@@ -263,6 +269,8 @@ wg_cookie_body()
 	# and a session doesn't start
 	$ping_fail $ip_wg_peer
 
+	atf_expect_fail "PR kern/56252"
+
 	extract_new_packets $BUS > $outfile
 	$DEBUG && cat $outfile
 	# XXX length 64 indicates the message is a cookie message
@@ -286,6 +294,8 @@ wg_cookie_body()
 	    $HIJACKING wgconfig wg0
 
 	destroy_wg_interfaces
+
+	atf_fail "failed to trigger PR kern/56252"
 }
 
 wg_cookie_cleanup()
@@ -342,6 +352,8 @@ wg_mobility_body()
 	export RUMP_SERVER=$SOCK_LOCAL
 	$ping_fail $ip_wg_peer
 
+	atf_expect_fail "PR kern/56252"
+
 	extract_new_packets $BUS > $outfile
 	$DEBUG && cat $outfile
 
@@ -380,6 +392,8 @@ wg_mobility_body()
 	atf_check -s exit:0 -o not-match:"$ip_local.$port > $ip_peer.$port" cat $outfile
 
 	destroy_wg_interfaces
+
+	atf_fail "failed to trigger PR kern/56252"
 }
 
 wg_mobility_cleanup()
@@ -420,7 +434,7 @@ wg_keepalive_body()
 	setup_common shmif0 inet $ip_local 24
 	setup_wg_common wg0 inet $ip_wg_local 24 $port "$key_priv_local"
 	add_peer wg0 peer0 $key_pub_peer $ip_peer:$port $ip_wg_peer/32
-	$ifconfg -w 10
+	$ifconfig -w 10
 
 	export RUMP_SERVER=$SOCK_PEER
 	setup_common shmif0 inet $ip_peer 24

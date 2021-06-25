@@ -1,4 +1,4 @@
-/*	$NetBSD: mount_chfs.c,v 1.2 2013/09/13 21:03:29 joerg Exp $	*/
+/*	$NetBSD: mount_chfs.c,v 1.4 2021/06/07 21:44:35 dholland Exp $	*/
 
 /*-
  * Copyright (c) 2010 Department of Software Engineering,
@@ -53,6 +53,12 @@
 #include "mountprog.h"
 #include "mount_chfs.h"
 
+static const struct mntopt mopts[] = {
+	MOPT_STDOPTS,
+	MOPT_GETARGS,
+	MOPT_NULL,
+};
+
 /* --------------------------------------------------------------------- */
 
 static void	usage(void) __dead;
@@ -64,6 +70,7 @@ mount_chfs_parseargs(int argc, char *argv[], struct ufs_args *args,
     int *mntflags, char *canon_dev, char *canon_dir)
 {
 	int ch;
+	mntoptparse_t mp;
 	struct stat sb;
 
 	/* Set default values for mount point arguments. */
@@ -72,8 +79,14 @@ mount_chfs_parseargs(int argc, char *argv[], struct ufs_args *args,
 
 	optind = optreset = 1;
 
-	while ((ch = getopt(argc, argv, "i:")) != -1) {
+	while ((ch = getopt(argc, argv, "o:")) != -1) {
 		switch (ch) {
+		case 'o':
+			mp = getmntopts(optarg, mopts, mntflags, 0);
+			if (mp == NULL)
+				err(1, "getmntopts");
+			freemntopts(mp);
+			break;
 		case '?':
 		default:
 			usage();
@@ -116,12 +129,11 @@ mount_chfs(int argc, char *argv[])
 	struct ufs_args args;
 	char canon_dev[MAXPATHLEN], fs_name[MAXPATHLEN];
 	int mntflags;
-	
 
 	mount_chfs_parseargs(argc, argv, &args, &mntflags,
 	    canon_dev, fs_name);
 
-	if (mount(MOUNT_CHEWIEFS, fs_name, mntflags, &args, sizeof args) == -1) {
+	if (mount(MOUNT_CHFS, fs_name, mntflags, &args, sizeof args) == -1) {
 		err(EXIT_FAILURE, "chfs on %s", fs_name);
 	}
 

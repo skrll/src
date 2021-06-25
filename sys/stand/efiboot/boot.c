@@ -1,4 +1,4 @@
-/*	$NetBSD: boot.c,v 1.29 2020/11/28 14:02:09 jmcneill Exp $	*/
+/*	$NetBSD: boot.c,v 1.34 2021/06/23 21:43:38 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -132,22 +132,18 @@ const struct boot_command commands[] = {
 static int
 bootcfg_path(char *pathbuf, size_t pathbuflen)
 {
-	/*
-	 * Special handling of boot.cfg on ISO9660 because fs protocol doesn't
-	 * seem to work.
-	 */
-	if (default_fstype == FS_ISO9660) {
-		snprintf(pathbuf, pathbuflen, "%s:%s", default_device, BOOTCFG_FILENAME);
-		return 0;
-	}
 
 	/*
-	 * Fall back to fs protocol for loading boot.cfg
+	 * Fallback to default_device
+	 * - for ISO9660 (efi_file_path() succeeds but does not work correctly)
+	 * - or whenever efi_file_path() fails (due to broken firmware)
 	 */
-	if (efi_bootdp == NULL)
-		return ENXIO;
+	if (default_fstype == FS_ISO9660 || efi_bootdp == NULL ||
+	    efi_file_path(efi_bootdp, BOOTCFG_FILENAME, pathbuf, pathbuflen))
+		snprintf(pathbuf, pathbuflen, "%s:%s", default_device,
+		    BOOTCFG_FILENAME);
 
-	return efi_file_path(efi_bootdp, BOOTCFG_FILENAME, pathbuf, pathbuflen);
+	return 0;
 }
 
 void
@@ -175,7 +171,9 @@ command_boot(char *arg)
 	if (!*bootargs)
 		bootargs = netbsd_args;
 
+	efi_block_set_readahead(true);
 	exec_netbsd(kernel, bootargs);
+	efi_block_set_readahead(false);
 }
 
 void
@@ -452,12 +450,59 @@ set_bootargs(const char *arg)
 	return 0;
 }
 
+static void
+get_memory_info(uint64_t *ptotal)
+{
+	EFI_MEMORY_DESCRIPTOR *md, *memmap;
+	UINTN nentries, mapkey, descsize;
+	UINT32 descver;
+	uint64_t totalpg = 0;
+	int n;
+
+	memmap = LibMemoryMap(&nentries, &mapkey, &descsize, &descver);
+	for (n = 0, md = memmap; n < nentries; n++, md = NextMemoryDescriptor(md, descsize)) {
+		if ((md->Attribute & EFI_MEMORY_WB) == 0) {
+			continue;
+		}
+		totalpg += md->NumberOfPages;
+	}
+
+	*ptotal = totalpg * EFI_PAGE_SIZE;
+}
+
+static void
+format_bytes(uint64_t val, uint64_t *pdiv, const char **punit)
+{
+	static const char *units[] = { "KB", "MB", "GB" };
+	unsigned n;
+
+	*punit = "bytes";
+	*pdiv = 1;
+
+	for (n = 0; n < __arraycount(units) && val >= 1024 * 10; n++) {
+		*punit = units[n];
+		*pdiv *= 1024;
+		val /= 1024;
+	}
+}
+
 void
 print_banner(void)
 {
-	printf("\n\n"
-	    ">> %s, Revision %s\n",
-	    bootprog_name, bootprog_rev);
+	const char *total_unit;
+	uint64_t total, total_div;
+
+	get_memory_info(&total);
+	format_bytes(total, &total_div, &total_unit);
+
+	printf("  \\-__,------,___.\n");
+	printf("   \\        __,---`  %s\n", bootprog_name);
+	printf("    \\       `---,_.  Revision %s\n", bootprog_rev);
+	printf("     \\-,_____,.---`  Memory: %" PRIu64 " %s\n",
+	    total / total_div, total_unit);
+	printf("      \\\n");
+	printf("       \\\n");
+	printf("        \\\n\n");
 }
 
 void
@@ -498,7 +543,9 @@ boot(void)
 		if (c != '\r' && c != '\n' && c != '\0')
 			bootprompt(); /* does not return */
 
+		efi_block_set_readahead(true);
 		exec_netbsd(netbsd_path, netbsd_args);
+		efi_block_set_readahead(false);
 	}
 
 	bootprompt();	/* does not return */

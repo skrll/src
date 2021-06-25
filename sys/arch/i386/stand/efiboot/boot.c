@@ -1,4 +1,4 @@
-/*	$NetBSD: boot.c,v 1.17 2019/09/26 12:21:03 nonaka Exp $	*/
+/*	$NetBSD: boot.c,v 1.19 2021/06/22 19:53:58 nia Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -38,6 +38,10 @@
 #include "biosdisk.h"
 #include "devopen.h"
 
+#ifdef _STANDALONE
+#include <bootinfo.h>
+#endif
+
 int errno;
 int boot_biosdev;
 daddr_t boot_biossector;
@@ -65,6 +69,7 @@ void	command_quit(char *);
 void	command_boot(char *);
 void	command_pkboot(char *);
 void	command_consdev(char *);
+void	command_root(char *);
 void	command_dev(char *);
 void	command_devpath(char *);
 void	command_efivar(char *);
@@ -88,6 +93,7 @@ const struct bootblk_command commands[] = {
 	{ "boot",	command_boot },
 	{ "pkboot",	command_pkboot },
 	{ "consdev",	command_consdev },
+	{ "root",	command_root },
 	{ "dev",	command_dev },
 	{ "devpath",	command_devpath },
 	{ "efivar",	command_efivar },
@@ -281,8 +287,19 @@ print_banner(void)
 		for (n = 0; n < BOOTCFG_MAXBANNER && bootcfg_info.banner[n];
 		    n++)
 			printf("%s\n", bootcfg_info.banner[n]);
-	} else
-		command_version("short");
+	} else {
+		printf("\n"
+		   "  \\-__,------,___.\n"
+		   "   \\        __,---`  %s (from NetBSD %s)\n"
+		   "    \\       `---,_.  Revision %s\n"
+		   "     \\-,_____,.---`  Memory: %d/%d k\n"
+		   "      \\\n"  
+		   "       \\\n"
+		   "        \\\n",
+		   bootprog_name, bootprog_kernrev,
+		   bootprog_rev,               
+		   getbasemem(), getextmem());
+	}
 }
 
 void
@@ -396,6 +413,9 @@ command_help(char *arg)
 	       "pkboot [dev:][filename] [-12acdqsvxz]\n"
 	       "dev [dev:]\n"
 	       "consdev {pc|com[0123][,{speed}]|com,{ioport}[,{speed}]}\n"
+	       "root    {spec}\n"
+	       "     spec can be disk, e.g. wd0, sd0\n"
+	       "     or string like wedge:name\n"
 	       "devpath\n"
 	       "efivar\n"
 	       "gop [{modenum|list}]\n"
@@ -589,6 +609,19 @@ command_consdev(char *arg)
 error:
 	printf("invalid console device.\n");
 }
+
+void
+command_root(char *arg)
+{
+	struct btinfo_rootdevice *biv = &bi_root;
+
+	strncpy(biv->devname, arg, sizeof(biv->devname));
+	if (biv->devname[sizeof(biv->devname)-1] != '\0') {
+		biv->devname[sizeof(biv->devname)-1] = '\0';
+		printf("truncated to %s\n",biv->devname);
+	}
+}
+
 
 #ifndef SMALL
 /* ARGSUSED */

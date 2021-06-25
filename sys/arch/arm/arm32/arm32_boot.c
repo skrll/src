@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_boot.c,v 1.41 2020/12/01 02:43:14 rin Exp $	*/
+/*	$NetBSD: arm32_boot.c,v 1.43 2021/06/03 07:06:22 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec Corporation.  All rights reserved.
@@ -122,7 +122,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.41 2020/12/01 02:43:14 rin Exp $");
+__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.43 2021/06/03 07:06:22 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cputypes.h"
@@ -290,6 +290,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 				VPRINTF("         start %08lx  end %08lx"
 				    "... loading in freelist %d\n", ptoa(start),
 				    ptoa(segend), vm_freelist);
+
 				uvm_page_physload(start, segend, start, segend,
 				    vm_freelist);
 
