@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.182 2021/05/16 11:11:36 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.188 2021/06/20 11:24:32 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.182 2021/05/16 11:11:36 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.188 2021/06/20 11:24:32 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -198,6 +198,7 @@ setcomplete(type_t *tp, bool complete)
 {
 	tspec_t	t;
 
+	lint_assert(tp != NULL);
 	if ((t = tp->t_tspec) == ARRAY) {
 		tp->t_incomplete_array = !complete;
 	} else if (t == STRUCT || t == UNION) {
@@ -601,8 +602,7 @@ begin_declaration_level(scl_t sc)
 	di->d_ctx = sc;
 	di->d_ldlsym = &di->d_dlsyms;
 	if (dflag)
-		(void)printf("%s(%p %d)\n", __func__, dcs, (int)sc);
-
+		(void)printf("%s(%p %s)\n", __func__, dcs, scl_name(sc));
 }
 
 /*
@@ -614,7 +614,8 @@ end_declaration_level(void)
 	dinfo_t	*di;
 
 	if (dflag)
-		(void)printf("%s(%p %d)\n", __func__, dcs, (int)dcs->d_ctx);
+		(void)printf("%s(%p %s)\n",
+		    __func__, dcs, scl_name(dcs->d_ctx));
 
 	lint_assert(dcs->d_next != NULL);
 	di = dcs;
@@ -1805,6 +1806,9 @@ complete_tag_struct_or_union(type_t *tp, sym_t *fmem)
 	int	n;
 	sym_t	*mem;
 
+	if (tp == NULL)		/* in case of syntax errors */
+		return gettyp(INT);
+
 	setcomplete(tp, true);
 
 	t = tp->t_tspec;
@@ -2039,7 +2043,7 @@ declare(sym_t *decl, bool initflg, sbuf_t *renaming)
 
 	if (dcs->d_ctx == EXTERN) {
 		declare_extern(decl, initflg, renaming);
-	} else if (dcs->d_ctx == ARG) {
+	} else if (dcs->d_ctx == ARG || dcs->d_ctx == PROTO_ARG) {
 		if (renaming != NULL) {
 			/* symbol renaming can't be used on function arguments */
 			error(310);
@@ -3052,7 +3056,10 @@ check_variable_usage(bool novar, sym_t *sym)
 	sym_t	*xsym;
 
 	lint_assert(block_level != 0);
-	lint_assert(sym->s_block_level != 0);
+
+	/* example at file scope: int c = ({ return 3; }); */
+	if (sym->s_block_level == 0 && ch_isdigit(sym->s_name[0]))
+		return;
 
 	/* errors in expressions easily cause lots of these warnings */
 	if (nerr != 0)
@@ -3256,6 +3263,8 @@ check_global_variable_size(const sym_t *sym)
 		 * function declaration
 		 */
 		return;
+	if (sym->s_def == TDEF && sym->s_type->t_tspec == VOID)
+		return;		/* prevent internal error in length() below */
 
 	cpos = curr_pos;
 	curr_pos = sym->s_def_pos;

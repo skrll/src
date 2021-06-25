@@ -1,7 +1,26 @@
-/*	$NetBSD: if_lagg.c,v 1.2 2021/05/19 10:20:50 rillig Exp $	*/
+/*	$NetBSD: if_lagg.c,v 1.5 2021/06/16 00:21:19 riastradh Exp $	*/
+
+/*
+ * Copyright (c) 2005, 2006 Reyk Floeter <reyk@openbsd.org>
+ * Copyright (c) 2007 Andrew Thompson <thompsa@FreeBSD.org>
+ * Copyright (c) 2014, 2016 Marcelo Araujo <araujo@FreeBSD.org>
+ * Copyright (c) 2021, Internet Initiative Japan Inc.
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_lagg.c,v 1.2 2021/05/19 10:20:50 rillig Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_lagg.c,v 1.5 2021/06/16 00:21:19 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -362,9 +381,7 @@ lagg_clone_create(struct if_clone *ifc, int unit)
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
 
-	error = if_initialize(ifp);
-	if (error != 0)
-		goto cleanup_ifmedia;
+	if_initialize(ifp);
 
 	switch (lagg_iftype) {
 	case LAGG_IF_TYPE_ETHERNET:
@@ -387,9 +404,6 @@ lagg_clone_create(struct if_clone *ifc, int unit)
 
 	return 0;
 
-cleanup_ifmedia:
-	ifmedia_fini(&sc->sc_media);
-	lagg_teardown_sysctls(sc);
 destroy_psz:
 	pserialize_destroy(sc->sc_psz);
 	mutex_destroy(&sc->sc_lock);

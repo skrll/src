@@ -1,4 +1,4 @@
-# $NetBSD: HACKS,v 1.217 2021/05/08 12:27:21 christos Exp $
+# $NetBSD: HACKS,v 1.220 2021/06/23 07:11:41 rillig Exp $
 #
 # This file is intended to document workarounds for currently unsolved
 # (mostly) compiler bugs.
@@ -975,19 +975,6 @@ descr	Disable optimization on tc.c, logerr.c, ubsan.c crashes:
 	function "__int64_t llvm::MachineFrameInfo::getObjectOffset(int) const"
 kcah
 
-port	arm
-hack	compile gdb/dwarf2{expr,loc}.c with -O0 for GCC[89] (PR/54820, 54877)
-cdate	Wed Apr 29 11:04:58 UTC 2020
-mdate	Thu Oct  8 17:00:00 JST 2020
-who	rin
-file	src/external/gpl3/gdb/lib/libgdb/Makefile: 1.22
-descr	For earmv7hf{,eb}, GCC 8.4 and 9.3 miscompile dwarf2expr.c with -O[21].
-	For earmv5hf{,eb}, GCC 9.3 miscompiles dwarf2{expr,loc}.c with -O2
-	(GCC9 -O1 and GCC8 -O2 work fine). These result in GDB crash with
-	``gdb_exception_RETURN_MASK_ERROR''. For everyone's safety, compile
-	these files with -O0 for all arm variants with GCC >= 8.
-kcah
-
 port	m68k
 hack	compile aes_ccm_tag() with -O0 for GCC8 and GCC9
 cdate	Mon Aug 10 06:27:29 UTC 2020
@@ -1010,4 +997,18 @@ file	src/external/gpl3/gdb/dist/gnulib/import/canonicalize-lgpl.c: 1.2
 descr	For alpha gcc-9 and gcc-10 miscompile the malloca macro leading to
         allocation from the stack and freeing with regular free which causes
 	a crash.
+kcah
+
+port	sh3
+
+	hack	gcc9-sh3-lint
+	cdate	Tue Jun 22 14:59:52 CEST 2021
+	mdate	Tue Jun 22 14:59:52 CEST 2021
+	who	martin
+	file	usr.bin/xlint/lint1/Makefile	: 1.70
+	descr
+		The in-tree gcc 9 crashes with an internal invalid
+		opcode exception when using any kind of optimization
+		on the lex.c file. Force -O0 for this file.
+		https://gcc.gnu.org/bugzilla/show_bug.cgi?id=101177
 kcah
