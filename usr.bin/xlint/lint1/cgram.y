@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.226 2021/05/03 05:24:44 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.230 2021/06/20 18:15:12 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.226 2021/05/03 05:24:44 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.230 2021/06/20 18:15:12 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -123,7 +123,7 @@ anonymize(sym_t *s)
 }
 %}
 
-%expect 181
+%expect 182
 
 %union {
 	val_t	*y_val;
@@ -142,7 +142,7 @@ anonymize(sym_t *s)
 };
 
 %token			T_LBRACE T_RBRACE T_LBRACK T_RBRACK T_LPAREN T_RPAREN
-%token	<y_op>		T_MEMBACC
+%token			T_POINT T_ARROW
 %token	<y_op>		T_UNARY
 %token	<y_op>		T_INCDEC
 %token			T_SIZEOF
@@ -269,7 +269,7 @@ anonymize(sym_t *s)
 %left	T_ADDITIVE
 %left	T_ASTERISK T_MULTIPLICATIVE
 %right	T_UNARY T_INCDEC T_SIZEOF T_REAL T_IMAG
-%left	T_LPAREN T_LBRACK T_MEMBACC
+%left	T_LPAREN T_LBRACK T_POINT T_ARROW
 
 %token	<y_sb>		T_NAME
 %token	<y_sb>		T_TYPENAME
@@ -843,9 +843,14 @@ member_declaration:
 		if (!Sflag)
 			/* anonymous struct/union members is a C9X feature */
 			warning(49);
-		$$ = dcs->d_type->t_str->sou_first_member;
-		/* add all the members of the anonymous struct/union */
-		anonymize($$);
+		if (is_struct_or_union(dcs->d_type->t_tspec)) {
+			$$ = dcs->d_type->t_str->sou_first_member;
+			/* add all the members of the anonymous struct/union */
+			anonymize($$);
+		} else {
+			/* syntax error '%s' */
+			error(249, "unnamed member");
+		}
 	  }
 	| error {
 		symtyp = FVFT;
@@ -1415,7 +1420,7 @@ designator:			/* C99 6.7.8 "Initialization" */
 			/* array initializer with des.s is a C9X feature */
 			warning(321);
 	  }
-	| point identifier {
+	| T_POINT identifier {
 		if (!Sflag)
 			/* struct or union member name in initializer is ... */
 			warning(313);
@@ -2023,12 +2028,17 @@ gcc_statement_expr_item:
 		$$->tn_type = gettyp(VOID);
 	  }
 	| expr T_SEMI {
-		/* XXX: We should really do that only on the last name */
-		if ($1->tn_op == NAME)
-			$1->tn_sym->s_used = true;
-		$$ = $1;
-		expr($1, false, false, false, false);
-		seen_fallthrough = false;
+		if ($1 == NULL) {	/* in case of syntax errors */
+			$$ = expr_zalloc_tnode();
+			$$->tn_type = gettyp(VOID);
+		} else {
+			/* XXX: do that only on the last name */
+			if ($1->tn_op == NAME)
+				$1->tn_sym->s_used = true;
+			$$ = $1;
+			expr($1, false, false, false, false);
+			seen_fallthrough = false;
+		}
 	}
 	;
 
@@ -2064,18 +2074,13 @@ func_arg_list:
 	;
 
 point_or_arrow:
-	  T_MEMBACC {
+	  T_POINT {
 		symtyp = FMEMBER;
-		$$ = $1;
+		$$ = POINT;
 	  }
-	;
-
-point:
-	  T_MEMBACC {
-		if ($1 != POINT) {
-			/* syntax error '%s' */
-			error(249, yytext);
-		}
+	| T_ARROW {
+		symtyp = FMEMBER;
+		$$ = ARROW;
 	  }
 	;
 

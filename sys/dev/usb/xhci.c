@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.142 2021/05/27 11:09:15 skrll Exp $	*/
+/*	$NetBSD: xhci.c,v 1.146 2021/06/12 13:58:05 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.142 2021/05/27 11:09:15 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.146 2021/06/12 13:58:05 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -1027,7 +1027,7 @@ xhci_resume(device_t self, const pmf_qual_t *qual)
 				v |= XHCI_PS_LWS;
 				v |= XHCI_PS_PLS_SET(XHCI_PS_PLS_SETRESUME);
 				xhci_op_write_4(sc, port, v);
-				usb_delay_ms(&sc->sc_bus, 20);
+				usb_delay_ms(&sc->sc_bus, USB_RESUME_WAIT);
 			} else {
 				KASSERT(sc->sc_bus.ub_revision > USBREV_2_0);
 			}
@@ -2159,6 +2159,7 @@ xhci_close_pipe(struct usbd_pipe *pipe)
 	usb_syncmem(&xs->xs_dc_dma, 0, sc->sc_pgsz, BUS_DMASYNC_POSTREAD);
 
 	xhci_ring_free(sc, &xs->xs_xr[dci]);
+	xs->xs_xr[dci] = NULL;
 }
 
 /*
@@ -2777,6 +2778,8 @@ xhci_new_device(device_t parent, struct usbd_bus *bus, int depth,
 	XHCIHIST_CALLARGS("port %ju depth %ju speed %ju up %#jx",
 	    port, depth, speed, (uintptr_t)up);
 
+	KASSERT(KERNEL_LOCKED_P());
+
 	dev = kmem_zalloc(sizeof(*dev), KM_SLEEP);
 	dev->ud_bus = bus;
 	dev->ud_quirks = &usbd_no_quirk;
@@ -2965,6 +2968,8 @@ xhci_new_device(device_t parent, struct usbd_bus *bus, int depth,
 	err = usbd_probe_and_attach(parent, dev, port, dev->ud_addr);
  bad:
 	if (err != USBD_NORMAL_COMPLETION) {
+		if (depth == 0 && port == 0 && dev->ud_pipe0)
+			usbd_kill_pipe(dev->ud_pipe0);
 		usbd_remove_device(dev, up);
 	}
 
