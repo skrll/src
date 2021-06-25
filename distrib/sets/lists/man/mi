@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1718 2021/04/27 21:13:38 nia Exp $
+# $NetBSD: mi,v 1.1722 2021/06/03 13:16:41 wiz Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -41,6 +41,7 @@
 ./usr/share/man/cat1/Mail.0			man-obsolete		obsolete
 ./usr/share/man/cat1/[.0			man-util-catman		.cat
 ./usr/share/man/cat1/agrep.0			man-util-catman		.cat
+./usr/share/man/cat1/aiomixer.0			man-audio-catman	.cat
 ./usr/share/man/cat1/alias.0			man-util-catman		.cat
 ./usr/share/man/cat1/altqstat.0			man-router-catman	.cat
 ./usr/share/man/cat1/amq.0			man-obsolete		obsolete
@@ -1263,12 +1264,12 @@
 ./usr/share/man/cat4/hythygtemp.0		man-sys-catman		.cat
 ./usr/share/man/cat4/i386/PCIBIOS.0		man-sys-catman		.cat
 ./usr/share/man/cat4/i386/apm.0			man-sys-catman		.cat
-./usr/share/man/cat4/i386/autoconf.0		man-sys-catman		.cat
+./usr/share/man/cat4/i386/autoconf.0		man-obsolete		obsolete
 ./usr/share/man/cat4/i386/busmouse.0		man-obsolete		obsolete
 ./usr/share/man/cat4/i386/cmos.0		man-sys-catman		.cat
 ./usr/share/man/cat4/i386/com.0			man-obsolete		obsolete
-./usr/share/man/cat4/i386/cons.0		man-sys-catman		.cat
-./usr/share/man/cat4/i386/console.0		man-sys-catman		.cat
+./usr/share/man/cat4/i386/cons.0		man-obsolete		obsolete
+./usr/share/man/cat4/i386/console.0		man-obsolete		obsolete
 ./usr/share/man/cat4/i386/ed.0			man-sys-catman		.cat
 ./usr/share/man/cat4/i386/elanpar.0		man-sys-catman		.cat
 ./usr/share/man/cat4/i386/elanpex.0		man-sys-catman		.cat
@@ -1412,6 +1413,7 @@
 ./usr/share/man/cat4/kttcp.0			man-sys-catman		.cat
 ./usr/share/man/cat4/kue.0			man-sys-catman		.cat
 ./usr/share/man/cat4/l2tp.0			man-sys-catman		.cat
+./usr/share/man/cat4/lagg.0			man-sys-catman		.cat
 ./usr/share/man/cat4/lc.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ld.0			man-sys-catman		.cat
 ./usr/share/man/cat4/le.0			man-sys-catman		.cat
@@ -2076,7 +2078,10 @@
 ./usr/share/man/cat4/x86/amdsmn.0		man-sys-catman		.cat
 ./usr/share/man/cat4/x86/amdzentemp.0		man-sys-catman		.cat
 ./usr/share/man/cat4/x86/apic.0			man-sys-catman		.cat
+./usr/share/man/cat4/x86/autoconf.0		man-sys-catman		.cat
 ./usr/share/man/cat4/x86/balloon.0		man-sys-catman		.cat
+./usr/share/man/cat4/x86/cons.0			man-sys-catman		.cat
+./usr/share/man/cat4/x86/console.0		man-sys-catman		.cat
 ./usr/share/man/cat4/x86/coretemp.0		man-sys-catman		.cat
 ./usr/share/man/cat4/x86/est.0			man-sys-catman		.cat
 ./usr/share/man/cat4/x86/fdc.0			man-sys-catman		.cat
@@ -3353,6 +3358,7 @@
 ./usr/share/man/html1/Mail.html			man-obsolete		obsolete
 ./usr/share/man/html1/[.html			man-util-htmlman	html
 ./usr/share/man/html1/agrep.html		man-util-htmlman	html
+./usr/share/man/html1/aiomixer.html		man-audio-htmlman	html
 ./usr/share/man/html1/alias.html		man-util-htmlman	html
 ./usr/share/man/html1/altqstat.html		man-router-htmlman	html
 ./usr/share/man/html1/apply.html		man-util-htmlman	html
@@ -4483,10 +4489,10 @@
 ./usr/share/man/html4/hythygtemp.html		man-sys-htmlman		html
 ./usr/share/man/html4/i386/PCIBIOS.html		man-sys-htmlman		html
 ./usr/share/man/html4/i386/apm.html		man-sys-htmlman		html
-./usr/share/man/html4/i386/autoconf.html	man-sys-htmlman		html
+./usr/share/man/html4/i386/autoconf.html	man-obsolete		obsolete
 ./usr/share/man/html4/i386/cmos.html		man-sys-htmlman		html
-./usr/share/man/html4/i386/cons.html		man-sys-htmlman		html
-./usr/share/man/html4/i386/console.html		man-sys-htmlman		html
+./usr/share/man/html4/i386/cons.html		man-obsolete		obsolete
+./usr/share/man/html4/i386/console.html		man-obsolete		obsolete
 ./usr/share/man/html4/i386/ed.html		man-sys-htmlman		html
 ./usr/share/man/html4/i386/elanpar.html		man-sys-htmlman		html
 ./usr/share/man/html4/i386/elanpex.html		man-sys-htmlman		html
@@ -4608,6 +4614,7 @@
 ./usr/share/man/html4/kttcp.html		man-sys-htmlman		html
 ./usr/share/man/html4/kue.html			man-sys-htmlman		html
 ./usr/share/man/html4/l2tp.html			man-sys-htmlman		html
+./usr/share/man/html4/lagg.html			man-sys-htmlman		html
 ./usr/share/man/html4/lc.html			man-sys-htmlman		html
 ./usr/share/man/html4/ld.html			man-sys-htmlman		html
 ./usr/share/man/html4/le.html			man-sys-htmlman		html
@@ -5227,7 +5234,10 @@
 ./usr/share/man/html4/x86/amdsmn.html		man-sys-htmlman		html
 ./usr/share/man/html4/x86/amdzentemp.html	man-sys-htmlman		html
 ./usr/share/man/html4/x86/apic.html		man-sys-htmlman		html
+./usr/share/man/html4/x86/autoconf.html		man-sys-htmlman		html
 ./usr/share/man/html4/x86/balloon.html		man-sys-htmlman		html
+./usr/share/man/html4/x86/cons.html		man-sys-htmlman		html
+./usr/share/man/html4/x86/console.html		man-sys-htmlman		html
 ./usr/share/man/html4/x86/coretemp.html		man-sys-htmlman		html
 ./usr/share/man/html4/x86/est.html		man-sys-htmlman		html
 ./usr/share/man/html4/x86/fdc.html		man-sys-htmlman		html
@@ -6274,6 +6284,7 @@
 ./usr/share/man/man1/Mail.1			man-obsolete		obsolete
 ./usr/share/man/man1/[.1			man-util-man		.man
 ./usr/share/man/man1/agrep.1			man-util-man		.man
+./usr/share/man/man1/aiomixer.1			man-audio-man		.man
 ./usr/share/man/man1/alias.1			man-util-man		.man
 ./usr/share/man/man1/altqstat.1			man-router-man		.man
 ./usr/share/man/man1/amq.1			man-obsolete		obsolete
@@ -7496,12 +7507,12 @@
 ./usr/share/man/man4/hythygtemp.4		man-sys-man		.man
 ./usr/share/man/man4/i386/PCIBIOS.4		man-sys-man		.man
 ./usr/share/man/man4/i386/apm.4			man-sys-man		.man
-./usr/share/man/man4/i386/autoconf.4		man-sys-man		.man
+./usr/share/man/man4/i386/autoconf.4		man-obsolete		obsolete
 ./usr/share/man/man4/i386/busmouse.4		man-obsolete		obsolete
 ./usr/share/man/man4/i386/cmos.4		man-sys-man		.man
 ./usr/share/man/man4/i386/com.4			man-obsolete		obsolete
-./usr/share/man/man4/i386/cons.4		man-sys-man		.man
-./usr/share/man/man4/i386/console.4		man-sys-man		.man
+./usr/share/man/man4/i386/cons.4		man-obsolete		obsolete
+./usr/share/man/man4/i386/console.4		man-obsolete		obsolete
 ./usr/share/man/man4/i386/ed.4			man-sys-man		.man
 ./usr/share/man/man4/i386/elanpar.4		man-sys-man		.man
 ./usr/share/man/man4/i386/elanpex.4		man-sys-man		.man
@@ -7645,6 +7656,7 @@
 ./usr/share/man/man4/kttcp.4			man-sys-man		.man
 ./usr/share/man/man4/kue.4			man-sys-man		.man
 ./usr/share/man/man4/l2tp.4			man-sys-man		.man
+./usr/share/man/man4/lagg.4			man-sys-man		.man
 ./usr/share/man/man4/lc.4			man-sys-man		.man
 ./usr/share/man/man4/ld.4			man-sys-man		.man
 ./usr/share/man/man4/le.4			man-sys-man		.man
@@ -8310,7 +8322,10 @@
 ./usr/share/man/man4/x86/amdsmn.4		man-sys-man		.man
 ./usr/share/man/man4/x86/amdzentemp.4		man-sys-man		.man
 ./usr/share/man/man4/x86/apic.4			man-sys-man		.man
+./usr/share/man/man4/x86/autoconf.4		man-sys-man		.man
 ./usr/share/man/man4/x86/balloon.4		man-sys-man		.man
+./usr/share/man/man4/x86/cons.4			man-sys-man		.man
+./usr/share/man/man4/x86/console.4		man-sys-man		.man
 ./usr/share/man/man4/x86/coretemp.4		man-sys-man		.man
 ./usr/share/man/man4/x86/est.4			man-sys-man		.man
 ./usr/share/man/man4/x86/fdc.4			man-sys-man		.man

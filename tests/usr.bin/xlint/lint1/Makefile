@@ -1,7 +1,7 @@
-# $NetBSD: Makefile,v 1.53 2021/04/30 23:49:36 rillig Exp $
+# $NetBSD: Makefile,v 1.65 2021/06/20 18:09:48 rillig Exp $
 
 NOMAN=		# defined
-MAX_MESSAGE=	343		# see lint1/err.c
+MAX_MESSAGE=	344		# see lint1/err.c
 
 .include <bsd.own.mk>
 
@@ -10,6 +10,8 @@ TESTSDIR=	${TESTSBASE}/usr.bin/xlint/lint1
 TESTS_SH=	t_integration
 
 FILESDIR=	${TESTSDIR}
+FILES+=		c99_init_designator.c
+FILES+=		c99_init_designator.exp
 FILES+=		d_alignof.c
 FILES+=		d_bltinoffsetof.c
 FILES+=		d_c99_bool.c
@@ -64,10 +66,10 @@ FILES+=		d_ellipsis_in_switch.c
 FILES+=		d_fold_test.c
 FILES+=		d_fold_test.exp
 FILES+=		d_gcc_compound_statements1.c
+FILES+=		d_gcc_compound_statements1.exp
 FILES+=		d_gcc_compound_statements2.c
 FILES+=		d_gcc_compound_statements3.c
 FILES+=		d_gcc_extension.c
-FILES+=		d_gcc_extension.exp
 FILES+=		d_gcc_func.c
 FILES+=		d_gcc_variable_array_init.c
 FILES+=		d_incorrect_array_size.c
@@ -100,20 +102,44 @@ FILES+=		d_type_question_colon.c
 FILES+=		d_typefun.c
 FILES+=		d_typename_as_var.c
 FILES+=		d_zero_sized_arrays.c
+FILES+=		decl_struct_member.c
+FILES+=		decl_struct_member.exp
 FILES+=		emit.c
 FILES+=		emit.exp
 FILES+=		emit.ln
+FILES+=		expr_range.c
+FILES+=		expr_range.exp
 FILES+=		feat_stacktrace.c
 FILES+=		feat_stacktrace.exp
 FILES+=		gcc_attribute.c
 FILES+=		gcc_attribute.exp
+FILES+=		gcc_attribute_aligned.c
+FILES+=		gcc_attribute_aligned.exp
+FILES+=		gcc_bit_field_types.c
+FILES+=		gcc_bit_field_types.exp
 FILES+=		gcc_init_compound_literal.c
 FILES+=		gcc_init_compound_literal.exp
 FILES+=		gcc_typeof_after_statement.c
 FILES+=		gcc_typeof_after_statement.exp
+FILES+=		lex_char.c
+FILES+=		lex_char.exp
+FILES+=		lex_comment.c
+FILES+=		lex_comment.exp
+FILES+=		lex_floating.c
+FILES+=		lex_floating.exp
+FILES+=		lex_integer.c
+FILES+=		lex_integer.exp
+FILES+=		lex_string.c
+FILES+=		lex_string.exp
+FILES+=		lex_wide_char.c
+FILES+=		lex_wide_char.exp
+FILES+=		lex_wide_string.c
+FILES+=		lex_wide_string.exp
 FILES+=		${:U0 ${:U:${:Urange=${MAX_MESSAGE}}}:C,^.$,0&,:C,^..$,0&,:@i@msg_${i}.c msg_${i}.exp@:Nmsg_176.exp}
 FILES+=		op_colon.c
 FILES+=		op_colon.exp
+FILES+=		stmt_for.c
+FILES+=		stmt_for.exp
 
 # ----- begin hack -----
 # Prevent that ${DESTDIR}/emit.ln gets ${DESTDIR}/emit.c as implicit source.

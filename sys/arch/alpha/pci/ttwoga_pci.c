@@ -1,4 +1,4 @@
-/* $NetBSD: ttwoga_pci.c,v 1.8 2015/10/02 05:22:49 msaitoh Exp $ */
+/* $NetBSD: ttwoga_pci.c,v 1.10 2021/06/25 03:49:47 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999, 2000 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: ttwoga_pci.c,v 1.8 2015/10/02 05:22:49 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ttwoga_pci.c,v 1.10 2021/06/25 03:49:47 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -44,16 +44,11 @@ __KERNEL_RCSID(0, "$NetBSD: ttwoga_pci.c,v 1.8 2015/10/02 05:22:49 msaitoh Exp $
 #include <alpha/pci/ttwogareg.h>
 #include <alpha/pci/ttwogavar.h>
 
-void		ttwoga_attach_hook(device_t, device_t,
-		    struct pcibus_attach_args *);
-int		ttwoga_bus_maxdevs(void *, int);
-pcitag_t	ttwoga_make_tag(void *, int, int, int);
-void		ttwoga_decompose_tag(void *, pcitag_t, int *, int *,
-		    int *);
-pcireg_t	ttwoga_conf_read(void *, pcitag_t, int);
-void		ttwoga_conf_write(void *, pcitag_t, int, pcireg_t);
+static int	ttwoga_bus_maxdevs(void *, int);
+static pcireg_t	ttwoga_conf_read(void *, pcitag_t, int);
+static void	ttwoga_conf_write(void *, pcitag_t, int, pcireg_t);
 
-paddr_t		ttwoga_make_type0addr(int, int);
+static paddr_t	ttwoga_make_type0addr(int, int);
 
 /*
  * The T2 has an annoying bug that can manifest itself while
@@ -70,7 +65,7 @@ cpuid_t ttwoga_conf_cpu;		/* XXX core logic bug */
 
 #define	TTWOGA_CONF_LOCK()						\
 do {									\
-	mutex_enter(&ttwoga_conf_lock);				\
+	mutex_enter(&ttwoga_conf_lock);					\
 	ttwoga_conf_cpu = cpu_number();					\
 } while (0)
 
@@ -87,57 +82,29 @@ ttwoga_pci_init(pci_chipset_tag_t pc, void *v)
 	mutex_init(&ttwoga_conf_lock, MUTEX_DEFAULT, IPL_HIGH);
 
 	pc->pc_conf_v = v;
-	pc->pc_attach_hook = ttwoga_attach_hook;
 	pc->pc_bus_maxdevs = ttwoga_bus_maxdevs;
-	pc->pc_make_tag = ttwoga_make_tag;
-	pc->pc_decompose_tag = ttwoga_decompose_tag;
 	pc->pc_conf_read = ttwoga_conf_read;
 	pc->pc_conf_write = ttwoga_conf_write;
 }
 
-void
-ttwoga_attach_hook(device_t parent, device_t self,
-    struct pcibus_attach_args *pba)
-{
-}
-
-int
+static int
 ttwoga_bus_maxdevs(void *cpv, int busno)
 {
-
-	return 32;
+	/*
+	 * We have to drive the IDSEL directly on bus 0, so we are
+	 * limited to 9 devices there.
+	 */
+	return busno == 0 ? 9 : 32;
 }
 
-pcitag_t
-ttwoga_make_tag(void *cpv, int b, int d, int f)
-{
-
-	/* This is the format used for Type 1 configuration cycles. */
-	return (b << 16) | (d << 11) | (f << 8);
-}
-
-void
-ttwoga_decompose_tag(void *cpv, pcitag_t tag, int *bp, int *dp, int *fp)
-{
-
-	if (bp != NULL)
-		*bp = (tag >> 16) & 0xff;
-	if (dp != NULL)
-		*dp = (tag >> 11) & 0x1f;
-	if (fp != NULL)
-		*fp = (tag >> 8) & 0x7;
-}
-
-paddr_t
+static paddr_t
 ttwoga_make_type0addr(int d, int f)
 {
-
-	if (d > 8)			/* XXX ??? */
-		return ((paddr_t) -1);
-	return ((0x0800UL << d) | (f << 8));
+	KASSERT(d < 9);
+	return PCI_CONF_TYPE0_IDSEL(d) | __SHIFTIN(f, PCI_CONF_TYPE1_FUNCTION);
 }
 
-pcireg_t
+static pcireg_t
 ttwoga_conf_read(void *cpv, pcitag_t tag, int offset)
 {
 	struct ttwoga_config *tcp = cpv;
@@ -152,8 +119,6 @@ ttwoga_conf_read(void *cpv, pcitag_t tag, int offset)
 	pci_decompose_tag(&tcp->tc_pc, tag, &b, &d, &f);
 
 	addr = b ? tag : ttwoga_make_type0addr(d, f);
-	if (addr == (paddr_t)-1)
-		return ((pcireg_t) -1);
 
 	TTWOGA_CONF_LOCK();
 
@@ -192,7 +157,7 @@ ttwoga_conf_read(void *cpv, pcitag_t tag, int offset)
 	return (data);
 }
 
-void
+static void
 ttwoga_conf_write(void *cpv, pcitag_t tag, int offset, pcireg_t data)
 {
 	struct ttwoga_config *tcp = cpv;
@@ -207,8 +172,6 @@ ttwoga_conf_write(void *cpv, pcitag_t tag, int offset, pcireg_t data)
 	pci_decompose_tag(&tcp->tc_pc, tag, &b, &d, &f);
 
 	addr = b ? tag : ttwoga_make_type0addr(d, f);
-	if (addr == (paddr_t)-1)
-		return;
 
 	TTWOGA_CONF_LOCK();
 

@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.281 2021/04/30 06:55:32 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.284 2021/06/16 00:21:18 riastradh Exp $ */
 
 /******************************************************************************
 
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ixgbe.c,v 1.281 2021/04/30 06:55:32 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixgbe.c,v 1.284 2021/06/16 00:21:18 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -1004,7 +1004,8 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		unsupported_sfp = true;
 		error = IXGBE_SUCCESS;
 	} else if (error) {
-		aprint_error_dev(dev, "Hardware initialization failed\n");
+		aprint_error_dev(dev,
+		    "Hardware initialization failed(error = %d)\n", error);
 		error = EIO;
 		goto err_late;
 	}
@@ -1334,7 +1335,6 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 {
 	struct ethercom *ec = &adapter->osdep.ec;
 	struct ifnet   *ifp;
-	int rv;
 
 	INIT_DEBUGOUT("ixgbe_setup_interface: begin");
 
@@ -1369,11 +1369,7 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 	IFQ_SET_MAXLEN(&ifp->if_snd, adapter->num_tx_desc - 2);
 	IFQ_SET_READY(&ifp->if_snd);
 
-	rv = if_initialize(ifp);
-	if (rv != 0) {
-		aprint_error_dev(dev, "if_initialize failed(%d)\n", rv);
-		return rv;
-	}
+	if_initialize(ifp);
 	adapter->ipq = if_percpuq_create(&adapter->osdep.ec.ec_if);
 	ether_ifattach(ifp, adapter->hw.mac.addr);
 	aprint_normal_dev(dev, "Ethernet address %s\n",
@@ -3983,7 +3979,7 @@ ixgbe_init_locked(struct adapter *adapter)
 	u32		rxdctl, rxctrl;
 	u32		ctrl_ext;
 	bool		unsupported_sfp = false;
-	int		i, j, err;
+	int		i, j, error;
 
 	/* XXX check IFF_UP and IFF_RUNNING, power-saving state! */
 
@@ -4041,8 +4037,10 @@ ixgbe_init_locked(struct adapter *adapter)
 		adapter->rx_mbuf_sz = MJUMPAGESIZE;
 
 	/* Prepare receive descriptors and buffers */
-	if (ixgbe_setup_receive_structures(adapter)) {
-		device_printf(dev, "Could not setup receive structures\n");
+	error = ixgbe_setup_receive_structures(adapter);
+	if (error) {
+		device_printf(dev,
+		    "Could not setup receive structures (err = %d)\n", error);
 		ixgbe_stop_locked(adapter);
 		return;
 	}
@@ -4172,8 +4170,8 @@ ixgbe_init_locked(struct adapter *adapter)
 	 * need to be kick-started
 	 */
 	if (hw->phy.type == ixgbe_phy_none) {
-		err = hw->phy.ops.identify(hw);
-		if (err == IXGBE_ERR_SFP_NOT_SUPPORTED)
+		error = hw->phy.ops.identify(hw);
+		if (error == IXGBE_ERR_SFP_NOT_SUPPORTED)
 			unsupported_sfp = true;
 	} else if (hw->phy.type == ixgbe_phy_sfp_unsupported)
 		unsupported_sfp = true;

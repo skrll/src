@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1246 2021/04/25 21:55:58 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1257 2021/06/19 06:19:35 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -72,16 +72,7 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
-.if ${MACHINE} == "alpha" || \
-    ${MACHINE} == "hppa" || \
-    ${MACHINE} == "ia64" || \
-    ${MACHINE} == "sparc" || \
-    ${MACHINE} == "sparc64" || \
-    ${MACHINE} == "vax" || \
-    ${MACHINE_ARCH} == "x86_64" || \
-    ${MACHINE_CPU} == "aarch64" || \
-    ${MACHINE_CPU} == "powerpc" || \
-    ${MACHINE_CPU} == "riscv"
+.if ${MACHINE_CPU} != "sh3"
 HAVE_GCC?=	10
 .else
 HAVE_GCC?=	9
@@ -440,6 +431,7 @@ TOOL_CTAGS=		${TOOLDIR}/bin/${_TOOL_PREFIX}ctags
 TOOL_CTFCONVERT=	${TOOLDIR}/bin/${_TOOL_PREFIX}ctfconvert
 TOOL_CTFMERGE=		${TOOLDIR}/bin/${_TOOL_PREFIX}ctfmerge
 TOOL_CVSLATEST=		${TOOLDIR}/bin/${_TOOL_PREFIX}cvslatest
+TOOL_DATE=		${TOOLDIR}/bin/${_TOOL_PREFIX}date
 TOOL_DB=		${TOOLDIR}/bin/${_TOOL_PREFIX}db
 TOOL_DISKLABEL=		${TOOLDIR}/bin/${_TOOL_PREFIX}disklabel
 TOOL_DTC=		${TOOLDIR}/bin/${_TOOL_PREFIX}dtc
@@ -492,6 +484,7 @@ TOOL_MKUBOOTIMAGE=	${TOOLDIR}/bin/${_TOOL_PREFIX}mkubootimage
 TOOL_ELFTOSB=		${TOOLDIR}/bin/${_TOOL_PREFIX}elftosb
 TOOL_MSGC=		MSGDEF=${TOOLDIR}/share/misc ${TOOLDIR}/bin/${_TOOL_PREFIX}msgc
 TOOL_MTREE=		${TOOLDIR}/bin/${_TOOL_PREFIX}mtree
+TOOL_MVME68KWRTVID=	${TOOLDIR}/bin/${_TOOL_PREFIX}mvme68k-wrtvid
 TOOL_NBPERF=		${TOOLDIR}/bin/${_TOOL_PREFIX}perf
 TOOL_NCDCS=		${TOOLDIR}/bin/${_TOOL_PREFIX}ibmnws-ncdcs
 TOOL_PAX=		${TOOLDIR}/bin/${_TOOL_PREFIX}pax
@@ -561,6 +554,7 @@ TOOL_CTAGS=		ctags
 TOOL_CTFCONVERT=	ctfconvert
 TOOL_CTFMERGE=		ctfmerge
 TOOL_CVSLATEST=		cvslatest
+TOOL_DATE=		date
 TOOL_DB=		db
 TOOL_DISKLABEL=		disklabel
 TOOL_DTC=		dtc
@@ -606,6 +600,7 @@ TOOL_MKUBOOTIMAGE=	mkubootimage
 TOOL_ELFTOSB=		elftosb
 TOOL_MSGC=		msgc
 TOOL_MTREE=		mtree
+TOOL_MVME68KWRTVID=	wrtvid
 TOOL_NBPERF=		nbperf
 TOOL_NCDCS=		ncdcs
 TOOL_PAX=		pax
@@ -1574,8 +1569,6 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 # During transition from xorg-server 1.10 to 1.20
 .if \
     ${MACHINE} == "alpha"	|| \
-    ${MACHINE} == "amiga"	|| \
-    ${MACHINE} == "mac68k"	|| \
     ${MACHINE} == "netwinder"	|| \
     ${MACHINE} == "sgimips"	|| \
     ${MACHINE} == "vax"

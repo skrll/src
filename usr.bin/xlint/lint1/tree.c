@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.280 2021/04/18 17:54:33 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.290 2021/06/20 20:48:25 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tree.c,v 1.280 2021/04/18 17:54:33 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.290 2021/06/20 20:48:25 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -183,7 +183,7 @@ expr_new_constant(type_t *tp, val_t *v)
 	n->tn_type = tp;
 	n->tn_val = expr_zalloc(sizeof(*n->tn_val));
 	n->tn_val->v_tspec = tp->t_tspec;
-	n->tn_val->v_ansiu = v->v_ansiu;
+	n->tn_val->v_unsigned_since_c90 = v->v_unsigned_since_c90;
 	n->tn_val->v_u = v->v_u;
 	free(v);
 	return n;
@@ -532,16 +532,16 @@ build(op_t op, tnode_t *ln, tnode_t *rn)
 	 * ANSI C, print a warning.
 	 */
 	if (mp->m_warn_if_left_unsigned_in_c90 &&
-	    ln->tn_op == CON && ln->tn_val->v_ansiu) {
+	    ln->tn_op == CON && ln->tn_val->v_unsigned_since_c90) {
 		/* ANSI C treats constant as unsigned, op %s */
 		warning(218, mp->m_name);
-		ln->tn_val->v_ansiu = false;
+		ln->tn_val->v_unsigned_since_c90 = false;
 	}
 	if (mp->m_warn_if_right_unsigned_in_c90 &&
-	    rn->tn_op == CON && rn->tn_val->v_ansiu) {
+	    rn->tn_op == CON && rn->tn_val->v_unsigned_since_c90) {
 		/* ANSI C treats constant as unsigned, op %s */
 		warning(218, mp->m_name);
-		rn->tn_val->v_ansiu = false;
+		rn->tn_val->v_unsigned_since_c90 = false;
 	}
 
 	/* Make sure both operands are of the same type */
@@ -1686,21 +1686,18 @@ promote(op_t op, bool farg, tnode_t *tn)
 
 	if (!tflag) {
 		/*
-		 * ANSI C requires that the result is always of type INT
-		 * if INT can represent all possible values of the previous
-		 * type.
+		 * C99 6.3.1.1p2 requires for types with lower rank than int
+		 * that "If an int can represent all the values of the
+		 * original type, the value is converted to an int; otherwise
+		 * it is converted to an unsigned int", and that "All other
+		 * types are unchanged by the integer promotions".
 		 */
 		if (tn->tn_type->t_bitfield) {
 			len = tn->tn_type->t_flen;
-			if (size_in_bits(INT) > len) {
+			if (len < size_in_bits(INT)) {
 				t = INT;
-			} else {
-				lint_assert(len == size_in_bits(INT));
-				if (is_uinteger(t)) {
-					t = UINT;
-				} else {
-					t = INT;
-				}
+			} else if (len == size_in_bits(INT)) {
+				t = is_uinteger(t) ? UINT : INT;
 			}
 		} else if (t == CHAR || t == UCHAR || t == SCHAR) {
 			t = (size_in_bits(CHAR) < size_in_bits(INT)
@@ -1937,12 +1934,10 @@ check_prototype_conversion(int arg, tspec_t nt, tspec_t ot, type_t *tp,
 /*
  * Print warnings for conversions of integer types which may cause problems.
  */
-/* ARGSUSED */
 static void
 check_integer_conversion(op_t op, int arg, tspec_t nt, tspec_t ot, type_t *tp,
 			 tnode_t *tn)
 {
-	char opbuf[16];
 
 	if (tn->tn_op == CON)
 		return;
@@ -1974,7 +1969,7 @@ check_integer_conversion(op_t op, int arg, tspec_t nt, tspec_t ot, type_t *tp,
 		case SHL:
 			/* suggest cast from '%s' to '%s' on op %s to ... */
 			warning(324, type_name(gettyp(ot)), type_name(tp),
-			    print_tnode(opbuf, sizeof(opbuf), tn));
+			    op_name(tn->tn_op));
 			break;
 		default:
 			break;
@@ -2093,6 +2088,255 @@ check_pointer_conversion(tnode_t *tn, type_t *ntp)
 	}
 }
 
+static void
+convert_constant_floating(op_t op, int arg, tspec_t ot, const type_t *tp,
+			  tspec_t nt, val_t *v, val_t *nv)
+{
+	ldbl_t	max = 0.0, min = 0.0;
+
+	switch (nt) {
+	case CHAR:
+		max = TARG_CHAR_MAX;	min = TARG_CHAR_MIN;	break;
+	case UCHAR:
+		max = TARG_UCHAR_MAX;	min = 0;		break;
+	case SCHAR:
+		max = TARG_SCHAR_MAX;	min = TARG_SCHAR_MIN;	break;
+	case SHORT:
+		max = TARG_SHRT_MAX;	min = TARG_SHRT_MIN;	break;
+	case USHORT:
+		max = TARG_USHRT_MAX;	min = 0;		break;
+	case ENUM:
+	case INT:
+		max = TARG_INT_MAX;	min = TARG_INT_MIN;	break;
+	case UINT:
+		max = (u_int)TARG_UINT_MAX;min = 0;		break;
+	case LONG:
+		max = TARG_LONG_MAX;	min = TARG_LONG_MIN;	break;
+	case ULONG:
+		max = (u_long)TARG_ULONG_MAX; min = 0;		break;
+	case QUAD:
+		max = QUAD_MAX;		min = QUAD_MIN;		break;
+	case UQUAD:
+		max = (uint64_t)UQUAD_MAX; min = 0;		break;
+	case FLOAT:
+	case FCOMPLEX:
+		max = FLT_MAX;		min = -FLT_MAX;		break;
+	case DOUBLE:
+	case DCOMPLEX:
+		max = DBL_MAX;		min = -DBL_MAX;		break;
+	case PTR:
+		/* Got already an error because of float --> ptr */
+	case LDOUBLE:
+	case LCOMPLEX:
+		max = LDBL_MAX;		min = -LDBL_MAX;	break;
+	default:
+		lint_assert(/*CONSTCOND*/false);
+	}
+	if (v->v_ldbl > max || v->v_ldbl < min) {
+		lint_assert(nt != LDOUBLE);
+		if (op == FARG) {
+			/* conv. of '%s' to '%s' is out of range, ... */
+			warning(295,
+			    type_name(gettyp(ot)), type_name(tp), arg);
+		} else {
+			/* conversion of '%s' to '%s' is out of range */
+			warning(119,
+			    type_name(gettyp(ot)), type_name(tp));
+		}
+		v->v_ldbl = v->v_ldbl > 0 ? max : min;
+	}
+	if (nt == FLOAT) {
+		nv->v_ldbl = (float)v->v_ldbl;
+	} else if (nt == DOUBLE) {
+		nv->v_ldbl = (double)v->v_ldbl;
+	} else if (nt == LDOUBLE) {
+		nv->v_ldbl = v->v_ldbl;
+	} else {
+		nv->v_quad = (nt == PTR || is_uinteger(nt)) ?
+		    (int64_t)v->v_ldbl : (int64_t)v->v_ldbl;
+	}
+}
+
+static bool
+convert_constant_to_floating(tspec_t nt, val_t *nv,
+			     tspec_t ot, const val_t *v)
+{
+	if (nt == FLOAT) {
+		nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
+		    (float)(uint64_t)v->v_quad : (float)v->v_quad;
+	} else if (nt == DOUBLE) {
+		nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
+		    (double)(uint64_t)v->v_quad : (double)v->v_quad;
+	} else if (nt == LDOUBLE) {
+		nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
+		    (ldbl_t)(uint64_t)v->v_quad : (ldbl_t)v->v_quad;
+	} else
+		return false;
+	return true;
+}
+
+/*
+ * Print a warning if bits which were set are lost due to the conversion.
+ * This can happen with operator ORASS only.
+ */
+static void
+convert_constant_check_range_bitor(size_t nsz, size_t osz, const val_t *v,
+				   uint64_t xmask, op_t op)
+{
+	if (nsz < osz && (v->v_quad & xmask) != 0) {
+		/* constant truncated by conv., op %s */
+		warning(306, op_name(op));
+	}
+}
+
+/*
+ * Print a warning if additional bits are not all 1
+ * and the most significant bit of the old value is 1,
+ * or if at least one (but not all) removed bit was 0.
+ */
+static void
+convert_constant_check_range_bitand(size_t nsz, size_t osz,
+				    uint64_t xmask, const val_t *nv,
+				    tspec_t ot, const val_t *v,
+				    const type_t *tp, op_t op)
+{
+	if (nsz > osz &&
+	    (nv->v_quad & bit(osz - 1)) != 0 &&
+	    (nv->v_quad & xmask) != xmask) {
+		/* extra bits set to 0 in conversion of '%s' to '%s', ... */
+		warning(309, type_name(gettyp(ot)),
+		    type_name(tp), op_name(op));
+	} else if (nsz < osz &&
+		   (v->v_quad & xmask) != xmask &&
+		   (v->v_quad & xmask) != 0) {
+		/* constant truncated by conversion, op %s */
+		warning(306, op_name(op));
+	}
+}
+
+static void
+convert_constant_check_range_signed(op_t op, int arg)
+{
+	if (op == ASSIGN) {
+		/* assignment of negative constant to unsigned type */
+		warning(164);
+	} else if (op == INIT) {
+		/* initialization of unsigned with negative constant */
+		warning(221);
+	} else if (op == FARG) {
+		/* conversion of negative constant to unsigned type, ... */
+		warning(296, arg);
+	} else if (modtab[op].m_comparison) {
+		/* handled by check_integer_comparison() */
+	} else {
+		/* conversion of negative constant to unsigned type */
+		warning(222);
+	}
+}
+
+/*
+ * Loss of significant bit(s). All truncated bits
+ * of unsigned types or all truncated bits plus the
+ * msb of the target for signed types are considered
+ * to be significant bits. Loss of significant bits
+ * means that at least on of the bits was set in an
+ * unsigned type or that at least one, but not all of
+ * the bits was set in an signed type.
+ * Loss of significant bits means that it is not
+ * possible, also not with necessary casts, to convert
+ * back to the original type. A example for a
+ * necessary cast is:
+ *	char c;	int	i; c = 128;
+ *	i = c;			** yields -128 **
+ *	i = (unsigned char)c;	** yields 128 **
+ */
+static void
+convert_constant_check_range_truncated(op_t op, int arg, const type_t *tp,
+				       tspec_t ot)
+{
+	if (op == ASSIGN && tp->t_bitfield) {
+		/* precision lost in bit-field assignment */
+		warning(166);
+	} else if (op == ASSIGN) {
+		/* constant truncated by assignment */
+		warning(165);
+	} else if (op == INIT && tp->t_bitfield) {
+		/* bit-field initializer does not fit */
+		warning(180);
+	} else if (op == INIT) {
+		/* initializer does not fit */
+		warning(178);
+	} else if (op == CASE) {
+		/* case label affected by conversion */
+		warning(196);
+	} else if (op == FARG) {
+		/* conversion of '%s' to '%s' is out of range, arg #%d */
+		warning(295,
+		    type_name(gettyp(ot)), type_name(tp), arg);
+	} else {
+		/* conversion of '%s' to '%s' is out of range */
+		warning(119,
+		    type_name(gettyp(ot)), type_name(tp));
+	}
+}
+
+static void
+convert_constant_check_range_loss(op_t op, int arg, const type_t *tp,
+				  tspec_t ot)
+{
+	if (op == ASSIGN && tp->t_bitfield) {
+		/* precision lost in bit-field assignment */
+		warning(166);
+	} else if (op == INIT && tp->t_bitfield) {
+		/* bit-field initializer out of range */
+		warning(11);
+	} else if (op == CASE) {
+		/* case label affected by conversion */
+		warning(196);
+	} else if (op == FARG) {
+		/* conversion of '%s' to '%s' is out of range, arg #%d */
+		warning(295,
+		    type_name(gettyp(ot)), type_name(tp), arg);
+	} else {
+		/* conversion of '%s' to '%s' is out of range */
+		warning(119,
+		    type_name(gettyp(ot)), type_name(tp));
+	}
+}
+
+static void
+convert_constant_check_range(tspec_t ot, const type_t *tp, tspec_t nt,
+			     op_t op, int arg, const val_t *v, val_t *nv)
+{
+	int	osz, nsz;
+	int64_t	xmask, xmsk1;
+
+	osz = size_in_bits(ot);
+	nsz = tp->t_bitfield ? tp->t_flen : size_in_bits(nt);
+	xmask = value_bits(nsz) ^ value_bits(osz);
+	xmsk1 = value_bits(nsz) ^ value_bits(osz - 1);
+	/*
+	 * For bitwise operations we are not interested in the
+	 * value, but in the bits itself.
+	 */
+	if (op == ORASS || op == BITOR || op == BITXOR) {
+		convert_constant_check_range_bitor(nsz, osz, v, xmask, op);
+	} else if (op == ANDASS || op == BITAND) {
+		convert_constant_check_range_bitand(nsz, osz, xmask, nv, ot,
+		    v, tp, op);
+	} else if ((nt != PTR && is_uinteger(nt)) &&
+		   (ot != PTR && !is_uinteger(ot)) &&
+		   v->v_quad < 0) {
+		convert_constant_check_range_signed(op, arg);
+	} else if (nv->v_quad != v->v_quad && nsz <= osz &&
+		   (v->v_quad & xmask) != 0 &&
+		   (is_uinteger(ot) || (v->v_quad & xmsk1) != xmsk1)) {
+		convert_constant_check_range_truncated(op, arg, tp, ot);
+	} else if (nv->v_quad != v->v_quad) {
+		convert_constant_check_range_loss(op, arg, tp, ot);
+	}
+}
+
 /*
  * Converts a typed constant to a constant of another type.
  *
@@ -2106,11 +2350,8 @@ void
 convert_constant(op_t op, int arg, const type_t *tp, val_t *nv, val_t *v)
 {
 	tspec_t	ot, nt;
-	ldbl_t	max = 0.0, min = 0.0;
 	int	sz;
-	bool	rchk;
-	int64_t	xmask, xmsk1;
-	int	osz, nsz;
+	bool	range_check;
 
 	/*
 	 * TODO: make 'v' const; the name of this function does not suggest
@@ -2118,102 +2359,28 @@ convert_constant(op_t op, int arg, const type_t *tp, val_t *nv, val_t *v)
 	 */
 	ot = v->v_tspec;
 	nt = nv->v_tspec = tp->t_tspec;
-	rchk = false;
+	range_check = false;
 
 	if (nt == BOOL) {	/* C99 6.3.1.2 */
-		nv->v_ansiu = false;
+		nv->v_unsigned_since_c90 = false;
 		nv->v_quad = is_nonzero_val(v) ? 1 : 0;
 		return;
 	}
 
 	if (ot == FLOAT || ot == DOUBLE || ot == LDOUBLE) {
-		switch (nt) {
-		case CHAR:
-			max = TARG_CHAR_MAX;	min = TARG_CHAR_MIN;	break;
-		case UCHAR:
-			max = TARG_UCHAR_MAX;	min = 0;		break;
-		case SCHAR:
-			max = TARG_SCHAR_MAX;	min = TARG_SCHAR_MIN;	break;
-		case SHORT:
-			max = TARG_SHRT_MAX;	min = TARG_SHRT_MIN;	break;
-		case USHORT:
-			max = TARG_USHRT_MAX;	min = 0;		break;
-		case ENUM:
-		case INT:
-			max = TARG_INT_MAX;	min = TARG_INT_MIN;	break;
-		case UINT:
-			max = (u_int)TARG_UINT_MAX;min = 0;		break;
-		case LONG:
-			max = TARG_LONG_MAX;	min = TARG_LONG_MIN;	break;
-		case ULONG:
-			max = (u_long)TARG_ULONG_MAX; min = 0;		break;
-		case QUAD:
-			max = QUAD_MAX;		min = QUAD_MIN;		break;
-		case UQUAD:
-			max = (uint64_t)UQUAD_MAX; min = 0;		break;
-		case FLOAT:
-		case FCOMPLEX:
-			max = FLT_MAX;		min = -FLT_MAX;		break;
-		case DOUBLE:
-		case DCOMPLEX:
-			max = DBL_MAX;		min = -DBL_MAX;		break;
-		case PTR:
-			/* Got already an error because of float --> ptr */
-		case LDOUBLE:
-		case LCOMPLEX:
-			max = LDBL_MAX;		min = -LDBL_MAX;	break;
-		default:
-			lint_assert(/*CONSTCOND*/false);
-		}
-		if (v->v_ldbl > max || v->v_ldbl < min) {
-			lint_assert(nt != LDOUBLE);
-			if (op == FARG) {
-				/* conv. of '%s' to '%s' is out of range, ... */
-				warning(295,
-				    type_name(gettyp(ot)), type_name(tp), arg);
-			} else {
-				/* conversion of '%s' to '%s' is out of range */
-				warning(119,
-				    type_name(gettyp(ot)), type_name(tp));
-			}
-			v->v_ldbl = v->v_ldbl > 0 ? max : min;
-		}
-		if (nt == FLOAT) {
-			nv->v_ldbl = (float)v->v_ldbl;
-		} else if (nt == DOUBLE) {
-			nv->v_ldbl = (double)v->v_ldbl;
-		} else if (nt == LDOUBLE) {
-			nv->v_ldbl = v->v_ldbl;
-		} else {
-			nv->v_quad = (nt == PTR || is_uinteger(nt)) ?
-				(int64_t)v->v_ldbl : (int64_t)v->v_ldbl;
-		}
-	} else {
-		if (nt == FLOAT) {
-			nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
-			       (float)(uint64_t)v->v_quad : (float)v->v_quad;
-		} else if (nt == DOUBLE) {
-			nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
-			       (double)(uint64_t)v->v_quad : (double)v->v_quad;
-		} else if (nt == LDOUBLE) {
-			nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
-			       (ldbl_t)(uint64_t)v->v_quad : (ldbl_t)v->v_quad;
-		} else {
-			rchk = true;		/* Check for lost precision. */
-			nv->v_quad = v->v_quad;
-		}
+		convert_constant_floating(op, arg, ot, tp, nt, v, nv);
+	} else if (!convert_constant_to_floating(nt, nv, ot, v)) {
+		range_check = true;	/* Check for lost precision. */
+		nv->v_quad = v->v_quad;
 	}
 
-	if (v->v_ansiu && is_floating(nt)) {
+	if ((v->v_unsigned_since_c90 && is_floating(nt)) ||
+	    (v->v_unsigned_since_c90 && (is_integer(nt) && !is_uinteger(nt) &&
+			    portable_size_in_bits(nt) >
+			    portable_size_in_bits(ot)))) {
 		/* ANSI C treats constant as unsigned */
 		warning(157);
-		v->v_ansiu = false;
-	} else if (v->v_ansiu && (is_integer(nt) && !is_uinteger(nt) &&
-				  portable_size_in_bits(nt) >
-				  portable_size_in_bits(ot))) {
-		/* ANSI C treats constant as unsigned */
-		warning(157);
-		v->v_ansiu = false;
+		v->v_unsigned_since_c90 = false;
 	}
 
 	switch (nt) {
@@ -2230,125 +2397,8 @@ convert_constant(op_t op, int arg, const type_t *tp, val_t *nv, val_t *v)
 		break;
 	}
 
-	if (rchk && op != CVT) {
-		osz = size_in_bits(ot);
-		nsz = tp->t_bitfield ? tp->t_flen : size_in_bits(nt);
-		xmask = qlmasks[nsz] ^ qlmasks[osz];
-		xmsk1 = qlmasks[nsz] ^ qlmasks[osz - 1];
-		/*
-		 * For bitwise operations we are not interested in the
-		 * value, but in the bits itself.
-		 */
-		if (op == ORASS || op == BITOR || op == BITXOR) {
-			/*
-			 * Print a warning if bits which were set are
-			 * lost due to the conversion.
-			 * This can happen with operator ORASS only.
-			 */
-			if (nsz < osz && (v->v_quad & xmask) != 0) {
-				/* constant truncated by conv., op %s */
-				warning(306, op_name(op));
-			}
-		} else if (op == ANDASS || op == BITAND) {
-			/*
-			 * Print a warning if additional bits are not all 1
-			 * and the most significant bit of the old value is 1,
-			 * or if at least one (but not all) removed bit was 0.
-			 */
-			if (nsz > osz &&
-			    (nv->v_quad & qbmasks[osz - 1]) != 0 &&
-			    (nv->v_quad & xmask) != xmask) {
-				/* extra bits set to 0 in conv. of '%s' ... */
-				warning(309, type_name(gettyp(ot)),
-				    type_name(tp), op_name(op));
-			} else if (nsz < osz &&
-				   (v->v_quad & xmask) != xmask &&
-				   (v->v_quad & xmask) != 0) {
-				/* constant truncated by conv., op %s */
-				warning(306, op_name(op));
-			}
-		} else if ((nt != PTR && is_uinteger(nt)) &&
-			   (ot != PTR && !is_uinteger(ot)) &&
-			   v->v_quad < 0) {
-			if (op == ASSIGN) {
-				/* assignment of negative constant to ... */
-				warning(164);
-			} else if (op == INIT) {
-				/* initialization of unsigned with neg... */
-				warning(221);
-			} else if (op == FARG) {
-				/* conversion of negative constant to ... */
-				warning(296, arg);
-			} else if (modtab[op].m_comparison) {
-				/* handled by check_integer_comparison() */
-			} else {
-				/* conversion of negative constant to ... */
-				warning(222);
-			}
-		} else if (nv->v_quad != v->v_quad && nsz <= osz &&
-			   (v->v_quad & xmask) != 0 &&
-			   (is_uinteger(ot) || (v->v_quad & xmsk1) != xmsk1)) {
-			/*
-			 * Loss of significant bit(s). All truncated bits
-			 * of unsigned types or all truncated bits plus the
-			 * msb of the target for signed types are considered
-			 * to be significant bits. Loss of significant bits
-			 * means that at least on of the bits was set in an
-			 * unsigned type or that at least one, but not all of
-			 * the bits was set in an signed type.
-			 * Loss of significant bits means that it is not
-			 * possible, also not with necessary casts, to convert
-			 * back to the original type. A example for a
-			 * necessary cast is:
-			 *	char c;	int	i; c = 128;
-			 *	i = c;			** yields -128 **
-			 *	i = (unsigned char)c;	** yields 128 **
-			 */
-			if (op == ASSIGN && tp->t_bitfield) {
-				/* precision lost in bit-field assignment */
-				warning(166);
-			} else if (op == ASSIGN) {
-				/* constant truncated by assignment */
-				warning(165);
-			} else if (op == INIT && tp->t_bitfield) {
-				/* bit-field initializer does not fit */
-				warning(180);
-			} else if (op == INIT) {
-				/* initializer does not fit */
-				warning(178);
-			} else if (op == CASE) {
-				/* case label affected by conversion */
-				warning(196);
-			} else if (op == FARG) {
-				/* conv. of '%s' to '%s' is out of range, ... */
-				warning(295,
-				    type_name(gettyp(ot)), type_name(tp), arg);
-			} else {
-				/* conversion of '%s' to '%s' is out of range */
-				warning(119,
-				    type_name(gettyp(ot)), type_name(tp));
-			}
-		} else if (nv->v_quad != v->v_quad) {
-			if (op == ASSIGN && tp->t_bitfield) {
-				/* precision lost in bit-field assignment */
-				warning(166);
-			} else if (op == INIT && tp->t_bitfield) {
-				/* bit-field initializer out of range */
-				warning(11);
-			} else if (op == CASE) {
-				/* case label affected by conversion */
-				warning(196);
-			} else if (op == FARG) {
-				/* conv. of '%s' to '%s' is out of range, ... */
-				warning(295,
-				    type_name(gettyp(ot)), type_name(tp), arg);
-			} else {
-				/* conversion of '%s' to '%s' is out of range */
-				warning(119,
-				    type_name(gettyp(ot)), type_name(tp));
-			}
-		}
-	}
+	if (range_check && op != CVT)
+		convert_constant_check_range(ot, tp, nt, op, arg, v, nv);
 }
 
 /*
@@ -2888,7 +2938,7 @@ fold(tnode_t *tn)
 	if (modtab[tn->tn_op].m_binary)
 		ur = sr = tn->tn_right->tn_val->v_quad;
 
-	mask = qlmasks[size_in_bits(t)];
+	mask = value_bits(size_in_bits(t));
 	ovfl = false;
 
 	switch (tn->tn_op) {
@@ -3566,7 +3616,8 @@ constant(tnode_t *tn, bool required)
 	if (tn->tn_op == CON) {
 		lint_assert(tn->tn_type->t_tspec == tn->tn_val->v_tspec);
 		if (is_integer(tn->tn_val->v_tspec)) {
-			v->v_ansiu = tn->tn_val->v_ansiu;
+			v->v_unsigned_since_c90 =
+			    tn->tn_val->v_unsigned_since_c90;
 			v->v_quad = tn->tn_val->v_quad;
 			return v;
 		}

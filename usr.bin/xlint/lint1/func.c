@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.106 2021/04/19 13:18:43 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.111 2021/06/19 19:59:02 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.106 2021/04/19 13:18:43 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.111 2021/06/19 19:59:02 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -173,7 +173,9 @@ end_control_statement(control_statement_kind kind)
 	case_label_t *cl, *next;
 
 	lint_assert(cstmt != NULL);
-	lint_assert(cstmt->c_kind == kind);
+
+	while (cstmt->c_kind != kind)
+		cstmt = cstmt->c_surrounding;
 
 	ci = cstmt;
 	cstmt = ci->c_surrounding;
@@ -413,6 +415,10 @@ funcend(void)
 		    dcs->d_func_args);
 	}
 
+	/* clean up after syntax errors, see test stmt_for.c. */
+	while (dcs->d_next != NULL)
+		dcs = dcs->d_next;
+
 	/*
 	 * remove all symbols declared during argument declaration from
 	 * the symbol table
@@ -437,6 +443,25 @@ named_label(sym_t *sym)
 	}
 
 	set_reached(true);
+}
+
+static void
+check_case_label_bitand(const tnode_t *case_expr, const tnode_t *switch_expr)
+{
+	uint64_t case_value, mask;
+
+	if (switch_expr->tn_op != BITAND ||
+	    switch_expr->tn_right->tn_op != CON)
+		return;
+
+	lint_assert(case_expr->tn_op == CON);
+	case_value = case_expr->tn_val->v_quad;
+	mask = switch_expr->tn_right->tn_val->v_quad;
+
+	if ((case_value & ~mask) != 0) {
+		/* statement not reached */
+		warning(193);
+	}
 }
 
 static void
@@ -483,6 +508,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 		return;
 	}
 
+	check_case_label_bitand(tn, ci->c_switch_expr);
 	check_case_label_enum(tn, ci);
 
 	lint_assert(ci->c_switch_type != NULL);
@@ -694,12 +720,16 @@ switch1(tnode_t *tn)
 		tp->t_tspec = INT;
 	}
 
+	/* leak the memory, for check_case_label_bitand */
+	expr_save_memory();
+
 	check_getopt_begin_switch();
-	expr(tn, true, false, true, false);
+	expr(tn, true, false, false, false);
 
 	begin_control_statement(CS_SWITCH);
 	cstmt->c_switch = true;
 	cstmt->c_switch_type = tp;
+	cstmt->c_switch_expr = tn;
 
 	set_reached(false);
 	seen_fallthrough = true;
@@ -1025,7 +1055,14 @@ do_return(tnode_t *tn)
 	cstk_t	*ci;
 	op_t	op;
 
-	for (ci = cstmt; ci->c_surrounding != NULL; ci = ci->c_surrounding)
+	ci = cstmt;
+	if (ci == NULL) {
+		/* syntax error '%s' */
+		error(249, "return outside function");
+		return;
+	}
+
+	for (; ci->c_surrounding != NULL; ci = ci->c_surrounding)
 		continue;
 
 	if (tn != NULL)
@@ -1120,6 +1157,12 @@ global_clean_up_decl(bool silent)
 	}
 
 	dcs->d_asm = false;
+
+	/*
+	 * Needed for BSD yacc in case of parse errors; GNU Bison 3.0.4 is
+	 * fine.  See gcc_attribute.c, function_with_unknown_attribute.
+	 */
+	attron = false;
 }
 
 /*

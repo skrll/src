@@ -1,4 +1,4 @@
-/* $NetBSD: device.h,v 1.169 2021/04/27 14:48:28 thorpej Exp $ */
+/* $NetBSD: device.h,v 1.171 2021/06/12 12:13:51 riastradh Exp $ */
 
 /*
  * Copyright (c) 2021 The NetBSD Foundation, Inc.
@@ -219,6 +219,9 @@ typedef enum {
 	/* OpenFirmware, FDT */
 	DEVHANDLE_TYPE_OF		=	0x4f504657,	/* 'OPFW' */
 
+	/* Sun OpenBoot */
+	DEVHANDLE_TYPE_OPENBOOT		=	0x4f504254,	/* 'OPBT' */
+
 	/* Private (opaque data) */
 	DEVHANDLE_TYPE_PRIVATE		=	0x50525654,	/* 'PRVT' */
 
@@ -270,6 +273,8 @@ struct device {
 
 	int		dv_pending;	/* config_pending count */
 	TAILQ_ENTRY(device) dv_pending_list;
+
+	struct lwp	*dv_detaching;	/* detach lock (config_misc_lock/cv) */
 
 	size_t		dv_activity_count;
 	void		(**dv_activity_handlers)(device_t, devactive_t);

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.277 2021/04/27 16:20:06 rillig Exp $
+# $NetBSD: Makefile,v 1.279 2021/06/16 09:39:48 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -206,6 +206,7 @@ TESTS+=		job-flags
 TESTS+=		job-output-long-lines
 TESTS+=		job-output-null
 TESTS+=		jobs-empty-commands
+TESTS+=		jobs-empty-commands-error
 TESTS+=		jobs-error-indirect
 TESTS+=		jobs-error-nested
 TESTS+=		jobs-error-nested-make
@@ -487,6 +488,7 @@ SED_CMDS.job-output-long-lines= \
 	${:D marker should always be at the beginning of the line. } \
 	-e '/^aa*--- job-b ---$$/d' \
 	-e '/^bb*--- job-a ---$$/d'
+SED_CMDS.opt-chdir=		-e 's,\(nonexistent\).[1-9][0-9]*,\1,'
 SED_CMDS.opt-debug-graph1=	${STD_SED_CMDS.dg1}
 SED_CMDS.opt-debug-graph2=	${STD_SED_CMDS.dg2}
 SED_CMDS.opt-debug-graph3=	${STD_SED_CMDS.dg3}

@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1800 2021/04/29 17:29:06 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1804 2021/06/17 01:16:55 christos Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -335,12 +335,12 @@ distribution into the netbsd format.  The script can be found in
 src/lib/libc/db/db2netbsd.
 
 Package:	dhcp
-Version:	4.4.2
-Current Vers:	4.4.2
+Version:	4.4.2-P1
+Current Vers:	4.4.2-P1
 Maintainer:	mellon
 Archive Site:	ftp://ftp.isc.org/isc/dhcp/
 Home Page:	http://www.isc.org/software/dhcp/
-Date:		2020-08-03
+Date:		2021-05-26
 Mailing List:	dhcp-server@isc.org
 Mailing List:	dhcp-client@isc.org
 Mailing List:	dhcp-announce@isc.org
@@ -450,11 +450,11 @@ There is a flex2netbsd script to help newer imports.
 
 Package:	gcc
 Version:	9.3.0/10.3.0
-Current Vers:	9.3.0/10.3.0
+Current Vers:	9.3.0/10.3.0/11.1.0
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gcc/
 Home Page:	http://www.gnu.org/software/gcc/
-Date:		2020-06-13
+Date:		2021-04-10
 Mailing List:	gcc-bugs@gnu.org
 Responsible:	mrg, christos, skrll
 License:	GPLv3, LGPLv3.1
@@ -2236,12 +2236,12 @@ Location:	external/bsd/pam-u2f
 Notes:
 
 Package:	libfido2
-Version:	1.5.0
-Current Vers:	1.5.0
+Version:	1.7.0
+Current Vers:	1.7.0
 Maintainer:	Yubico
 Archive Site:	https://github.com/Yubico/libfido2
 Home Page:	https://developers.yubico.com/libfido2/
-Date:		2020-12-04
+Date:		2021-06-16
 Mailing List:
 Responsible:	christos
 License:	bsd
