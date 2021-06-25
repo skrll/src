@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.101 2021/05/15 19:12:14 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.105 2021/06/20 20:32:42 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -104,13 +104,16 @@ typedef enum {
 	CONST, VOLATILE, RESTRICT, THREAD
 } tqual_t;
 
-/*
- * Integer and floating point values are stored in this structure
- */
+/* An integer or floating-point value. */
 typedef struct {
 	tspec_t	v_tspec;
-	bool	v_ansiu;		/* set if an integer constant is
-					   unsigned in ANSI C */
+	/*
+	 * Set if an integer constant is unsigned only in C90 and later, but
+	 * not in traditional C.
+	 *
+	 * See the operators table in ops.def, columns "l r".
+	 */
+	bool	v_unsigned_since_c90;
 	union {
 		int64_t	_v_quad;	/* integers */
 		ldbl_t	_v_ldbl;	/* floats */
@@ -530,4 +533,35 @@ static inline bool
 is_nonzero(const tnode_t *tn)
 {
 	return tn != NULL && tn->tn_op == CON && is_nonzero_val(tn->tn_val);
+}
+
+static inline uint64_t
+bit(unsigned i)
+{
+	lint_assert(i < 64);
+	return (uint64_t)1 << i;
+}
+
+static inline uint64_t
+value_bits(unsigned bitsize)
+{
+	lint_assert(bitsize > 0);
+
+	/* for long double (80 or 128), double _Complex (128) */
+	/*
+	 * XXX: double _Complex does not have 128 bits of precision,
+	 * therefore it should never be necessary to query the value bits
+	 * of such a type; see d_c99_complex_split.c to trigger this case.
+	 */
+	if (bitsize >= 64)
+		return ~((uint64_t)0);
+
+	return ~(~(uint64_t)0 << bitsize);
+}
+
+/* C99 6.7.8p7 */
+static inline bool
+is_struct_or_union(tspec_t t)
+{
+	return t == STRUCT || t == UNION;
 }

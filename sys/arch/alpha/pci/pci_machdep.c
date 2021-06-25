@@ -1,4 +1,4 @@
-/* $NetBSD: pci_machdep.c,v 1.28 2020/09/26 21:07:48 thorpej Exp $ */
+/* $NetBSD: pci_machdep.c,v 1.30 2021/06/25 03:44:10 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.28 2020/09/26 21:07:48 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.30 2021/06/25 03:44:10 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -158,6 +158,22 @@ device_pci_register(device_t dev, void *aux)
 		dict = device_properties(dev);
 		prop_dictionary_set_bool(dict, "is_console", true);
 	}
+}
+
+void
+alpha_pci_intr_init(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
+    pci_chipset_tag_t pc)
+{
+	__link_set_decl(alpha_pci_intr_impls, struct alpha_pci_intr_impl);
+	struct alpha_pci_intr_impl * const *impl;
+
+	__link_set_foreach(impl, alpha_pci_intr_impls) {
+		if ((*impl)->systype == cputype) {
+			(*impl)->intr_init(core, iot, memt, pc);
+			return;
+		}
+	}
+	panic("%s: unknown systype %d", __func__, cputype);
 }
 
 int
@@ -465,14 +481,18 @@ pci_attach_hook(device_t const parent, device_t const self,
 {
 	pci_chipset_tag_t const pc = pba->pba_pc;
 
-	KASSERT(pc->pc_attach_hook != NULL);
-	pc->pc_attach_hook(parent, self, pba);
+	if (pc->pc_attach_hook != NULL) {
+		pc->pc_attach_hook(parent, self, pba);
+	}
 }
 
 int
 pci_bus_maxdevs(pci_chipset_tag_t const pc, int const busno)
 {
-	KASSERT(pc->pc_bus_maxdevs != NULL);
+	if (pc->pc_bus_maxdevs == NULL) {
+		return 32;
+	}
+
 	return pc->pc_bus_maxdevs(pc->pc_conf_v, busno);
 }
 
@@ -480,7 +500,13 @@ pcitag_t
 pci_make_tag(pci_chipset_tag_t const pc, int const bus, int const dev,
     int const func)
 {
-	KASSERT(pc->pc_make_tag != NULL);
+	if (__predict_true(pc->pc_make_tag == NULL)) {
+		/* Just use the standard Type 1 address format. */
+		return __SHIFTIN(bus, PCI_CONF_TYPE1_BUS) |
+		       __SHIFTIN(dev, PCI_CONF_TYPE1_DEVICE) |
+		       __SHIFTIN(func, PCI_CONF_TYPE1_FUNCTION);
+	}
+
 	return pc->pc_make_tag(pc->pc_conf_v, bus, dev, func);
 }
 
@@ -488,7 +514,16 @@ void
 pci_decompose_tag(pci_chipset_tag_t const pc, pcitag_t const tag,
     int * const busp, int * const devp, int * const funcp)
 {
-	KASSERT(pc->pc_decompose_tag != NULL);
+	if (__predict_true(pc->pc_decompose_tag == NULL)) {
+		if (busp != NULL)
+			*busp = __SHIFTOUT(tag, PCI_CONF_TYPE1_BUS);
+		if (devp != NULL)
+			*devp = __SHIFTOUT(tag, PCI_CONF_TYPE1_DEVICE);
+		if (funcp != NULL)
+			*funcp = __SHIFTOUT(tag, PCI_CONF_TYPE1_FUNCTION);
+		return;
+	}
+
 	pc->pc_decompose_tag(pc->pc_conf_v, tag, busp, devp, funcp);
 }
 

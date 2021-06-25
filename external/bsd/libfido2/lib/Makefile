@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.3 2020/12/12 18:45:11 christos Exp $
+# $NetBSD: Makefile,v 1.7 2021/06/18 13:57:52 christos Exp $
 
 NOLINT=
 .include <bsd.own.mk>
@@ -8,10 +8,10 @@ NOLINT=
 
 CPPFLAGS+= -D_FIDO_INTERNAL -I${DIST}/src
 
-LDADD+=-lusbhid -lcbor
-DPADD+=${LIBUSBHID} ${LIBCBOR}
+LDADD+=-lusbhid -lcbor -lz
+DPADD+=${LIBUSBHID} ${LIBCBOR} ${LIBZ}
 
-LDFLAGS+=-Wl,--version-script=${.CURDIR}/fido2.map
+LDFLAGS+=-Wl,--version-script=${DIST}/src/export.gnu
 
 LIB=    fido2
 
@@ -23,6 +23,8 @@ bio.c \
 blob.c \
 buf.c \
 cbor.c \
+compress.c \
+config.c \
 cred.c \
 credman.c \
 dev.c \
@@ -32,23 +34,28 @@ err.c \
 es256.c \
 hid.c \
 hid_netbsd.c \
+hid_unix.c \
 info.c \
 io.c \
 iso7816.c \
+largeblob.c \
 log.c \
 pin.c \
+random.c \
 reset.c \
 rs256.c \
 u2f.c
 
 SRCS+= \
 explicit_bzero.c \
+freezero.c \
 recallocarray.c \
 timingsafe_bcmp.c
 
 INCS+= \
 fido.h \
 fido/bio.h \
+fido/config.h \
 fido/credman.h \
 fido/eddsa.h \
 fido/err.h \
@@ -76,9 +83,11 @@ fido_cred_new.3 \
 fido_cred_set_authdata.3 \
 fido_cred_verify.3 \
 fido_credman_metadata_new.3 \
+fido_dev_enable_entattest.3 \
 fido_dev_get_assert.3 \
 fido_dev_get_touch_begin.3 \
 fido_dev_info_manifest.3 \
+fido_dev_largeblob_get.3 \
 fido_dev_make_cred.3 \
 fido_dev_open.3 \
 fido_dev_set_io_functions.3 \
@@ -87,8 +96,8 @@ fido_init.3 \
 fido_strerr.3 \
 rs256_pk_new.3
 
-SHLIB_MAJOR=2
-SHLIB_MINOR=1
+SHLIB_MAJOR=3
+SHLIB_MINOR=0
 
 .SUFFIXES: .in
 .in:
