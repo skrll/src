@@ -33,32 +33,20 @@
 
 ATOMIC_OP16(sub, sub)
 
+SYNC_FETCH_OP16(sub, sub)
+
 ATOMIC_OP_ALIAS(atomic_sub_16,_atomic_sub_16)
 ATOMIC_OP_ALIAS(atomic_sub_short,_atomic_sub_16)
 ATOMIC_OP_ALIAS(atomic_sub_ushort,_atomic_sub_16)
 STRONG_ALIAS(_atomic_sub_short,_atomic_sub_16)
 STRONG_ALIAS(_atomic_sub_ushort,_atomic_sub_16)
 
-ENTRY_NP(__sync_fetch_and_sub_2)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_sub_16
-	dmb	ish
-	ret	x5
-END(__sync_fetch_and_sub_2)
-
 ATOMIC_OP16_NV(sub, sub)
+
+SYNC_OP16_FETCH(sub, sub)
 
 ATOMIC_OP_ALIAS(atomic_sub_16_nv,_atomic_sub_16_nv)
 ATOMIC_OP_ALIAS(atomic_sub_short_nv,_atomic_sub_16_nv)
 ATOMIC_OP_ALIAS(atomic_sub_ushort_nv,_atomic_sub_16_nv)
 STRONG_ALIAS(_atomic_sub_short_nv,_atomic_sub_16_nv)
 STRONG_ALIAS(_atomic_sub_ushort_nv,_atomic_sub_16_nv)
-
-ENTRY_NP(__sync_sub_and_fetch_2)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_sub_16_nv
-	dmb	ish
-	ret	x5
-END(__sync_sub_and_fetch_2)

@@ -33,28 +33,16 @@
 
 ATOMIC_OP32(or, orr)
 
+SYNC_FETCH_OP32(or, orr)
+
 ATOMIC_OP_ALIAS(atomic_or_32,_atomic_or_32)
 ATOMIC_OP_ALIAS(atomic_or_uint,_atomic_or_32)
 STRONG_ALIAS(_atomic_or_uint,_atomic_or_32)
 
-ENTRY_NP(__sync_fetch_and_or_4)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_or_32
-	dmb	ish
-	ret	x5
-END(__sync_fetch_and_or_4)
-
 ATOMIC_OP32_NV(or, orr)
+
+SYNC_OP32_FETCH(or, orr)
 
 ATOMIC_OP_ALIAS(atomic_or_32_nv,_atomic_or_32_nv)
 ATOMIC_OP_ALIAS(atomic_or_uint_nv,_atomic_or_32_nv)
 STRONG_ALIAS(_atomic_or_uint_nv,_atomic_or_32_nv)
-
-ENTRY_NP(__sync_or_and_fetch_4)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_or_32_nv
-	dmb	ish
-	ret	x5
-END(__sync_or_and_fetch_4)

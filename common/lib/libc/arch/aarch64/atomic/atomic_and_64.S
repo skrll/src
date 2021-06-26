@@ -33,28 +33,16 @@
 
 ATOMIC_OP64(and, and)
 
+SYNC_FETCH_OP64(and, and)
+
 ATOMIC_OP_ALIAS(atomic_and_64,_atomic_and_64)
 ATOMIC_OP_ALIAS(atomic_and_ulong,_atomic_and_64)
 STRONG_ALIAS(_atomic_and_ulong,_atomic_and_64)
 
-ENTRY_NP(__sync_fetch_and_and_8)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_and_64
-	dmb	ish
-	ret	x5
-END(__sync_fetch_and_and_8)
-
 ATOMIC_OP64_NV(and, and)
+
+SYNC_OP64_FETCH(and, and)
 
 ATOMIC_OP_ALIAS(atomic_and_64_nv,_atomic_and_64_nv)
 ATOMIC_OP_ALIAS(atomic_and_ulong_nv,_atomic_and_64_nv)
 STRONG_ALIAS(_atomic_and_ulong_nv,_atomic_and_64_nv)
-
-ENTRY_NP(__sync_and_and_fetch_8)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_and_64_nv
-	dmb	ish
-	ret	x5
-END(__sync_and_and_fetch_8)

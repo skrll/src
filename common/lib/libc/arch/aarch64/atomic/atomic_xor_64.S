@@ -33,26 +33,14 @@
 
 ATOMIC_OP64(xor, eor)
 
+SYNC_FETCH_OP64(xor, eor)
+
 ATOMIC_OP_ALIAS(atomic_xor_64,_atomic_xor_64)
 ATOMIC_OP_ALIAS(atomic_xor_ulong,_atomic_xor_64)
 
-ENTRY_NP(__sync_fetch_and_xor_8)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_xor_64
-	dmb	ish
-	ret	x5
-END(__sync_fetch_and_xor_8)
-
 ATOMIC_OP64_NV(xor, eor)
+
+SYNC_OP64_FETCH(xor, eor)
 
 ATOMIC_OP_ALIAS(atomic_xor_64_nv,_atomic_xor_64_nv)
 ATOMIC_OP_ALIAS(atomic_xor_ulong_nv,_atomic_xor_64_nv)
-
-ENTRY_NP(__sync_xor_and_fetch_8)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_xor_64_nv
-	dmb	ish
-	ret	x5
-END(__sync_xor_and_fetch_8)

@@ -33,28 +33,16 @@
 
 ATOMIC_OP8(add, add)
 
+SYNC_FETCH_OP8(add, add)
+
 ATOMIC_OP_ALIAS(atomic_add_8,_atomic_add_8)
 ATOMIC_OP_ALIAS(atomic_add_char,_atomic_add_8)
 STRONG_ALIAS(_atomic_add_char,_atomic_add_8)
 
-ENTRY_NP(__sync_fetch_and_add_1)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_add_8
-	dmb	ish
-	ret	x5
-END(__sync_fetch_and_add_1)
-
 ATOMIC_OP8_NV(add, add)
+
+SYNC_OP8_FETCH(add, add)
 
 ATOMIC_OP_ALIAS(atomic_add_8_nv,_atomic_add_8_nv)
 ATOMIC_OP_ALIAS(atomic_add_char_nv,_atomic_add_8_nv)
 STRONG_ALIAS(_atomic_add_char_nv,_atomic_add_8_nv)
-
-ENTRY_NP(__sync_add_and_fetch_1)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_add_8_nv
-	dmb	ish
-	ret	x5
-END(__sync_add_and_fetch_1)
