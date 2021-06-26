@@ -204,4 +204,3 @@ ENTRY_NP(INSN_FUNC)
 2:	b	1b
 END(INSN_FUNC)
 #endif
-

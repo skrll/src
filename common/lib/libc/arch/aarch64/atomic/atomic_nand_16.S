@@ -89,4 +89,3 @@ END(__sync_nand_and_fetch_2)
 ATOMIC_OP_ALIAS(atomic_nand_16_nv,_atomic_nand_16_nv)
 ATOMIC_OP_ALIAS(atomic_nand_ushort_nv,_atomic_nand_16_nv)
 STRONG_ALIAS(_atomic_nand_ushort_nv,_atomic_nand_16_nv)
-
