@@ -31,49 +31,62 @@
 
 #include "atomic_op_asm.h"
 
+/*
+ * { tmp = *ptr; *ptr = ~(tmp & value); return tmp; }   // nand
+ */
 ENTRY_NP(_atomic_nand_16)
-	mov	x4, x0
-1:	ldxrh	w0, [x4]		/* load old value (to be returned) */
-	mvn	w3, w0			/* complement source */
-	and	w3, w3, w1		/* calculate new value */
+	mov	x4, x0			/* need r0 for return value */
+1:	ldxrh	w0, [x4]		/* load old value (*ptr) */
+	and	w3, w0, w1		/* w3 =  (*ptr & value) */
+	mvn	w3, w3			/* w3 = ~(*ptr & value) */
 	stxrh	w2, w3, [x4]		/* try to store */
 	cbnz	w2, 2f			/*   succeed? no, try again */
 	ret				/* return old value */
 2:	b	1b
 END(_atomic_nand_16)
 
+ENTRY_NP(__sync_fetch_and_nand_2)
+	mov	x4, x0			/* need r0 for return value */
+1:	ldaxrh	w0, [x4]		/* load (acquire) old value (*ptr) */
+	and	w3, w0, w1		/* w3 =  (*ptr & value) */
+	mvn	w3, w3			/* w3 = ~(*ptr & value) */
+	stlxrh	w2, w3, [x4]		/* try to store release */
+	cbnz	w2, 2f			/*   succeed? no, try again */
+	ret				/* return old value */
+2:	b	1b
+END(__sync_fetch_and_nand_2)
+
 ATOMIC_OP_ALIAS(atomic_nand_16,_atomic_nand_16)
 ATOMIC_OP_ALIAS(atomic_nand_ushort,_atomic_nand_16)
 STRONG_ALIAS(_atomic_nand_ushort,_atomic_nand_16)
 
-ENTRY_NP(__sync_fetch_and_nand_2)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_nand_16
-	dmb	ish
-	ret	x5
-END(__sync_fetch_and_nand_2)
 
-
+/*
+ * { tmp = ~(*ptr & value); *ptr = tmp; return *ptr; }   // nand
+ */
 ENTRY_NP(_atomic_nand_16_nv)
 	mov	x4, x0			/* need r0 for return value */
-1:	ldxrh	w0, [x4]		/* load old value */
-	mvn	w0, w0			/* complement source */
-	and	w0, w0, w1		/* calculate new value (return value) */
+1:	ldxrh	w0, [x4]		/* load old value (*ptr) */
+	and	w0, w0, w1		/* w0 =  (*ptr & value) */
+	mvn	w0, w0			/* w0 = ~(*ptr & value), return */
 	stxrh	w2, w0, [x4]		/* try to store */
 	cbnz	w2, 2f			/*   succeed? no, try again? */
 	ret				/* return new value */
 2:	b	1b
 END(_atomic_nand_16_nv)
 
+ENTRY_NP(__sync_nand_and_fetch_2)
+	mov	x4, x0			/* need r0 for return value */
+1:	ldaxrh	w0, [x4]		/* load (acquire) old value (*ptr) */
+	and	w0, w0, w1		/* w0 =  (*ptr & value) */
+	mvn	w0, w0			/* w0 = ~(*ptr & value), return */
+	stlxrh	w2, w0, [x4]		/* try to store (release) */
+	cbnz	w2, 2f			/*   succeed? no, try again? */
+	ret				/* return new value */
+2:	b	1b
+END(__sync_nand_and_fetch_2)
+
 ATOMIC_OP_ALIAS(atomic_nand_16_nv,_atomic_nand_16_nv)
 ATOMIC_OP_ALIAS(atomic_nand_ushort_nv,_atomic_nand_16_nv)
 STRONG_ALIAS(_atomic_nand_ushort_nv,_atomic_nand_16_nv)
 
-ENTRY_NP(__sync_nand_and_fetch_2)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_nand_16_nv
-	dmb	ish
-	ret	x5
-END(__sync_nand_and_fetch_2)

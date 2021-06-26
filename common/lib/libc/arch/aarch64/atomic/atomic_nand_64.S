@@ -31,11 +31,14 @@
 
 #include "atomic_op_asm.h"
 
+/*
+ * { tmp = *ptr; *ptr = ~(tmp & value); return tmp; }   // nand
+ */
 ENTRY_NP(_atomic_nand_64)
-	mov	x4, x0
-1:	ldxr	x0, [x4]		/* load old value (to be returned) */
-	mvn	x2, x0			/* complement source */
-	and	x2, x2, x1		/* calculate new value */
+	mov	x4, x0			/* need r0 for return value */
+1:	ldxr	x0, [x4]		/* load old value (*ptr) */
+	and	x2, x2, x1		/* x3 =  (*ptr & value) */
+	mvn	x2, x0			/* x3 = ~(*ptr & value) */
 	stxr	w3, x2, [x4]		/* try to store */
 	cbnz	w3, 2f			/*   succeed? no, try again */
 	ret				/* return old value */
@@ -47,18 +50,25 @@ ATOMIC_OP_ALIAS(atomic_nand_ulong,_atomic_nand_64)
 STRONG_ALIAS(_atomic_nand_ulong,_atomic_nand_64)
 
 ENTRY_NP(__sync_fetch_and_nand_8)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_nand_64
-	dmb	ish
-	ret	x5
+	mov	x4, x0			/* need r0 for return value */
+1:	ldaxr	x0, [x4]		/* load (acquire) old value (*ptr) */
+	and	x2, x2, x1		/* x3 =  (*ptr & value) */
+	mvn	x2, x0			/* x3 = ~(*ptr & value) */
+	stlxr	w3, x2, [x4]		/* try to store release */
+	cbnz	w3, 2f			/*   succeed? no, try again */
+	ret				/* return old value */
+2:	b	1b
 END(__sync_fetch_and_nand_8)
 
+
+/*
+ * { tmp = ~(*ptr & value); *ptr = tmp; return *ptr; }   // nand
+ */
 ENTRY_NP(_atomic_nand_64_nv)
 	mov	x4, x0			/* need r0 for return value */
-1:	ldxr	x0, [x4]		/* load old value */
-	mvn	x0, x0			/* complement source */
-	and	x0, x0, x1		/* calculate new value (return value) */
+1:	ldxr	x0, [x4]		/* load old value (*ptr) */
+	and	x0, x0, x1		/* x0 =  (*ptr & value) */
+	mvn	x0, x0			/* x0 = ~(*ptr & value) */
 	stxr	w3, x0, [x4]		/* try to store */
 	cbnz	w3, 2f			/*   succeed? no, try again? */
 	ret				/* return new value */
@@ -70,9 +80,12 @@ ATOMIC_OP_ALIAS(atomic_nand_ulong_nv,_atomic_nand_64_nv)
 STRONG_ALIAS(_atomic_nand_ulong_nv,_atomic_nand_64_nv)
 
 ENTRY_NP(__sync_nand_and_fetch_8)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_nand_64_nv
-	dmb	ish
-	ret	x5
+	mov	x4, x0			/* need r0 for return value */
+1:	ldaxr	x0, [x4]		/* load (acquire) old value (*ptr) */
+	and	x0, x0, x1		/* x0 =  (*ptr & value) */
+	mvn	x0, x0			/* x0 = ~(*ptr & value) */
+	stlxr	w3, x0, [x4]		/* try to store (release) */
+	cbnz	w3, 2f			/*   succeed? no, try again? */
+	ret				/* return new value */
+2:	b	1b
 END(__sync_nand_and_fetch_8)
