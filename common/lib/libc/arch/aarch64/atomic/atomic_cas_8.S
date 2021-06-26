@@ -47,9 +47,12 @@ STRONG_ALIAS(_atomic_cas_char,_atomic_cas_8)
 STRONG_ALIAS(_atomic_cas_uchar,_atomic_cas_8)
 
 ENTRY_NP(__sync_val_compare_and_swap_1)
-	mov	x5, lr
-	dmb	ish
-	bl	_atomic_cas_8
-	dmb	ish
-	ret	x5
+	mov	x4, x0			/* we need x0 for return value */
+1:	ldaxrb	w0, [x4]		/* load (acquire) old value */
+	cmp	w0, w1			/*   compare? */
+	b.ne	2f
+	stlxrb	w3, w2, [x4]		/* store (release) new value */
+	cbnz	w3, 3f			/*   succeed? nope, try again. */
+2:	ret				/* return. */
+3:	b	1b
 END(__sync_val_compare_and_swap_1)
