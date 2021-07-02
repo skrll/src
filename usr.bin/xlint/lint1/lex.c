@@ -1,4 +1,4 @@
-/* $NetBSD: lex.c,v 1.46 2021/06/20 20:32:42 rillig Exp $ */
+/* $NetBSD: lex.c,v 1.50 2021/06/30 10:25:02 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: lex.c,v 1.46 2021/06/20 20:32:42 rillig Exp $");
+__RCSID("$NetBSD: lex.c,v 1.50 2021/06/30 10:25:02 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -668,7 +668,7 @@ lex_integer_constant(const char *yytext, size_t yyleng, int base)
 		break;
 	}
 
-	uq = (uint64_t)xsign((int64_t)uq, typ, -1);
+	uq = (uint64_t)convert_integer((int64_t)uq, typ, -1);
 
 	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = typ;
@@ -676,21 +676,6 @@ lex_integer_constant(const char *yytext, size_t yyleng, int base)
 	yylval.y_val->v_quad = (int64_t)uq;
 
 	return T_CON;
-}
-
-/*
- * Returns whether t is a signed type and the value is negative.
- *
- * len is the number of significant bits. If len is -1, len is set
- * to the width of type t.
- */
-static bool
-sign(int64_t q, tspec_t t, int len)
-{
-
-	if (t == PTR || is_uinteger(t))
-		return false;
-	return msb(q, t, len) != 0;
 }
 
 int
@@ -703,10 +688,13 @@ msb(int64_t q, tspec_t t, int len)
 }
 
 /*
- * Extends the sign of q.
+ * Extend or truncate q to match t.  If t is signed, sign-extend.
+ *
+ * len is the number of significant bits. If len is -1, len is set
+ * to the width of type t.
  */
 int64_t
-xsign(int64_t q, tspec_t t, int len)
+convert_integer(int64_t q, tspec_t t, int len)
 {
 	uint64_t vbits;
 
@@ -714,7 +702,7 @@ xsign(int64_t q, tspec_t t, int len)
 		len = size_in_bits(t);
 
 	vbits = value_bits(len);
-	return t == PTR || is_uinteger(t) || !sign(q, t, len)
+	return t == PTR || is_uinteger(t) || msb(q, t, len) == 0
 	    ? q & vbits
 	    : q | ~vbits;
 }
@@ -820,7 +808,6 @@ lex_character_constant(void)
 {
 	size_t	n;
 	int val, c;
-	char	cv;
 
 	n = 0;
 	val = 0;
@@ -844,8 +831,12 @@ lex_character_constant(void)
 		error(73);
 	}
 	if (n == 1) {
-		cv = (char)val;
-		val = cv;
+		/*
+		 * XXX: use the target platform's 'char' instead of the
+		 *  'char' from the execution environment, to be able to
+		 *  run lint for powerpc on x86_64.
+		 */
+		val = (char)val;
 	}
 
 	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
@@ -987,10 +978,7 @@ get_escaped_char(int delim)
 			do {
 				v = (v << 3) + (c - '0');
 				c = inpc();
-			} while (--n > 0 && isdigit(c) && (tflag || c <= '7'));
-			if (tflag && n > 0 && isdigit(c))
-				/* bad octal digit %c */
-				warning(77, c);
+			} while (--n > 0 && '0' <= c && c <= '7');
 			pbc = c;
 			if (v > TARG_UCHAR_MAX) {
 				/* character escape does not fit in character */
