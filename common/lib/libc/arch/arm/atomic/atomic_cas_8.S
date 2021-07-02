@@ -50,11 +50,18 @@ ENTRY_NP(_atomic_cas_8)
 	cmp	r3, #0			/*   succeed? */
 	bne	1b			/*     nope, try again. */
 2:	RET				/* return. */
-	END(_atomic_cas_8)
+END(_atomic_cas_8)
 
 ATOMIC_OP_ALIAS(atomic_cas_8,_atomic_cas_8)
 STRONG_ALIAS(_atomic_cas_char,_atomic_cas_8)
 STRONG_ALIAS(_atomic_cas_uchar,_atomic_cas_8)
-CRT_ALIAS(__sync_val_compare_and_swap_1,_atomic_cas_8)
+
+ENTRY_NP(__sync_val_compare_and_swap_1)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_cas_8
+	DMB
+	pop	{r4, pc}
+END(__sync_val_compare_and_swap_1)
 
 #endif /* _ARM_ARCH_6 */

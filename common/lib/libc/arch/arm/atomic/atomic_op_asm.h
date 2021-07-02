@@ -74,4 +74,12 @@
 #define	CRT_ALIAS(a,s)
 #endif
 
+#ifdef _ARM_ARCH_7
+#define DMB	dmb	ish
+#define	DMBST	dmb	ishst
+#else
+#define DMB	mcr	p15, 0, r0, c7, c10, 5	/* Data Memory Barrier */
+#define DMBST	DMB
+#endif
+
 #endif /* _ATOMIC_OP_ASM_H_ */

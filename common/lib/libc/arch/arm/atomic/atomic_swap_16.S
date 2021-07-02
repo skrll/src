@@ -32,6 +32,10 @@
 #include "atomic_op_asm.h"
 
 #ifdef _ARM_ARCH_6
+ENTRY_NP(__sync_lock_test_and_set_2)
+	DMB
+	/* FALLTHROUGH */
+
 ENTRY_NP(_atomic_swap_16)
 	mov	ip, r0
 1:
@@ -41,23 +45,20 @@ ENTRY_NP(_atomic_swap_16)
 	bne	1b
 	RET
 END(_atomic_swap_16)
+END(__sync_lock_test_and_set_2)
 
 ATOMIC_OP_ALIAS(atomic_swap_16,_atomic_swap_16)
 ATOMIC_OP_ALIAS(atomic_swap_short,_atomic_swap_16)
 ATOMIC_OP_ALIAS(atomic_swap_ushort,_atomic_swap_16)
-CRT_ALIAS(__sync_lock_test_and_set_2,_atomic_swap_16)
 CRT_ALIAS(__atomic_exchange_2,_atomic_swap_16)
 STRONG_ALIAS(_atomic_swap_short,_atomic_swap_16)
 STRONG_ALIAS(_atomic_swap_ushort,_atomic_swap_16)
 
+
 #if (!defined(_KERNEL) || !defined(_RUMPKERNEL)) && !defined(_STANDALONE)
 ENTRY_NP(__sync_lock_release_2)
 	mov	r1, #0
-#ifdef _ARM_ARCH_7
-	dmb	ishst
-#else
-	mcr	p15, 0, r1, c7, c10, 5	/* data memory barrier */
-#endif
+	DMBST
 	strh	r1, [r0]
 	RET
 END(__sync_lock_release_2)

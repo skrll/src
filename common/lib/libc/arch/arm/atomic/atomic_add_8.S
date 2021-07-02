@@ -50,18 +50,33 @@ END(_atomic_sub_8)
 ATOMIC_OP_ALIAS(atomic_add_8,_atomic_add_8)
 ATOMIC_OP_ALIAS(atomic_add_char,_atomic_add_8)
 ATOMIC_OP_ALIAS(atomic_add_uchar,_atomic_add_8)
-CRT_ALIAS(__sync_fetch_and_add_1,_atomic_add_8)
 CRT_ALIAS(__atomic_fetch_add_1,_atomic_add_8)
 STRONG_ALIAS(_atomic_add_char,_atomic_add_8)
 STRONG_ALIAS(_atomic_add_uchar,_atomic_add_8)
 
+ENTRY_NP(__sync_fetch_and_add_1)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_add_8
+	DMB
+	pop	{r4, pc}
+END(__sync_fetch_and_add_1)
+
+ENTRY_NP(__sync_fetch_and_sub_1)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_sub_8
+	DMB
+	pop	{r4, pc}
+END(__sync_fetch_and_sub_1)
+
 ATOMIC_OP_ALIAS(atomic_sub_8,_atomic_sub_8)
 ATOMIC_OP_ALIAS(atomic_sub_char,_atomic_sub_8)
 ATOMIC_OP_ALIAS(atomic_sub_uchar,_atomic_sub_8)
-CRT_ALIAS(__sync_fetch_and_sub_1,_atomic_sub_8)
 CRT_ALIAS(__atomic_fetch_sub_1,_atomic_sub_8)
 STRONG_ALIAS(_atomic_sub_char,_atomic_sub_8)
 STRONG_ALIAS(_atomic_sub_uchar,_atomic_sub_8)
+
 
 ENTRY_NP(_atomic_sub_8_nv)
 	negs	r1, r1
@@ -76,15 +91,12 @@ ENTRY_NP(_atomic_add_8_nv)
 	RET				/* return new value */
 END(_atomic_add_8_nv)
 END(_atomic_sub_8_nv)
+
 ATOMIC_OP_ALIAS(atomic_add_8_nv,_atomic_add_8_nv)
 ATOMIC_OP_ALIAS(atomic_add_char_nv,_atomic_add_8_nv)
 ATOMIC_OP_ALIAS(atomic_add_uchar_nv,_atomic_add_8_nv)
 STRONG_ALIAS(_atomic_add_char_nv,_atomic_add_8_nv)
 STRONG_ALIAS(_atomic_add_uchar_nv,_atomic_add_8_nv)
-
-
-CRT_ALIAS(__sync_add_and_fetch_1,_atomic_add_8_nv)
-
 
 ATOMIC_OP_ALIAS(atomic_sub_8_nv,_atomic_sub_8_nv)
 ATOMIC_OP_ALIAS(atomic_sub_char_nv,_atomic_sub_8_nv)
@@ -92,9 +104,20 @@ ATOMIC_OP_ALIAS(atomic_sub_uchar_nv,_atomic_sub_8_nv)
 STRONG_ALIAS(_atomic_sub_char_nv,_atomic_sub_8_nv)
 STRONG_ALIAS(_atomic_sub_uchar_nv,_atomic_sub_8_nv)
 
+ENTRY_NP(__sync_add_and_fetch_1)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_add_8_nv
+	DMB
+	pop	{r4, pc}
+END(__sync_add_and_fetch_1)
 
-CRT_ALIAS(__sync_sub_and_fetch_1,_atomic_sub_8_nv)
-
-
+ENTRY_NP(__sync_sub_and_fetch_1)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_sub_8_nv
+	DMB
+	pop	{r4, pc}
+END(__sync_sub_and_fetch_1)
 
 #endif /* _ARM_ARCH_6 */

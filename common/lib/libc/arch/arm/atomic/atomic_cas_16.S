@@ -54,6 +54,13 @@ END(_atomic_cas_16)
 ATOMIC_OP_ALIAS(atomic_cas_16,_atomic_cas_16)
 STRONG_ALIAS(_atomic_cas_short,_atomic_cas_16)
 STRONG_ALIAS(_atomic_cas_ushort,_atomic_cas_16)
-CRT_ALIAS(__sync_val_compare_and_swap_2,_atomic_cas_16)
+
+ENTRY_NP(__sync_val_compare_and_swap_2)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_cas_16
+	DMB
+	pop	{r4, pc}
+END(__sync_val_compare_and_swap_2)
 
 #endif /* _ARM_ARCH_6 */

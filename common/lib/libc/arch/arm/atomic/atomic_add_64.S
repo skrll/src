@@ -32,6 +32,45 @@
 
 #ifdef _ARM_ARCH_6
 
+
+ENTRY_NP(_atomic_add_64)
+	push	{r4-r7}
+	mov	ip, r0
+#ifndef __ARM__EABI__
+	mov	r3, r2
+	mov	r2, r1
+#endif
+1:	ldrexd	r0, r1, [ip]		/* load old value */
+	adds	TLO, LO, NLO		/* calculate new value */
+	adcs	THI, HI, NHI		/* calculate new value */
+	strexd	r6, r4, r5, [ip]	/* try to store */
+	cmp	r6, #0			/*   succeed? */
+	bne	1b			/*     no, try again */
+#ifdef _ARM_ARCH_7
+	dmb
+#else
+	mcr	p15, 0, r2, c7, c10, 5	/* data memory barrier */
+#endif
+	pop	{r4-r7}
+	RET				/* return old value */
+END(_atomic_add_64)
+
+ENTRY_NP(__sync_fetch_add_and_8)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_add_64
+	DMB
+	pop	{r4, pc}
+END(__sync_fetch_add_and_8)
+
+
+STRONG_ALIAS(_atomic_add_64,_atomic_add_64_nv)
+ATOMIC_OP_ALIAS(atomic_add_64_nv,_atomic_add_64_nv)
+ATOMIC_OP_ALIAS(atomic_add_64,_atomic_add_64)
+CRT_ALIAS(__atomic_fetch_add_8,__sync_fetch_and_add_8)
+
+
+
 ENTRY_NP(_atomic_add_64_nv)
 	push	{r3,r4}			/* save temporary */
 	mov	ip, r0			/* need r0 for return value */
@@ -49,9 +88,13 @@ ENTRY_NP(_atomic_add_64_nv)
 	RET				/* return new value */
 END(_atomic_add_64_nv)
 
-STRONG_ALIAS(_atomic_add_64,_atomic_add_64_nv)
-ATOMIC_OP_ALIAS(atomic_add_64_nv,_atomic_add_64_nv)
-ATOMIC_OP_ALIAS(atomic_add_64,_atomic_add_64)
-CRT_ALIAS(__sync_add_and_fetch_8,_atomic_add_64_nv)
+
+ENTRY_NP(__sync_add_and_fetch_8)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_add_64_nv
+	DMB
+	pop	{r4, pc}
+END(__sync_add_and_fetch_8)
 
 #endif /* _ARM_ARCH_6 */

@@ -47,9 +47,17 @@ END(_atomic_nand_32)
 ATOMIC_OP_ALIAS(atomic_nand_32,_atomic_nand_32)
 ATOMIC_OP_ALIAS(atomic_nand_uint,_atomic_nand_32)
 ATOMIC_OP_ALIAS(atomic_nand_ulong,_atomic_nand_32)
-CRT_ALIAS(__sync_fetch_and_nand_4,_atomic_nand_32)
 STRONG_ALIAS(_atomic_nand_uint,_atomic_nand_32)
 STRONG_ALIAS(_atomic_nand_ulong,_atomic_nand_32)
+
+ENTRY_NP(__sync_fetch_and_nand_4)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_nand_32
+	DMB
+	pop	{r4, pc}
+END(__sync_fetch_and_nand_4)
+
 
 ENTRY_NP(_atomic_nand_32_nv)
 	mov	ip, r0			/* need r0 for return value */
@@ -65,8 +73,16 @@ END(_atomic_nand_32_nv)
 ATOMIC_OP_ALIAS(atomic_nand_32_nv,_atomic_nand_32_nv)
 ATOMIC_OP_ALIAS(atomic_nand_uint_nv,_atomic_nand_32_nv)
 ATOMIC_OP_ALIAS(atomic_nand_ulong_nv,_atomic_nand_32_nv)
-CRT_ALIAS(__sync_nand_and_fetch_4,_atomic_nand_32_nv)
 STRONG_ALIAS(_atomic_nand_uint_nv,_atomic_nand_32_nv)
 STRONG_ALIAS(_atomic_nand_ulong_nv,_atomic_nand_32_nv)
+
+ENTRY_NP(__sync_nand_and_fetch_4)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_nand_32_nv
+	DMB
+	pop	{r4, pc}
+END(__sync_nand_and_fetch_4)
+
 
 #endif /* _ARM_ARCH_6 */

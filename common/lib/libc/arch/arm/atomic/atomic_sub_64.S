@@ -53,6 +53,14 @@ END(_atomic_sub_64_nv)
 STRONG_ALIAS(_atomic_sub_64,_atomic_sub_64_nv)
 ATOMIC_OP_ALIAS(atomic_sub_64_nv,_atomic_sub_64_nv)
 ATOMIC_OP_ALIAS(atomic_sub_64,_atomic_sub_64)
-CRT_ALIAS(__sync_sub_and_fetch_8,_atomic_sub_64_nv)
+
+ENTRY_NP(__sync_sub_and_fetch_8)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_sub_64
+	DMB
+	pop	{r4, pc}
+END(__sync_sub_and_fetch_8)
+
 
 #endif /* _ARM_ARCH_6 */

@@ -44,6 +44,10 @@
  * and fix yet again).
  */
 
+ENTRY_NP(__sync_lock_test_and_set_4)
+	DMB
+	/* FALLTHROUGH */
+
 ENTRY_NP(_atomic_swap_32)
 	mov	ip, r0
 1:
@@ -68,12 +72,12 @@ ENTRY_NP(_atomic_swap_32)
 99:
 	RET
 END(_atomic_swap_32)
+END(__sync_lock_test_and_set_4)
 
 ATOMIC_OP_ALIAS(atomic_swap_32,_atomic_swap_32)
 ATOMIC_OP_ALIAS(atomic_swap_uint,_atomic_swap_32)
 ATOMIC_OP_ALIAS(atomic_swap_ulong,_atomic_swap_32)
 ATOMIC_OP_ALIAS(atomic_swap_ptr,_atomic_swap_32)
-CRT_ALIAS(__sync_lock_test_and_set_4,_atomic_swap_32)
 CRT_ALIAS(__atomic_exchange_4,_atomic_swap_32)
 STRONG_ALIAS(_atomic_swap_uint,_atomic_swap_32)
 STRONG_ALIAS(_atomic_swap_ulong,_atomic_swap_32)
@@ -82,15 +86,16 @@ STRONG_ALIAS(_atomic_swap_ptr,_atomic_swap_32)
 #if (!defined(_KERNEL) || !defined(_RUMPKERNEL)) && !defined(_STANDALONE)
 ENTRY_NP(__sync_lock_release_4)
 	mov	r1, #0
-#ifdef _ARM_ARCH_7
-	dmb	ishst
-#else
-	mcr	p15, 0, r1, c7, c10, 5	/* data memory barrier */
-#endif
+	DMBST
+
 	str	r1, [r0]
 	RET
 END(__sync_lock_release_4)
 #endif
+
+ENTRY_NP(__sync_lock_test_and_set_1)
+	DMB
+	/* FALLTHROUGH */
 
 ENTRY_NP(_atomic_swap_8)
 	mov	ip, r0
@@ -106,11 +111,11 @@ ENTRY_NP(_atomic_swap_8)
 	bne	1b
 	RET
 END(_atomic_swap_8)
+END(__sync_lock_test_and_set_1)
 
 ATOMIC_OP_ALIAS(atomic_swap_8,_atomic_swap_8)
 ATOMIC_OP_ALIAS(atomic_swap_char,_atomic_swap_8)
 ATOMIC_OP_ALIAS(atomic_swap_uchar,_atomic_swap_8)
-CRT_ALIAS(__sync_lock_test_and_set_1,_atomic_swap_8)
 CRT_ALIAS(__atomic_exchange_1,_atomic_swap_8)
 STRONG_ALIAS(_atomic_swap_char,_atomic_swap_8)
 STRONG_ALIAS(_atomic_swap_uchar,_atomic_swap_8)
@@ -118,11 +123,8 @@ STRONG_ALIAS(_atomic_swap_uchar,_atomic_swap_8)
 #if (!defined(_KERNEL) || !defined(_RUMPKERNEL)) && !defined(_STANDALONE)
 ENTRY_NP(__sync_lock_release_1)
 	mov	r1, #0
-#ifdef _ARM_ARCH_7
-	dmb	ishst
-#else
-	mcr	p15, 0, r1, c7, c10, 5	/* data memory barrier */
-#endif
+	DMBST
+
 	strb	r1, [r0]
 	RET
 END(__sync_lock_release_1)

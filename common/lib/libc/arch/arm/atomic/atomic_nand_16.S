@@ -46,8 +46,16 @@ END(_atomic_nand_16)
 
 ATOMIC_OP_ALIAS(atomic_nand_16,_atomic_nand_16)
 ATOMIC_OP_ALIAS(atomic_nand_ushort,_atomic_nand_16)
-CRT_ALIAS(__sync_fetch_and_nand_2,_atomic_nand_16)
 STRONG_ALIAS(_atomic_nand_ushort,_atomic_nand_16)
+
+ENTRY_NP(__sync_fetch_and_nand_2)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_nand_16
+	DMB
+	pop	{r4, pc}
+END(__sync_fetch_and_nand_2)
+
 
 ENTRY_NP(_atomic_nand_16_nv)
 	mov	ip, r0			/* need r0 for return value */
@@ -62,7 +70,15 @@ END(_atomic_nand_16_nv)
 
 ATOMIC_OP_ALIAS(atomic_nand_16_nv,_atomic_nand_16_nv)
 ATOMIC_OP_ALIAS(atomic_nand_ushort_nv,_atomic_nand_16_nv)
-CRT_ALIAS(__sync_nand_and_fetch_2,_atomic_nand_16_nv)
 STRONG_ALIAS(_atomic_nand_ushort_nv,_atomic_nand_16_nv)
+
+ENTRY_NP(__sync_nand_and_fetch_2)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_nand_16_nv
+	DMB
+	pop	{r4, pc}
+END(__sync_nand_and_fetch_2)
+
 
 #endif /* _ARM_ARCH_6 */

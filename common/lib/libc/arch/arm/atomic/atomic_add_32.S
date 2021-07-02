@@ -47,11 +47,27 @@ ENTRY_NP(_atomic_add_32)
 END(_atomic_add_32)
 END(_atomic_sub_32)
 
+ENTRY_NP(__sync_fetch_and_add_4)
+	push    {r4, lr}
+	DMB
+	bl	_atomic_add_32
+	DMB
+	pop	{r4, pc}
+END(__sync_fetch_and_add_4)
+
+ENTRY_NP(__sync_fetch_and_sub_4)
+	push    {r4, lr}
+	DMB
+	bl	_atomic_add_32
+	DMB
+	pop	{r4, pc}
+END(__sync_fetch_and_sub_4)
+
+
 ATOMIC_OP_ALIAS(atomic_add_32,_atomic_add_32)
 ATOMIC_OP_ALIAS(atomic_add_int,_atomic_add_32)
 ATOMIC_OP_ALIAS(atomic_add_long,_atomic_add_32)
 ATOMIC_OP_ALIAS(atomic_add_ptr,_atomic_add_32)
-CRT_ALIAS(__sync_fetch_and_add_4,_atomic_add_32)
 CRT_ALIAS(__atomic_fetch_add_4,_atomic_add_32)
 STRONG_ALIAS(_atomic_add_int,_atomic_add_32)
 STRONG_ALIAS(_atomic_add_long,_atomic_add_32)
@@ -61,7 +77,6 @@ ATOMIC_OP_ALIAS(atomic_sub_32,_atomic_sub_32)
 ATOMIC_OP_ALIAS(atomic_sub_int,_atomic_sub_32)
 ATOMIC_OP_ALIAS(atomic_sub_long,_atomic_sub_32)
 ATOMIC_OP_ALIAS(atomic_sub_ptr,_atomic_sub_32)
-CRT_ALIAS(__sync_fetch_and_sub_4,_atomic_sub_32)
 CRT_ALIAS(__atomic_fetch_sub_4,_atomic_sub_32)
 STRONG_ALIAS(_atomic_sub_int,_atomic_sub_32)
 STRONG_ALIAS(_atomic_sub_long,_atomic_sub_32)
@@ -84,7 +99,6 @@ ATOMIC_OP_ALIAS(atomic_add_32_nv,_atomic_add_32_nv)
 ATOMIC_OP_ALIAS(atomic_add_int_nv,_atomic_add_32_nv)
 ATOMIC_OP_ALIAS(atomic_add_long_nv,_atomic_add_32_nv)
 ATOMIC_OP_ALIAS(atomic_add_ptr_nv,_atomic_add_32_nv)
-CRT_ALIAS(__sync_add_and_fetch_4,_atomic_add_32_nv)
 STRONG_ALIAS(_atomic_add_int_nv,_atomic_add_32_nv)
 STRONG_ALIAS(_atomic_add_long_nv,_atomic_add_32_nv)
 STRONG_ALIAS(_atomic_add_ptr_nv,_atomic_add_32_nv)
@@ -93,8 +107,24 @@ ATOMIC_OP_ALIAS(atomic_sub_32_nv,_atomic_sub_32_nv)
 ATOMIC_OP_ALIAS(atomic_sub_int_nv,_atomic_sub_32_nv)
 ATOMIC_OP_ALIAS(atomic_sub_long_nv,_atomic_sub_32_nv)
 ATOMIC_OP_ALIAS(atomic_sub_ptr_nv,_atomic_sub_32_nv)
-CRT_ALIAS(__sync_sub_and_fetch_4,_atomic_sub_32_nv)
 STRONG_ALIAS(_atomic_sub_int_nv,_atomic_sub_32_nv)
 STRONG_ALIAS(_atomic_sub_long_nv,_atomic_sub_32_nv)
 STRONG_ALIAS(_atomic_sub_ptr_nv,_atomic_sub_32_nv)
+
+ENTRY_NP(__sync_add_and_fetch_4)
+	push    {r4, lr}
+	DMB
+	bl	_atomic_add_32_nv
+	DMB
+	pop	{r4, pc}
+END(__sync_add_and_fetch_4)
+
+ENTRY_NP(__sync_sub_and_fetch_4)
+	push    {r4, lr}
+	DMB
+	bl	_atomic_sub_32_nv
+	DMB
+	pop	{r4, pc}
+END(__sync_sub_and_fetch_4)
+
 #endif /* _ARM_ARCH_6 */

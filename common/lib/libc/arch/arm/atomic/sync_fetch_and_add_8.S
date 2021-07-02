@@ -33,7 +33,7 @@
 
 #if defined(_ARM_ARCH_6)
 
-ENTRY_NP(__sync_fetch_and_add_8)
+ENTRY_NP(__atomic_fetch_add_8)
 	push	{r4-r7}
 	mov	ip, r0
 #ifndef __ARM__EABI__
@@ -48,8 +48,15 @@ ENTRY_NP(__sync_fetch_and_add_8)
 	bne	1b			/*     no, try again */
 	pop	{r4-r7}
 	RET				/* return old value */
-END(__sync_fetch_and_add_8)
+END(__atomic_fetch_add_8)
 
-CRT_ALIAS(__atomic_fetch_add_8,__sync_fetch_and_add_8)
+ENTRY_NP(__sync_fetch_and_add_8)
+	push    {r4, lr}
+	DMB
+	bl	__atomic_fetch_add_8
+	DMB
+	pop	{r4, pc}
+	DMB
+END(__sync_fetch_and_add_8)
 
 #endif /* _ARM_ARCH_6 */

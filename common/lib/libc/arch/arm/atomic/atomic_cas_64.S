@@ -64,9 +64,16 @@ ENTRY_NP(_atomic_cas_64)
 	RET				/* return. */
 END(_atomic_cas_64)
 
+STRONG_ALIAS(_atomic_cas_64_ni,_atomic_cas_64)
 ATOMIC_OP_ALIAS(atomic_cas_64,_atomic_cas_64)
 ATOMIC_OP_ALIAS(atomic_cas_64_ni,_atomic_cas_64)
-STRONG_ALIAS(_atomic_cas_64_ni,_atomic_cas_64)
-CRT_ALIAS(__sync_val_compare_and_swap_8,_atomic_cas_64)
+
+ENTRY_NP(__sync_val_compare_and_swap_8)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_cas_64
+	DMB
+	pop	{r4, pc}
+END(__sync_val_compare_and_swap_8)
 
 #endif /* _ARM_ARCH_6 */

@@ -45,10 +45,17 @@ END(_atomic_xor_32)
 ATOMIC_OP_ALIAS(atomic_xor_32,_atomic_xor_32)
 ATOMIC_OP_ALIAS(atomic_xor_uint,_atomic_xor_32)
 ATOMIC_OP_ALIAS(atomic_xor_ulong,_atomic_xor_32)
-CRT_ALIAS(__sync_fetch_and_xor_4,_atomic_xor_32)
 CRT_ALIAS(__atomic_fetch_xor_4,_atomic_xor_32)
 STRONG_ALIAS(_atomic_xor_uint,_atomic_xor_32)
 STRONG_ALIAS(_atomic_xor_ulong,_atomic_xor_32)
+
+ENTRY_NP(__sync_fetch_and_xor_4)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_xor_32
+	DMB
+	pop	{r4, pc}
+END(__sync_fetch_and_xor_4)
 
 ENTRY_NP(_atomic_xor_32_nv)
 	mov	ip, r0			/* need r0 for return value */
@@ -63,8 +70,16 @@ END(_atomic_xor_32_nv)
 ATOMIC_OP_ALIAS(atomic_xor_32_nv,_atomic_xor_32_nv)
 ATOMIC_OP_ALIAS(atomic_xor_uint_nv,_atomic_xor_32_nv)
 ATOMIC_OP_ALIAS(atomic_xor_ulong_nv,_atomic_xor_32_nv)
-CRT_ALIAS(__sync_xor_and_fetch_4,_atomic_xor_32_nv)
 STRONG_ALIAS(_atomic_xor_uint_nv,_atomic_xor_32_nv)
 STRONG_ALIAS(_atomic_xor_ulong_nv,_atomic_xor_32_nv)
+
+ENTRY_NP(__sync_xor_and_fetch_4)
+	push	{r4, lr}
+	DMB
+	bl	_atomic_xor_32_nv
+	DMB
+	pop	{r4, pc}
+END(__sync_xor_and_fetch_4)
+
 
 #endif /* _ARM_ARCH_6 */
