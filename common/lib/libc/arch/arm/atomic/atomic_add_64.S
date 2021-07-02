@@ -1,4 +1,4 @@
-/*	$NetBSD: atomic_add_64.S,v 1.11 2014/03/04 16:15:28 matt Exp $	*/
+/*	$NetBSD: atomic_add_64.S,v 1.12 2021/06/28 09:00:45 skrll Exp $	*/
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -63,16 +63,11 @@ ENTRY_NP(__sync_fetch_add_and_8)
 	pop	{r4, pc}
 END(__sync_fetch_add_and_8)
 
-
-STRONG_ALIAS(_atomic_add_64,_atomic_add_64_nv)
-ATOMIC_OP_ALIAS(atomic_add_64_nv,_atomic_add_64_nv)
 ATOMIC_OP_ALIAS(atomic_add_64,_atomic_add_64)
-CRT_ALIAS(__atomic_fetch_add_8,__sync_fetch_and_add_8)
-
 
 
 ENTRY_NP(_atomic_add_64_nv)
-	push	{r3,r4}			/* save temporary */
+	push	{r3, r4}		/* save temporary */
 	mov	ip, r0			/* need r0 for return value */
 #ifndef __ARM_EABI__
 	mov	r3, r2
@@ -84,10 +79,11 @@ ENTRY_NP(_atomic_add_64_nv)
 	strexd	r4, r0, r1, [ip]	/* try to store */
 	cmp	r4, #0			/*   succeed? */
 	bne	1b			/*     no, try again? */
-	pop	{r3,r4}			/* restore temporary */
+	pop	{r3, r4}		/* restore temporary */
 	RET				/* return new value */
 END(_atomic_add_64_nv)
 
+ATOMIC_OP_ALIAS(atomic_add_64_nv,_atomic_add_64_nv)
 
 ENTRY_NP(__sync_add_and_fetch_8)
 	push	{r4, lr}

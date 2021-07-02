@@ -1,4 +1,4 @@
-/*	$NetBSD: atomic_swap_64.S,v 1.12 2021/04/26 21:40:21 skrll Exp $	*/
+/*	$NetBSD: atomic_swap_64.S,v 1.13 2021/06/28 09:00:45 skrll Exp $	*/
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -35,7 +35,7 @@ ENTRY_NP(__sync_lock_test_and_set_8)
 	/* FALLTHROUGH */
 
 ENTRY_NP(_atomic_swap_64)
-	push	{r3,r4}			/* save temporary */
+	push	{r3, r4}		/* save temporary */
 	mov	ip, r0			/* return value will be in r0 */
 #ifndef __ARM_EABI__
 	mov	r3, r2			/* r2 will be overwriten by r1 */
@@ -45,7 +45,7 @@ ENTRY_NP(_atomic_swap_64)
 	strexd	r4, r2, r3, [ip]	/* store new value */
 	cmp	r4, #0			/*   succeed? */
 	bne	1b			/*    no, try again */
-	pop	{r3,r4}			/* restore temporary */
+	pop	{r3, r4}		/* restore temporary */
 	RET
 END(_atomic_swap_64)
 END(__sync_lock_test_and_set_8)

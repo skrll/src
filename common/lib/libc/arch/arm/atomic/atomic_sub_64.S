@@ -1,4 +1,4 @@
-/*	$NetBSD: atomic_sub_64.S,v 1.2 2014/03/04 16:15:28 matt Exp $	*/
+/*	$NetBSD: atomic_sub_64.S,v 1.3 2021/06/28 09:00:45 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
 #ifdef _ARM_ARCH_6
 
 ENTRY_NP(_atomic_sub_64_nv)
-	push	{r3,r4}			/* save temporary */
+	push	{r3, r4}		/* save temporary */
 	mov	ip, r0			/* need r0 for return value */
 #ifndef __ARM_EABI__
 	mov	r3, r2
@@ -46,7 +46,7 @@ ENTRY_NP(_atomic_sub_64_nv)
 	strexd	r4, r0, [ip]		/* try to store */
 	cmp	r4, #0			/*   succeed? */
 	bne	1b			/*     no, try again? */
-	pop	{r3,r4}			/* restore temporary */
+	pop	{r3, r4}		/* restore temporary */
 	RET				/* return new value */
 END(_atomic_sub_64_nv)
 

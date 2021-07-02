@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.105 2021/06/20 20:32:42 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.108 2021/06/28 08:52:55 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -316,6 +316,12 @@ typedef	struct tnode {
 #define	tn_val		tn_u._tn_val
 #define	tn_string	tn_u._tn_string
 
+struct generic_association_types {
+	type_t *gat_arg;	/* NULL means default or error */
+	tnode_t *gat_result;	/* NULL means error */
+	struct generic_association_types *gat_prev;
+};
+
 /*
  * For nested declarations a stack exists, which holds all information
  * needed for the current level. dcs points to the innermost element of this
@@ -368,16 +374,13 @@ typedef	struct dinfo {
 	struct	dinfo *d_next;	/* next level */
 } dinfo_t;
 
-/*
- * Used to collect information about pointers and qualifiers in
- * declarators.
- */
-typedef	struct pqinf {
-	int	p_pcnt;			/* number of asterisks */
-	bool	p_const : 1;
-	bool	p_volatile : 1;
-	struct	pqinf *p_next;
-} pqinf_t;
+/* One level of pointer indirection in declarators, including qualifiers. */
+typedef	struct qual_ptr {
+	bool	p_const: 1;
+	bool	p_volatile: 1;
+	bool	p_pointer: 1;
+	struct	qual_ptr *p_next;
+} qual_ptr;
 
 /*
  * The values of the 'case' labels, linked via cl_next in reverse order of
