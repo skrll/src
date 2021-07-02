@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_lookup.c,v 1.225 2020/12/29 22:13:40 chs Exp $	*/
+/*	$NetBSD: vfs_lookup.c,v 1.229 2021/06/29 22:39:21 dholland Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_lookup.c,v 1.225 2020/12/29 22:13:40 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_lookup.c,v 1.229 2021/06/29 22:39:21 dholland Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_magiclinks.h"
@@ -223,22 +223,6 @@ namei_hash(const char *name, const char **ep)
 		*ep = name;
 	}
 	return (hash + (hash >> 5));
-}
-
-/*
- * Find the end of the first path component in NAME and return its
- * length.
- */
-static size_t
-namei_getcomponent(const char *name)
-{
-	size_t pos;
-
-	pos = 0;
-	while (name[pos] != '\0' && name[pos] != '/') {
-		pos++;
-	}
-	return pos;
 }
 
 ////////////////////////////////////////////////////////////
@@ -840,9 +824,10 @@ namei_follow(struct namei_state *state, int inhibitmagic,
  * Inspect the leading path component and update the state accordingly.
  */
 static int
-lookup_parsepath(struct namei_state *state)
+lookup_parsepath(struct namei_state *state, struct vnode *searchdir)
 {
 	const char *cp;			/* pointer into pathname argument */
+	int error;
 
 	struct componentname *cnp = state->cnp;
 	struct nameidata *ndp = state->ndp;
@@ -860,8 +845,10 @@ lookup_parsepath(struct namei_state *state)
 	 * At this point, our only vnode state is that the search dir
 	 * is held.
 	 */
-	cnp->cn_consume = 0;
-	cnp->cn_namelen = namei_getcomponent(cnp->cn_nameptr);
+	error = VOP_PARSEPATH(searchdir, cnp->cn_nameptr, &cnp->cn_namelen);
+	if (error) {
+		return error;
+	}
 	cp = cnp->cn_nameptr + cnp->cn_namelen;
 	if (cnp->cn_namelen > KERNEL_NAME_MAX) {
 		return ENAMETOOLONG;
@@ -1250,19 +1237,6 @@ unionlookup:
 	printf("found\n");
 #endif /* NAMEI_DIAGNOSTIC */
 
-	/*
-	 * Take into account any additional components consumed by the
-	 * underlying filesystem.  This will include any trailing slashes after
-	 * the last component consumed.
-	 */
-	if (cnp->cn_consume > 0) {
-		ndp->ni_pathlen -= cnp->cn_consume - state->slashes;
-		ndp->ni_next += cnp->cn_consume - state->slashes;
-		cnp->cn_consume = 0;
-		if (ndp->ni_next[0] == '\0')
-			cnp->cn_flags |= ISLASTCN;
-	}
-
 	/* Unlock, unless the caller needs the parent locked. */
 	if (searchdir != NULL) {
 		KASSERT(searchdir_locked);
@@ -1325,7 +1299,7 @@ lookup_fastforward(struct namei_state *state, struct vnode **searchdir_ret,
 		 */
 		KASSERT(cnp->cn_nameptr[0] != '/');
 		KASSERT(cnp->cn_nameptr[0] != '\0');
-		if ((error = lookup_parsepath(state)) != 0) {
+		if ((error = lookup_parsepath(state, searchdir)) != 0) {
 			break;
 		}
 
@@ -1500,9 +1474,13 @@ lookup_fastforward(struct namei_state *state, struct vnode **searchdir_ret,
 			}
 			cnp->cn_nameptr = oldnameptr;
 			ndp->ni_pathlen = oldpathlen;
-			error = lookup_parsepath(state);
-			if (error == 0) {
+			if (searchdir == NULL) {
 				error = EOPNOTSUPP;
+			} else {
+				error = lookup_parsepath(state, searchdir);
+				if (error == 0) {
+					error = EOPNOTSUPP;
+				}
 			}
 		}
 	} else if (plock != NULL) {
@@ -1802,10 +1780,33 @@ namei_oneroot(struct namei_state *state,
 		 * a CREATE, DELETE, or RENAME), and we don't have one
 		 * (because this is the root directory, or we crossed
 		 * a mount point), then we must fail.
+		 *
+		 * 20210604 dholland when NONEXCLHACK is set (open
+		 * with O_CREAT but not O_EXCL) skip this logic. Since
+		 * we have a foundobj, open will not be creating, so
+		 * it doesn't actually need or use the searchdir, so
+		 * it's ok to return it even if it's on a different
+		 * volume, and it's also ok to return NULL; by setting
+		 * NONEXCLHACK the open code promises to cope with
+		 * those cases correctly. (That is, it should do what
+		 * it would do anyway, that is, just release the
+		 * searchdir, except not crash if it's null.) This is
+		 * needed because otherwise opening mountpoints with
+		 * O_CREAT but not O_EXCL fails... which is a silly
+		 * thing to do but ought to work. (This whole issue
+		 * came to light because 3rd party code wanted to open
+		 * certain procfs nodes with O_CREAT for some 3rd
+		 * party reason, and it failed.)
+		 *
+		 * Note that NONEXCLHACK is properly a different
+		 * nameiop (it is partway between LOOKUP and CREATE)
+		 * but it was stuffed in as a flag instead to make the
+		 * resulting patch less invasive for pullup. Blah.
 		 */
 		if (cnp->cn_nameiop != LOOKUP &&
 		    (searchdir == NULL ||
-		     searchdir->v_mount != foundobj->v_mount)) {
+		     searchdir->v_mount != foundobj->v_mount) &&
+		    (cnp->cn_flags & NONEXCLHACK) == 0) {
 			if (searchdir) {
 				if (searchdir_locked) {
 					vput(searchdir);
@@ -2026,7 +2027,7 @@ lookup_for_nfsd(struct nameidata *ndp, struct vnode *forcecwd, int neverfollow)
 static int
 do_lookup_for_nfsd_index(struct namei_state *state)
 {
-	int error = 0;
+	int error;
 
 	struct componentname *cnp = state->cnp;
 	struct nameidata *ndp = state->ndp;
@@ -2044,8 +2045,11 @@ do_lookup_for_nfsd_index(struct namei_state *state)
 	state->rdonly = cnp->cn_flags & RDONLY;
 	ndp->ni_dvp = NULL;
 
-	cnp->cn_consume = 0;
-	cnp->cn_namelen = namei_getcomponent(cnp->cn_nameptr);
+	error = VOP_PARSEPATH(startdir, cnp->cn_nameptr, &cnp->cn_namelen);
+	if (error) {
+		return error;
+	}
+
 	cp = cnp->cn_nameptr + cnp->cn_namelen;
 	KASSERT(cnp->cn_namelen <= KERNEL_NAME_MAX);
 	ndp->ni_pathlen -= cnp->cn_namelen;
@@ -2176,7 +2180,10 @@ relookup(struct vnode *dvp, struct vnode **vpp, struct componentname *cnp, int d
 	if ((uint32_t)newhash != (uint32_t)cnp->cn_hash)
 		panic("relookup: bad hash");
 #endif
-	newlen = namei_getcomponent(cnp->cn_nameptr);
+	error = VOP_PARSEPATH(dvp, cnp->cn_nameptr, &newlen);
+	if (error) {
+		panic("relookup: parsepath failed with error %d", error);
+	}
 	if (cnp->cn_namelen != newlen)
 		panic("relookup: bad len");
 	cp = cnp->cn_nameptr + cnp->cn_namelen;

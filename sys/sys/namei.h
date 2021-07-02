@@ -1,11 +1,11 @@
-/*	$NetBSD: namei.h,v 1.113 2020/05/30 20:16:34 ad Exp $	*/
+/*	$NetBSD: namei.h,v 1.115 2021/06/29 22:40:06 dholland Exp $	*/
 
 
 /*
  * WARNING: GENERATED FILE.  DO NOT EDIT
  * (edit namei.src and run make namei in src/sys/sys)
  *   by:   NetBSD: gennameih.awk,v 1.5 2009/12/23 14:17:19 pooka Exp 
- *   from: NetBSD: namei.src,v 1.58 2020/05/30 20:16:14 ad Exp 
+ *   from: NetBSD: namei.src,v 1.60 2021/06/29 22:39:21 dholland Exp 
  */
 
 /*
@@ -102,7 +102,6 @@ struct componentname {
 	 */
 	const char 	*cn_nameptr;	/* pointer to looked up name */
 	size_t		cn_namelen;	/* length of looked up comp */
-	size_t		cn_consume;	/* chars to consume in lookup */
 };
 
 /*
@@ -162,7 +161,8 @@ struct nameidata {
 					   in ni_erootdir */
 #define	LOCKSHARED	0x00000100	/* want shared locks if possible */
 #define	NOCHROOT	0x01000000	/* no chroot on abs path lookups */
-#define	MODMASK		0x010001fc	/* mask of operational modifiers */
+#define	NONEXCLHACK	0x02000000	/* open wwith O_CREAT but not O_EXCL */
+#define	MODMASK		0x030001fc	/* mask of operational modifiers */
 /*
  * Namei parameter descriptors.
  */
@@ -364,7 +364,8 @@ struct	nchstats _NAMEI_CACHE_STATS(uint64_t);
 #define NAMEI_EMULROOTSET	0x00000080
 #define NAMEI_LOCKSHARED	0x00000100
 #define NAMEI_NOCHROOT	0x01000000
-#define NAMEI_MODMASK	0x010001fc
+#define NAMEI_NONEXCLHACK	0x02000000
+#define NAMEI_MODMASK	0x030001fc
 #define NAMEI_NOCROSSMOUNT	0x0000800
 #define NAMEI_RDONLY	0x0001000
 #define NAMEI_ISDOTDOT	0x0002000

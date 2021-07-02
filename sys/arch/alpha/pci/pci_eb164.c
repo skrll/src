@@ -1,4 +1,4 @@
-/* $NetBSD: pci_eb164.c,v 1.46 2020/09/22 15:24:02 thorpej Exp $ */
+/* $NetBSD: pci_eb164.c,v 1.48 2021/06/25 18:08:34 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pci_eb164.c,v 1.46 2020/09/22 15:24:02 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_eb164.c,v 1.48 2021/06/25 18:08:34 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -81,8 +81,6 @@ __KERNEL_RCSID(0, "$NetBSD: pci_eb164.c,v 1.46 2020/09/22 15:24:02 thorpej Exp $
 #include <alpha/pci/ciareg.h>
 #include <alpha/pci/ciavar.h>
 
-#include <alpha/pci/pci_eb164.h>
-
 #include "sio.h"
 #if NSIO
 #include <alpha/pci/siovar.h>
@@ -102,15 +100,15 @@ static bus_space_handle_t eb164_intrgate_ioh;
 extern void	eb164_intr_enable(pci_chipset_tag_t, int irq);
 extern void	eb164_intr_disable(pci_chipset_tag_t, int irq);
 
-void
-pci_eb164_pickintr(struct cia_config *ccp)
+static void
+pci_eb164_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
+    pci_chipset_tag_t pc)
 {
-	bus_space_tag_t iot = &ccp->cc_iot;
-	pci_chipset_tag_t pc = &ccp->cc_pc;
+	struct cia_config *ccp = core;
 	char *cp;
 	int i;
 
-	pc->pc_intr_v = ccp;
+	pc->pc_intr_v = core;
 	pc->pc_intr_map = dec_eb164_intr_map;
 	pc->pc_intr_string = alpha_pci_generic_intr_string;
 	pc->pc_intr_evcnt = alpha_pci_generic_intr_evcnt;
@@ -130,7 +128,7 @@ pci_eb164_pickintr(struct cia_config *ccp)
 #define PCI_EB164_IRQ_STR	8
 	pc->pc_shared_intrs = alpha_shared_intr_alloc(EB164_MAX_IRQ,
 	    PCI_EB164_IRQ_STR);
-	pc->pc_intr_desc = "eb164 irq";
+	pc->pc_intr_desc = "eb164";
 	pc->pc_vecbase = 0x900;
 	pc->pc_nirq = EB164_MAX_IRQ;
 
@@ -150,7 +148,7 @@ pci_eb164_pickintr(struct cia_config *ccp)
 		snprintf(cp, PCI_EB164_IRQ_STR, "irq %d", i);
 		evcnt_attach_dynamic(alpha_shared_intr_evcnt(
 		    pc->pc_shared_intrs, i), EVCNT_TYPE_INTR, NULL,
-		    "eb164", cp);
+		    pc->pc_intr_desc, cp);
 	}
 
 #if NSIO
@@ -158,6 +156,7 @@ pci_eb164_pickintr(struct cia_config *ccp)
 	eb164_intr_enable(pc, EB164_SIO_IRQ);
 #endif
 }
+ALPHA_PCI_INTR_INIT(ST_EB164, pci_eb164_pickintr)
 
 static int
 dec_eb164_intr_map(const struct pci_attach_args *pa, pci_intr_handle_t *ihp)

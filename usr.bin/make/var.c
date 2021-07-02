@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.930 2021/04/19 22:22:27 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.938 2021/06/21 18:25:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -140,7 +140,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.930 2021/04/19 22:22:27 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.938 2021/06/21 18:25:20 rillig Exp $");
 
 /*
  * Variables are defined using one of the VAR=value assignments.  Their
@@ -1585,6 +1585,52 @@ VarREError(int reerr, const regex_t *pat, const char *str)
 	free(errbuf);
 }
 
+/*
+ * Replacement of regular expressions is not specified by POSIX, therefore
+ * re-implement it here.
+ */
+static void
+RegexReplace(const char *replace, SepBuf *buf, const char *wp,
+	     const regmatch_t *m, size_t nsub)
+{
+	const char *rp;
+	unsigned int n;
+
+	for (rp = replace; *rp != '\0'; rp++) {
+		if (*rp == '\\' && (rp[1] == '&' || rp[1] == '\\')) {
+			SepBuf_AddBytes(buf, rp + 1, 1);
+			rp++;
+			continue;
+		}
+
+		if (*rp == '&') {
+			SepBuf_AddBytesBetween(buf,
+			    wp + m[0].rm_so, wp + m[0].rm_eo);
+			continue;
+		}
+
+		if (*rp != '\\' || !ch_isdigit(rp[1])) {
+			SepBuf_AddBytes(buf, rp, 1);
+			continue;
+		}
+
+		/* \0 to \9 backreference */
+		n = rp[1] - '0';
+		rp++;
+
+		if (n >= nsub) {
+			Error("No subexpression \\%u", n);
+		} else if (m[n].rm_so == -1) {
+			if (opts.strict) {
+				Error("No match for subexpression \\%u", n);
+			}
+		} else {
+			SepBuf_AddBytesBetween(buf,
+			    wp + m[n].rm_so, wp + m[n].rm_eo);
+		}
+	}
+}
+
 struct ModifyWord_SubstRegexArgs {
 	regex_t re;
 	size_t nsub;
@@ -1603,85 +1649,42 @@ ModifyWord_SubstRegex(Substring word, SepBuf *buf, void *data)
 	struct ModifyWord_SubstRegexArgs *args = data;
 	int xrv;
 	const char *wp;
-	const char *rp;
 	int flags = 0;
 	regmatch_t m[10];
 
 	assert(word.end[0] == '\0');	/* assume null-terminated word */
 	wp = word.start;
 	if (args->pflags.subOnce && args->matched)
-		goto nosub;
+		goto no_match;
 
-tryagain:
+again:
 	xrv = regexec(&args->re, wp, args->nsub, m, flags);
+	if (xrv == 0)
+		goto ok;
+	if (xrv != REG_NOMATCH)
+		VarREError(xrv, &args->re, "Unexpected regex error");
+no_match:
+	SepBuf_AddStr(buf, wp);
+	return;
 
-	switch (xrv) {
-	case 0:
-		args->matched = true;
-		SepBuf_AddBytes(buf, wp, (size_t)m[0].rm_so);
+ok:
+	args->matched = true;
+	SepBuf_AddBytes(buf, wp, (size_t)m[0].rm_so);
 
-		/*
-		 * Replacement of regular expressions is not specified by
-		 * POSIX, therefore implement it here.
-		 */
+	RegexReplace(args->replace, buf, wp, m, args->nsub);
 
-		for (rp = args->replace; *rp != '\0'; rp++) {
-			if (*rp == '\\' && (rp[1] == '&' || rp[1] == '\\')) {
-				SepBuf_AddBytes(buf, rp + 1, 1);
-				rp++;
-				continue;
-			}
-
-			if (*rp == '&') {
-				SepBuf_AddBytesBetween(buf,
-				    wp + m[0].rm_so, wp + m[0].rm_eo);
-				continue;
-			}
-
-			if (*rp != '\\' || !ch_isdigit(rp[1])) {
-				SepBuf_AddBytes(buf, rp, 1);
-				continue;
-			}
-
-			{	/* \0 to \9 backreference */
-				size_t n = (size_t)(rp[1] - '0');
-				rp++;
-
-				if (n >= args->nsub) {
-					Error("No subexpression \\%u",
-					    (unsigned)n);
-				} else if (m[n].rm_so == -1) {
-					Error(
-					    "No match for subexpression \\%u",
-					    (unsigned)n);
-				} else {
-					SepBuf_AddBytesBetween(buf,
-					    wp + m[n].rm_so, wp + m[n].rm_eo);
-				}
-			}
-		}
-
-		wp += m[0].rm_eo;
-		if (args->pflags.subGlobal) {
-			flags |= REG_NOTBOL;
-			if (m[0].rm_so == 0 && m[0].rm_eo == 0) {
-				SepBuf_AddBytes(buf, wp, 1);
-				wp++;
-			}
-			if (*wp != '\0')
-				goto tryagain;
+	wp += m[0].rm_eo;
+	if (args->pflags.subGlobal) {
+		flags |= REG_NOTBOL;
+		if (m[0].rm_so == 0 && m[0].rm_eo == 0) {
+			SepBuf_AddBytes(buf, wp, 1);
+			wp++;
 		}
 		if (*wp != '\0')
-			SepBuf_AddStr(buf, wp);
-		break;
-	default:
-		VarREError(xrv, &args->re, "Unexpected regex error");
-		/* FALLTHROUGH */
-	case REG_NOMATCH:
-	nosub:
-		SepBuf_AddStr(buf, wp);
-		break;
+			goto again;
 	}
+	if (*wp != '\0')
+		SepBuf_AddStr(buf, wp);
 }
 #endif
 
@@ -1822,24 +1825,6 @@ Words_JoinFree(Words words)
 	Words_Free(words);
 
 	return Buf_DoneData(&buf);
-}
-
-/* Remove adjacent duplicate words. */
-static char *
-VarUniq(const char *str)
-{
-	Words words = Str_Words(str, false);
-
-	if (words.len > 1) {
-		size_t i, j;
-		for (j = 0, i = 1; i < words.len; i++)
-			if (strcmp(words.words[i], words.words[j]) != 0 &&
-			    (++j != i))
-				words.words[j] = words.words[i];
-		words.len = j + 1;
-	}
-
-	return Words_JoinFree(words);
 }
 
 
@@ -2151,7 +2136,7 @@ IsEscapedModifierPart(const char *p, char delim,
 	return p[1] == '&' && subst != NULL;
 }
 
-/* See ParseModifierPart */
+/* See ParseModifierPart for the documentation. */
 static VarParseResult
 ParseModifierPartSubst(
     const char **pp,
@@ -2159,8 +2144,8 @@ ParseModifierPartSubst(
     VarEvalMode emode,
     ModChain *ch,
     LazyBuf *part,
-    /* For the first part of the :S modifier, sets the VARP_ANCHOR_END flag
-     * if the last character of the pattern is a $. */
+    /* For the first part of the modifier ':S', set anchorEnd if the last
+     * character of the pattern is a $. */
     PatternFlags *out_pflags,
     /* For the second part of the :S modifier, allow ampersands to be
      * escaped and replace unescaped ampersands with subst->lhs. */
@@ -2281,10 +2266,9 @@ ParseModifierPartSubst(
  * including the next unescaped delimiter.  The delimiter, as well as the
  * backslash or the dollar, can be escaped with a backslash.
  *
- * Return the parsed (and possibly expanded) string, or NULL if no delimiter
- * was found.  On successful return, the parsing position pp points right
- * after the delimiter.  The delimiter is not included in the returned
- * value though.
+ * Return VPR_OK if parsing succeeded, together with the parsed (and possibly
+ * expanded) part.  In that case, pp points right after the delimiter.  The
+ * delimiter is not included in the part though.
  */
 static VarParseResult
 ParseModifierPart(
@@ -3561,15 +3545,36 @@ ApplyModifier_WordFunc(const char **pp, ModChain *ch,
 	return AMR_OK;
 }
 
+/* Remove adjacent duplicate words. */
 static ApplyModifierResult
 ApplyModifier_Unique(const char **pp, ModChain *ch)
 {
+	Words words;
+
 	if (!IsDelimiter((*pp)[1], ch))
 		return AMR_UNKNOWN;
 	(*pp)++;
 
-	if (ModChain_ShouldEval(ch))
-		Expr_SetValueOwn(ch->expr, VarUniq(ch->expr->value.str));
+	if (!ModChain_ShouldEval(ch))
+		return AMR_OK;
+
+	words = Str_Words(ch->expr->value.str, false);
+
+	if (words.len > 1) {
+		size_t si, di;
+
+		di = 0;
+		for (si = 1; si < words.len; si++) {
+			if (strcmp(words.words[si], words.words[di]) != 0) {
+				di++;
+				if (di != si)
+					words.words[di] = words.words[si];
+			}
+		}
+		words.len = di + 1;
+	}
+
+	Expr_SetValueOwn(ch->expr, Words_JoinFree(words));
 
 	return AMR_OK;
 }

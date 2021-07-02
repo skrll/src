@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.182 2021/05/16 11:11:36 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.192 2021/06/28 10:07:43 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.182 2021/05/16 11:11:36 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.192 2021/06/28 10:07:43 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -198,6 +198,7 @@ setcomplete(type_t *tp, bool complete)
 {
 	tspec_t	t;
 
+	lint_assert(tp != NULL);
 	if ((t = tp->t_tspec) == ARRAY) {
 		tp->t_incomplete_array = !complete;
 	} else if (t == STRUCT || t == UNION) {
@@ -601,8 +602,7 @@ begin_declaration_level(scl_t sc)
 	di->d_ctx = sc;
 	di->d_ldlsym = &di->d_dlsyms;
 	if (dflag)
-		(void)printf("%s(%p %d)\n", __func__, dcs, (int)sc);
-
+		(void)printf("%s(%p %s)\n", __func__, dcs, scl_name(sc));
 }
 
 /*
@@ -614,7 +614,8 @@ end_declaration_level(void)
 	dinfo_t	*di;
 
 	if (dflag)
-		(void)printf("%s(%p %d)\n", __func__, dcs, (int)dcs->d_ctx);
+		(void)printf("%s(%p %s)\n",
+		    __func__, dcs, scl_name(dcs->d_ctx));
 
 	lint_assert(dcs->d_next != NULL);
 	di = dcs;
@@ -1285,40 +1286,44 @@ bitfield(sym_t *dsym, int len)
 }
 
 /*
- * Collect information about a sequence of asterisks and qualifiers in a
- * list of type pqinf_t.
- * Qualifiers always refer to the left asterisk.
- * The rightmost asterisk will be at the top of the list.
+ * A sequence of asterisks and qualifiers, from right to left.  For example,
+ * 'const ***volatile **const volatile' results in [cvp, p, vp, p, p].  The
+ * leftmost 'const' is not included in this list, it is stored in dcs->d_const
+ * instead.
  */
-pqinf_t *
-merge_pointers_and_qualifiers(pqinf_t *p1, pqinf_t *p2)
+qual_ptr *
+merge_qualified_pointer(qual_ptr *p1, qual_ptr *p2)
 {
-	pqinf_t	*p;
+	qual_ptr *tail;
 
-	if (p2->p_pcnt != 0) {
-		/* left '*' at the end of the list */
-		for (p = p2; p->p_next != NULL; p = p->p_next)
+	if (p2 == NULL)
+		return p1;	/* for optional qualifiers */
+
+	if (p2->p_pointer) {
+		/* append p1 to p2, keeping p2 */
+		for (tail = p2; tail->p_next != NULL; tail = tail->p_next)
 			continue;
-		p->p_next = p1;
+		tail->p_next = p1;
 		return p2;
-	} else {
-		if (p2->p_const) {
-			if (p1->p_const) {
-				/* duplicate '%s' */
-				warning(10, "const");
-			}
-			p1->p_const = true;
-		}
-		if (p2->p_volatile) {
-			if (p1->p_volatile) {
-				/* duplicate '%s' */
-				warning(10, "volatile");
-			}
-			p1->p_volatile = true;
-		}
-		free(p2);
-		return p1;
 	}
+
+	/* merge p2 into p1, keeping p1 */
+	if (p2->p_const) {
+		if (p1->p_const) {
+			/* duplicate '%s' */
+			warning(10, "const");
+		}
+		p1->p_const = true;
+	}
+	if (p2->p_volatile) {
+		if (p1->p_volatile) {
+			/* duplicate '%s' */
+			warning(10, "volatile");
+		}
+		p1->p_volatile = true;
+	}
+	free(p2);
+	return p1;
 }
 
 /*
@@ -1330,10 +1335,10 @@ merge_pointers_and_qualifiers(pqinf_t *p1, pqinf_t *p2)
  * declarator. The new type extension is inserted between both.
  */
 sym_t *
-add_pointer(sym_t *decl, pqinf_t *pi)
+add_pointer(sym_t *decl, qual_ptr *p)
 {
-	type_t	**tpp, *tp;
-	pqinf_t	*npi;
+	type_t **tpp, *tp;
+	qual_ptr *next;
 
 	tpp = &decl->s_type;
 	while (*tpp != NULL && *tpp != dcs->d_type)
@@ -1341,15 +1346,15 @@ add_pointer(sym_t *decl, pqinf_t *pi)
 	if (*tpp == NULL)
 		return decl;
 
-	while (pi != NULL) {
+	while (p != NULL) {
 		*tpp = tp = getblk(sizeof(*tp));
 		tp->t_tspec = PTR;
-		tp->t_const = pi->p_const;
-		tp->t_volatile = pi->p_volatile;
+		tp->t_const = p->p_const;
+		tp->t_volatile = p->p_volatile;
 		*(tpp = &tp->t_subt) = dcs->d_type;
-		npi = pi->p_next;
-		free(pi);
-		pi = npi;
+		next = p->p_next;
+		free(p);
+		p = next;
 	}
 	return decl;
 }
@@ -1805,6 +1810,9 @@ complete_tag_struct_or_union(type_t *tp, sym_t *fmem)
 	int	n;
 	sym_t	*mem;
 
+	if (tp == NULL)		/* in case of syntax errors */
+		return gettyp(INT);
+
 	setcomplete(tp, true);
 
 	t = tp->t_tspec;
@@ -2039,7 +2047,7 @@ declare(sym_t *decl, bool initflg, sbuf_t *renaming)
 
 	if (dcs->d_ctx == EXTERN) {
 		declare_extern(decl, initflg, renaming);
-	} else if (dcs->d_ctx == ARG) {
+	} else if (dcs->d_ctx == ARG || dcs->d_ctx == PROTO_ARG) {
 		if (renaming != NULL) {
 			/* symbol renaming can't be used on function arguments */
 			error(310);
@@ -2425,6 +2433,7 @@ declare_argument(sym_t *sym, bool initflg)
 		error(52, sym->s_name);
 	}
 
+	lint_assert(sym->s_type != NULL);
 	if ((t = sym->s_type->t_tspec) == ARRAY) {
 		sym->s_type = derive_type(sym->s_type->t_subt, PTR);
 	} else if (t == FUNC) {
@@ -3052,7 +3061,10 @@ check_variable_usage(bool novar, sym_t *sym)
 	sym_t	*xsym;
 
 	lint_assert(block_level != 0);
-	lint_assert(sym->s_block_level != 0);
+
+	/* example at file scope: int c = ({ return 3; }); */
+	if (sym->s_block_level == 0 && ch_isdigit(sym->s_name[0]))
+		return;
 
 	/* errors in expressions easily cause lots of these warnings */
 	if (nerr != 0)
@@ -3256,6 +3268,8 @@ check_global_variable_size(const sym_t *sym)
 		 * function declaration
 		 */
 		return;
+	if (sym->s_def == TDEF && sym->s_type->t_tspec == VOID)
+		return;		/* prevent internal error in length() below */
 
 	cpos = curr_pos;
 	curr_pos = sym->s_def_pos;

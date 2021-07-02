@@ -1,4 +1,4 @@
-/*	$NetBSD: for.c,v 1.142 2021/04/03 11:08:40 rillig Exp $	*/
+/*	$NetBSD: for.c,v 1.144 2021/06/25 16:10:07 rillig Exp $	*/
 
 /*
  * Copyright (c) 1992, The Regents of the University of California.
@@ -58,7 +58,7 @@
 #include "make.h"
 
 /*	"@(#)for.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: for.c,v 1.142 2021/04/03 11:08:40 rillig Exp $");
+MAKE_RCSID("$NetBSD: for.c,v 1.144 2021/06/25 16:10:07 rillig Exp $");
 
 
 /* One of the variables to the left of the "in" in a .for loop. */
@@ -72,15 +72,15 @@ typedef struct ForLoop {
 	Vector /* of ForVar */ vars; /* Iteration variables */
 	Words items;		/* Substitution items */
 	Buffer curBody;		/* Expanded body of the current iteration */
-	/* Is any of the names 1 character long? If so, when the variable values
-	 * are substituted, the parser must handle $V expressions as well, not
-	 * only ${V} and $(V). */
+	/* Is any of the names 1 character long? If so, when the variable
+	 * values are substituted, the parser must handle $V expressions as
+	 * well, not only ${V} and $(V). */
 	bool short_var;
 	unsigned int sub_next;	/* Where to continue iterating */
 } ForLoop;
 
 
-static ForLoop *accumFor;		/* Loop being accumulated */
+static ForLoop *accumFor;	/* Loop being accumulated */
 static int forLevel = 0;	/* Nesting level */
 
 
@@ -325,7 +325,8 @@ NeedsEscapes(const char *value, char endc)
 	const char *p;
 
 	for (p = value; *p != '\0'; p++) {
-		if (*p == ':' || *p == '$' || *p == '\\' || *p == endc)
+		if (*p == ':' || *p == '$' || *p == '\\' || *p == endc ||
+		    *p == '\n')
 			return true;
 	}
 	return false;
@@ -360,6 +361,10 @@ Buf_AddEscaped(Buffer *cmds, const char *item, char endc)
 			Buf_AddByte(cmds, '\\');
 		} else if (ch == ':' || ch == '\\' || ch == endc)
 			Buf_AddByte(cmds, '\\');
+		else if (ch == '\n') {
+			Parse_Error(PARSE_FATAL, "newline in .for value");
+			ch = ' ';	/* prevent newline injection */
+		}
 		Buf_AddByte(cmds, ch);
 	}
 }
@@ -376,8 +381,8 @@ ForLoop_SubstVarLong(ForLoop *f, const char **pp, const char *bodyEnd,
 	const char *p = *pp;
 
 	for (i = 0; i < f->vars.len; i++) {
-		ForVar *forVar = Vector_Get(&f->vars, i);
-		char *varname = forVar->name;
+		const ForVar *forVar = Vector_Get(&f->vars, i);
+		const char *varname = forVar->name;
 		size_t varnameLen = forVar->nameLen;
 
 		if (varnameLen >= (size_t)(bodyEnd - p))
@@ -413,7 +418,7 @@ static void
 ForLoop_SubstVarShort(ForLoop *f, const char *p, const char **inout_mark)
 {
 	const char ch = *p;
-	ForVar *vars;
+	const ForVar *vars;
 	size_t i;
 
 	/* Skip $$ and stupid ones. */

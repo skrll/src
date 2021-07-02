@@ -1,4 +1,4 @@
-/*	$NetBSD: dev_verbose.h,v 1.4 2020/08/11 12:10:10 uwe Exp $ */
+/*	$NetBSD: dev_verbose.h,v 1.8 2021/06/29 21:03:36 pgoyette Exp $ */
 
 /*
  * Redistribution and use in source and binary forms, with or without
@@ -25,55 +25,63 @@
 #ifndef _DEV_DEV_VERBOSE_H_
 #define	_DEV_DEV_VERBOSE_H_
 
+#ifdef _KERNEL
+#include <sys/module_hook.h>
+#endif
+
 const char *dev_findvendor(char *, size_t, const char *, size_t, 
-	const uint16_t *, size_t, uint16_t);
+	const uint32_t *, size_t, uint32_t, const char *);
 const char *dev_findproduct(char *, size_t, const char *, size_t, 
-	const uint16_t *, size_t, uint16_t, uint16_t);
+	const uint32_t *, size_t, uint32_t, uint32_t, const char *);
 
 #define DEV_VERBOSE_COMMON_DEFINE(tag)					\
 static const char *							\
-tag ## _findvendor_real(char *buf, size_t len, uint16_t vendor)		\
+tag ## _findvendor_real(char *buf, size_t len, uint32_t vendor)		\
 {									\
 	return dev_findvendor(buf, len, tag ## _words,			\
 	    __arraycount(tag ## _words), tag ## _vendors,		\
-	    __arraycount(tag ## _vendors), vendor);			\
+	    __arraycount(tag ## _vendors), vendor, tag ## _id1_format);	\
 }									\
 									\
 static const char *							\
-tag ## _findproduct_real(char *buf, size_t len, uint16_t vendor,	\
-    uint16_t product)							\
+tag ## _findproduct_real(char *buf, size_t len, uint32_t vendor,	\
+    uint32_t product)							\
 {									\
 	return dev_findproduct(buf, len, tag ## _words,			\
 	    __arraycount(tag ## _words), tag ## _products,		\
-	    __arraycount(tag ## _products), vendor, product);		\
+	    __arraycount(tag ## _products), vendor, product,		\
+	    tag ## _id2_format);					\
 }									\
 
 #ifdef _KERNEL
 
+#define DEV_VERBOSE_KERNEL_DECLARE(tag)					\
+MODULE_HOOK(tag ## _findvendor_hook, const char *,			\
+	(char *, size_t, uint32_t));					\
+MODULE_HOOK(tag ## _findproduct_hook, const char *,			\
+	(char *, size_t, uint32_t, uint32_t));				\
+extern int tag ## verbose_loaded;
+
 #define DEV_VERBOSE_MODULE_DEFINE(tag, deps)				\
 DEV_VERBOSE_COMMON_DEFINE(tag)						\
-extern int tag ## verbose_loaded;					\
+DEV_VERBOSE_KERNEL_DECLARE(tag)						\
 									\
 static int								\
 tag ## verbose_modcmd(modcmd_t cmd, void *arg)				\
 {									\
-	static const char *(*saved_findvendor)(char *, size_t,		\
-	    uint16_t);							\
-	static const char *(*saved_findproduct)(char *, size_t,		\
-	    uint16_t, uint16_t);					\
 									\
 	switch (cmd) {							\
 	case MODULE_CMD_INIT:						\
-		saved_findvendor = tag ## _findvendor;			\
-		saved_findproduct = tag ## _findproduct;		\
-		tag ## _findvendor = tag ## _findvendor_real;		\
-		tag ## _findproduct = tag ## _findproduct_real;		\
+		MODULE_HOOK_SET(tag ## _findvendor_hook,		\
+			tag ## _findvendor_real);			\
+		MODULE_HOOK_SET(tag ## _findproduct_hook,		\
+			tag ## _findproduct_real);			\
 		tag ## verbose_loaded = 1;				\
 		return 0;						\
 	case MODULE_CMD_FINI:						\
-		tag ## _findvendor = saved_findvendor;			\
-		tag ## _findproduct = saved_findproduct;		\
 		tag ## verbose_loaded = 0;				\
+		MODULE_HOOK_UNSET(tag ## _findproduct_hook);		\
+		MODULE_HOOK_UNSET(tag ## _findvendor_hook);		\
 		return 0;						\
 	default:							\
 		return ENOTTY;						\
@@ -84,11 +92,15 @@ MODULE(MODULE_CLASS_DRIVER, tag ## verbose, deps)
 #endif /* KERNEL */
 
 #define DEV_VERBOSE_DECLARE(tag)					\
-extern const char * (*tag ## _findvendor)(char *, size_t, uint16_t);	\
-extern const char * (*tag ## _findproduct)(char *, size_t, uint16_t, uint16_t)
+extern const char * tag ## _findvendor(char *, size_t, uint32_t);	\
+extern const char * tag ## _findproduct(char *, size_t, uint32_t, uint32_t)
 
 #if defined(_KERNEL)
+
 #define DEV_VERBOSE_DEFINE(tag)						\
+DEV_VERBOSE_KERNEL_DECLARE(tag)						\
+struct tag ## _findvendor_hook_t tag ## _findvendor_hook;		\
+struct tag ## _findproduct_hook_t tag ## _findproduct_hook;		\
 int tag ## verbose_loaded = 0;						\
 									\
 static void								\
@@ -99,46 +111,48 @@ tag ## _load_verbose(void)						\
 		module_autoload(# tag "verbose", MODULE_CLASS_DRIVER);	\
 }									\
 									\
-static const char *							\
-tag ## _findvendor_stub(char *buf, size_t len, uint16_t vendor)		\
+const char *								\
+tag ## _findvendor(char *buf, size_t len, uint32_t vendor)		\
 {									\
+	const char *retval = NULL;					\
 									\
 	tag ## _load_verbose();						\
-	if (tag ## verbose_loaded)					\
-		return tag ## _findvendor(buf, len, vendor);		\
-	else {								\
-		snprintf(buf, len, "vendor %4.4x", vendor);		\
-		return NULL;						\
-	}								\
+	MODULE_HOOK_CALL(tag ## _findvendor_hook, (buf, len, vendor),	\
+		(snprintf(buf, len, tag ## _id1_format, vendor), NULL),	\
+		retval);						\
+	return retval;							\
 }									\
 									\
-static const char *							\
-tag ## _findproduct_stub(char *buf, size_t len, uint16_t vendor,	\
-    uint16_t product)							\
+const char *								\
+tag ## _findproduct(char *buf, size_t len, uint32_t vendor,		\
+    uint32_t product)							\
 {									\
+	const char *retval = NULL;					\
 									\
 	tag ## _load_verbose();						\
-	if (tag ## verbose_loaded)					\
-		return tag ## _findproduct(buf, len, vendor, product);	\
-	else {								\
-		snprintf(buf, len, "product %4.4x", product);		\
-		return NULL;						\
-	}								\
+	MODULE_HOOK_CALL(tag ## _findproduct_hook,			\
+		(buf, len, vendor, product),				\
+		(snprintf(buf, len, tag ## _id2_format, product), NULL), \
+		retval);						\
+	return retval;							\
 }									\
-									\
-const char *(*tag ## _findvendor)(char *, size_t, uint16_t) = 		\
-    tag ## _findvendor_stub;						\
-const char *(*tag ## _findproduct)(char *, size_t, uint16_t, uint16_t) =\
-    tag ## _findproduct_stub						\
 
-#else
+#else	/* _KERNEL */
 
 #define DEV_VERBOSE_DEFINE(tag)						\
 DEV_VERBOSE_COMMON_DEFINE(tag)						\
-const char *(*tag ## _findvendor)(char *, size_t, uint16_t) = 		\
-    tag ## _findvendor_real;						\
-const char *(*tag ## _findproduct)(char *, size_t, uint16_t, uint16_t) =\
-    tag ## _findproduct_real						\
+const char *tag ## _findvendor(char *buf, size_t len, uint32_t vendor)	\
+{									\
+									\
+	return tag ## _findvendor_real(buf, len, vendor);		\
+}									\
+									\
+const char *tag ## _findproduct(char *buf, size_t len, uint32_t vendor,	\
+		uint32_t product)					\
+{									\
+									\
+	return tag ## _findproduct_real(buf, len, vendor, product);	\
+}
 
 #endif /* _KERNEL */
 

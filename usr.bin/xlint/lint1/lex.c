@@ -1,4 +1,4 @@
-/* $NetBSD: lex.c,v 1.36 2021/05/03 08:03:45 rillig Exp $ */
+/* $NetBSD: lex.c,v 1.50 2021/06/30 10:25:02 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: lex.c,v 1.36 2021/05/03 08:03:45 rillig Exp $");
+__RCSID("$NetBSD: lex.c,v 1.50 2021/06/30 10:25:02 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -250,15 +250,6 @@ static	struct	kwtab {
 /* Symbol table */
 static	sym_t	*symtab[HSHSIZ1];
 
-/* bit i of the entry with index i is set */
-uint64_t qbmasks[64];
-
-/* least significant i bits are set in the entry with index i */
-uint64_t qlmasks[64 + 1];
-
-/* least significant i bits are not set in the entry with index i */
-uint64_t qumasks[64 + 1];
-
 /* free list for sbuf structures */
 static	sbuf_t	 *sbfrlst;
 
@@ -321,8 +312,6 @@ void
 initscan(void)
 {
 	struct	kwtab *kw;
-	size_t	i;
-	uint64_t uq;
 
 	for (kw = kwtab; kw->kw_name != NULL; kw++) {
 		if ((kw->kw_c89 || kw->kw_c99) && tflag)
@@ -335,16 +324,6 @@ initscan(void)
 		add_keyword(kw, 2);
 		add_keyword(kw, 4);
 	}
-
-	/* initialize bit-masks for quads */
-	for (i = 0; i < 64; i++) {
-		qbmasks[i] = (uint64_t)1 << i;
-		uq = ~(uint64_t)0 << i;
-		qumasks[i] = uq;
-		qlmasks[i] = ~uq;
-	}
-	qumasks[i] = 0;
-	qlmasks[i] = ~(uint64_t)0;
 }
 
 /*
@@ -390,7 +369,12 @@ inpc(void)
 {
 	int	c;
 
-	if ((c = lex_input()) != EOF && (c &= CHAR_MASK) == '\n')
+	if ((c = lex_input()) == EOF)
+		return c;
+	c &= CHAR_MASK;
+	if (c == '\0')
+		return EOF;	/* lex returns 0 on EOF. */
+	if (c == '\n')
 		lex_next_line();
 	return c;
 }
@@ -684,29 +668,14 @@ lex_integer_constant(const char *yytext, size_t yyleng, int base)
 		break;
 	}
 
-	uq = (uint64_t)xsign((int64_t)uq, typ, -1);
+	uq = (uint64_t)convert_integer((int64_t)uq, typ, -1);
 
 	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = typ;
-	yylval.y_val->v_ansiu = ansiu;
+	yylval.y_val->v_unsigned_since_c90 = ansiu;
 	yylval.y_val->v_quad = (int64_t)uq;
 
 	return T_CON;
-}
-
-/*
- * Returns whether t is a signed type and the value is negative.
- *
- * len is the number of significant bits. If len is -1, len is set
- * to the width of type t.
- */
-static bool
-sign(int64_t q, tspec_t t, int len)
-{
-
-	if (t == PTR || is_uinteger(t))
-		return false;
-	return msb(q, t, len) != 0;
 }
 
 int
@@ -715,25 +684,27 @@ msb(int64_t q, tspec_t t, int len)
 
 	if (len <= 0)
 		len = size_in_bits(t);
-	return (q & qbmasks[len - 1]) != 0 ? 1 : 0;
+	return (q & bit(len - 1)) != 0 ? 1 : 0;
 }
 
 /*
- * Extends the sign of q.
+ * Extend or truncate q to match t.  If t is signed, sign-extend.
+ *
+ * len is the number of significant bits. If len is -1, len is set
+ * to the width of type t.
  */
 int64_t
-xsign(int64_t q, tspec_t t, int len)
+convert_integer(int64_t q, tspec_t t, int len)
 {
+	uint64_t vbits;
 
 	if (len <= 0)
 		len = size_in_bits(t);
 
-	if (t == PTR || is_uinteger(t) || !sign(q, t, len)) {
-		q &= qlmasks[len];
-	} else {
-		q |= qumasks[len];
-	}
-	return q;
+	vbits = value_bits(len);
+	return t == PTR || is_uinteger(t) || msb(q, t, len) == 0
+	    ? q & vbits
+	    : q | ~vbits;
 }
 
 /*
@@ -837,7 +808,6 @@ lex_character_constant(void)
 {
 	size_t	n;
 	int val, c;
-	char	cv;
 
 	n = 0;
 	val = 0;
@@ -848,22 +818,25 @@ lex_character_constant(void)
 	if (c == -2) {
 		/* unterminated character constant */
 		error(253);
-	} else {
+	} else if (n > sizeof(int) || (n > 1 && (pflag || hflag))) {
 		/* XXX: should rather be sizeof(TARG_INT) */
-		if (n > sizeof(int) || (n > 1 && (pflag || hflag))) {
-			/* too many characters in character constant */
-			error(71);
-		} else if (n > 1) {
-			/* multi-character character constant */
-			warning(294);
-		} else if (n == 0) {
-			/* empty character constant */
-			error(73);
-		}
+
+		/* too many characters in character constant */
+		error(71);
+	} else if (n > 1) {
+		/* multi-character character constant */
+		warning(294);
+	} else if (n == 0) {
+		/* empty character constant */
+		error(73);
 	}
 	if (n == 1) {
-		cv = (char)val;
-		val = cv;
+		/*
+		 * XXX: use the target platform's 'char' instead of the
+		 *  'char' from the execution environment, to be able to
+		 *  run lint for powerpc on x86_64.
+		 */
+		val = (char)val;
 	}
 
 	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
@@ -880,17 +853,17 @@ int
 lex_wide_character_constant(void)
 {
 	static	char buf[MB_LEN_MAX + 1];
-	size_t	i, imax;
+	size_t	n, nmax;
 	int c;
 	wchar_t	wc;
 
-	imax = MB_CUR_MAX;
+	nmax = MB_CUR_MAX;
 
-	i = 0;
+	n = 0;
 	while ((c = get_escaped_char('\'')) >= 0) {
-		if (i < imax)
-			buf[i] = (char)c;
-		i++;
+		if (n < nmax)
+			buf[n] = (char)c;
+		n++;
 	}
 
 	wc = 0;
@@ -898,21 +871,19 @@ lex_wide_character_constant(void)
 	if (c == -2) {
 		/* unterminated character constant */
 		error(253);
-	} else if (c == 0) {
+	} else if (n == 0) {
 		/* empty character constant */
 		error(73);
+	} else if (n > nmax) {
+		n = nmax;
+		/* too many characters in character constant */
+		error(71);
 	} else {
-		if (i > imax) {
-			i = imax;
-			/* too many characters in character constant */
-			error(71);
-		} else {
-			buf[i] = '\0';
-			(void)mbtowc(NULL, NULL, 0);
-			if (mbtowc(&wc, buf, imax) < 0)
-				/* invalid multibyte character */
-				error(291);
-		}
+		buf[n] = '\0';
+		(void)mbtowc(NULL, NULL, 0);
+		if (mbtowc(&wc, buf, nmax) < 0)
+			/* invalid multibyte character */
+			error(291);
 	}
 
 	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
@@ -954,6 +925,10 @@ get_escaped_char(int delim)
 			return -2;
 		}
 		return c;
+	case 0:
+		/* syntax error '%s' */
+		error(249, "EOF or null byte in literal");
+		return -2;
 	case EOF:
 		return -2;
 	case '\\':
@@ -1003,10 +978,7 @@ get_escaped_char(int delim)
 			do {
 				v = (v << 3) + (c - '0');
 				c = inpc();
-			} while (--n > 0 && isdigit(c) && (tflag || c <= '7'));
-			if (tflag && n > 0 && isdigit(c))
-				/* bad octal digit %c */
-				warning(77, c);
+			} while (--n > 0 && '0' <= c && c <= '7');
 			pbc = c;
 			if (v > TARG_UCHAR_MAX) {
 				/* character escape does not fit in character */

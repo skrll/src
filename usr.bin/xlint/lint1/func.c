@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.108 2021/05/15 19:12:14 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.112 2021/06/30 11:29:29 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.108 2021/05/15 19:12:14 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.112 2021/06/30 11:29:29 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -173,7 +173,9 @@ end_control_statement(control_statement_kind kind)
 	case_label_t *cl, *next;
 
 	lint_assert(cstmt != NULL);
-	lint_assert(cstmt->c_kind == kind);
+
+	while (cstmt->c_kind != kind)
+		cstmt = cstmt->c_surrounding;
 
 	ci = cstmt;
 	cstmt = ci->c_surrounding;
@@ -412,6 +414,10 @@ funcend(void)
 		    cstmt->c_had_return_value, funcsym->s_osdef,
 		    dcs->d_func_args);
 	}
+
+	/* clean up after syntax errors, see test stmt_for.c. */
+	while (dcs->d_next != NULL)
+		dcs = dcs->d_next;
 
 	/*
 	 * remove all symbols declared during argument declaration from
@@ -741,12 +747,11 @@ switch2(void)
 
 	lint_assert(cstmt->c_switch_type != NULL);
 
-	/*
-	 * If the switch expression was of type enumeration, count the case
-	 * labels and the number of enumerators. If both counts are not
-	 * equal print a warning.
-	 */
 	if (cstmt->c_switch_type->t_is_enum) {
+		/*
+		 * Warn if the number of case labels is different from the
+		 * number of enumerators.
+		 */
 		nenum = nclab = 0;
 		lint_assert(cstmt->c_switch_type->t_enum != NULL);
 		for (esym = cstmt->c_switch_type->t_enum->en_first_enumerator;
@@ -765,22 +770,25 @@ switch2(void)
 
 	if (cstmt->c_break) {
 		/*
-		 * end of switch always reached (c_break is only set if the
-		 * break statement can be reached).
+		 * The end of the switch statement is always reached since
+		 * c_break is only set if a break statement can actually
+		 * be reached.
 		 */
 		set_reached(true);
-	} else if (!cstmt->c_default &&
-		   (!hflag || !cstmt->c_switch_type->t_is_enum ||
-		    nenum != nclab)) {
+	} else if (cstmt->c_default ||
+		   (hflag && cstmt->c_switch_type->t_is_enum &&
+		    nenum == nclab)) {
 		/*
-		 * there are possible values which are not handled in
-		 * switch
+		 * The end of the switch statement is reached if the end
+		 * of the last statement inside it is reached.
+		 */
+	} else {
+		/*
+		 * There are possible values that are not handled in the
+		 * switch statement.
 		 */
 		set_reached(true);
-	}	/*
-		 * otherwise the end of the switch expression is reached
-		 * if the end of the last statement inside it is reached.
-		 */
+	}
 
 	end_control_statement(CS_SWITCH);
 }
@@ -1049,7 +1057,14 @@ do_return(tnode_t *tn)
 	cstk_t	*ci;
 	op_t	op;
 
-	for (ci = cstmt; ci->c_surrounding != NULL; ci = ci->c_surrounding)
+	ci = cstmt;
+	if (ci == NULL) {
+		/* syntax error '%s' */
+		error(249, "return outside function");
+		return;
+	}
+
+	for (; ci->c_surrounding != NULL; ci = ci->c_surrounding)
 		continue;
 
 	if (tn != NULL)

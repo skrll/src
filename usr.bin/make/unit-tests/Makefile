@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.278 2021/05/18 17:05:45 sjg Exp $
+# $NetBSD: Makefile,v 1.280 2021/06/29 00:35:23 sjg Exp $
 #
 # Unit tests for make(1)
 #
@@ -206,6 +206,7 @@ TESTS+=		job-flags
 TESTS+=		job-output-long-lines
 TESTS+=		job-output-null
 TESTS+=		jobs-empty-commands
+TESTS+=		jobs-empty-commands-error
 TESTS+=		jobs-error-indirect
 TESTS+=		jobs-error-nested
 TESTS+=		jobs-error-nested-make
@@ -427,6 +428,12 @@ TESTS+=		varparse-errors
 TESTS+=		varparse-mod
 TESTS+=		varparse-undef-partial
 TESTS+=		varquote
+
+# Some tests just do not work on some platforms or environments
+# so allow for some filtering.
+.if !empty(BROKEN_TESTS)
+TESTS:= ${TESTS:${BROKEN_TESTS:S,^,N,:ts:}}
+.endif
 
 # Ideas for more tests:
 #	char-0020-space.mk

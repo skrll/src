@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1254 2021/05/27 21:02:56 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1257 2021/06/19 06:19:35 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -72,18 +72,7 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
-.if ${MACHINE} == "alpha" || \
-    ${MACHINE} == "hppa" || \
-    ${MACHINE} == "ia64" || \
-    ${MACHINE} == "sparc" || \
-    ${MACHINE} == "sparc64" || \
-    ${MACHINE} == "vax" || \
-    ${MACHINE_ARCH} == "i386" || \
-    ${MACHINE_ARCH} == "x86_64" || \
-    ${MACHINE_CPU} == "aarch64" || \
-    ${MACHINE_CPU} == "mips" || \
-    ${MACHINE_CPU} == "powerpc" || \
-    ${MACHINE_CPU} == "riscv"
+.if ${MACHINE_CPU} != "sh3"
 HAVE_GCC?=	10
 .else
 HAVE_GCC?=	9
@@ -1580,8 +1569,6 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 # During transition from xorg-server 1.10 to 1.20
 .if \
     ${MACHINE} == "alpha"	|| \
-    ${MACHINE} == "amiga"	|| \
-    ${MACHINE} == "mac68k"	|| \
     ${MACHINE} == "netwinder"	|| \
     ${MACHINE} == "sgimips"	|| \
     ${MACHINE} == "vax"

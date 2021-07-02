@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.70 2021/04/18 22:51:24 rillig Exp $
+#	$NetBSD: Makefile,v 1.75 2021/06/29 07:37:34 rillig Exp $
 
 .include <bsd.own.mk>
 
@@ -26,6 +26,12 @@ CPPFLAGS+=	-I${.CURDIR}
 CPPFLAGS+=	${DEBUG:D-DDEBUG}
 
 COPTS.err.c+=	${${ACTIVE_CC} == "clang":? -Wno-format-nonliteral :}
+
+# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=101177
+.if ${HAVE_GCC:U0} >= 9 &&	\
+	(${MACHINE_ARCH} == "sh3el" || ${MACHINE_ARCH} == "sh3eb")
+COPTS.lex.c+=	-O0
+.endif
 
 BINDIR=		/usr/libexec
 
@@ -88,8 +94,6 @@ add-test: .PHONY
 		"FILES+=		$$test.exp" \
 		'.' 'w' 'q' \
 	| ed Makefile; \
-	${MAKE} sync-mi; \
-	printf '%s\n' '/^test_case /i' "test_case $$test" '.' 'w' 'q' \
-	| ed t_integration.sh
+	${MAKE} sync-mi
 
 .include <bsd.prog.mk>

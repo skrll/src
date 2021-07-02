@@ -1,4 +1,4 @@
-/* $NetBSD: pci_2100_a500.c,v 1.14 2020/09/25 03:40:11 thorpej Exp $ */
+/* $NetBSD: pci_2100_a500.c,v 1.16 2021/06/25 18:08:34 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pci_2100_a500.c,v 1.14 2020/09/25 03:40:11 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_2100_a500.c,v 1.16 2021/06/25 18:08:34 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -44,6 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: pci_2100_a500.c,v 1.14 2020/09/25 03:40:11 thorpej E
 #include <sys/syslog.h>
 
 #include <machine/autoconf.h>
+#include <machine/rpb.h>
 
 #include <dev/eisa/eisavar.h>
 
@@ -182,16 +183,17 @@ static const int dec_2100_a500_intr_deftype[SABLE_MAX_IRQ] = {
 	IST_LEVEL,
 };
 
-void
-pci_2100_a500_pickintr(struct ttwoga_config *tcp)
+static void
+pci_2100_a500_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
+    pci_chipset_tag_t pc)
 {
-	pci_chipset_tag_t pc = &tcp->tc_pc;
+	struct ttwoga_config *tcp = core;
 	char *cp;
 	int i;
 
-	pic_iot = &tcp->tc_iot;
+	pic_iot = iot;
 
-	pc->pc_intr_v = tcp;
+	pc->pc_intr_v = core;
 	pc->pc_intr_string = alpha_pci_generic_intr_string;
 	pc->pc_intr_evcnt = alpha_pci_generic_intr_evcnt;
 	pc->pc_intr_establish = dec_2100_a500_intr_establish;
@@ -204,7 +206,7 @@ pci_2100_a500_pickintr(struct ttwoga_config *tcp)
 	pc->pc_shared_intrs = alpha_shared_intr_alloc(SABLE_MAX_IRQ,
 	    PCI_2100_IRQ_STR);
 
-	pc->pc_intr_desc = "T2 irq";
+	pc->pc_intr_desc = "T2";
 
 	/* 64 16-byte vectors per hose. */
 	pc->pc_vecbase = 0x800 + ((64 * 16) * tcp->tc_hose);
@@ -246,6 +248,8 @@ pci_2100_a500_pickintr(struct ttwoga_config *tcp)
 		dec_2100_a500_icic_init_intr(tcp);
 	}
 }
+ALPHA_PCI_INTR_INIT(ST_DEC_2100_A500, pci_2100_a500_pickintr)
+ALPHA_PCI_INTR_INIT(ST_DEC_2100A_A500, pci_2100_a500_pickintr)
 
 void
 pci_2100_a500_eisa_pickintr(pci_chipset_tag_t pc, eisa_chipset_tag_t ec)
@@ -434,14 +438,14 @@ dec_2100_a500_intr_establish(pci_chipset_tag_t const pc,
 	KASSERT(irq < SABLE_MAX_IRQ);
 
 	cookie = alpha_shared_intr_alloc_intrhand(pc->pc_shared_intrs, irq,
-	    dec_2100_a500_intr_deftype[irq], level, flags, func, arg, "T2 irq");
+	    dec_2100_a500_intr_deftype[irq], level, flags, func, arg, "T2");
 
 	if (cookie == NULL)
 		return NULL;
 
 	mutex_enter(&cpu_lock);
 
-	if (! alpha_shared_intr_link(pc->pc_shared_intrs, cookie, "T2 irq")) {
+	if (! alpha_shared_intr_link(pc->pc_shared_intrs, cookie, "T2")) {
 		mutex_exit(&cpu_lock);
 		alpha_shared_intr_free_intrhand(cookie);
 		return NULL;
@@ -474,7 +478,7 @@ dec_2100_a500_intr_disestablish(pci_chipset_tag_t const pc, void * const cookie)
 		scb_free(pc->pc_vecbase + SCB_IDXTOVEC(irq));
 	}
 
-	alpha_shared_intr_unlink(pc->pc_shared_intrs, cookie, "T2 irq");
+	alpha_shared_intr_unlink(pc->pc_shared_intrs, cookie, "T2");
 
 	mutex_exit(&cpu_lock);
 
@@ -569,14 +573,14 @@ dec_2100_a500_eisa_intr_establish(void *v, int eirq, int type, int level,
 	}
 
 	cookie = alpha_shared_intr_alloc_intrhand(pc->pc_shared_intrs, irq,
-	    type, level, 0, fn, arg, "T2 irq");
+	    type, level, 0, fn, arg, "T2");
 
 	if (cookie == NULL)
 		return NULL;
 
 	mutex_enter(&cpu_lock);
 
-	if (! alpha_shared_intr_link(pc->pc_shared_intrs, cookie, "T2 irq")) {
+	if (! alpha_shared_intr_link(pc->pc_shared_intrs, cookie, "T2")) {
 		mutex_exit(&cpu_lock);
 		alpha_shared_intr_free_intrhand(cookie);
 		return NULL;
@@ -614,7 +618,7 @@ dec_2100_a500_eisa_intr_disestablish(void *v, void *cookie)
 	}
 
 	/* Remove it from the link. */
-	alpha_shared_intr_unlink(pc->pc_shared_intrs, cookie, "T2 irq");
+	alpha_shared_intr_unlink(pc->pc_shared_intrs, cookie, "T2");
 
 	mutex_exit(&cpu_lock);
 
@@ -665,7 +669,7 @@ dec_2100_a500_iointr(void *arg, u_long vec)
 	rv = alpha_shared_intr_dispatch(pc->pc_shared_intrs, irq);
 	(*tcp->tc_eoi)(tcp, irq);
 	if (rv == 0) {
-		alpha_shared_intr_stray(pc->pc_shared_intrs, irq, "T2 irq");
+		alpha_shared_intr_stray(pc->pc_shared_intrs, irq, "T2");
 		if (ALPHA_SHARED_INTR_DISABLE(pc->pc_shared_intrs, irq))
 			(*tcp->tc_enable_intr)(tcp, irq, 0);
 	} else

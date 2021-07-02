@@ -1,4 +1,4 @@
-/* $NetBSD: lca.c,v 1.52 2021/04/24 23:36:23 thorpej Exp $ */
+/* $NetBSD: lca.c,v 1.54 2021/06/19 16:59:07 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -56,13 +56,9 @@
  * rights to redistribute these changes.
  */
 
-#include "opt_dec_axppci_33.h"
-#include "opt_dec_alphabook1.h"
-#include "opt_dec_eb66.h"
-
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: lca.c,v 1.52 2021/04/24 23:36:23 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lca.c,v 1.54 2021/06/19 16:59:07 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -81,32 +77,23 @@ __KERNEL_RCSID(0, "$NetBSD: lca.c,v 1.52 2021/04/24 23:36:23 thorpej Exp $");
 #include <dev/pci/pcivar.h>
 #include <alpha/pci/lcareg.h>
 #include <alpha/pci/lcavar.h>
-#ifdef DEC_AXPPCI_33
-#include <alpha/pci/pci_axppci_33.h>
-#endif
-#ifdef DEC_ALPHABOOK1
-#include <alpha/pci/pci_alphabook1.h>
-#endif
-#ifdef DEC_EB66
-#include <alpha/pci/pci_eb66.h>
-#endif
 
-int	lcamatch(device_t, cfdata_t, void *);
-void	lcaattach(device_t, device_t, void *);
+static int	lcamatch(device_t, cfdata_t, void *);
+static void	lcaattach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(lca, sizeof(struct lca_softc),
     lcamatch, lcaattach, NULL, NULL);
 
 extern struct cfdriver lca_cd;
 
-int	lca_bus_get_window(int, int,
-	    struct alpha_bus_space_translation *);
+static int	lca_bus_get_window(int, int,
+		    struct alpha_bus_space_translation *);
 
 /* There can be only one. */
-int lcafound;
 struct lca_config lca_configuration;
+static int lcafound;
 
-int
+static int
 lcamatch(device_t parent, cfdata_t match, void *aux)
 {
 	struct mainbus_attach_args *ma = aux;
@@ -181,7 +168,7 @@ lca_init(struct lca_config *lcp, int mallocsafe)
 	lcp->lc_initted = 1;
 }
 
-void
+static void
 lcaattach(device_t parent, device_t self, void *aux)
 {
 	struct lca_softc *sc = device_private(self);
@@ -189,7 +176,6 @@ lcaattach(device_t parent, device_t self, void *aux)
 	struct pcibus_attach_args pba;
 
 	/* note that we've attached the chipset; can't have 2 LCAs. */
-	/* Um, not sure about this.  XXX JH */
 	lcafound = 1;
 	sc->sc_dev = self;
 
@@ -206,26 +192,7 @@ lcaattach(device_t parent, device_t self, void *aux)
 
 	lca_dma_init(lcp);
 
-	switch (cputype) {
-#ifdef DEC_AXPPCI_33
-	case ST_DEC_AXPPCI_33:
-		pci_axppci_33_pickintr(lcp);
-		break;
-#endif
-#ifdef DEC_ALPHABOOK1
-	case ST_ALPHABOOK1:
-		pci_alphabook1_pickintr(lcp);
-		break;
-#endif
-#ifdef DEC_EB66
-	case ST_EB66:
-		pci_eb66_pickintr(lcp);
-		break;
-#endif
-
-	default:
-		panic("lcaattach: shouldn't be here, really...");
-	}
+	alpha_pci_intr_init(lcp, &lcp->lc_iot, &lcp->lc_memt, &lcp->lc_pc);
 
 	pba.pba_iot = &lcp->lc_iot;
 	pba.pba_memt = &lcp->lc_memt;
@@ -240,8 +207,9 @@ lcaattach(device_t parent, device_t self, void *aux)
 	config_found(self, &pba, pcibusprint, CFARG_EOL);
 }
 
-int
-lca_bus_get_window(int type, int window, struct alpha_bus_space_translation *abst)
+static int
+lca_bus_get_window(int type, int window,
+    struct alpha_bus_space_translation *abst)
 {
 	struct lca_config *lcp = &lca_configuration;
 	bus_space_tag_t st;

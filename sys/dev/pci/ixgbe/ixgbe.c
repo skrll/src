@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.283 2021/05/18 05:29:16 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.285 2021/06/29 21:03:36 pgoyette Exp $ */
 
 /******************************************************************************
 
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ixgbe.c,v 1.283 2021/05/18 05:29:16 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixgbe.c,v 1.285 2021/06/29 21:03:36 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -1177,14 +1177,15 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	if (hw->phy.media_type == ixgbe_media_type_copper) {
 		uint16_t id1, id2;
 		int oui, model, rev;
-		const char *descr;
+		char descr[MII_MAX_DESCR_LEN];
 
 		id1 = hw->phy.id >> 16;
 		id2 = hw->phy.id & 0xffff;
 		oui = MII_OUI(id1, id2);
 		model = MII_MODEL(id2);
 		rev = MII_REV(id2);
-		if ((descr = mii_get_descr(oui, model)) != NULL)
+		mii_get_descr(descr, sizeof(descr), oui, model);
+		if (descr[0])
 			aprint_normal_dev(dev,
 			    "PHY: %s (OUI 0x%06x, model 0x%04x), rev. %d\n",
 			    descr, oui, model, rev);
@@ -1335,7 +1336,6 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 {
 	struct ethercom *ec = &adapter->osdep.ec;
 	struct ifnet   *ifp;
-	int rv;
 
 	INIT_DEBUGOUT("ixgbe_setup_interface: begin");
 
@@ -1370,11 +1370,7 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 	IFQ_SET_MAXLEN(&ifp->if_snd, adapter->num_tx_desc - 2);
 	IFQ_SET_READY(&ifp->if_snd);
 
-	rv = if_initialize(ifp);
-	if (rv != 0) {
-		aprint_error_dev(dev, "if_initialize failed(%d)\n", rv);
-		return rv;
-	}
+	if_initialize(ifp);
 	adapter->ipq = if_percpuq_create(&adapter->osdep.ec.ec_if);
 	ether_ifattach(ifp, adapter->hw.mac.addr);
 	aprint_normal_dev(dev, "Ethernet address %s\n",

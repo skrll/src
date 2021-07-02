@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.inc,v 1.2 2020/12/04 18:27:44 christos Exp $
+# $NetBSD: Makefile.inc,v 1.4 2021/06/18 13:57:52 christos Exp $
 
 DIST:=${.PARSEDIR}/dist
 
