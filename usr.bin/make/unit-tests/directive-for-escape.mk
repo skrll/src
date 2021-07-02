@@ -1,4 +1,4 @@
-# $NetBSD: directive-for-escape.mk,v 1.8 2021/06/24 23:22:17 rillig Exp $
+# $NetBSD: directive-for-escape.mk,v 1.10 2021/06/25 16:10:07 rillig Exp $
 #
 # Test escaping of special characters in the iteration values of a .for loop.
 # These values get expanded later using the :U variable modifier, and this
@@ -126,5 +126,15 @@ i,=		comma
 closing-brace=		}		# guard against an
 ${closing-brace}=	<closing-brace>	# alternative interpretation
 .info eight ${$}${$}${$}${$} and no cents.
+
+# What happens if the values from the .for loop contain a literal newline?
+# Before for.c 1.144 from 2021-06-25, the newline was passed verbatim to the
+# body of the .for loop, where it was then interpreted as a literal newline,
+# leading to syntax errors such as "Unclosed variable expression" in the upper
+# line and "Invalid line type" in the lower line.
+.for i in "${.newline}"
+.  info short: $i
+.  info long: ${i}
+.endfor
 
 all:

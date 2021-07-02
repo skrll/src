@@ -1,8 +1,9 @@
-/*	$NetBSD: msg_259.c,v 1.6 2021/02/04 07:39:39 rillig Exp $	*/
+/*	$NetBSD: msg_259.c,v 1.8 2021/06/29 13:58:13 rillig Exp $	*/
 # 3 "msg_259.c"
 
 // Test for message: argument #%d is converted from '%s' to '%s' due to prototype [259]
 
+/* lint1-only-if lp64 */
 /* lint1-extra-flags: -h */
 
 void farg_char(char);
