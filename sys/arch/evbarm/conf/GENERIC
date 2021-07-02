@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC,v 1.97 2021/05/05 10:24:04 jmcneill Exp $
+#	$NetBSD: GENERIC,v 1.99 2021/06/26 09:29:14 nia Exp $
 #
 #	GENERIC ARM (aarch32) kernel
 #
