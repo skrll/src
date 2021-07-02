@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.111 2021/06/20 20:59:08 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.114 2021/06/29 21:16:54 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -78,7 +78,7 @@ extern	FILE	*yyin;
 
 extern	void	initscan(void);
 extern	int	msb(int64_t, tspec_t, int);
-extern	int64_t	xsign(int64_t, tspec_t, int);
+extern	int64_t	convert_integer(int64_t, tspec_t, int);
 extern	void	clear_warn_flags(void);
 extern	sym_t	*getsym(sbuf_t *);
 extern	void	cleanup(void);
@@ -163,8 +163,8 @@ extern	sym_t	*lnklst(sym_t *, sym_t *);
 extern	void	check_type(sym_t *);
 extern	sym_t	*declarator_1_struct_union(sym_t *);
 extern	sym_t	*bitfield(sym_t *, int);
-extern	pqinf_t	*merge_pointers_and_qualifiers(pqinf_t *, pqinf_t *);
-extern	sym_t	*add_pointer(sym_t *, pqinf_t *);
+extern	qual_ptr *merge_qualified_pointer(qual_ptr *, qual_ptr *);
+extern	sym_t	*add_pointer(sym_t *, qual_ptr *);
 extern	sym_t	*add_array(sym_t *, bool, int);
 extern	sym_t	*add_function(sym_t *, sym_t *);
 extern	void	check_function_definition(sym_t *, bool);
@@ -208,6 +208,9 @@ extern	tnode_t	*expr_new_constant(type_t *, val_t *);
 extern	tnode_t	*new_name_node(sym_t *, int);
 extern	tnode_t	*new_string_node(strg_t *);
 extern	sym_t	*struct_or_union_member(tnode_t *, op_t, sym_t *);
+extern	tnode_t	*build_generic_selection(const tnode_t *,
+		    struct generic_association_types *);
+
 extern	tnode_t	*build(op_t, tnode_t *, tnode_t *);
 extern	tnode_t	*cconv(tnode_t *);
 extern	bool	is_typeok_bool_operand(const tnode_t *);

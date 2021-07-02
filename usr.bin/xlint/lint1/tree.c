@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.290 2021/06/20 20:48:25 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.303 2021/06/30 14:42:13 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tree.c,v 1.290 2021/06/20 20:48:25 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.303 2021/06/30 14:42:13 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -232,6 +232,14 @@ fallback_symbol(sym_t *sym)
 	error(99, sym->s_name);
 }
 
+/* https://gcc.gnu.org/onlinedocs/gcc/C-Extensions.html */
+static bool
+is_gcc_builtin(const char *name)
+{
+	return strncmp(name, "__atomic_", 9) == 0 ||
+	       strncmp(name, "__builtin_", 10) == 0;
+}
+
 /*
  * Create a node for a name (symbol table entry).
  * follow_token is the token which follows the name.
@@ -245,9 +253,18 @@ new_name_node(sym_t *sym, int follow_token)
 		sym->s_scl = EXTERN;
 		sym->s_def = DECL;
 		if (follow_token == T_LPAREN) {
-			if (sflag) {
-				/* function implicitly declared to ... */
-				warning(215);
+			if (gflag && is_gcc_builtin(sym->s_name)) {
+				/*
+				 * Do not warn about these, just assume that
+				 * they are regular functions compatible with
+				 * non-prototype calling conventions.
+				 */
+			} else if (Sflag) {
+				/* function '%s' implicitly declared to ... */
+				warning(215, sym->s_name);
+			} else if (sflag) {
+				/* function '%s' implicitly declared to ... */
+				warning(215, sym->s_name);
 			}
 			/*
 			 * XXX if tflag is set the symbol should be
@@ -330,7 +347,7 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 	 */
 	if (msym->s_scl == NOSCL) {
 		/* type '%s' does not have member '%s' */
-		error(101, type_name(msym->s_type), msym->s_name);
+		error(101, type_name(tn->tn_type), msym->s_name);
 		rmsym(msym);
 		msym->s_kind = FMEMBER;
 		msym->s_scl = MOS;
@@ -466,6 +483,21 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 	}
 
 	return msym;
+}
+
+tnode_t *
+build_generic_selection(const tnode_t *expr,
+			struct generic_association_types *sel)
+{
+	tnode_t *default_result = NULL;
+
+	for (; sel != NULL; sel = sel->gat_prev)
+		if (expr != NULL &&
+		    eqtype(sel->gat_arg, expr->tn_type, false, false, NULL))
+			return sel->gat_result;
+		else if (sel->gat_arg == NULL)
+			default_result = sel->gat_result;
+	return default_result;
 }
 
 /*
@@ -1475,8 +1507,8 @@ check_assign_types_compatible(op_t op, int arg,
 		error(211, type_name(ltp), type_name(rtp));
 		break;
 	case FARG:
-		/* argument is incompatible with prototype, arg #%d */
-		warning(155, arg);
+		/* passing '%s' to incompatible '%s', arg #%d */
+		warning(155, type_name(rtp), type_name(ltp), arg);
 		break;
 	default:
 		warn_incompatible_types(op, ltp, lt, rtp, rt);
@@ -1730,7 +1762,8 @@ promote(op_t op, bool farg, tnode_t *tn)
 		ntp = expr_dup_type(tn->tn_type);
 		ntp->t_tspec = t;
 		/*
-		 * Keep t_is_enum so we are later able to check compatibility
+		 * Keep t_is_enum even though t_tspec gets converted from
+		 * ENUM to INT, so we are later able to check compatibility
 		 * of enum types.
 		 */
 		tn = convert(op, 0, ntp, tn);
@@ -2239,9 +2272,9 @@ convert_constant_check_range_signed(op_t op, int arg)
  * of unsigned types or all truncated bits plus the
  * msb of the target for signed types are considered
  * to be significant bits. Loss of significant bits
- * means that at least on of the bits was set in an
- * unsigned type or that at least one, but not all of
- * the bits was set in an signed type.
+ * means that at least one of the bits was set in an
+ * unsigned type or that at least one but not all of
+ * the bits was set in a signed type.
  * Loss of significant bits means that it is not
  * possible, also not with necessary casts, to convert
  * back to the original type. A example for a
@@ -2383,18 +2416,9 @@ convert_constant(op_t op, int arg, const type_t *tp, val_t *nv, val_t *v)
 		v->v_unsigned_since_c90 = false;
 	}
 
-	switch (nt) {
-	case FLOAT:
-	case FCOMPLEX:
-	case DOUBLE:
-	case DCOMPLEX:
-	case LDOUBLE:
-	case LCOMPLEX:
-		break;
-	default:
+	if (is_integer(nt)) {
 		sz = tp->t_bitfield ? tp->t_flen : size_in_bits(nt);
-		nv->v_quad = xsign(nv->v_quad, nt, sz);
-		break;
+		nv->v_quad = convert_integer(nv->v_quad, nt, sz);
 	}
 
 	if (range_check && op != CVT)
@@ -3013,7 +3037,7 @@ fold(tnode_t *tn)
 		 * shifts of signed values are implementation dependent.
 		 */
 		q = ul >> sr;
-		q = xsign(q, t, size_in_bits(t) - (int)sr);
+		q = convert_integer(q, t, size_in_bits(t) - (int)sr);
 		break;
 	case LT:
 		q = (utyp ? ul < ur : sl < sr) ? 1 : 0;
@@ -3054,7 +3078,7 @@ fold(tnode_t *tn)
 			warning(141, op_name(tn->tn_op));
 	}
 
-	v->v_quad = xsign(q, t, -1);
+	v->v_quad = convert_integer(q, t, -1);
 
 	cn = expr_new_constant(tn->tn_type, v);
 	if (tn->tn_left->tn_system_dependent)
