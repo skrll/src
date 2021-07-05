@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.303 2021/06/30 14:42:13 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.312 2021/07/04 17:28:05 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tree.c,v 1.303 2021/06/30 14:42:13 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.312 2021/07/04 17:28:05 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -457,11 +457,11 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 	if (eq) {
 		if (op == POINT) {
 			if (tflag) {
-				/* left operand of '.' must be struct/... */
-				warning(103);
+				/* left operand of '.' must be struct ... */
+				warning(103, type_name(tn->tn_type));
 			} else {
-				/* left operand of '.' must be struct/... */
-				error(103);
+				/* left operand of '.' must be struct ... */
+				error(103, type_name(tn->tn_type));
 			}
 		} else {
 			if (tflag && tn->tn_type->t_tspec == PTR) {
@@ -728,6 +728,7 @@ cconv(tnode_t *tn)
 	/* lvalue to rvalue */
 	if (tn->tn_lvalue) {
 		tp = expr_dup_type(tn->tn_type);
+		/* C99 6.3.2.1p2 sentence 2 says to remove the qualifiers. */
 		tp->t_const = tp->t_volatile = false;
 		tn = new_tnode(LOAD, tp, tn, NULL);
 	}
@@ -760,8 +761,6 @@ typeok_incdec(op_t op, const tnode_t *tn, const type_t *tp)
 	if (!tn->tn_lvalue) {
 		if (tn->tn_op == CVT && tn->tn_cast &&
 		    tn->tn_left->tn_op == LOAD) {
-			if (tn->tn_type->t_tspec == PTR)
-				return true;
 			/* a cast does not yield an lvalue */
 			error(163);
 		}
@@ -785,8 +784,6 @@ typeok_address(const mod_t *mp,
 	} else if (!tn->tn_lvalue) {
 		if (tn->tn_op == CVT && tn->tn_cast &&
 		    tn->tn_left->tn_op == LOAD) {
-			if (tn->tn_type->t_tspec == PTR)
-				return true;
 			/* a cast does not yield an lvalue */
 			error(163);
 		}
@@ -1075,8 +1072,6 @@ typeok_assign(const mod_t *mp, const tnode_t *ln, const type_t *ltp, tspec_t lt)
 	if (!ln->tn_lvalue) {
 		if (ln->tn_op == CVT && ln->tn_cast &&
 		    ln->tn_left->tn_op == LOAD) {
-			if (ln->tn_type->t_tspec == PTR)
-				return true;
 			/* a cast does not yield an lvalue */
 			error(163);
 		}
@@ -1633,7 +1628,7 @@ new_tnode(op_t op, type_t *type, tnode_t *ln, tnode_t *rn)
 {
 	tnode_t	*ntn;
 	tspec_t	t;
-#ifdef notyet
+#if 0 /* not yet */
 	size_t l;
 	uint64_t rnum;
 #endif
@@ -1642,15 +1637,12 @@ new_tnode(op_t op, type_t *type, tnode_t *ln, tnode_t *rn)
 
 	ntn->tn_op = op;
 	ntn->tn_type = type;
-	if (ln->tn_from_system_header)
-		ntn->tn_from_system_header = true;
-	if (rn != NULL && rn->tn_from_system_header)
-		ntn->tn_from_system_header = true;
+	ntn->tn_relaxed = ln->tn_relaxed || (rn != NULL && rn->tn_relaxed);
 	ntn->tn_left = ln;
 	ntn->tn_right = rn;
 
 	switch (op) {
-#ifdef notyet
+#if 0 /* not yet */
 	case SHR:
 		if (rn->tn_op != CON)
 			break;
@@ -1887,7 +1879,7 @@ convert(op_t op, int arg, type_t *tp, tnode_t *tn)
 	ntn->tn_op = CVT;
 	ntn->tn_type = tp;
 	ntn->tn_cast = op == CVT;
-	ntn->tn_from_system_header |= tn->tn_from_system_header;
+	ntn->tn_relaxed |= tn->tn_relaxed;
 	ntn->tn_right = NULL;
 	if (tn->tn_op != CON || nt == VOID) {
 		ntn->tn_left = tn;
@@ -3682,9 +3674,7 @@ void
 expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk, bool is_do_while)
 {
 
-	lint_assert(tn != NULL || nerr != 0);
-
-	if (tn == NULL) {
+	if (tn == NULL) {	/* in case of errors */
 		expr_free_all();
 		return;
 	}
@@ -3785,6 +3775,9 @@ display_expression(const tnode_t *tn, int offs)
 		(void)printf("0x %08lx %08lx ",
 		    (long)(uq >> 32) & 0xffffffffl,
 		    (long)uq & 0xffffffffl);
+	} else if (tn->tn_op == CON && tn->tn_type->t_tspec == BOOL) {
+		(void)printf("%s ",
+		    tn->tn_val->v_quad != 0 ? "true" : "false");
 	} else if (tn->tn_op == CON) {
 		lint_assert(tn->tn_type->t_tspec == PTR);
 		(void)printf("0x%0*lx ", (int)(sizeof(void *) * CHAR_BIT / 4),
