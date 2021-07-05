@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.72 2021/06/29 21:33:09 rillig Exp $
+# $NetBSD: Makefile,v 1.79 2021/07/04 20:22:31 rillig Exp $
 
 NOMAN=		# defined
 MAX_MESSAGE=	345		# see lint1/err.c
@@ -12,6 +12,9 @@ TESTS_SH=	t_integration
 FILESDIR=	${TESTSDIR}
 FILES+=		c11_generic_expression.c
 FILES+=		c11_generic_expression.exp
+FILES+=		c99_bool_strict_suppressed.c
+FILES+=		c99_init_array.c
+FILES+=		c99_init_array.exp
 FILES+=		c99_init_designator.c
 FILES+=		c99_init_designator.exp
 FILES+=		d_alignof.c
@@ -52,6 +55,7 @@ FILES+=		d_cast_fun_array_param.c
 FILES+=		d_cast_init.c
 FILES+=		d_cast_init2.c
 FILES+=		d_cast_lhs.c
+FILES+=		d_cast_lhs.exp
 FILES+=		d_cast_typeof.c
 FILES+=		d_compound_literals1.c
 FILES+=		d_compound_literals2.c
@@ -141,10 +145,14 @@ FILES+=		lex_wide_char.exp
 FILES+=		lex_wide_string.c
 FILES+=		lex_wide_string.exp
 FILES+=		${:U0 ${:U:${:Urange=${MAX_MESSAGE}}}:C,^.$,0&,:C,^..$,0&,:@i@msg_${i}.c msg_${i}.exp@:Nmsg_176.exp}
+FILES+=		msg_230_uchar.c
+FILES+=		msg_230_uchar.exp
 FILES+=		msg_259_ilp32.c
 FILES+=		msg_259_ilp32.exp
 FILES+=		op_colon.c
 FILES+=		op_colon.exp
+FILES+=		op_shl_lp64.c
+FILES+=		op_shl_lp64.exp
 FILES+=		stmt_for.c
 FILES+=		stmt_for.exp
 

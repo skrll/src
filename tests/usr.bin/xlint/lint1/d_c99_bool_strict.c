@@ -1,4 +1,4 @@
-/*	$NetBSD: d_c99_bool_strict.c,v 1.28 2021/04/05 01:35:34 rillig Exp $	*/
+/*	$NetBSD: d_c99_bool_strict.c,v 1.30 2021/07/04 07:09:39 rillig Exp $	*/
 # 3 "d_c99_bool_strict.c"
 
 /*
@@ -373,13 +373,13 @@ strict_bool_controlling_expression(bool b, int i, double d, const void *p)
 	if (b)
 		do_nothing();
 
-	if (0)			/* expect: 333 */
+	if (/*CONSTCOND*/0)	/* expect: 333 */
+		do_nothing();	/* expect: statement not reached [193] */
+
+	if (/*CONSTCOND*/1)	/* expect: 333 */
 		do_nothing();
 
-	if (1)			/* expect: 333 */
-		do_nothing();
-
-	if (2)			/* expect: 333 */
+	if (/*CONSTCOND*/2)	/* expect: 333 */
 		do_nothing();
 
 	/* Not allowed: There is no implicit conversion from scalar to bool. */
@@ -438,6 +438,8 @@ strict_bool_operand_unary_address(void)
 	*bp = b;
 	b = *bp;
 }
+
+/* see strict_bool_operand_unary_all below for the other unary operators. */
 
 /*
  * strict-bool-operand-binary:
@@ -512,7 +514,7 @@ strict_bool_operand_binary(bool b, int i)
 }
 
 void
-strict_bool_operand_binary_all(bool b, unsigned u)
+strict_bool_operand_unary_all(bool b)
 {
 	b = !b;
 	b = ~b;			/* expect: 335 */
@@ -522,7 +524,11 @@ strict_bool_operand_binary_all(bool b, unsigned u)
 	b--;			/* expect: 335 */
 	b = +b;			/* expect: 335 */
 	b = -b;			/* expect: 335 */
+}
 
+void
+strict_bool_operand_binary_all(bool b, unsigned u)
+{
 	b = b * b;		/* expect: 336 *//* expect: 337 */
 	b = b / b;		/* expect: 336 *//* expect: 337 */
 	b = b % b;		/* expect: 336 *//* expect: 337 */
