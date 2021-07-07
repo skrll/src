@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.122 2021/06/30 14:23:50 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.125 2021/07/04 17:01:58 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.122 2021/06/30 14:23:50 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.125 2021/07/04 17:01:58 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -85,7 +85,7 @@ const char *const msgs[] = {
 	"redefinition of %s",					      /* 28 */
 	"previously declared extern, becomes static: %s",	      /* 29 */
 	"redeclaration of %s; ANSI C requires static",		      /* 30 */
-	"incomplete structure or union %s: %s",			      /* 31 */
+	"argument '%s' has type '%s'",				      /* 31 */
 	"argument type defaults to 'int': %s",			      /* 32 */
 	"duplicate member name: %s",				      /* 33 */
 	"nonportable bit-field type '%s'",			      /* 34 */
@@ -157,8 +157,8 @@ const char *const msgs[] = {
 	"unary + is illegal in traditional C",			      /* 100 */
 	"type '%s' does not have member '%s'",			      /* 101 */
 	"illegal member use: %s",				      /* 102 */
-	"left operand of '.' must be struct/union object",	      /* 103 */
-	"left operand of '->' must be pointer to struct/union not %s",/* 104 */
+	"left operand of '.' must be struct or union, not '%s'",      /* 103 */
+	"left operand of '->' must be pointer to struct or union, not '%s'", /* 104 */
 	"non-unique member requires struct/union %s",		      /* 105 */
 	"left operand of '->' must be pointer",			      /* 106 */
 	"operands of '%s' have incompatible types (%s != %s)",	      /* 107 */
@@ -430,8 +430,10 @@ update_location(const char *filename, int lineno, bool is_begin, bool is_end)
 			free(top);
 			top = includes;
 		}
-		top->filename = filename;
-		top->lineno = lineno;
+		if (top != NULL) {
+			top->filename = filename;
+			top->lineno = lineno;
+		}
 	}
 }
 
