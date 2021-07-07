@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.249 2021/07/03 21:18:40 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.265 2021/07/06 21:41:36 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.249 2021/07/03 21:18:40 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.265 2021/07/06 21:41:36 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -123,7 +123,7 @@ anonymize(sym_t *s)
 }
 %}
 
-%expect 182
+%expect 162
 
 %union {
 	val_t	*y_val;
@@ -139,7 +139,7 @@ anonymize(sym_t *s)
 	strg_t	*y_string;
 	qual_ptr *y_qual_ptr;
 	bool	y_seen_statement;
-	struct generic_association_types *y_types;
+	struct generic_association *y_generic;
 };
 
 %token			T_LBRACE T_RBRACE T_LBRACK T_RBRACK T_LPAREN T_RPAREN
@@ -300,15 +300,14 @@ anonymize(sym_t *s)
 %type	<y_tnode>	constant_expr
 %type	<y_tnode>	array_size
 %type	<y_sym>		enum_declaration
-%type	<y_sym>		enums_with_opt_comma
-%type	<y_sym>		enums
+%type	<y_sym>		enumerator_list
 %type	<y_sym>		enumerator
 %type	<y_sym>		enumeration_constant
 %type	<y_sym>		notype_direct_decl
 %type	<y_sym>		type_direct_decl
 %type	<y_qual_ptr>	pointer
 %type	<y_qual_ptr>	asterisk
-%type	<y_sym>		param_decl
+%type	<y_sym>		type_param_decl
 %type	<y_sym>		param_list
 %type	<y_sym>		abstract_decl_param_list
 %type	<y_sym>		direct_param_decl
@@ -341,8 +340,8 @@ anonymize(sym_t *s)
 %type	<y_range>	range
 %type	<y_seen_statement> block_item_list
 %type	<y_seen_statement> block_item
-%type	<y_types>	generic_assoc_list
-%type	<y_types>	generic_association
+%type	<y_generic>	generic_assoc_list
+%type	<y_generic>	generic_association
 
 
 %%
@@ -539,114 +538,6 @@ declaration:			/* C99 6.7 */
 	| error T_SEMI
 	;
 
-type_attribute_format_type:
-	  T_AT_FORMAT_GNU_PRINTF
-	| T_AT_FORMAT_PRINTF
-	| T_AT_FORMAT_SCANF
-	| T_AT_FORMAT_STRFMON
-	| T_AT_FORMAT_STRFTIME
-	| T_AT_FORMAT_SYSLOG
-	;
-
-type_attribute_bounded_type:
-	  T_AT_MINBYTES
-	| T_AT_STRING
-	| T_AT_BUFFER
-	;
-
-
-type_attribute_spec:
-	  /* empty */
-	| T_AT_ALWAYS_INLINE
-	| T_AT_ALIAS T_LPAREN string T_RPAREN
-	| T_AT_ALIGNED T_LPAREN constant_expr T_RPAREN
-	| T_AT_ALIGNED
-	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_COMMA constant_expr T_RPAREN
-	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_RPAREN
-	| T_AT_BOUNDED T_LPAREN type_attribute_bounded_type
-	  T_COMMA constant_expr T_COMMA constant_expr T_RPAREN
-	| T_AT_COLD
-	| T_AT_COMMON
-	| T_AT_CONSTRUCTOR T_LPAREN constant_expr T_RPAREN
-	| T_AT_CONSTRUCTOR
-	| T_AT_DEPRECATED T_LPAREN string T_RPAREN
-	| T_AT_DEPRECATED
-	| T_AT_DESTRUCTOR T_LPAREN constant_expr T_RPAREN
-	| T_AT_DESTRUCTOR
-	| T_AT_FALLTHROUGH {
-		fallthru(1);
-	}
-	| T_AT_FORMAT T_LPAREN type_attribute_format_type T_COMMA
-	    constant_expr T_COMMA constant_expr T_RPAREN
-	| T_AT_FORMAT_ARG T_LPAREN constant_expr T_RPAREN
-	| T_AT_GNU_INLINE
-	| T_AT_MALLOC
-	| T_AT_MAY_ALIAS
-	| T_AT_MODE T_LPAREN T_NAME T_RPAREN
-	| T_AT_NOINLINE
-	| T_AT_NONNULL T_LPAREN constant_expr_list_opt T_RPAREN
-	| T_AT_NONNULL
-	| T_AT_NONSTRING
-	| T_AT_NORETURN
-	| T_AT_NOTHROW
-	| T_AT_NO_INSTRUMENT_FUNCTION
-	| T_AT_OPTIMIZE T_LPAREN string T_RPAREN
-	| T_AT_PACKED {
-		addpacked();
-	  }
-	| T_AT_PCS T_LPAREN string T_RPAREN
-	| T_AT_PURE
-	| T_AT_RETURNS_TWICE
-	| T_AT_SECTION T_LPAREN string T_RPAREN
-	| T_AT_SENTINEL T_LPAREN constant_expr T_RPAREN
-	| T_AT_SENTINEL
-	| T_AT_TLS_MODEL T_LPAREN string T_RPAREN
-	| T_AT_TUNION
-	| T_AT_UNUSED {
-		add_attr_used();
-	  }
-	| T_AT_USED {
-		add_attr_used();
-	  }
-	| T_AT_VISIBILITY T_LPAREN constant_expr T_RPAREN
-	| T_AT_WARN_UNUSED_RESULT
-	| T_AT_WEAK
-	| T_QUAL {
-		if ($1 != CONST)
-			yyerror("Bad attribute");
-	  }
-	;
-
-type_attribute_spec_list:
-	  type_attribute_spec
-	| type_attribute_spec_list T_COMMA type_attribute_spec
-	;
-
-align_as:
-	  typespec
-	| constant_expr
-	;
-
-type_attribute:
-	  T_ATTRIBUTE T_LPAREN T_LPAREN {
-	    attron = true;
-	  } type_attribute_spec_list {
-	    attron = false;
-	  } T_RPAREN T_RPAREN
-	| T_ALIGNAS T_LPAREN align_as T_RPAREN {
-	  }
-	| T_PACKED {
-		addpacked();
-	  }
-	| T_NORETURN {
-	  }
-	;
-
-type_attribute_list:
-	  type_attribute
-	| type_attribute_list type_attribute
-	;
-
 clrtyp:
 	  /* empty */ {
 		clrtyp();
@@ -690,7 +581,7 @@ declmod:
 	| T_SCLASS {
 		add_storage_class($1);
 	  }
-	| type_attribute_list
+	| type_attribute
 	;
 
 clrtyp_typespec:
@@ -759,7 +650,7 @@ struct:
 		symtyp = FTAG;
 		begin_declaration_level($1 == STRUCT ? MOS : MOU);
 		dcs->d_offset = 0;
-		dcs->d_stralign = CHAR_SIZE;
+		dcs->d_sou_align_in_bits = CHAR_SIZE;
 		$$ = $1;
 	  }
 	;
@@ -858,6 +749,11 @@ member_declaration:
 	  }
 	;
 
+/*
+ * XXX: shift/reduce conflict, caused by:
+ *	type_attribute noclass_declspecs
+ *	noclass_declspecs type_attribute
+ */
 noclass_declspecs:
 	  clrtyp_typespec {
 		add_type($1);
@@ -964,7 +860,7 @@ enum_tag:
 	;
 
 enum_declaration:
-	  enum_decl_lbrace enums_with_opt_comma T_RBRACE {
+	  enum_decl_lbrace enumerator_list enumerator_list_comma_opt T_RBRACE {
 		$$ = $2;
 	  }
 	;
@@ -976,23 +872,9 @@ enum_decl_lbrace:
 	  }
 	;
 
-enums_with_opt_comma:
-	  enums
-	| enums T_COMMA {
-		if (sflag) {
-			/* trailing ',' prohibited in enum declaration */
-			error(54);
-		} else {
-			/* trailing ',' prohibited in enum declaration */
-			c99ism(54);
-		}
-		$$ = $1;
-	  }
-	;
-
-enums:
+enumerator_list:		/* C99 6.7.2.2 */
 	  enumerator
-	| enums T_COMMA enumerator {
+	| enumerator_list T_COMMA enumerator {
 		$$ = lnklst($1, $3);
 	  }
 	| error {
@@ -1000,7 +882,20 @@ enums:
 	  }
 	;
 
-enumerator:
+enumerator_list_comma_opt:
+	  /* empty */
+	| T_COMMA {
+		if (sflag) {
+			/* trailing ',' prohibited in enum declaration */
+			error(54);
+		} else {
+			/* trailing ',' prohibited in enum declaration */
+			c99ism(54);
+		}
+	  }
+	;
+
+enumerator:			/* C99 6.7.2.2 */
 	  enumeration_constant {
 		$$ = enumeration_constant($1, enumval, true);
 	  }
@@ -1015,6 +910,11 @@ enumeration_constant:		/* C99 6.4.4.3 */
 	  }
 	;
 
+
+/*
+ * For an explanation of 'notype' in the following rules, see the Bison
+ * manual, section 7.1 "Semantic Info in Token Kinds".
+ */
 
 notype_init_decls:
 	  notype_init_decl
@@ -1068,6 +968,11 @@ type_decl:
 	  }
 	;
 
+/*
+ * XXX: shift/reduce conflict, caused by:
+ *	type_attribute notype_direct_decl
+ *	notype_direct_decl type_attribute
+ */
 notype_direct_decl:
 	  T_NAME {
 		$$ = declarator_name(getsym($1));
@@ -1089,9 +994,14 @@ notype_direct_decl:
 		end_declaration_level();
 		block_level--;
 	  }
-	| notype_direct_decl type_attribute_list
+	| notype_direct_decl type_attribute
 	;
 
+/*
+ * XXX: shift/reduce conflict, caused by:
+ *	type_attribute type_direct_decl
+ *	type_direct_decl type_attribute
+ */
 type_direct_decl:
 	  identifier {
 		$$ = declarator_name(getsym($1));
@@ -1113,33 +1023,28 @@ type_direct_decl:
 		end_declaration_level();
 		block_level--;
 	  }
-	| type_direct_decl type_attribute_list
+	| type_direct_decl type_attribute
 	;
 
 /*
- * param_decl and notype_param_decl exist to avoid a conflict in
- * argument lists. A typename enclosed in parens should always be
- * treated as a typename, not an argument.
- * "typedef int a; f(int (a));" is  "typedef int a; f(int foo(a));"
- *				not "typedef int a; f(int a);"
+ * The two distinct rules type_param_decl and notype_param_decl avoid a
+ * conflict in argument lists. A typename enclosed in parentheses is always
+ * treated as a typename, not an argument name. For example, after
+ * "typedef double a;", the declaration "f(int (a));" is interpreted as
+ * "f(int (double));", not "f(int a);".
  */
-param_decl:
+type_param_decl:
 	  direct_param_decl
 	| pointer direct_param_decl {
 		$$ = add_pointer($2, $1);
 	  }
 	;
 
-array_size:
-	  type_qualifier_list_opt T_SCLASS constant_expr {
-		/* C11 6.7.6.3p7 */
-		if ($2 != STATIC)
-			yyerror("Bad attribute");
-		/* static array size is a C11 extension */
-		c11ism(343);
-		$$ = $3;
+notype_param_decl:
+	  direct_notype_param_decl
+	| pointer direct_notype_param_decl {
+		$$ = add_pointer($2, $1);
 	  }
-	| constant_expr
 	;
 
 direct_param_decl:
@@ -1165,14 +1070,8 @@ direct_param_decl:
 	  }
 	;
 
-notype_param_decl:
-	  direct_notype_param_decl
-	| pointer direct_notype_param_decl {
-		$$ = add_pointer($2, $1);
-	  }
-	;
-
 direct_notype_param_decl:
+	/* XXX: missing identifier type_attribute_list? */
 	  identifier {
 		$$ = declarator_name(getsym($1));
 	  }
@@ -1234,6 +1133,11 @@ type_qualifier:
 			lint_assert($1 == RESTRICT || $1 == THREAD);
 		}
 	  }
+	;
+
+align_as:			/* See alignment-specifier in C11 6.7.5 */
+	  typespec
+	| constant_expr
 	;
 
 param_list:
@@ -1306,6 +1210,7 @@ parameter_type_list:
 	  }
 	;
 
+/* XXX: C99 6.7.5 defines the same name, but it looks completely different. */
 parameter_declaration:
 	  declmods deftyp {
 		$$ = declare_argument(abstract_name(), false);
@@ -1316,14 +1221,7 @@ parameter_declaration:
 	| declmods deftyp notype_param_decl {
 		$$ = declare_argument($3, false);
 	  }
-	/*
-	 * param_decl is needed because of following conflict:
-	 * "typedef int a; f(int (a));" could be parsed as
-	 * "function with argument a of type int", or
-	 * "function with an abstract argument of type function".
-	 * This grammar realizes the second case.
-	 */
-	| declaration_specifiers deftyp param_decl {
+	| declaration_specifiers deftyp type_param_decl {
 		$$ = declare_argument($3, false);
 	  }
 	| declmods deftyp abstract_declarator {
@@ -1348,7 +1246,7 @@ asm_or_symbolrename_opt:		/* expect only one */
 	;
 
 initializer:			/* C99 6.7.8 "Initialization" */
-	  expr				%prec T_COMMA {
+	  expr %prec T_COMMA {
 		init_expr($1);
 	  }
 	| init_lbrace init_rbrace {
@@ -1405,7 +1303,7 @@ range:
 	| constant_expr T_ELLIPSIS constant_expr {
 		$$.lo = to_int_constant($1, true);
 		$$.hi = to_int_constant($3, true);
-		/* initialization with '[a...b]' is a GNU extension */
+		/* initialization with '[a...b]' is a GCC extension */
 		gnuism(340);
 	  }
 	;
@@ -1459,6 +1357,11 @@ abstract_declarator:		/* C99 6.7.6 */
 	  }
 	;
 
+/*
+ * XXX: shift/reduce conflict, caused by:
+ *	type_attribute direct_abstract_declarator
+ *	direct_abstract_declarator type_attribute
+ */
 direct_abstract_declarator:		/* C99 6.7.6 */
 	  T_LPAREN abstract_declarator T_RPAREN {
 		$$ = $2;
@@ -1491,7 +1394,19 @@ direct_abstract_declarator:		/* C99 6.7.6 */
 		end_declaration_level();
 		block_level--;
 	  }
-	| direct_abstract_declarator type_attribute_list
+	| direct_abstract_declarator type_attribute
+	;
+
+array_size:
+	  type_qualifier_list_opt T_SCLASS constant_expr {
+		/* C11 6.7.6.3p7 */
+		if ($2 != STATIC)
+			yyerror("Bad attribute");
+		/* static array size is a C11 extension */
+		c11ism(343);
+		$$ = $3;
+	  }
+	| constant_expr
 	;
 
 non_expr_statement:
@@ -1512,7 +1427,7 @@ statement:			/* C99 6.8 */
 	;
 
 labeled_statement:		/* C99 6.8.1 */
-	  label type_attribute_opt statement
+	  label gcc_attribute_list_opt statement
 	;
 
 label:
@@ -1565,7 +1480,7 @@ block_item_list:
 			/* declarations after statements is a C99 feature */
 			c99ism(327);
 		$$ = $1 || $2;
-	}
+	  }
 	;
 
 block_item:
@@ -1647,7 +1562,7 @@ generic_selection:		/* C11 6.5.1.1 */
 generic_assoc_list:		/* C11 6.5.1.1 */
 	  generic_association
 	| generic_assoc_list T_COMMA generic_association {
-		$3->gat_prev = $1;
+		$3->ga_prev = $1;
 		$$ = $3;
 	  }
 	;
@@ -1655,13 +1570,13 @@ generic_assoc_list:		/* C11 6.5.1.1 */
 generic_association:		/* C11 6.5.1.1 */
 	  type_name T_COLON assignment_expression {
 		$$ = getblk(sizeof(*$$));
-		$$->gat_arg = $1;
-		$$->gat_result = $3;
+		$$->ga_arg = $1;
+		$$->ga_result = $3;
 	  }
 	| T_DEFAULT T_COLON assignment_expression {
 		$$ = getblk(sizeof(*$$));
-		$$->gat_arg = NULL;
-		$$->gat_result = $3;
+		$$->ga_arg = NULL;
+		$$->ga_result = $3;
 	  }
 	;
 
@@ -1727,6 +1642,7 @@ for_start:
 		block_level++;
 	  }
 	;
+
 for_exprs:
 	  for_start declaration_specifiers deftyp notype_init_decls T_SEMI
 	    expr_opt T_SEMI expr_opt T_RPAREN {
@@ -1949,12 +1865,6 @@ term:
 	| T_EXTENSION term {
 		$$ = $2;
 	  }
-	| T_REAL T_LPAREN term T_RPAREN {
-		$$ = build(REAL, $3, NULL);
-	  }
-	| T_IMAG T_LPAREN term T_RPAREN {
-		$$ = build(IMAG, $3, NULL);
-	  }
 	| T_BUILTIN_OFFSETOF T_LPAREN type_name T_COMMA identifier T_RPAREN {
 		symtyp = FMEMBER;
 		$$ = build_offsetof($3, getsym($5));
@@ -1964,13 +1874,13 @@ term:
 		if ($$ != NULL)
 			check_expr_misc($2, false, false, false, false, false, true);
 	  }
-	| T_SIZEOF T_LPAREN type_name T_RPAREN		%prec T_SIZEOF {
+	| T_SIZEOF T_LPAREN type_name T_RPAREN %prec T_SIZEOF {
 		$$ = build_sizeof($3);
 	  }
 	| T_ALIGNOF T_LPAREN type_name T_RPAREN {
 		$$ = build_alignof($3);
 	  }
-	| T_LPAREN type_name T_RPAREN term		%prec T_UNARY {
+	| T_LPAREN type_name T_RPAREN term %prec T_UNARY {
 		$$ = cast($4, $2);
 	  }
 	| T_LPAREN type_name T_RPAREN {	/* C99 6.5.2.5 "Compound literals" */
@@ -2043,7 +1953,7 @@ string2:
 	;
 
 func_arg_list:
-	  expr						%prec T_COMMA {
+	  expr %prec T_COMMA {
 		$$ = new_function_argument_node(NULL, $1);
 	  }
 	| func_arg_list T_COMMA expr {
@@ -2074,9 +1984,127 @@ identifier:			/* C99 6.4.2.1 */
 	;
 
 comma_opt:
-	  T_COMMA
-	| /* empty */
+	  /* empty */
+	| T_COMMA
 	;
+
+/* GCC extensions */
+
+type_attribute_list:
+	  type_attribute
+	| type_attribute_list type_attribute
+	;
+
+type_attribute:
+	  gcc_attribute
+	| T_ALIGNAS T_LPAREN align_as T_RPAREN
+	| T_PACKED {
+		addpacked();
+	  }
+	| T_NORETURN
+	;
+
+gcc_attribute_list_opt:
+	  /* empty */
+	| gcc_attribute_list
+	;
+
+gcc_attribute_list:
+	  gcc_attribute
+	| gcc_attribute_list gcc_attribute
+	;
+
+/* https://gcc.gnu.org/onlinedocs/gcc/Attribute-Syntax.html */
+gcc_attribute:
+	  T_ATTRIBUTE T_LPAREN T_LPAREN {
+	    attron = true;
+	  } gcc_attribute_spec_list {
+	    attron = false;
+	  } T_RPAREN T_RPAREN
+	;
+
+gcc_attribute_spec_list:
+	  gcc_attribute_spec
+	| gcc_attribute_spec_list T_COMMA gcc_attribute_spec
+	;
+
+gcc_attribute_spec:
+	  /* empty */
+	| T_AT_ALWAYS_INLINE
+	| T_AT_ALIAS T_LPAREN string T_RPAREN
+	| T_AT_ALIGNED T_LPAREN constant_expr T_RPAREN
+	| T_AT_ALIGNED
+	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_COMMA constant_expr T_RPAREN
+	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_RPAREN
+	| T_AT_BOUNDED T_LPAREN gcc_attribute_bounded
+	  T_COMMA constant_expr T_COMMA constant_expr T_RPAREN
+	| T_AT_COLD
+	| T_AT_COMMON
+	| T_AT_CONSTRUCTOR T_LPAREN constant_expr T_RPAREN
+	| T_AT_CONSTRUCTOR
+	| T_AT_DEPRECATED T_LPAREN string T_RPAREN
+	| T_AT_DEPRECATED
+	| T_AT_DESTRUCTOR T_LPAREN constant_expr T_RPAREN
+	| T_AT_DESTRUCTOR
+	| T_AT_FALLTHROUGH {
+		fallthru(1);
+	  }
+	| T_AT_FORMAT T_LPAREN gcc_attribute_format T_COMMA
+	    constant_expr T_COMMA constant_expr T_RPAREN
+	| T_AT_FORMAT_ARG T_LPAREN constant_expr T_RPAREN
+	| T_AT_GNU_INLINE
+	| T_AT_MALLOC
+	| T_AT_MAY_ALIAS
+	| T_AT_MODE T_LPAREN T_NAME T_RPAREN
+	| T_AT_NOINLINE
+	| T_AT_NONNULL T_LPAREN constant_expr_list_opt T_RPAREN
+	| T_AT_NONNULL
+	| T_AT_NONSTRING
+	| T_AT_NORETURN
+	| T_AT_NOTHROW
+	| T_AT_NO_INSTRUMENT_FUNCTION
+	| T_AT_OPTIMIZE T_LPAREN string T_RPAREN
+	| T_AT_PACKED {
+		addpacked();
+	  }
+	| T_AT_PCS T_LPAREN string T_RPAREN
+	| T_AT_PURE
+	| T_AT_RETURNS_TWICE
+	| T_AT_SECTION T_LPAREN string T_RPAREN
+	| T_AT_SENTINEL T_LPAREN constant_expr T_RPAREN
+	| T_AT_SENTINEL
+	| T_AT_TLS_MODEL T_LPAREN string T_RPAREN
+	| T_AT_TUNION
+	| T_AT_UNUSED {
+		add_attr_used();
+	  }
+	| T_AT_USED {
+		add_attr_used();
+	  }
+	| T_AT_VISIBILITY T_LPAREN constant_expr T_RPAREN
+	| T_AT_WARN_UNUSED_RESULT
+	| T_AT_WEAK
+	| T_QUAL {
+		if ($1 != CONST)
+			yyerror("Bad attribute");
+	  }
+	;
+
+gcc_attribute_bounded:
+	  T_AT_MINBYTES
+	| T_AT_STRING
+	| T_AT_BUFFER
+	;
+
+gcc_attribute_format:
+	  T_AT_FORMAT_GNU_PRINTF
+	| T_AT_FORMAT_PRINTF
+	| T_AT_FORMAT_SCANF
+	| T_AT_FORMAT_STRFMON
+	| T_AT_FORMAT_STRFTIME
+	| T_AT_FORMAT_SYSLOG
+	;
+
 %%
 
 /* ARGSUSED */

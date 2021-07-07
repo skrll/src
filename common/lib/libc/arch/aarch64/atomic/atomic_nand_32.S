@@ -1,4 +1,4 @@
-/* $NetBSD: atomic_nand_32.S,v 1.3 2021/07/04 06:55:47 skrll Exp $ */
+/* $NetBSD: atomic_nand_32.S,v 1.4 2021/07/05 08:50:31 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -37,8 +37,8 @@
 ENTRY_NP(_atomic_nand_32)
 	mov	x4, x0			/* need r0 for return value */
 1:	ldxr	w0, [x4]		/* load old value (*ptr) */
-	and	w3, w0, w1		/* w3 =  (tmp & value) */
-	mvn	w3, w3			/* w3 = ~(tmp & value) */
+	and	w3, w0, w1		/* w3 =  (*ptr & value) */
+	mvn	w3, w3			/* w3 = ~(*ptr & value) */
 	stxr	w2, w3, [x4]		/* try to store */
 	cbnz	w2, 2f			/*   succeed? no, try again */
 	ret				/* return old value */
@@ -52,8 +52,8 @@ STRONG_ALIAS(_atomic_nand_uint,_atomic_nand_32)
 ENTRY_NP(__sync_fetch_and_nand_4)
 	mov	x4, x0			/* need r0 for return value */
 1:	ldaxr	w0, [x4]		/* load (acquire) old value (*ptr) */
-	and	w3, w0, w1		/* w3 =  (tmp & value) */
-	mvn	w3, w3			/* w3 = ~(tmp & value) */
+	and	w3, w0, w1		/* w3 =  (*ptr & value) */
+	mvn	w3, w3			/* w3 = ~(*ptr & value) */
 	stlxr	w2, w3, [x4]		/* try to store (release) */
 	cbnz	w2, 2f			/*   succeed? no, try again */
 	ret				/* return old value */
@@ -67,8 +67,8 @@ END(__sync_fetch_and_nand_4)
 ENTRY_NP(_atomic_nand_32_nv)
 	mov	x4, x0			/* need r0 for return value */
 1:	ldxr	w0, [x4]		/* load old value (*ptr) */
-	and	w0, w0, w1		/* w0 =  (tmp & value) */
-	mvn	w0, w0			/* w0 = ~(tmp & value), return value*/
+	and	w0, w0, w1		/* w0 =  (*ptr & value) */
+	mvn	w0, w0			/* w0 = ~(*ptr & value), return value */
 	stxr	w2, w0, [x4]		/* try to store */
 	cbnz	w2, 2f			/*   succeed? no, try again? */
 	ret				/* return new value */
