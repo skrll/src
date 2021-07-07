@@ -1,4 +1,4 @@
-/* $NetBSD: vm_machdep.c,v 1.118 2021/05/29 23:27:22 thorpej Exp $ */
+/* $NetBSD: vm_machdep.c,v 1.120 2021/07/06 12:20:52 thorpej Exp $ */
 
 /*
  * Copyright (c) 1994, 1995, 1996 Carnegie-Mellon University.
@@ -29,12 +29,11 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.118 2021/05/29 23:27:22 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.120 2021/07/06 12:20:52 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
-#include <sys/malloc.h>
 #include <sys/buf.h>
 #include <sys/vnode.h>
 #include <sys/core.h>
@@ -117,10 +116,12 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	 * Floating point state from the FP chip has already been saved.
 	 */
 	*pcb2 = *pcb1;
-	if (stack != NULL)
-		pcb2->pcb_hw.apcb_usp = (u_long)stack + stacksize;
-	else
+	if (stack != NULL) {
+		pcb2->pcb_hw.apcb_usp =
+		    ((u_long)stack + stacksize) & ~((u_long)STACK_ALIGNBYTES);
+	} else {
 		pcb2->pcb_hw.apcb_usp = alpha_pal_rdusp();
+	}
 
 	/*
 	 * Put l2 on the kernel's page tables until its first trip

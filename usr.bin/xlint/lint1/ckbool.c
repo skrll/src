@@ -1,4 +1,4 @@
-/* $NetBSD: ckbool.c,v 1.4 2021/06/20 20:32:42 rillig Exp $ */
+/* $NetBSD: ckbool.c,v 1.7 2021/07/04 09:13:59 rillig Exp $ */
 
 /*-
  * Copyright (c) 2021 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
 #include <sys/cdefs.h>
 
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: ckbool.c,v 1.4 2021/06/20 20:32:42 rillig Exp $");
+__RCSID("$NetBSD: ckbool.c,v 1.7 2021/07/04 09:13:59 rillig Exp $");
 #endif
 
 #include <string.h>
@@ -82,23 +82,19 @@ is_int_constant_zero(const tnode_t *tn, tspec_t t)
 }
 
 static bool
-is_typeok_strict_bool(op_t op,
-		      const tnode_t *ln, tspec_t lt,
-		      const tnode_t *rn, tspec_t rt)
+is_typeok_strict_bool_binary(op_t op,
+			     const tnode_t *ln, tspec_t lt,
+			     const tnode_t *rn, tspec_t rt)
 {
-	if (rn == NULL)
-		return true;	/* TODO: check unary operators as well. */
-
 	if ((lt == BOOL) == (rt == BOOL))
 		return true;
 
-	if ((ln->tn_from_system_header || rn->tn_from_system_header) &&
+	if ((ln->tn_relaxed || rn->tn_relaxed) &&
 	    (is_int_constant_zero(ln, lt) || is_int_constant_zero(rn, rt)))
 		return true;
 
 	if (is_assignment_bool_or_other(op)) {
-		return lt != BOOL &&
-		       (ln->tn_from_system_header || rn->tn_from_system_header);
+		return lt != BOOL && (ln->tn_relaxed || rn->tn_relaxed);
 	}
 
 	return !is_symmetric_bool_or_other(op);
@@ -113,12 +109,11 @@ is_typeok_strict_bool(op_t op,
  * behavior.
  */
 static bool
-typeok_strict_bool_compatible(op_t op, int arg,
-			      const tnode_t *ln, tspec_t lt,
-			      const tnode_t *rn, tspec_t rt)
+typeok_strict_bool_binary_compatible(op_t op, int arg,
+				     const tnode_t *ln, tspec_t lt,
+				     const tnode_t *rn, tspec_t rt)
 {
-
-	if (is_typeok_strict_bool(op, ln, lt, rn, rt))
+	if (is_typeok_strict_bool_binary(op, ln, lt, rn, rt))
 		return true;
 
 	if (op == FARG) {
@@ -157,7 +152,8 @@ typeok_scalar_strict_bool(op_t op, const mod_t *mp, int arg,
 		rt = NOTSPEC;
 	}
 
-	if (!typeok_strict_bool_compatible(op, arg, ln, lt, rn, rt))
+	if (rn != NULL &&
+	    !typeok_strict_bool_binary_compatible(op, arg, ln, lt, rn, rt))
 		return false;
 
 	if (mp->m_requires_bool || op == QUEST) {
@@ -226,20 +222,14 @@ is_typeok_bool_operand(const tnode_t *tn)
 	if (t == BOOL)
 		return true;
 
-	if (tn->tn_from_system_header && is_scalar(t))
+	if (tn->tn_relaxed && is_scalar(t))
 		return true;
 
 	/* For enums that are used as bit sets, allow "flags & FLAG". */
 	if (tn->tn_op == BITAND &&
 	    tn->tn_left->tn_op == CVT &&
-	    tn->tn_left->tn_type->t_tspec == INT && !tn->tn_left->tn_cast &&
-	    tn->tn_left->tn_left->tn_type->t_tspec == ENUM &&
-	    /*
-	     * XXX: Somehow the type information got lost here.  The type
-	     * of the enum constant on the right-hand side should still be
-	     * ENUM, but is INT.
-	     */
-	    tn->tn_right->tn_type->t_tspec == INT)
+	    tn->tn_left->tn_type->t_is_enum &&
+	    tn->tn_right->tn_type->t_is_enum)
 		return true;
 
 	return false;

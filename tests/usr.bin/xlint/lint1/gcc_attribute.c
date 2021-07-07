@@ -1,4 +1,4 @@
-/*	$NetBSD: gcc_attribute.c,v 1.5 2021/05/03 07:08:54 rillig Exp $	*/
+/*	$NetBSD: gcc_attribute.c,v 1.8 2021/07/06 18:43:27 rillig Exp $	*/
 # 3 "gcc_attribute.c"
 
 /*
@@ -6,12 +6,6 @@
  * provided by GCC.
  *
  * https://gcc.gnu.org/onlinedocs/gcc/Attribute-Syntax.html
- * https://gcc.gnu.org/onlinedocs/gcc/Function-Attributes.html
- * https://gcc.gnu.org/onlinedocs/gcc/Variable-Attributes.html
- * https://gcc.gnu.org/onlinedocs/gcc/Type-Attributes.html
- * https://gcc.gnu.org/onlinedocs/gcc/Enumerator-Attributes.html
- * https://gcc.gnu.org/onlinedocs/gcc/Statement-Attributes.html
- * https://gcc.gnu.org/onlinedocs/gcc/Label-Attributes.html
  */
 
 void __attribute__((noinline))
@@ -53,3 +47,40 @@ local_variable_pcs(void)
 	int pcs = 3;
 	return pcs;
 }
+
+/*
+ * FIXME: The attributes are handled by different grammar rules even though
+ *  they occur in the same syntactical position.
+ *
+ * Grammar rule abstract_decl_param_list handles the first attribute.
+ *
+ * Grammar rule direct_abstract_declarator handles all remaining attributes.
+ *
+ * Since abstract_decl_param_list contains type_attribute_opt, this could be
+ * the source of the many shift/reduce conflicts in the grammar.
+ */
+int
+func(
+    int(int)
+    __attribute__((__noreturn__))
+    __attribute__((__noreturn__))
+);
+
+/*
+ * https://gcc.gnu.org/onlinedocs/gcc/Attribute-Syntax.html says that the
+ * attribute-list is a "possibly empty comma-separated sequence of
+ * attributes".
+ *
+ * No matter whether this particular example is interpreted as an empty list
+ * or a list containing a single empty attribute, the result is the same in
+ * both cases.
+ */
+void one_empty_attribute(void)
+    __attribute__((/* none */));
+
+/*
+ * https://gcc.gnu.org/onlinedocs/gcc/Attribute-Syntax.html further says that
+ * each individual attribute may be "Empty. Empty attributes are ignored".
+ */
+void two_empty_attributes(void)
+    __attribute__((/* none */, /* still none */));

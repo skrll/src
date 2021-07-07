@@ -1,4 +1,4 @@
-#	$NetBSD: t_vlan.sh,v 1.17 2020/03/08 09:05:33 nisimura Exp $
+#	$NetBSD: t_vlan.sh,v 1.19 2021/07/06 01:18:22 yamaguchi Exp $
 #
 # Copyright (c) 2016 Internet Initiative Japan Inc.
 # All rights reserved.
@@ -589,8 +589,12 @@ vlan_configs_body_common()
 	$atf_ifconfig shmif1 link b0:a0:75:00:01:01 active
 	$atf_ifconfig vlan0 create
 
+	atf_check -s exit:0 -o match:'status: +down' \
+	    rump.ifconfig vlan0
 	$atf_ifconfig vlan0 vlan 10 vlanif shmif0
 	$atf_ifconfig vlan0 -vlanif
+	atf_check -s exit:0 -o match:'status: +down' \
+	    rump.ifconfig vlan0
 
 	$atf_ifconfig vlan0 vlan 10 vlanif shmif0
 	$atf_ifconfig vlan0 -vlanif shmif0
@@ -669,6 +673,7 @@ vlan_configs6_cleanup()
 vlan_bridge_body_common()
 {
 	local atf_ifconfig="atf_check -s exit:0 rump.ifconfig"
+	local atf_brconfig="atf_check -s exit:0 $HIJACKING /sbin/brconfig"
 
 	rump_server_add_iface $SOCK_LOCAL shmif0 $BUS
 
@@ -681,17 +686,49 @@ vlan_bridge_body_common()
 	$DEBUG && rump.ifconfig vlan0
 
 	$atf_ifconfig bridge0 create
-	# Adjust to the MTU of a vlan on a shmif
-	$atf_ifconfig bridge0 mtu 1496
 	$atf_ifconfig bridge0 up
-	# Test brconfig add
-	atf_check -s exit:0 $HIJACKING brconfig bridge0 add vlan0
-	$DEBUG && brconfig bridge0
-	# Test brconfig delete
-	atf_check -s exit:0 $HIJACKING brconfig bridge0 delete vlan0
 
-	atf_check -s exit:0 $HIJACKING brconfig bridge0 add vlan0
-	# Test vlan destruction with bridge
+	#
+	# Add vlan to bridge member
+	#
+	$atf_ifconfig bridge0 mtu 1496
+	atf_check -s exit:0 -o match:'mtu 1496' rump.ifconfig vlan0
+
+	$atf_brconfig bridge0 add vlan0
+	$DEBUG && brconfig bridge0
+	$atf_brconfig bridge0 delete vlan0
+
+	#
+	# decrease MTU on adding to bridge member
+	#
+	$atf_ifconfig bridge0 mtu 1495
+	atf_check -s exit:0 -o match:'mtu 1496' rump.ifconfig vlan0
+
+	$atf_brconfig bridge0 add vlan0
+	$DEBUG && brconfig bridge0
+	atf_check -s exit:0 -o match:'mtu 1495' rump.ifconfig vlan0
+	$atf_brconfig bridge0 delete vlan0
+
+	#
+	# increase MTU on adding to bridge member
+	#
+	$atf_ifconfig bridge0 mtu 1496
+	$atf_ifconfig vlan0 mtu 1495
+	$atf_brconfig bridge0 add vlan0
+
+	$DEBUG && brconfig bridge0
+	atf_check -s exit:0 -o match:'mtu 1496' rump.ifconfig vlan0
+	$atf_brconfig bridge0 delete vlan0
+
+	$atf_ifconfig bridge0 mtu 1497
+	atf_check -s not-exit:0 -o ignore -e ignore \
+	    /sbin/brconfig bridge0 add vlan0
+
+	#
+	# Destroy a vlan interface that is bridge member
+	#
+	$atf_ifconfig bridge0 mtu 1496
+	$atf_brconfig bridge0 add vlan0
 	$atf_ifconfig vlan0 destroy
 
 	rump_server_destroy_ifaces
