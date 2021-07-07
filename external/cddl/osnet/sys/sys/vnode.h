@@ -1,4 +1,4 @@
-/*	$NetBSD: vnode.h,v 1.17 2020/05/26 08:39:27 hannken Exp $	*/
+/*	$NetBSD: vnode.h,v 1.19 2021/06/29 22:40:53 dholland Exp $	*/
 
 /*
  * CDDL HEADER START
@@ -99,10 +99,7 @@
 
 #ifdef _KERNEL
 
-struct vnode;
 struct vattr;
-
-typedef	struct vnode	vnode_t;
 typedef	struct vattr	vattr_t;
 typedef enum vtype vtype_t;
 
@@ -242,7 +239,6 @@ zfs_vn_open(const char *pnamep, enum uio_seg seg, int filemode, int createmode,
     vnode_t **vpp, enum create crwhy, mode_t umask)
 {
 	struct pathbuf *pb;
-	struct nameidata nd;
 	int error;
 
 	ASSERT(seg == UIO_SYSSPACE);
@@ -250,12 +246,12 @@ zfs_vn_open(const char *pnamep, enum uio_seg seg, int filemode, int createmode,
 	ASSERT(crwhy == CRCREAT);
 	ASSERT(umask == 0);
 
+	filemode |= O_NOFOLLOW;
+
 	pb = pathbuf_create(pnamep);
-	NDINIT(&nd, LOOKUP, NOFOLLOW, pb);
-	error = vn_open(&nd, filemode, createmode);
+	error = vn_open(NULL, pb, 0, filemode, createmode, vpp, NULL, NULL);
 	if (error == 0) {
-		VOP_UNLOCK(nd.ni_vp, 0);
-		*vpp = nd.ni_vp;
+		VOP_UNLOCK(*vpp, 0);
 	}
 	pathbuf_destroy(pb);
 	return (error);

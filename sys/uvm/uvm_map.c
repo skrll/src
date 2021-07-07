@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_map.c,v 1.386 2021/03/13 15:29:55 skrll Exp $	*/
+/*	$NetBSD: uvm_map.c,v 1.390 2021/07/01 15:06:01 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.386 2021/03/13 15:29:55 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.390 2021/07/01 15:06:01 chs Exp $");
 
 #include "opt_ddb.h"
 #include "opt_pax.h"
@@ -104,9 +104,6 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.386 2021/03/13 15:29:55 skrll Exp $");
 #ifdef UVMHIST
 #ifndef UVMHIST_MAPHIST_SIZE
 #define UVMHIST_MAPHIST_SIZE 100
-#endif
-#ifndef UVMHIST_PDHIST_SIZE
-#define UVMHIST_PDHIST_SIZE 100
 #endif
 static struct kern_history_ent maphistbuf[UVMHIST_MAPHIST_SIZE];
 UVMHIST_DEFINE(maphist) = UVMHIST_INITIALIZER(maphist, maphistbuf);
@@ -904,17 +901,13 @@ uvm_map_unreference_amap(struct vm_map_entry *entry, int flags)
 void
 uvm_map_init(void)
 {
-#if defined(UVMHIST)
-	static struct kern_history_ent pdhistbuf[UVMHIST_PDHIST_SIZE];
-#endif
-
 	/*
 	 * first, init logging system.
 	 */
 
 	UVMHIST_FUNC(__func__);
 	UVMHIST_LINK_STATIC(maphist);
-	UVMHIST_INIT_STATIC(pdhist, pdhistbuf);
+	UVMHIST_LINK_STATIC(pdhist);
 	UVMHIST_CALLED(maphist);
 	UVMHIST_LOG(maphist,"<starting uvm map system>", 0, 0, 0, 0);
 
@@ -4458,6 +4451,7 @@ uvm_mapent_forkzero(struct vm_map *new_map, struct vm_map *old_map,
 			new_entry->object.uvm_obj->pgops->pgo_detach(
 			    new_entry->object.uvm_obj);
 		new_entry->object.uvm_obj = NULL;
+		new_entry->offset = 0;
 		new_entry->etype &= ~UVM_ET_OBJ;
 	}
 }
@@ -5171,11 +5165,6 @@ fill_vmentry(struct lwp *l, struct proc *p, struct kinfo_vmentry *kve,
 				kve->kve_vn_fsid = va.va_fsid;
 				error = vnode_to_path(kve->kve_path,
 				    sizeof(kve->kve_path) / 2, vp, l, p);
-#ifdef DIAGNOSTIC
-				if (error)
-					printf("%s: vp %p error %d\n", __func__,
-						vp, error);
-#endif
 			}
 		} else if (UVM_OBJ_IS_KERN_OBJECT(uobj)) {
 			kve->kve_type = KVME_TYPE_KERN;

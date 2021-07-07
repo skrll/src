@@ -1,4 +1,4 @@
-# $NetBSD: HACKS,v 1.216 2020/12/16 01:35:39 rin Exp $
+# $NetBSD: HACKS,v 1.222 2021/07/06 12:42:12 thorpej Exp $
 #
 # This file is intended to document workarounds for currently unsolved
 # (mostly) compiler bugs.
@@ -950,17 +950,6 @@ descr	Disable optimization for rtld.c on the vax with gcc-7. Crashes on the
 	second pass loop with elm == 0xffffffff
 kcah
 
-port	alpha
-hack	GCC 7.4/8.3/9.3: userland binaries crash randomly (port-alpha/54307)
-cdate	Fri Nov  1 20:43:35 UTC 2019
-mdate	Wed Dec 16 01:21:32 UTC 2020
-who	rin
-file	src/external/bsd/jemalloc/lib/Makefile.inc: 1.11
-descr	GCC miscompiles rtree.c and tcache.c (for 7.4, 8.3, and 9.3) with
-	optimization levels -O[12]. Compile these files with -O0,
-	alternatively, compile whole jemalloc with -DJEMALLOC_DEBUG.
-kcah
-
 port	powerpc
 hack	compile tc.c, logerr.c, ubsan.c with -O0 for clang
 cdate	Wed Jan 29 17:40:19 EST 2020
@@ -975,19 +964,6 @@ descr	Disable optimization on tc.c, logerr.c, ubsan.c crashes:
 	function "__int64_t llvm::MachineFrameInfo::getObjectOffset(int) const"
 kcah
 
-port	arm
-hack	compile gdb/dwarf2{expr,loc}.c with -O0 for GCC[89] (PR/54820, 54877)
-cdate	Wed Apr 29 11:04:58 UTC 2020
-mdate	Thu Oct  8 17:00:00 JST 2020
-who	rin
-file	src/external/gpl3/gdb/lib/libgdb/Makefile: 1.22
-descr	For earmv7hf{,eb}, GCC 8.4 and 9.3 miscompile dwarf2expr.c with -O[21].
-	For earmv5hf{,eb}, GCC 9.3 miscompiles dwarf2{expr,loc}.c with -O2
-	(GCC9 -O1 and GCC8 -O2 work fine). These result in GDB crash with
-	``gdb_exception_RETURN_MASK_ERROR''. For everyone's safety, compile
-	these files with -O0 for all arm variants with GCC >= 8.
-kcah
-
 port	m68k
 hack	compile aes_ccm_tag() with -O0 for GCC8 and GCC9
 cdate	Mon Aug 10 06:27:29 UTC 2020
@@ -999,4 +975,25 @@ descr	GCC 9.4 and 8.3 miscompile aes_ccm_tag() for m68k with optimization
 	For 9.4, -O0 and -O1 work but -O2 fails for amiga (A1200, 68060) and
 	mac68k (Quadra 840AV, 68040). Whereas -O0 and -O2 work but -O1 fails
 	for sun3 (TME, 68020 emulator) and sun2 (TME, 68010 emulator).
+kcah
+
+port	sh3
+
+	hack	gcc9-sh3-lint
+	cdate	Tue Jun 22 14:59:52 CEST 2021
+	mdate	Mon Jul  5 12:34:57 CEST 2021
+	who	hgutch
+	file	external/gpl3/gcc/dist/gcc/config/sh/sh.md 1.2
+		external/gpl3/gcc.old/dist/gcc/config/sh/sh.md 1.11
+	descr
+		The in-tree gcc 9/gcc 10 crashes with an internal
+		invalid opcode exception when using any kind of
+		optimization on lex.c in usr.bin/xlint/lint .  This
+		was introduced apparently unintendedly in gcc when
+		addressing a different issue.  Rather than disabling
+		optimization for lex.c, instead revert the change to
+		gcc.  The bug report upstream has been updated to
+		reflect the exact breakage.
+
+		https://gcc.gnu.org/bugzilla/show_bug.cgi?id=101177
 kcah

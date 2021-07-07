@@ -1,4 +1,4 @@
-/*	$NetBSD: tyname.c,v 1.36 2021/03/27 12:42:22 rillig Exp $	*/
+/*	$NetBSD: tyname.c,v 1.43 2021/07/02 18:22:09 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2005 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tyname.c,v 1.36 2021/03/27 12:42:22 rillig Exp $");
+__RCSID("$NetBSD: tyname.c,v 1.43 2021/07/02 18:22:09 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -43,14 +43,18 @@ __RCSID("$NetBSD: tyname.c,v 1.36 2021/03/27 12:42:22 rillig Exp $");
 #include <stdlib.h>
 #include <err.h>
 
-#include PASS
+#if defined(IS_LINT1)
+#include "lint1.h"
+#else
+#include "lint2.h"
+#endif
 
 #ifndef INTERNAL_ERROR
 #define INTERNAL_ERROR(fmt, args...) \
 	do { \
 		(void)warnx("%s, %d: " fmt, __FILE__, __LINE__, ##args); \
 		abort(); \
-	} while (/*CONSTCOND*/false)
+	} while (false)
 #endif
 
 /* A tree of strings. */
@@ -74,7 +78,7 @@ new_name_tree_node(const char *name)
 {
 	name_tree_node *n;
 
-	n = xmalloc(sizeof *n);
+	n = xmalloc(sizeof(*n));
 	n->ntn_name = xstrdup(name);
 	n->ntn_less = NULL;
 	n->ntn_greater = NULL;
@@ -137,9 +141,9 @@ buf_add(buffer *buf, const char *s)
 static void
 buf_add_int(buffer *buf, int n)
 {
-	char num[1 + sizeof n * CHAR_BIT + 1];
+	char num[1 + sizeof(n) * CHAR_BIT + 1];
 
-	snprintf(num, sizeof num, "%d", n);
+	snprintf(num, sizeof(num), "%d", n);
 	buf_add(buf, num);
 }
 
@@ -193,7 +197,7 @@ sametype(const type_t *t1, const type_t *t2)
 	if (t1->t_tspec != t2->t_tspec)
 		return false;
 
-	/* Ignore const/void */
+	/* Ignore const/volatile */
 
 	switch (t = t1->t_tspec) {
 	case BOOL:
@@ -259,14 +263,20 @@ type_name_of_function(buffer *buf, const type_t *tp)
 #ifdef t_enum /* lint1 */
 		sym_t *arg;
 
-		for (arg = tp->t_args; arg != NULL; arg = arg->s_next) {
+		arg = tp->t_args;
+		if (arg == NULL)
+			buf_add(buf, "void");
+		for (; arg != NULL; arg = arg->s_next) {
 			buf_add(buf, sep), sep = ", ";
 			buf_add(buf, type_name(arg->s_type));
 		}
 #else /* lint2 */
 		type_t **argtype;
 
-		for (argtype = tp->t_args; *argtype != NULL; argtype++) {
+		argtype = tp->t_args;
+		if (argtype == NULL)
+			buf_add(buf, "void");
+		for (; *argtype != NULL; argtype++) {
 			buf_add(buf, sep), sep = ", ";
 			buf_add(buf, type_name(*argtype));
 		}
@@ -341,10 +351,6 @@ type_name(const type_t *tp)
 	if (tp == NULL)
 		return "(null)";
 
-	/*
-	 * XXX: Why is this necessary, and in which cases does this apply?
-	 * Shouldn't the type be an ENUM from the beginning?
-	 */
 	if ((t = tp->t_tspec) == INT && tp->t_is_enum)
 		t = ENUM;
 
@@ -354,6 +360,10 @@ type_name(const type_t *tp)
 	if (tp->t_volatile)
 		buf_add(&buf, "volatile ");
 
+#ifdef t_str
+	if ((t == STRUCT || t == UNION) && tp->t_str->sou_incomplete)
+		buf_add(&buf, "incomplete ");
+#endif
 	buf_add(&buf, tspec_name(t));
 
 	switch (t) {

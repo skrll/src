@@ -1,4 +1,4 @@
-# $NetBSD: directive-for-escape.mk,v 1.7 2021/02/15 07:58:19 rillig Exp $
+# $NetBSD: directive-for-escape.mk,v 1.10 2021/06/25 16:10:07 rillig Exp $
 #
 # Test escaping of special characters in the iteration values of a .for loop.
 # These values get expanded later using the :U variable modifier, and this
@@ -108,6 +108,33 @@ i,=		comma
 .  info .     $${i2}: ${i2}
 .  info .     $${i,}: ${i,}
 .  info .  adjacent: $i${i}${i:M*}$i
+.endfor
+
+# The variable name can be a single '$' since there is no check on valid
+# variable names. ForLoop_SubstVarShort skips "stupid" variable names though,
+# but ForLoop_SubstVarLong naively parses the body of the loop, substituting
+# each '${$}' with an actual 'dollar'.
+.for $ in dollar
+.  info eight $$$$$$$$ and no cents.
+.  info eight ${$}${$}${$}${$} and no cents.
+.endfor
+# Outside a .for loop, '${$}' is interpreted differently. The outer '$' starts
+# a variable expression. The inner '$' is followed by a '}' and is thus a
+# silent syntax error, the '$' is skipped. The variable name is thus '', and
+# since since there is never a variable named '', the whole expression '${$}'
+# evaluates to an empty string.
+closing-brace=		}		# guard against an
+${closing-brace}=	<closing-brace>	# alternative interpretation
+.info eight ${$}${$}${$}${$} and no cents.
+
+# What happens if the values from the .for loop contain a literal newline?
+# Before for.c 1.144 from 2021-06-25, the newline was passed verbatim to the
+# body of the .for loop, where it was then interpreted as a literal newline,
+# leading to syntax errors such as "Unclosed variable expression" in the upper
+# line and "Invalid line type" in the lower line.
+.for i in "${.newline}"
+.  info short: $i
+.  info long: ${i}
 .endfor
 
 all:

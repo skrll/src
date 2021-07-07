@@ -1,4 +1,4 @@
-/* $NetBSD: device.h,v 1.167 2021/02/06 21:08:51 christos Exp $ */
+/* $NetBSD: device.h,v 1.171 2021/06/12 12:13:51 riastradh Exp $ */
 
 /*
  * Copyright (c) 2021 The NetBSD Foundation, Inc.
@@ -219,6 +219,9 @@ typedef enum {
 	/* OpenFirmware, FDT */
 	DEVHANDLE_TYPE_OF		=	0x4f504657,	/* 'OPFW' */
 
+	/* Sun OpenBoot */
+	DEVHANDLE_TYPE_OPENBOOT		=	0x4f504254,	/* 'OPBT' */
+
 	/* Private (opaque data) */
 	DEVHANDLE_TYPE_PRIVATE		=	0x50525654,	/* 'PRVT' */
 
@@ -270,6 +273,8 @@ struct device {
 
 	int		dv_pending;	/* config_pending count */
 	TAILQ_ENTRY(device) dv_pending_list;
+
+	struct lwp	*dv_detaching;	/* detach lock (config_misc_lock/cv) */
 
 	size_t		dv_activity_count;
 	void		(**dv_activity_handlers)(device_t, devactive_t);
@@ -524,6 +529,21 @@ struct pdevinit {
 /* This allows us to wildcard a device unit. */
 #define	DVUNIT_ANY	-1
 
+/*
+ * Tags for tag-value argument pairs passed to config_search() and
+ * config_found().
+ */
+typedef enum {
+	CFARG_SUBMATCH		= 0,	/* submatch function (direct config) */
+	CFARG_SEARCH		= 1,	/* search function (indirect config) */
+	CFARG_IATTR		= 2,	/* interface attribute */
+	CFARG_LOCATORS		= 3,	/* locators array */
+	CFARG_DEVHANDLE		= 4,	/* devhandle_t (by value) */
+
+	/* ...a value not likely to occur randomly in the wild. */
+	CFARG_EOL		= 0xeeeeeeee
+} cfarg_t;
+
 #ifdef _KERNEL
 
 extern struct cfdriverlist allcfdrivers;/* list of all cfdrivers */
@@ -567,21 +587,26 @@ const struct cfiattrdata *cfiattr_lookup(const char *, const struct cfdriver *);
 const char *cfdata_ifattr(const struct cfdata *);
 
 int	config_stdsubmatch(device_t, cfdata_t, const int *, void *);
-cfdata_t config_search_loc(cfsubmatch_t, device_t,
-				 const char *, const int *, void *);
-cfdata_t config_search_ia(cfsubmatch_t, device_t,
-				 const char *, void *);
+cfdata_t config_search(device_t, void *, cfarg_t, ...);
 cfdata_t config_rootsearch(cfsubmatch_t, const char *, void *);
-device_t config_found_sm_loc(device_t, const char *, const int *,
-			     void *, cfprint_t, cfsubmatch_t);
-device_t config_found_ia(device_t, const char *, void *, cfprint_t);
-device_t config_found(device_t, void *, cfprint_t);
+device_t config_found(device_t, void *, cfprint_t, cfarg_t, ...);
 device_t config_rootfound(const char *, void *);
-device_t config_attach_loc(device_t, cfdata_t, const int *, void *, cfprint_t);
-device_t config_attach(device_t, cfdata_t, void *, cfprint_t);
+device_t config_attach(device_t, cfdata_t, void *, cfprint_t, cfarg_t, ...);
 int	config_match(device_t, cfdata_t, void *);
+int	config_probe(device_t, cfdata_t, void *);
 
-bool ifattr_match(const char *, const char *);
+#if defined(__SUBR_AUTOCONF_PRIVATE)
+/*
+ * XXX Some ports abuse the internals of autoconfiguration, so we need
+ * XXX provide these symbols to them for the time being.
+ */
+cfdata_t config_vsearch(device_t, void *, cfarg_t, va_list);
+device_t config_vfound(device_t, void *, cfprint_t, cfarg_t, va_list);
+device_t config_vattach(device_t, cfdata_t, void *, cfprint_t, cfarg_t,
+			va_list);
+#endif /* __SUBR_AUTOCONF_PRIVATE */
+
+bool	ifattr_match(const char *, const char *);
 
 device_t config_attach_pseudo(cfdata_t);
 

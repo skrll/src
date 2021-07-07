@@ -1,4 +1,4 @@
-/* $NetBSD: tsc.c,v 1.24 2014/02/22 18:42:47 martin Exp $ */
+/* $NetBSD: tsc.c,v 1.28 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 by Ross Harvey.  All rights reserved.
@@ -31,16 +31,13 @@
  *
  */
 
-#include "opt_dec_6600.h"
-
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.24 2014/02/22 18:42:47 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.28 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 
 #include <machine/autoconf.h>
 #include <machine/rpb.h>
@@ -54,10 +51,6 @@ __KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.24 2014/02/22 18:42:47 martin Exp $");
 #include <alpha/pci/tsvar.h>
 
 #include "tsciic.h"
-
-#ifdef DEC_6600
-#include <alpha/pci/pci_6600.h>
-#endif
 
 #define tsc() { Generate ctags(1) key. }
 
@@ -147,25 +140,25 @@ tscattach(device_t parent, device_t self, void * aux)
 	tsp.tsp_name = "tsp";
 	tsp.tsp_slot = 0;
 
-	config_found(self, &tsp, tscprint);
+	config_found(self, &tsp, tscprint, CFARG_EOL);
 	if (titan) {
 		tsp.tsp_slot += 2;
-		config_found(self, &tsp, tscprint);
+		config_found(self, &tsp, tscprint, CFARG_EOL);
 	}
 
 	if (csc & CSC_P1P) {
 		tsp.tsp_slot = 1;
-		config_found(self, &tsp, tscprint);
+		config_found(self, &tsp, tscprint, CFARG_EOL);
 		if (titan) {
 			tsp.tsp_slot += 2;
-			config_found(self, &tsp, tscprint);
+			config_found(self, &tsp, tscprint, CFARG_EOL);
 		}
 	}
 
 	memset(&tsciic, 0, sizeof tsciic);
 	tsciic.tsciic_name = "tsciic";
 
-	config_found(self, &tsciic, tsciicprint);
+	config_found(self, &tsciic, tsciicprint, CFARG_EOL);
 }
 
 static int
@@ -225,19 +218,19 @@ tspattach(device_t parent, device_t self, void *aux)
 	 */
 	tsp_bus_mem_init2(&pcp->pc_memt, pcp);
 
-	pci_6600_pickintr(pcp);
+	alpha_pci_intr_init(pcp, &pcp->pc_iot, &pcp->pc_memt, &pcp->pc_pc);
 
 	pba.pba_iot = &pcp->pc_iot;
 	pba.pba_memt = &pcp->pc_memt;
 	pba.pba_dmat =
 	    alphabus_dma_get_tag(&pcp->pc_dmat_direct, ALPHA_BUS_PCI);
-	pba.pba_dmat64 = NULL;
+	pba.pba_dmat64 = &pcp->pc_dmat64_direct;
 	pba.pba_pc = &pcp->pc_pc;
 	pba.pba_bus = 0;
 	pba.pba_bridgetag = NULL;
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY |
 	    PCI_FLAGS_MRL_OKAY | PCI_FLAGS_MRM_OKAY | PCI_FLAGS_MWI_OKAY;
-	config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint, CFARG_EOL);
 }
 
 struct tsp_config *

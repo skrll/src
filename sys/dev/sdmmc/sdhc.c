@@ -1,4 +1,4 @@
-/*	$NetBSD: sdhc.c,v 1.108 2021/03/13 23:26:47 mlelstv Exp $	*/
+/*	$NetBSD: sdhc.c,v 1.110 2021/05/13 05:54:14 msaitoh Exp $	*/
 /*	$OpenBSD: sdhc.c,v 1.25 2009/01/13 19:44:20 grange Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sdhc.c,v 1.108 2021/03/13 23:26:47 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sdhc.c,v 1.110 2021/05/13 05:54:14 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sdmmc.h"
@@ -138,7 +138,7 @@ hwrite1(struct sdhc_host *hp, bus_size_t o, uint8_t val)
 		const size_t shift = 8 * (o & 3);
 		o &= -4;
 		uint32_t tmp = bus_space_read_4(hp->iot, hp->ioh, o);
-		tmp = (val << shift) | (tmp & ~(0xff << shift));
+		tmp = (val << shift) | (tmp & ~(0xffU << shift));
 		bus_space_write_4(hp->iot, hp->ioh, o, tmp);
 	}
 }
@@ -153,7 +153,7 @@ hwrite2(struct sdhc_host *hp, bus_size_t o, uint16_t val)
 		const size_t shift = 8 * (o & 2);
 		o &= -4;
 		uint32_t tmp = bus_space_read_4(hp->iot, hp->ioh, o);
-		tmp = (val << shift) | (tmp & ~(0xffff << shift));
+		tmp = (val << shift) | (tmp & ~(0xffffU << shift));
 		bus_space_write_4(hp->iot, hp->ioh, o, tmp);
 	}
 }
@@ -642,7 +642,7 @@ adma_done:
 	if (ISSET(sc->sc_flags, SDHC_FLAG_BROKEN_ADMA2_ZEROLEN))
 		saa.saa_max_seg = 65535;
 
-	hp->sdmmc = config_found(sc->sc_dev, &saa, sdhc_cfprint);
+	hp->sdmmc = config_found(sc->sc_dev, &saa, sdhc_cfprint, CFARG_EOL);
 
 	return 0;
 

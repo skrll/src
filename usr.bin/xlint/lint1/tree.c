@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.252 2021/03/27 11:08:00 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.313 2021/07/06 04:44:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tree.c,v 1.252 2021/03/27 11:08:00 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.313 2021/07/06 04:44:20 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -50,7 +50,7 @@ __RCSID("$NetBSD: tree.c,v 1.252 2021/03/27 11:08:00 rillig Exp $");
 #include "lint1.h"
 #include "cgram.h"
 
-static	tnode_t	*new_integer_constant_node(tspec_t, int64_t);
+static	tnode_t	*expr_new_integer_constant(tspec_t, int64_t);
 static	void	check_pointer_comparison(op_t,
 					 const tnode_t *, const tnode_t *);
 static	bool	check_assign_types_compatible(op_t, int,
@@ -67,7 +67,6 @@ static	void	warn_incompatible_types(op_t, const type_t *, tspec_t,
 					const type_t *, tspec_t);
 static	void	warn_incompatible_pointers(const mod_t *,
 					   const type_t *, const type_t *);
-static	void	merge_qualifiers(type_t **, type_t *, type_t *);
 static	bool	has_constant_member(const type_t *);
 static	void	check_prototype_conversion(int, tspec_t, tspec_t, type_t *,
 					   tnode_t *);
@@ -75,7 +74,7 @@ static	void	check_integer_conversion(op_t, int, tspec_t, tspec_t, type_t *,
 					 tnode_t *);
 static	void	check_pointer_integer_conversion(op_t, tspec_t, type_t *,
 						 tnode_t *);
-static	void	check_pointer_conversion(op_t, tnode_t *, type_t *);
+static	void	check_pointer_conversion(tnode_t *, type_t *);
 static	tnode_t	*build_struct_access(op_t, tnode_t *, tnode_t *);
 static	tnode_t	*build_prepost_incdec(op_t, tnode_t *);
 static	tnode_t	*build_real_imag(op_t, tnode_t *);
@@ -99,7 +98,7 @@ static	void	check_precedence_confusion(tnode_t *);
 extern sig_atomic_t fpe;
 
 static const char *
-getopname(op_t op)
+op_name(op_t op)
 {
 	return modtab[op].m_name;
 }
@@ -118,7 +117,7 @@ debug_node(const tnode_t *tn, int indent)
 	op = tn->tn_op;
 	printf("%*s%s with type '%s'%s%s",
 	    2 * indent, "",
-	    op == CVT && !tn->tn_cast ? "convert" : getopname(op),
+	    op == CVT && !tn->tn_cast ? "convert" : op_name(op),
 	    type_name(tn->tn_type), tn->tn_lvalue ? ", lvalue" : "",
 	    tn->tn_parenthesized ? ", parenthesized" : "");
 
@@ -144,30 +143,28 @@ debug_node(const tnode_t *tn, int indent)
 }
 #endif
 
-/*
- * Increase degree of reference.
- * This is most often used to change type "T" in type "pointer to T".
- */
+/* Build 'pointer to tp', 'array of tp' or 'function returning tp'. */
 type_t *
-incref(type_t *tp, tspec_t t)
+derive_type(type_t *tp, tspec_t t)
 {
 	type_t	*tp2;
 
-	tp2 = getblk(sizeof *tp2);
+	tp2 = getblk(sizeof(*tp2));
 	tp2->t_tspec = t;
 	tp2->t_subt = tp;
 	return tp2;
 }
 
 /*
- * same for use in expressions
+ * Build 'pointer to tp', 'array of tp' or 'function returning tp'.  The
+ * memory is freed at the end of the current expression.
  */
 type_t *
-tincref(type_t *tp, tspec_t t)
+expr_derive_type(type_t *tp, tspec_t t)
 {
 	type_t	*tp2;
 
-	tp2 = tgetblk(sizeof *tp2);
+	tp2 = expr_zalloc(sizeof(*tp2));
 	tp2->t_tspec = t;
 	tp2->t_subt = tp;
 	return tp2;
@@ -177,30 +174,30 @@ tincref(type_t *tp, tspec_t t)
  * Create a node for a constant.
  */
 tnode_t *
-new_constant_node(type_t *tp, val_t *v)
+expr_new_constant(type_t *tp, val_t *v)
 {
 	tnode_t	*n;
 
-	n = getnode();
+	n = expr_zalloc_tnode();
 	n->tn_op = CON;
 	n->tn_type = tp;
-	n->tn_val = tgetblk(sizeof *n->tn_val);
+	n->tn_val = expr_zalloc(sizeof(*n->tn_val));
 	n->tn_val->v_tspec = tp->t_tspec;
-	n->tn_val->v_ansiu = v->v_ansiu;
+	n->tn_val->v_unsigned_since_c90 = v->v_unsigned_since_c90;
 	n->tn_val->v_u = v->v_u;
 	free(v);
 	return n;
 }
 
 static tnode_t *
-new_integer_constant_node(tspec_t t, int64_t q)
+expr_new_integer_constant(tspec_t t, int64_t q)
 {
 	tnode_t	*n;
 
-	n = getnode();
+	n = expr_zalloc_tnode();
 	n->tn_op = CON;
 	n->tn_type = gettyp(t);
-	n->tn_val = tgetblk(sizeof *n->tn_val);
+	n->tn_val = expr_zalloc(sizeof(*n->tn_val));
 	n->tn_val->v_tspec = t;
 	n->tn_val->v_quad = q;
 	return n;
@@ -210,29 +207,14 @@ static void
 fallback_symbol(sym_t *sym)
 {
 
-	if (Tflag && strcmp(sym->s_name, "__lint_false") == 0) {
-		sym->s_scl = CTCONST; /* close enough */
-		sym->s_type = gettyp(BOOL);
-		sym->s_value.v_tspec = BOOL;
-		sym->s_value.v_ansiu = false;
-		sym->s_value.v_quad = 0;
+	if (fallback_symbol_strict_bool(sym))
 		return;
-	}
-
-	if (Tflag && strcmp(sym->s_name, "__lint_true") == 0) {
-		sym->s_scl = CTCONST; /* close enough */
-		sym->s_type = gettyp(BOOL);
-		sym->s_value.v_tspec = BOOL;
-		sym->s_value.v_ansiu = false;
-		sym->s_value.v_quad = 1;
-		return;
-	}
 
 	if (block_level > 0 && (strcmp(sym->s_name, "__FUNCTION__") == 0 ||
 			   strcmp(sym->s_name, "__PRETTY_FUNCTION__") == 0)) {
 		/* __FUNCTION__/__PRETTY_FUNCTION__ is a GCC extension */
 		gnuism(316);
-		sym->s_type = incref(gettyp(CHAR), PTR);
+		sym->s_type = derive_type(gettyp(CHAR), PTR);
 		sym->s_type->t_const = true;
 		return;
 	}
@@ -241,13 +223,21 @@ fallback_symbol(sym_t *sym)
 		if (!Sflag)
 			/* __func__ is a C9X feature */
 			warning(317);
-		sym->s_type = incref(gettyp(CHAR), PTR);
+		sym->s_type = derive_type(gettyp(CHAR), PTR);
 		sym->s_type->t_const = true;
 		return;
 	}
 
 	/* '%s' undefined */
 	error(99, sym->s_name);
+}
+
+/* https://gcc.gnu.org/onlinedocs/gcc/C-Extensions.html */
+static bool
+is_gcc_builtin(const char *name)
+{
+	return strncmp(name, "__atomic_", 9) == 0 ||
+	       strncmp(name, "__builtin_", 10) == 0;
 }
 
 /*
@@ -263,15 +253,24 @@ new_name_node(sym_t *sym, int follow_token)
 		sym->s_scl = EXTERN;
 		sym->s_def = DECL;
 		if (follow_token == T_LPAREN) {
-			if (sflag) {
-				/* function implicitly declared to ... */
-				warning(215);
+			if (gflag && is_gcc_builtin(sym->s_name)) {
+				/*
+				 * Do not warn about these, just assume that
+				 * they are regular functions compatible with
+				 * non-prototype calling conventions.
+				 */
+			} else if (Sflag) {
+				/* function '%s' implicitly declared to ... */
+				warning(215, sym->s_name);
+			} else if (sflag) {
+				/* function '%s' implicitly declared to ... */
+				warning(215, sym->s_name);
 			}
 			/*
 			 * XXX if tflag is set the symbol should be
 			 * exported to level 0
 			 */
-			sym->s_type = incref(sym->s_type, FUNC);
+			sym->s_type = derive_type(sym->s_type, FUNC);
 		} else {
 			fallback_symbol(sym);
 		}
@@ -279,7 +278,7 @@ new_name_node(sym_t *sym, int follow_token)
 
 	lint_assert(sym->s_kind == FVFT || sym->s_kind == FMEMBER);
 
-	n = getnode();
+	n = expr_zalloc_tnode();
 	n->tn_type = sym->s_type;
 	if (sym->s_scl != CTCONST) {
 		n->tn_op = NAME;
@@ -288,7 +287,7 @@ new_name_node(sym_t *sym, int follow_token)
 			n->tn_lvalue = true;
 	} else {
 		n->tn_op = CON;
-		n->tn_val = tgetblk(sizeof *n->tn_val);
+		n->tn_val = expr_zalloc(sizeof(*n->tn_val));
 		*n->tn_val = sym->s_value;
 	}
 
@@ -303,24 +302,24 @@ new_string_node(strg_t *strg)
 
 	len = strg->st_len;
 
-	n = getnode();
+	n = expr_zalloc_tnode();
 
 	n->tn_op = STRING;
-	n->tn_type = tincref(gettyp(strg->st_tspec), ARRAY);
+	n->tn_type = expr_derive_type(gettyp(strg->st_tspec), ARRAY);
 	n->tn_type->t_dim = len + 1;
 	n->tn_lvalue = true;
 
-	n->tn_string = tgetblk(sizeof *n->tn_string);
+	n->tn_string = expr_zalloc(sizeof(*n->tn_string));
 	n->tn_string->st_tspec = strg->st_tspec;
 	n->tn_string->st_len = len;
 
 	if (strg->st_tspec == CHAR) {
-		n->tn_string->st_cp = tgetblk(len + 1);
+		n->tn_string->st_cp = expr_zalloc(len + 1);
 		(void)memcpy(n->tn_string->st_cp, strg->st_cp, len + 1);
 		free(strg->st_cp);
 	} else {
-		size_t size = (len + 1) * sizeof *n->tn_string->st_wcp;
-		n->tn_string->st_wcp = tgetblk(size);
+		size_t size = (len + 1) * sizeof(*n->tn_string->st_wcp);
+		n->tn_string->st_wcp = expr_zalloc(size);
 		(void)memcpy(n->tn_string->st_wcp, strg->st_wcp, size);
 		free(strg->st_wcp);
 	}
@@ -347,13 +346,14 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 	 * that no defined struct or union has a member with the same name.
 	 */
 	if (msym->s_scl == NOSCL) {
-		/* undefined struct/union member: %s */
-		error(101, msym->s_name);
+		/* type '%s' does not have member '%s' */
+		error(101, type_name(tn->tn_type), msym->s_name);
 		rmsym(msym);
 		msym->s_kind = FMEMBER;
 		msym->s_scl = MOS;
-		msym->s_styp = tgetblk(sizeof *msym->s_styp);
-		msym->s_styp->sou_tag = tgetblk(sizeof *msym->s_styp->sou_tag);
+		msym->s_styp = expr_zalloc(sizeof(*msym->s_styp));
+		msym->s_styp->sou_tag = expr_zalloc(
+		    sizeof(*msym->s_styp->sou_tag));
 		msym->s_styp->sou_tag->s_name = unnamed;
 		msym->s_value.v_tspec = INT;
 		return msym;
@@ -457,11 +457,11 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 	if (eq) {
 		if (op == POINT) {
 			if (tflag) {
-				/* left operand of '.' must be struct/... */
-				warning(103);
+				/* left operand of '.' must be struct ... */
+				warning(103, type_name(tn->tn_type));
 			} else {
-				/* left operand of '.' must be struct/... */
-				error(103);
+				/* left operand of '.' must be struct ... */
+				error(103, type_name(tn->tn_type));
 			}
 		} else {
 			if (tflag && tn->tn_type->t_tspec == PTR) {
@@ -478,11 +478,26 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 			error(105, op == POINT ? "object" : "pointer");
 		} else {
 			/* unacceptable operand of '%s' */
-			error(111, getopname(op));
+			error(111, op_name(op));
 		}
 	}
 
 	return msym;
+}
+
+tnode_t *
+build_generic_selection(const tnode_t *expr,
+			struct generic_association *sel)
+{
+	tnode_t *default_result = NULL;
+
+	for (; sel != NULL; sel = sel->ga_prev)
+		if (expr != NULL &&
+		    eqtype(sel->ga_arg, expr->tn_type, false, false, NULL))
+			return sel->ga_result;
+		else if (sel->ga_arg == NULL)
+			default_result = sel->ga_result;
+	return default_result;
 }
 
 /*
@@ -549,16 +564,16 @@ build(op_t op, tnode_t *ln, tnode_t *rn)
 	 * ANSI C, print a warning.
 	 */
 	if (mp->m_warn_if_left_unsigned_in_c90 &&
-	    ln->tn_op == CON && ln->tn_val->v_ansiu) {
+	    ln->tn_op == CON && ln->tn_val->v_unsigned_since_c90) {
 		/* ANSI C treats constant as unsigned, op %s */
 		warning(218, mp->m_name);
-		ln->tn_val->v_ansiu = false;
+		ln->tn_val->v_unsigned_since_c90 = false;
 	}
 	if (mp->m_warn_if_right_unsigned_in_c90 &&
-	    rn->tn_op == CON && rn->tn_val->v_ansiu) {
+	    rn->tn_op == CON && rn->tn_val->v_unsigned_since_c90) {
 		/* ANSI C treats constant as unsigned, op %s */
 		warning(218, mp->m_name);
-		rn->tn_val->v_ansiu = false;
+		rn->tn_val->v_unsigned_since_c90 = false;
 	}
 
 	/* Make sure both operands are of the same type */
@@ -696,10 +711,10 @@ cconv(tnode_t *tn)
 		if (!tn->tn_lvalue) {
 			/* XXX print correct operator */
 			/* %soperand of '%s' must be lvalue */
-			gnuism(114, "", modtab[ADDR].m_name);
+			gnuism(114, "", op_name(ADDR));
 		}
-		tn = new_tnode(ADDR, tincref(tn->tn_type->t_subt, PTR),
-			     tn, NULL);
+		tn = new_tnode(ADDR,
+		    expr_derive_type(tn->tn_type->t_subt, PTR), tn, NULL);
 	}
 
 	/*
@@ -712,7 +727,8 @@ cconv(tnode_t *tn)
 
 	/* lvalue to rvalue */
 	if (tn->tn_lvalue) {
-		tp = tduptyp(tn->tn_type);
+		tp = expr_dup_type(tn->tn_type);
+		/* C99 6.3.2.1p2 sentence 2 says to remove the qualifiers. */
 		tp->t_const = tp->t_volatile = false;
 		tn = new_tnode(LOAD, tp, tn, NULL);
 	}
@@ -720,7 +736,7 @@ cconv(tnode_t *tn)
 	return tn;
 }
 
-static const tnode_t *
+const tnode_t *
 before_conversion(const tnode_t *tn)
 {
 	while (tn->tn_op == CVT && !tn->tn_cast)
@@ -738,61 +754,23 @@ is_null_pointer(const tnode_t *tn)
 	       && (tn->tn_op == CON && tn->tn_val->v_quad == 0);
 }
 
-/*
- * See if the node is valid as operand of an operator that compares its
- * argument with 0.
- */
-bool
-is_typeok_bool_operand(const tnode_t *tn)
-{
-	tspec_t t;
-
-	lint_assert(Tflag);
-
-	tn = before_conversion(tn);
-	t = tn->tn_type->t_tspec;
-
-	if (t == BOOL)
-		return true;
-
-	if (tn->tn_from_system_header && is_scalar(t))
-		return true;
-
-	/* For enums that are used as bit sets, allow "flags & FLAG". */
-	if (tn->tn_op == BITAND &&
-	    tn->tn_left->tn_op == CVT &&
-	    tn->tn_left->tn_type->t_tspec == INT && !tn->tn_left->tn_cast &&
-	    tn->tn_left->tn_left->tn_type->t_tspec == ENUM &&
-	    /*
-	     * XXX: Somehow the type information got lost here.  The type
-	     * of the enum constant on the right-hand side should still be
-	     * ENUM, but is INT.
-	     */
-	    tn->tn_right->tn_type->t_tspec == INT)
-		return true;
-
-	return false;
-}
-
 static bool
-typeok_incdec(const mod_t *mp, const tnode_t *tn, const type_t *tp)
+typeok_incdec(op_t op, const tnode_t *tn, const type_t *tp)
 {
 	/* operand has scalar type (checked in typeok) */
 	if (!tn->tn_lvalue) {
 		if (tn->tn_op == CVT && tn->tn_cast &&
 		    tn->tn_left->tn_op == LOAD) {
-			if (tn->tn_type->t_tspec == PTR)
-				return true;
 			/* a cast does not yield an lvalue */
 			error(163);
 		}
 		/* %soperand of '%s' must be lvalue */
-		error(114, "", mp->m_name);
+		error(114, "", op_name(op));
 		return false;
 	} else if (tp->t_const) {
 		if (!tflag)
 			/* %soperand of '%s' must be modifiable lvalue */
-			warning(115, "", mp->m_name);
+			warning(115, "", op_name(op));
 	}
 	return true;
 }
@@ -806,8 +784,6 @@ typeok_address(const mod_t *mp,
 	} else if (!tn->tn_lvalue) {
 		if (tn->tn_op == CVT && tn->tn_cast &&
 		    tn->tn_left->tn_op == LOAD) {
-			if (tn->tn_type->t_tspec == PTR)
-				return true;
 			/* a cast does not yield an lvalue */
 			error(163);
 		}
@@ -908,7 +884,7 @@ typeok_shr(const mod_t *mp,
 		 * The left operand would become unsigned in
 		 * traditional C.
 		 */
-		if (hflag &&
+		if (hflag && !Sflag &&
 		    (ln->tn_op != CON || ln->tn_val->v_quad < 0)) {
 			/* semantics of '%s' change in ANSI C; use ... */
 			warning(118, mp->m_name);
@@ -919,7 +895,7 @@ typeok_shr(const mod_t *mp,
 		 * In traditional C the left operand would be extended,
 		 * possibly with 1, and then shifted.
 		 */
-		if (hflag &&
+		if (hflag && !Sflag &&
 		    (ln->tn_op != CON || ln->tn_val->v_quad < 0)) {
 			/* semantics of '%s' change in ANSI C; use ... */
 			warning(118, mp->m_name);
@@ -944,7 +920,7 @@ typeok_shl(const mod_t *mp, tspec_t lt, tspec_t rt)
 		 * that there is really a difference between
 		 * ANSI C and traditional C.
 		 */
-		if (hflag)
+		if (hflag && !Sflag)
 			/* semantics of '%s' change in ANSI C; use ... */
 			warning(118, mp->m_name);
 	}
@@ -953,19 +929,21 @@ typeok_shl(const mod_t *mp, tspec_t lt, tspec_t rt)
 static void
 typeok_shift(tspec_t lt, const tnode_t *rn, tspec_t rt)
 {
-	if (rn->tn_op == CON) {
-		if (!is_uinteger(rt) && rn->tn_val->v_quad < 0) {
-			/* negative shift */
-			warning(121);
-		} else if ((uint64_t)rn->tn_val->v_quad ==
-			   (uint64_t)size_in_bits(lt)) {
-			/* shift equal to size of object */
-			warning(267);
-		} else if ((uint64_t)rn->tn_val->v_quad >
-			   (uint64_t)size_in_bits(lt)) {
-			/* shift greater than size of object */
-			warning(122);
-		}
+	if (rn->tn_op != CON)
+		return;
+
+	if (!is_uinteger(rt) && rn->tn_val->v_quad < 0) {
+		/* negative shift */
+		warning(121);
+	} else if ((uint64_t)rn->tn_val->v_quad ==
+		   (uint64_t)size_in_bits(lt)) {
+		/* shift equal to size of object */
+		warning(267);
+	} else if ((uint64_t)rn->tn_val->v_quad > (uint64_t)size_in_bits(lt)) {
+		/* shift amount %llu is greater than bit-size %llu of '%s' */
+		warning(122, (unsigned long long)rn->tn_val->v_quad,
+		    (unsigned long long)size_in_bits(lt),
+		    tspec_name(lt));
 	}
 }
 
@@ -1000,7 +978,7 @@ typeok_ordered_comparison(op_t op,
 	const char *lx = lt == PTR ? "pointer" : "integer";
 	const char *rx = rt == PTR ? "pointer" : "integer";
 	/* illegal combination of %s (%s) and %s (%s), op %s */
-	warning(123, lx, type_name(ltp), rx, type_name(rtp), getopname(op));
+	warning(123, lx, type_name(ltp), rx, type_name(rtp), op_name(op));
 	return true;
 }
 
@@ -1094,8 +1072,6 @@ typeok_assign(const mod_t *mp, const tnode_t *ln, const type_t *ltp, tspec_t lt)
 	if (!ln->tn_lvalue) {
 		if (ln->tn_op == CVT && ln->tn_cast &&
 		    ln->tn_left->tn_op == LOAD) {
-			if (ln->tn_type->t_tspec == PTR)
-				return true;
 			/* a cast does not yield an lvalue */
 			error(163);
 		}
@@ -1111,159 +1087,7 @@ typeok_assign(const mod_t *mp, const tnode_t *ln, const type_t *ltp, tspec_t lt)
 	return true;
 }
 
-/*
- * See if in strict bool mode, the operator takes either two bool operands
- * or two arbitrary other operands.
- */
-static bool
-is_assignment_bool_or_other(op_t op)
-{
-	return op == ASSIGN ||
-	       op == ANDASS || op == XORASS || op == ORASS ||
-	       op == RETURN || op == INIT || op == FARG;
-}
 
-static bool
-is_symmetric_bool_or_other(op_t op)
-{
-	return op == EQ || op == NE ||
-	       op == BITAND || op == BITXOR || op == BITOR ||
-	       op == COLON;
-}
-
-static bool
-is_int_constant_zero(const tnode_t *tn, tspec_t t)
-{
-	return t == INT && tn->tn_op == CON && tn->tn_val->v_quad == 0;
-}
-
-static bool
-is_typeok_strict_bool(op_t op,
-		      const tnode_t *ln, tspec_t lt,
-		      const tnode_t *rn, tspec_t rt)
-{
-	if (rn == NULL)
-		return true;	/* TODO: check unary operators as well. */
-
-	if ((lt == BOOL) == (rt == BOOL))
-		return true;
-
-	if ((ln->tn_from_system_header || rn->tn_from_system_header) &&
-	    (is_int_constant_zero(ln, lt) || is_int_constant_zero(rn, rt)))
-		return true;
-
-	if (is_assignment_bool_or_other(op)) {
-		return lt != BOOL &&
-		       (ln->tn_from_system_header || rn->tn_from_system_header);
-	}
-
-	return !is_symmetric_bool_or_other(op);
-}
-
-/*
- * Some operators require that either both operands are bool or both are
- * scalar.
- *
- * Code that passes this check can be compiled in a pre-C99 environment that
- * doesn't implement the special rule C99 6.3.1.2, without silent change in
- * behavior.
- */
-static bool
-typeok_strict_bool_compatible(op_t op, int arg,
-			      const tnode_t *ln, tspec_t lt,
-			      const tnode_t *rn, tspec_t rt)
-{
-
-	if (is_typeok_strict_bool(op, ln, lt, rn, rt))
-		return true;
-
-	if (op == FARG) {
-		/* argument #%d expects '%s', gets passed '%s' */
-		error(334, arg, tspec_name(lt), tspec_name(rt));
-	} else if (op == RETURN) {
-		/* return value type mismatch (%s) and (%s) */
-		error(211, tspec_name(lt), tspec_name(rt));
-	} else {
-		/* operands of '%s' have incompatible types (%s != %s) */
-		error(107, getopname(op), tspec_name(lt), tspec_name(rt));
-	}
-
-	return false;
-}
-
-/*
- * In strict bool mode, check whether the types of the operands match the
- * operator.
- */
-static bool
-typeok_scalar_strict_bool(op_t op, const mod_t *mp, int arg,
-			  const tnode_t *ln,
-			  const tnode_t *rn)
-
-{
-	tspec_t lt, rt;
-
-	ln = before_conversion(ln);
-	lt = ln->tn_type->t_tspec;
-
-	if (rn != NULL) {
-		rn = before_conversion(rn);
-		rt = rn->tn_type->t_tspec;
-	} else {
-		rt = NOTSPEC;
-	}
-
-	if (!typeok_strict_bool_compatible(op, arg, ln, lt, rn, rt))
-		return false;
-
-	if (mp->m_requires_bool || op == QUEST) {
-		bool binary = mp->m_binary;
-		bool lbool = is_typeok_bool_operand(ln);
-		bool ok = true;
-
-		if (!binary && !lbool) {
-			/* operand of '%s' must be bool, not '%s' */
-			error(330, getopname(op), tspec_name(lt));
-			ok = false;
-		}
-		if (binary && !lbool) {
-			/* left operand of '%s' must be bool, not '%s' */
-			error(331, getopname(op), tspec_name(lt));
-			ok = false;
-		}
-		if (binary && op != QUEST && !is_typeok_bool_operand(rn)) {
-			/* right operand of '%s' must be bool, not '%s' */
-			error(332, getopname(op), tspec_name(rt));
-			ok = false;
-		}
-		return ok;
-	}
-
-	if (!mp->m_takes_bool) {
-		bool binary = mp->m_binary;
-		bool lbool = ln->tn_type->t_tspec == BOOL;
-		bool ok = true;
-
-		if (!binary && lbool) {
-			/* operand of '%s' must not be bool */
-			error(335, getopname(op));
-			ok = false;
-		}
-		if (binary && lbool) {
-			/* left operand of '%s' must not be bool */
-			error(336, getopname(op));
-			ok = false;
-		}
-		if (binary && rn->tn_type->t_tspec == BOOL) {
-			/* right operand of '%s' must not be bool */
-			error(337, getopname(op));
-			ok = false;
-		}
-		return ok;
-	}
-
-	return true;
-}
 
 /* Check the types using the information from modtab[]. */
 static bool
@@ -1335,7 +1159,7 @@ typeok_op(op_t op, const mod_t *mp, int arg,
 	case DECAFT:
 	case INCBEF:
 	case DECBEF:
-		if (!typeok_incdec(mp, ln, ltp))
+		if (!typeok_incdec(op, ln, ltp))
 			return false;
 		break;
 	case ADDR:
@@ -1678,8 +1502,8 @@ check_assign_types_compatible(op_t op, int arg,
 		error(211, type_name(ltp), type_name(rtp));
 		break;
 	case FARG:
-		/* argument is incompatible with prototype, arg #%d */
-		warning(155, arg);
+		/* passing '%s' to incompatible '%s', arg #%d */
+		warning(155, type_name(rtp), type_name(ltp), arg);
 		break;
 	default:
 		warn_incompatible_types(op, ltp, lt, rtp, rt);
@@ -1713,7 +1537,7 @@ check_bad_enum_operation(op_t op, const tnode_t *ln, const tnode_t *rn)
 	}
 
 	/* dubious operation on enum, op %s */
-	warning(241, getopname(op));
+	warning(241, op_name(op));
 
 }
 
@@ -1791,7 +1615,7 @@ check_enum_int_mismatch(op_t op, int arg, const tnode_t *ln, const tnode_t *rn)
 	default:
 		/* combination of '%s' and '%s', op %s */
 		warning(242, type_name(ln->tn_type), type_name(rn->tn_type),
-		    getopname(op));
+		    op_name(op));
 		break;
 	}
 }
@@ -1804,24 +1628,21 @@ new_tnode(op_t op, type_t *type, tnode_t *ln, tnode_t *rn)
 {
 	tnode_t	*ntn;
 	tspec_t	t;
-#ifdef notyet
+#if 0 /* not yet */
 	size_t l;
 	uint64_t rnum;
 #endif
 
-	ntn = getnode();
+	ntn = expr_zalloc_tnode();
 
 	ntn->tn_op = op;
 	ntn->tn_type = type;
-	if (ln->tn_from_system_header)
-		ntn->tn_from_system_header = true;
-	if (rn != NULL && rn->tn_from_system_header)
-		ntn->tn_from_system_header = true;
+	ntn->tn_relaxed = ln->tn_relaxed || (rn != NULL && rn->tn_relaxed);
 	ntn->tn_left = ln;
 	ntn->tn_right = rn;
 
 	switch (op) {
-#ifdef notyet
+#if 0 /* not yet */
 	case SHR:
 		if (rn->tn_op != CON)
 			break;
@@ -1889,21 +1710,18 @@ promote(op_t op, bool farg, tnode_t *tn)
 
 	if (!tflag) {
 		/*
-		 * ANSI C requires that the result is always of type INT
-		 * if INT can represent all possible values of the previous
-		 * type.
+		 * C99 6.3.1.1p2 requires for types with lower rank than int
+		 * that "If an int can represent all the values of the
+		 * original type, the value is converted to an int; otherwise
+		 * it is converted to an unsigned int", and that "All other
+		 * types are unchanged by the integer promotions".
 		 */
 		if (tn->tn_type->t_bitfield) {
 			len = tn->tn_type->t_flen;
-			if (size_in_bits(INT) > len) {
+			if (len < size_in_bits(INT)) {
 				t = INT;
-			} else {
-				lint_assert(len == size_in_bits(INT));
-				if (is_uinteger(t)) {
-					t = UINT;
-				} else {
-					t = INT;
-				}
+			} else if (len == size_in_bits(INT)) {
+				t = is_uinteger(t) ? UINT : INT;
 			}
 		} else if (t == CHAR || t == UCHAR || t == SCHAR) {
 			t = (size_in_bits(CHAR) < size_in_bits(INT)
@@ -1933,10 +1751,11 @@ promote(op_t op, bool farg, tnode_t *tn)
 	}
 
 	if (t != tn->tn_type->t_tspec) {
-		ntp = tduptyp(tn->tn_type);
+		ntp = expr_dup_type(tn->tn_type);
 		ntp->t_tspec = t;
 		/*
-		 * Keep t_is_enum so we are later able to check compatibility
+		 * Keep t_is_enum even though t_tspec gets converted from
+		 * ENUM to INT, so we are later able to check compatibility
 		 * of enum types.
 		 */
 		tn = convert(op, 0, ntp, tn);
@@ -2019,12 +1838,12 @@ balance(op_t op, tnode_t **lnp, tnode_t **rnp)
 	}
 
 	if (t != lt) {
-		ntp = tduptyp((*lnp)->tn_type);
+		ntp = expr_dup_type((*lnp)->tn_type);
 		ntp->t_tspec = t;
 		*lnp = convert(op, 0, ntp, *lnp);
 	}
 	if (t != rt) {
-		ntp = tduptyp((*rnp)->tn_type);
+		ntp = expr_dup_type((*rnp)->tn_type);
 		ntp->t_tspec = t;
 		*rnp = convert(op, 0, ntp, *rnp);
 	}
@@ -2052,21 +1871,21 @@ convert(op_t op, int arg, type_t *tp, tnode_t *tn)
 		/* a null pointer may be assigned to any pointer. */
 	} else if (is_integer(nt) && nt != BOOL && ot == PTR) {
 		check_pointer_integer_conversion(op, nt, tp, tn);
-	} else if (nt == PTR && ot == PTR) {
-		check_pointer_conversion(op, tn, tp);
+	} else if (nt == PTR && ot == PTR && op == CVT) {
+		check_pointer_conversion(tn, tp);
 	}
 
-	ntn = getnode();
+	ntn = expr_zalloc_tnode();
 	ntn->tn_op = CVT;
 	ntn->tn_type = tp;
 	ntn->tn_cast = op == CVT;
-	ntn->tn_from_system_header |= tn->tn_from_system_header;
+	ntn->tn_relaxed |= tn->tn_relaxed;
 	ntn->tn_right = NULL;
 	if (tn->tn_op != CON || nt == VOID) {
 		ntn->tn_left = tn;
 	} else {
 		ntn->tn_op = CON;
-		ntn->tn_val = tgetblk(sizeof *ntn->tn_val);
+		ntn->tn_val = expr_zalloc(sizeof(*ntn->tn_val));
 		convert_constant(op, arg, ntn->tn_type, ntn->tn_val,
 		    tn->tn_val);
 	}
@@ -2140,18 +1959,19 @@ check_prototype_conversion(int arg, tspec_t nt, tspec_t ot, type_t *tp,
 /*
  * Print warnings for conversions of integer types which may cause problems.
  */
-/* ARGSUSED */
 static void
 check_integer_conversion(op_t op, int arg, tspec_t nt, tspec_t ot, type_t *tp,
 			 tnode_t *tn)
 {
-	char opbuf[16];
 
 	if (tn->tn_op == CON)
 		return;
 
 	if (op == CVT)
 		return;
+
+	if (Sflag && nt == BOOL)
+		return;		/* See C99 6.3.1.2 */
 
 	if (Pflag && portable_size_in_bits(nt) > portable_size_in_bits(ot) &&
 	    is_uinteger(nt) != is_uinteger(ot)) {
@@ -2174,7 +1994,7 @@ check_integer_conversion(op_t op, int arg, tspec_t nt, tspec_t ot, type_t *tp,
 		case SHL:
 			/* suggest cast from '%s' to '%s' on op %s to ... */
 			warning(324, type_name(gettyp(ot)), type_name(tp),
-			    print_tnode(opbuf, sizeof opbuf, tn));
+			    op_name(tn->tn_op));
 			break;
 		default:
 			break;
@@ -2223,20 +2043,28 @@ check_pointer_integer_conversion(op_t op, tspec_t nt, type_t *tp, tnode_t *tn)
 }
 
 static bool
-should_warn_about_pointer_cast(const type_t *tp, tspec_t nst,
-			       const tnode_t *tn, tspec_t ost)
+should_warn_about_pointer_cast(const type_t *nstp, tspec_t nst,
+			       const type_t *ostp, tspec_t ost)
 {
-	if (nst == STRUCT || nst == UNION)
-		if (tp->t_subt->t_str != tn->tn_type->t_subt->t_str)
-			return true;
+	/*
+	 * Casting a pointer to 'struct S' to a pointer to another struct that
+	 * has 'struct S' as its first member is ok, see msg_247.c, 'struct
+	 * counter'.
+	 */
+	if (nst == STRUCT && ost == STRUCT &&
+	    nstp->t_str->sou_first_member != NULL &&
+	    nstp->t_str->sou_first_member->s_type == ostp)
+		return false;
+
+	if (is_incomplete(nstp) || is_incomplete(ostp))
+		return false;
+
+	if ((nst == STRUCT || nst == UNION) && nstp->t_str != ostp->t_str)
+		return true;
 
 	if (nst == CHAR || nst == UCHAR)
 		return false;	/* for the sake of traditional C code */
 
-	/*
-	 * XXX: Why should it be ok to cast between arbitrary structs that
-	 * just happen to be of the same size?
-	 */
 	return portable_size_in_bits(nst) != portable_size_in_bits(ost);
 }
 
@@ -2244,20 +2072,17 @@ should_warn_about_pointer_cast(const type_t *tp, tspec_t nst,
  * Warn about questionable pointer conversions.
  */
 static void
-check_pointer_conversion(op_t op, tnode_t *tn, type_t *tp)
+check_pointer_conversion(tnode_t *tn, type_t *ntp)
 {
+	const type_t *nstp, *otp, *ostp;
 	tspec_t nst, ost;
 	const char *nts, *ots;
 
-	/*
-	 * We got already an error (pointers of different types
-	 * without a cast) or we will not get a warning.
-	 */
-	if (op != CVT)
-		return;
-
-	nst = tp->t_subt->t_tspec;
-	ost = tn->tn_type->t_subt->t_tspec;
+	nstp = ntp->t_subt;
+	otp = tn->tn_type;
+	ostp = otp->t_subt;
+	nst = nstp->t_tspec;
+	ost = ostp->t_tspec;
 
 	if (nst == VOID || ost == VOID) {
 		if (sflag && (nst == FUNC || ost == FUNC)) {
@@ -2272,19 +2097,268 @@ check_pointer_conversion(op_t op, tnode_t *tn, type_t *tp)
 		return;
 	} else if (nst == FUNC || ost == FUNC) {
 		/* converting '%s' to '%s' is questionable */
-		warning(229, type_name(tn->tn_type), type_name(tp));
+		warning(229, type_name(otp), type_name(ntp));
 		return;
 	}
 
-	if (hflag && alignment_in_bits(tp->t_subt) >
-		     alignment_in_bits(tn->tn_type->t_subt)) {
+	if (hflag && alignment_in_bits(nstp) > alignment_in_bits(ostp) &&
+	    !is_incomplete(ostp)) {
 		/* converting '%s' to '%s' may cause alignment problem */
-		warning(135, type_name(tn->tn_type), type_name(tp));
+		warning(135, type_name(otp), type_name(ntp));
 	}
 
-	if (cflag && should_warn_about_pointer_cast(tp, nst, tn, ost)) {
+	if (cflag && should_warn_about_pointer_cast(nstp, nst, ostp, ost)) {
 		/* pointer cast from '%s' to '%s' may be troublesome */
-		warning(247, type_name(tn->tn_type), type_name(tp));
+		warning(247, type_name(otp), type_name(ntp));
+	}
+}
+
+static void
+convert_constant_floating(op_t op, int arg, tspec_t ot, const type_t *tp,
+			  tspec_t nt, val_t *v, val_t *nv)
+{
+	ldbl_t	max = 0.0, min = 0.0;
+
+	switch (nt) {
+	case CHAR:
+		max = TARG_CHAR_MAX;	min = TARG_CHAR_MIN;	break;
+	case UCHAR:
+		max = TARG_UCHAR_MAX;	min = 0;		break;
+	case SCHAR:
+		max = TARG_SCHAR_MAX;	min = TARG_SCHAR_MIN;	break;
+	case SHORT:
+		max = TARG_SHRT_MAX;	min = TARG_SHRT_MIN;	break;
+	case USHORT:
+		max = TARG_USHRT_MAX;	min = 0;		break;
+	case ENUM:
+	case INT:
+		max = TARG_INT_MAX;	min = TARG_INT_MIN;	break;
+	case UINT:
+		max = (u_int)TARG_UINT_MAX;min = 0;		break;
+	case LONG:
+		max = TARG_LONG_MAX;	min = TARG_LONG_MIN;	break;
+	case ULONG:
+		max = (u_long)TARG_ULONG_MAX; min = 0;		break;
+	case QUAD:
+		max = QUAD_MAX;		min = QUAD_MIN;		break;
+	case UQUAD:
+		max = (uint64_t)UQUAD_MAX; min = 0;		break;
+	case FLOAT:
+	case FCOMPLEX:
+		max = FLT_MAX;		min = -FLT_MAX;		break;
+	case DOUBLE:
+	case DCOMPLEX:
+		max = DBL_MAX;		min = -DBL_MAX;		break;
+	case PTR:
+		/* Got already an error because of float --> ptr */
+	case LDOUBLE:
+	case LCOMPLEX:
+		max = LDBL_MAX;		min = -LDBL_MAX;	break;
+	default:
+		lint_assert(/*CONSTCOND*/false);
+	}
+	if (v->v_ldbl > max || v->v_ldbl < min) {
+		lint_assert(nt != LDOUBLE);
+		if (op == FARG) {
+			/* conv. of '%s' to '%s' is out of range, ... */
+			warning(295,
+			    type_name(gettyp(ot)), type_name(tp), arg);
+		} else {
+			/* conversion of '%s' to '%s' is out of range */
+			warning(119,
+			    type_name(gettyp(ot)), type_name(tp));
+		}
+		v->v_ldbl = v->v_ldbl > 0 ? max : min;
+	}
+	if (nt == FLOAT) {
+		nv->v_ldbl = (float)v->v_ldbl;
+	} else if (nt == DOUBLE) {
+		nv->v_ldbl = (double)v->v_ldbl;
+	} else if (nt == LDOUBLE) {
+		nv->v_ldbl = v->v_ldbl;
+	} else {
+		nv->v_quad = (nt == PTR || is_uinteger(nt)) ?
+		    (int64_t)v->v_ldbl : (int64_t)v->v_ldbl;
+	}
+}
+
+static bool
+convert_constant_to_floating(tspec_t nt, val_t *nv,
+			     tspec_t ot, const val_t *v)
+{
+	if (nt == FLOAT) {
+		nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
+		    (float)(uint64_t)v->v_quad : (float)v->v_quad;
+	} else if (nt == DOUBLE) {
+		nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
+		    (double)(uint64_t)v->v_quad : (double)v->v_quad;
+	} else if (nt == LDOUBLE) {
+		nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
+		    (ldbl_t)(uint64_t)v->v_quad : (ldbl_t)v->v_quad;
+	} else
+		return false;
+	return true;
+}
+
+/*
+ * Print a warning if bits which were set are lost due to the conversion.
+ * This can happen with operator ORASS only.
+ */
+static void
+convert_constant_check_range_bitor(size_t nsz, size_t osz, const val_t *v,
+				   uint64_t xmask, op_t op)
+{
+	if (nsz < osz && (v->v_quad & xmask) != 0) {
+		/* constant truncated by conv., op %s */
+		warning(306, op_name(op));
+	}
+}
+
+/*
+ * Print a warning if additional bits are not all 1
+ * and the most significant bit of the old value is 1,
+ * or if at least one (but not all) removed bit was 0.
+ */
+static void
+convert_constant_check_range_bitand(size_t nsz, size_t osz,
+				    uint64_t xmask, const val_t *nv,
+				    tspec_t ot, const val_t *v,
+				    const type_t *tp, op_t op)
+{
+	if (nsz > osz &&
+	    (nv->v_quad & bit(osz - 1)) != 0 &&
+	    (nv->v_quad & xmask) != xmask) {
+		/* extra bits set to 0 in conversion of '%s' to '%s', ... */
+		warning(309, type_name(gettyp(ot)),
+		    type_name(tp), op_name(op));
+	} else if (nsz < osz &&
+		   (v->v_quad & xmask) != xmask &&
+		   (v->v_quad & xmask) != 0) {
+		/* constant truncated by conversion, op %s */
+		warning(306, op_name(op));
+	}
+}
+
+static void
+convert_constant_check_range_signed(op_t op, int arg)
+{
+	if (op == ASSIGN) {
+		/* assignment of negative constant to unsigned type */
+		warning(164);
+	} else if (op == INIT) {
+		/* initialization of unsigned with negative constant */
+		warning(221);
+	} else if (op == FARG) {
+		/* conversion of negative constant to unsigned type, ... */
+		warning(296, arg);
+	} else if (modtab[op].m_comparison) {
+		/* handled by check_integer_comparison() */
+	} else {
+		/* conversion of negative constant to unsigned type */
+		warning(222);
+	}
+}
+
+/*
+ * Loss of significant bit(s). All truncated bits
+ * of unsigned types or all truncated bits plus the
+ * msb of the target for signed types are considered
+ * to be significant bits. Loss of significant bits
+ * means that at least one of the bits was set in an
+ * unsigned type or that at least one but not all of
+ * the bits was set in a signed type.
+ * Loss of significant bits means that it is not
+ * possible, also not with necessary casts, to convert
+ * back to the original type. A example for a
+ * necessary cast is:
+ *	char c;	int	i; c = 128;
+ *	i = c;			** yields -128 **
+ *	i = (unsigned char)c;	** yields 128 **
+ */
+static void
+convert_constant_check_range_truncated(op_t op, int arg, const type_t *tp,
+				       tspec_t ot)
+{
+	if (op == ASSIGN && tp->t_bitfield) {
+		/* precision lost in bit-field assignment */
+		warning(166);
+	} else if (op == ASSIGN) {
+		/* constant truncated by assignment */
+		warning(165);
+	} else if (op == INIT && tp->t_bitfield) {
+		/* bit-field initializer does not fit */
+		warning(180);
+	} else if (op == INIT) {
+		/* initializer does not fit */
+		warning(178);
+	} else if (op == CASE) {
+		/* case label affected by conversion */
+		warning(196);
+	} else if (op == FARG) {
+		/* conversion of '%s' to '%s' is out of range, arg #%d */
+		warning(295,
+		    type_name(gettyp(ot)), type_name(tp), arg);
+	} else {
+		/* conversion of '%s' to '%s' is out of range */
+		warning(119,
+		    type_name(gettyp(ot)), type_name(tp));
+	}
+}
+
+static void
+convert_constant_check_range_loss(op_t op, int arg, const type_t *tp,
+				  tspec_t ot)
+{
+	if (op == ASSIGN && tp->t_bitfield) {
+		/* precision lost in bit-field assignment */
+		warning(166);
+	} else if (op == INIT && tp->t_bitfield) {
+		/* bit-field initializer out of range */
+		warning(11);
+	} else if (op == CASE) {
+		/* case label affected by conversion */
+		warning(196);
+	} else if (op == FARG) {
+		/* conversion of '%s' to '%s' is out of range, arg #%d */
+		warning(295,
+		    type_name(gettyp(ot)), type_name(tp), arg);
+	} else {
+		/* conversion of '%s' to '%s' is out of range */
+		warning(119,
+		    type_name(gettyp(ot)), type_name(tp));
+	}
+}
+
+static void
+convert_constant_check_range(tspec_t ot, const type_t *tp, tspec_t nt,
+			     op_t op, int arg, const val_t *v, val_t *nv)
+{
+	int	osz, nsz;
+	int64_t	xmask, xmsk1;
+
+	osz = size_in_bits(ot);
+	nsz = tp->t_bitfield ? tp->t_flen : size_in_bits(nt);
+	xmask = value_bits(nsz) ^ value_bits(osz);
+	xmsk1 = value_bits(nsz) ^ value_bits(osz - 1);
+	/*
+	 * For bitwise operations we are not interested in the
+	 * value, but in the bits itself.
+	 */
+	if (op == ORASS || op == BITOR || op == BITXOR) {
+		convert_constant_check_range_bitor(nsz, osz, v, xmask, op);
+	} else if (op == ANDASS || op == BITAND) {
+		convert_constant_check_range_bitand(nsz, osz, xmask, nv, ot,
+		    v, tp, op);
+	} else if ((nt != PTR && is_uinteger(nt)) &&
+		   (ot != PTR && !is_uinteger(ot)) &&
+		   v->v_quad < 0) {
+		convert_constant_check_range_signed(op, arg);
+	} else if (nv->v_quad != v->v_quad && nsz <= osz &&
+		   (v->v_quad & xmask) != 0 &&
+		   (is_uinteger(ot) || (v->v_quad & xmsk1) != xmsk1)) {
+		convert_constant_check_range_truncated(op, arg, tp, ot);
+	} else if (nv->v_quad != v->v_quad) {
+		convert_constant_check_range_loss(op, arg, tp, ot);
 	}
 }
 
@@ -2298,248 +2372,49 @@ check_pointer_conversion(op_t op, tnode_t *tn, type_t *tp)
  * v		old constant
  */
 void
-convert_constant(op_t op, int arg, type_t *tp, val_t *nv, val_t *v)
+convert_constant(op_t op, int arg, const type_t *tp, val_t *nv, val_t *v)
 {
 	tspec_t	ot, nt;
-	ldbl_t	max = 0.0, min = 0.0;
 	int	sz;
-	bool	rchk;
-	int64_t	xmask, xmsk1;
-	int	osz, nsz;
+	bool	range_check;
 
+	/*
+	 * TODO: make 'v' const; the name of this function does not suggest
+	 *  that it modifies 'v'.
+	 */
 	ot = v->v_tspec;
 	nt = nv->v_tspec = tp->t_tspec;
-	rchk = false;
+	range_check = false;
 
 	if (nt == BOOL) {	/* C99 6.3.1.2 */
-		nv->v_ansiu = false;
+		nv->v_unsigned_since_c90 = false;
 		nv->v_quad = is_nonzero_val(v) ? 1 : 0;
 		return;
 	}
 
 	if (ot == FLOAT || ot == DOUBLE || ot == LDOUBLE) {
-		switch (nt) {
-		case CHAR:
-			max = TARG_CHAR_MAX;	min = TARG_CHAR_MIN;	break;
-		case UCHAR:
-			max = TARG_UCHAR_MAX;	min = 0;		break;
-		case SCHAR:
-			max = TARG_SCHAR_MAX;	min = TARG_SCHAR_MIN;	break;
-		case SHORT:
-			max = TARG_SHRT_MAX;	min = TARG_SHRT_MIN;	break;
-		case USHORT:
-			max = TARG_USHRT_MAX;	min = 0;		break;
-		case ENUM:
-		case INT:
-			max = TARG_INT_MAX;	min = TARG_INT_MIN;	break;
-		case UINT:
-			max = (u_int)TARG_UINT_MAX;min = 0;		break;
-		case LONG:
-			max = TARG_LONG_MAX;	min = TARG_LONG_MIN;	break;
-		case ULONG:
-			max = (u_long)TARG_ULONG_MAX; min = 0;		break;
-		case QUAD:
-			max = QUAD_MAX;		min = QUAD_MIN;		break;
-		case UQUAD:
-			max = (uint64_t)UQUAD_MAX; min = 0;		break;
-		case FLOAT:
-		case FCOMPLEX:
-			max = FLT_MAX;		min = -FLT_MAX;		break;
-		case DOUBLE:
-		case DCOMPLEX:
-			max = DBL_MAX;		min = -DBL_MAX;		break;
-		case PTR:
-			/* Got already an error because of float --> ptr */
-		case LDOUBLE:
-		case LCOMPLEX:
-			max = LDBL_MAX;		min = -LDBL_MAX;	break;
-		default:
-			lint_assert(/*CONSTCOND*/false);
-		}
-		if (v->v_ldbl > max || v->v_ldbl < min) {
-			lint_assert(nt != LDOUBLE);
-			if (op == FARG) {
-				/* conv. of '%s' to '%s' is out of range, ... */
-				warning(295,
-				    type_name(gettyp(ot)), type_name(tp), arg);
-			} else {
-				/* conversion of '%s' to '%s' is out of range */
-				warning(119,
-				    type_name(gettyp(ot)), type_name(tp));
-			}
-			v->v_ldbl = v->v_ldbl > 0 ? max : min;
-		}
-		if (nt == FLOAT) {
-			nv->v_ldbl = (float)v->v_ldbl;
-		} else if (nt == DOUBLE) {
-			nv->v_ldbl = (double)v->v_ldbl;
-		} else if (nt == LDOUBLE) {
-			nv->v_ldbl = v->v_ldbl;
-		} else {
-			nv->v_quad = (nt == PTR || is_uinteger(nt)) ?
-				(int64_t)v->v_ldbl : (int64_t)v->v_ldbl;
-		}
-	} else {
-		if (nt == FLOAT) {
-			nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
-			       (float)(uint64_t)v->v_quad : (float)v->v_quad;
-		} else if (nt == DOUBLE) {
-			nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
-			       (double)(uint64_t)v->v_quad : (double)v->v_quad;
-		} else if (nt == LDOUBLE) {
-			nv->v_ldbl = (ot == PTR || is_uinteger(ot)) ?
-			       (ldbl_t)(uint64_t)v->v_quad : (ldbl_t)v->v_quad;
-		} else {
-			rchk = true;		/* Check for lost precision. */
-			nv->v_quad = v->v_quad;
-		}
+		convert_constant_floating(op, arg, ot, tp, nt, v, nv);
+	} else if (!convert_constant_to_floating(nt, nv, ot, v)) {
+		range_check = true;	/* Check for lost precision. */
+		nv->v_quad = v->v_quad;
 	}
 
-	if (v->v_ansiu && is_floating(nt)) {
+	if ((v->v_unsigned_since_c90 && is_floating(nt)) ||
+	    (v->v_unsigned_since_c90 && (is_integer(nt) && !is_uinteger(nt) &&
+			    portable_size_in_bits(nt) >
+			    portable_size_in_bits(ot)))) {
 		/* ANSI C treats constant as unsigned */
 		warning(157);
-		v->v_ansiu = false;
-	} else if (v->v_ansiu && (is_integer(nt) && !is_uinteger(nt) &&
-				  portable_size_in_bits(nt) >
-				  portable_size_in_bits(ot))) {
-		/* ANSI C treats constant as unsigned */
-		warning(157);
-		v->v_ansiu = false;
+		v->v_unsigned_since_c90 = false;
 	}
 
-	switch (nt) {
-	case FLOAT:
-	case FCOMPLEX:
-	case DOUBLE:
-	case DCOMPLEX:
-	case LDOUBLE:
-	case LCOMPLEX:
-		break;
-	default:
+	if (is_integer(nt)) {
 		sz = tp->t_bitfield ? tp->t_flen : size_in_bits(nt);
-		nv->v_quad = xsign(nv->v_quad, nt, sz);
-		break;
+		nv->v_quad = convert_integer(nv->v_quad, nt, sz);
 	}
 
-	if (rchk && op != CVT) {
-		osz = size_in_bits(ot);
-		nsz = tp->t_bitfield ? tp->t_flen : size_in_bits(nt);
-		xmask = qlmasks[nsz] ^ qlmasks[osz];
-		xmsk1 = qlmasks[nsz] ^ qlmasks[osz - 1];
-		/*
-		 * For bitwise operations we are not interested in the
-		 * value, but in the bits itself.
-		 */
-		if (op == ORASS || op == BITOR || op == BITXOR) {
-			/*
-			 * Print a warning if bits which were set are
-			 * lost due to the conversion.
-			 * This can happen with operator ORASS only.
-			 */
-			if (nsz < osz && (v->v_quad & xmask) != 0) {
-				/* constant truncated by conv., op %s */
-				warning(306, getopname(op));
-			}
-		} else if (op == ANDASS || op == BITAND) {
-			/*
-			 * Print a warning if additional bits are not all 1
-			 * and the most significant bit of the old value is 1,
-			 * or if at least one (but not all) removed bit was 0.
-			 */
-			if (nsz > osz &&
-			    (nv->v_quad & qbmasks[osz - 1]) != 0 &&
-			    (nv->v_quad & xmask) != xmask) {
-				/* extra bits set to 0 in conv. of '%s' ... */
-				warning(309, type_name(gettyp(ot)),
-				    type_name(tp), getopname(op));
-			} else if (nsz < osz &&
-				   (v->v_quad & xmask) != xmask &&
-				   (v->v_quad & xmask) != 0) {
-				/* constant truncated by conv., op %s */
-				warning(306, getopname(op));
-			}
-		} else if ((nt != PTR && is_uinteger(nt)) &&
-			   (ot != PTR && !is_uinteger(ot)) &&
-			   v->v_quad < 0) {
-			if (op == ASSIGN) {
-				/* assignment of negative constant to ... */
-				warning(164);
-			} else if (op == INIT) {
-				/* initialization of unsigned with neg... */
-				warning(221);
-			} else if (op == FARG) {
-				/* conversion of negative constant to ... */
-				warning(296, arg);
-			} else if (modtab[op].m_comparison) {
-				/* handled by check_integer_comparison() */
-			} else {
-				/* conversion of negative constant to ... */
-				warning(222);
-			}
-		} else if (nv->v_quad != v->v_quad && nsz <= osz &&
-			   (v->v_quad & xmask) != 0 &&
-			   (is_uinteger(ot) || (v->v_quad & xmsk1) != xmsk1)) {
-			/*
-			 * Loss of significant bit(s). All truncated bits
-			 * of unsigned types or all truncated bits plus the
-			 * msb of the target for signed types are considered
-			 * to be significant bits. Loss of significant bits
-			 * means that at least on of the bits was set in an
-			 * unsigned type or that at least one, but not all of
-			 * the bits was set in an signed type.
-			 * Loss of significant bits means that it is not
-			 * possible, also not with necessary casts, to convert
-			 * back to the original type. A example for a
-			 * necessary cast is:
-			 *	char c;	int	i; c = 128;
-			 *	i = c;			** yields -128 **
-			 *	i = (unsigned char)c;	** yields 128 **
-			 */
-			if (op == ASSIGN && tp->t_bitfield) {
-				/* precision lost in bit-field assignment */
-				warning(166);
-			} else if (op == ASSIGN) {
-				/* constant truncated by assignment */
-				warning(165);
-			} else if (op == INIT && tp->t_bitfield) {
-				/* bit-field initializer does not fit */
-				warning(180);
-			} else if (op == INIT) {
-				/* initializer does not fit */
-				warning(178);
-			} else if (op == CASE) {
-				/* case label affected by conversion */
-				warning(196);
-			} else if (op == FARG) {
-				/* conv. of '%s' to '%s' is out of range, ... */
-				warning(295,
-				    type_name(gettyp(ot)), type_name(tp), arg);
-			} else {
-				/* conversion of '%s' to '%s' is out of range */
-				warning(119,
-				    type_name(gettyp(ot)), type_name(tp));
-			}
-		} else if (nv->v_quad != v->v_quad) {
-			if (op == ASSIGN && tp->t_bitfield) {
-				/* precision lost in bit-field assignment */
-				warning(166);
-			} else if (op == INIT && tp->t_bitfield) {
-				/* bit-field initializer out of range */
-				warning(11);
-			} else if (op == CASE) {
-				/* case label affected by conversion */
-				warning(196);
-			} else if (op == FARG) {
-				/* conv. of '%s' to '%s' is out of range, ... */
-				warning(295,
-				    type_name(gettyp(ot)), type_name(tp), arg);
-			} else {
-				/* conversion of '%s' to '%s' is out of range */
-				warning(119,
-				    type_name(gettyp(ot)), type_name(tp));
-			}
-		}
-	}
+	if (range_check && op != CVT)
+		convert_constant_check_range(ot, tp, nt, op, arg, v, nv);
 }
 
 /*
@@ -2613,31 +2488,30 @@ warn_incompatible_pointers(const mod_t *mp,
 	}
 }
 
-/*
- * Make sure type (*tpp)->t_subt has at least the qualifiers
- * of tp1->t_subt and tp2->t_subt.
- */
-static void
-merge_qualifiers(type_t **tpp, type_t *tp1, type_t *tp2)
+/* Return a type based on tp1, with added qualifiers from tp2. */
+static type_t *
+merge_qualifiers(type_t *tp1, const type_t *tp2)
 {
+	type_t *ntp, *nstp;
 
-	lint_assert((*tpp)->t_tspec == PTR);
 	lint_assert(tp1->t_tspec == PTR);
 	lint_assert(tp2->t_tspec == PTR);
 
-	if ((*tpp)->t_subt->t_const ==
-	    (tp1->t_subt->t_const | tp2->t_subt->t_const) &&
-	    (*tpp)->t_subt->t_volatile ==
-	    (tp1->t_subt->t_volatile | tp2->t_subt->t_volatile)) {
-		return;
-	}
+	bool c1 = tp1->t_subt->t_const;
+	bool c2 = tp2->t_subt->t_const;
+	bool v1 = tp1->t_subt->t_volatile;
+	bool v2 = tp2->t_subt->t_volatile;
 
-	*tpp = tduptyp(*tpp);
-	(*tpp)->t_subt = tduptyp((*tpp)->t_subt);
-	(*tpp)->t_subt->t_const =
-		tp1->t_subt->t_const | tp2->t_subt->t_const;
-	(*tpp)->t_subt->t_volatile =
-		tp1->t_subt->t_volatile | tp2->t_subt->t_volatile;
+	if (c1 == (c1 | c2) && v1 == (v1 | v2))
+		return tp1;
+
+	nstp = expr_dup_type(tp1->t_subt);
+	nstp->t_const |= c2;
+	nstp->t_volatile |= v2;
+
+	ntp = expr_dup_type(tp1);
+	ntp->t_subt = nstp;
+	return ntp;
 }
 
 /*
@@ -2688,13 +2562,13 @@ build_struct_access(op_t op, tnode_t *ln, tnode_t *rn)
 	} else if (ln->tn_type->t_tspec != PTR) {
 		lint_assert(tflag);
 		lint_assert(is_integer(ln->tn_type->t_tspec));
-		ln = convert(NOOP, 0, tincref(gettyp(VOID), PTR), ln);
+		ln = convert(NOOP, 0, expr_derive_type(gettyp(VOID), PTR), ln);
 	}
 
-	ctn = new_integer_constant_node(PTRDIFF_TSPEC,
+	ctn = expr_new_integer_constant(PTRDIFF_TSPEC,
 	    rn->tn_sym->s_value.v_quad / CHAR_SIZE);
 
-	ntn = new_tnode(PLUS, tincref(rn->tn_type, PTR), ln, ctn);
+	ntn = new_tnode(PLUS, expr_derive_type(rn->tn_type, PTR), ln, ctn);
 	if (ln->tn_op == CON)
 		ntn = fold(ntn);
 
@@ -2723,7 +2597,7 @@ build_prepost_incdec(op_t op, tnode_t *ln)
 	if (ln->tn_type->t_tspec == PTR) {
 		cn = plength(ln->tn_type);
 	} else {
-		cn = new_integer_constant_node(INT, (int64_t)1);
+		cn = expr_new_integer_constant(INT, (int64_t)1);
 	}
 	ntn = new_tnode(op, ln->tn_type, ln, cn);
 
@@ -2740,16 +2614,27 @@ build_real_imag(op_t op, tnode_t *ln)
 
 	lint_assert(ln != NULL);
 
+	if (ln->tn_op == NAME) {
+		/*
+		 * This may be too much, but it avoids wrong warnings.
+		 * See d_c99_complex_split.c.
+		 */
+		mark_as_used(ln->tn_sym, false, false);
+		mark_as_set(ln->tn_sym);
+	}
+
 	switch (ln->tn_type->t_tspec) {
 	case LCOMPLEX:
 		/* XXX: integer and LDOUBLE don't match. */
-		cn = new_integer_constant_node(LDOUBLE, (int64_t)1);
+		cn = expr_new_integer_constant(LDOUBLE, (int64_t)1);
 		break;
 	case DCOMPLEX:
-		cn = new_integer_constant_node(DOUBLE, (int64_t)1);
+		/* XXX: integer and DOUBLE don't match. */
+		cn = expr_new_integer_constant(DOUBLE, (int64_t)1);
 		break;
 	case FCOMPLEX:
-		cn = new_integer_constant_node(FLOAT, (int64_t)1);
+		/* XXX: integer and FLOAT don't match. */
+		cn = expr_new_integer_constant(FLOAT, (int64_t)1);
 		break;
 	default:
 		/* __%s__ is illegal for type %s */
@@ -2784,7 +2669,7 @@ build_address(tnode_t *tn, bool noign)
 		return tn->tn_left;
 	}
 
-	return new_tnode(ADDR, tincref(tn->tn_type, PTR), tn, NULL);
+	return new_tnode(ADDR, expr_derive_type(tn->tn_type, PTR), tn, NULL);
 }
 
 /*
@@ -2805,7 +2690,10 @@ build_plus_minus(op_t op, tnode_t *ln, tnode_t *rn)
 
 	if (ln->tn_type->t_tspec == PTR && rn->tn_type->t_tspec != PTR) {
 
+		/* XXX: this assertion should be easy to trigger */
 		lint_assert(is_integer(rn->tn_type->t_tspec));
+
+		check_ctype_macro_invocation(ln, rn);
 
 		ctn = plength(ln->tn_type);
 		if (rn->tn_type->t_tspec != ctn->tn_type->t_tspec)
@@ -2857,7 +2745,7 @@ static tnode_t *
 build_colon(tnode_t *ln, tnode_t *rn)
 {
 	tspec_t	lt, rt, pdt;
-	type_t	*rtp;
+	type_t	*tp;
 	tnode_t	*ntn;
 
 	lt = ln->tn_type->t_tspec;
@@ -2869,55 +2757,48 @@ build_colon(tnode_t *ln, tnode_t *rn)
 	 * still need to be handled.
 	 */
 	if (is_arithmetic(lt) && is_arithmetic(rt)) {
-		rtp = ln->tn_type;
+		tp = ln->tn_type;
 	} else if (lt == BOOL && rt == BOOL) {
-		rtp = ln->tn_type;
+		tp = ln->tn_type;
 	} else if (lt == VOID || rt == VOID) {
-		rtp = gettyp(VOID);
+		tp = gettyp(VOID);
 	} else if (lt == STRUCT || lt == UNION) {
 		/* Both types must be identical. */
 		lint_assert(rt == STRUCT || rt == UNION);
 		lint_assert(ln->tn_type->t_str == rn->tn_type->t_str);
 		if (is_incomplete(ln->tn_type)) {
 			/* unknown operand size, op %s */
-			error(138, modtab[COLON].m_name);
+			error(138, op_name(COLON));
 			return NULL;
 		}
-		rtp = ln->tn_type;
+		tp = ln->tn_type;
 	} else if (lt == PTR && is_integer(rt)) {
 		if (rt != pdt) {
 			rn = convert(NOOP, 0, gettyp(pdt), rn);
 			rt = pdt;
 		}
-		rtp = ln->tn_type;
+		tp = ln->tn_type;
 	} else if (rt == PTR && is_integer(lt)) {
 		if (lt != pdt) {
 			ln = convert(NOOP, 0, gettyp(pdt), ln);
 			lt = pdt;
 		}
-		rtp = rn->tn_type;
+		tp = rn->tn_type;
 	} else if (lt == PTR && ln->tn_type->t_subt->t_tspec == VOID) {
-		lint_assert(rt == PTR);
-		rtp = rn->tn_type;
-		merge_qualifiers(&rtp, ln->tn_type, rn->tn_type);
+		tp = merge_qualifiers(rn->tn_type, ln->tn_type);
 	} else if (rt == PTR && rn->tn_type->t_subt->t_tspec == VOID) {
-		lint_assert(lt == PTR);
-		rtp = ln->tn_type;
-		merge_qualifiers(&rtp, ln->tn_type, rn->tn_type);
+		tp = merge_qualifiers(ln->tn_type, rn->tn_type);
 	} else {
-		lint_assert(lt == PTR);
-		lint_assert(rt == PTR);
 		/*
 		 * XXX For now we simply take the left type. This is
 		 * probably wrong, if one type contains a function prototype
 		 * and the other one, at the same place, only an old style
 		 * declaration.
 		 */
-		rtp = ln->tn_type;
-		merge_qualifiers(&rtp, ln->tn_type, rn->tn_type);
+		tp = merge_qualifiers(ln->tn_type, rn->tn_type);
 	}
 
-	ntn = new_tnode(COLON, rtp, ln, rn);
+	ntn = new_tnode(COLON, tp, ln, rn);
 
 	return ntn;
 }
@@ -2956,7 +2837,7 @@ build_assignment(op_t op, tnode_t *ln, tnode_t *rn)
 				error(212);
 			} else {
 				/* unknown operand size, op %s */
-				error(138, getopname(op));
+				error(138, op_name(op));
 			}
 			return NULL;
 		}
@@ -3041,7 +2922,7 @@ plength(type_t *tp)
 	if (elsz == 0)
 		elsz = CHAR_SIZE;
 
-	return new_integer_constant_node(PTRDIFF_TSPEC,
+	return expr_new_integer_constant(PTRDIFF_TSPEC,
 	    (int64_t)(elem * elsz / CHAR_SIZE));
 }
 
@@ -3065,7 +2946,7 @@ fold(tnode_t *tn)
 	uint64_t ul, ur = 0;
 	tnode_t	*cn;
 
-	v = xcalloc(1, sizeof *v);
+	v = xcalloc(1, sizeof(*v));
 	v->v_tspec = t = tn->tn_type->t_tspec;
 
 	utyp = t == PTR || is_uinteger(t);
@@ -3073,7 +2954,7 @@ fold(tnode_t *tn)
 	if (modtab[tn->tn_op].m_binary)
 		ur = sr = tn->tn_right->tn_val->v_quad;
 
-	mask = qlmasks[size_in_bits(t)];
+	mask = value_bits(size_in_bits(t));
 	ovfl = false;
 
 	switch (tn->tn_op) {
@@ -3148,7 +3029,7 @@ fold(tnode_t *tn)
 		 * shifts of signed values are implementation dependent.
 		 */
 		q = ul >> sr;
-		q = xsign(q, t, size_in_bits(t) - (int)sr);
+		q = convert_integer(q, t, size_in_bits(t) - (int)sr);
 		break;
 	case LT:
 		q = (utyp ? ul < ur : sl < sr) ? 1 : 0;
@@ -3186,12 +3067,12 @@ fold(tnode_t *tn)
 	    (q & ~mask) != 0)) {
 		if (hflag)
 			/* integer overflow detected, op %s */
-			warning(141, modtab[tn->tn_op].m_name);
+			warning(141, op_name(tn->tn_op));
 	}
 
-	v->v_quad = xsign(q, t, -1);
+	v->v_quad = convert_integer(q, t, -1);
 
-	cn = new_constant_node(tn->tn_type, v);
+	cn = expr_new_constant(tn->tn_type, v);
 	if (tn->tn_left->tn_system_dependent)
 		cn->tn_system_dependent = true;
 	if (modtab[tn->tn_op].m_binary && tn->tn_right->tn_system_dependent)
@@ -3210,7 +3091,7 @@ fold_test(tnode_t *tn)
 	bool	l, r;
 	val_t	*v;
 
-	v = xcalloc(1, sizeof *v);
+	v = xcalloc(1, sizeof(*v));
 	v->v_tspec = tn->tn_type->t_tspec;
 	lint_assert(v->v_tspec == INT || (Tflag && v->v_tspec == BOOL));
 
@@ -3220,7 +3101,7 @@ fold_test(tnode_t *tn)
 	switch (tn->tn_op) {
 	case NOT:
 		if (hflag && !constcond_flag)
-			/* constant argument to NOT */
+			/* constant argument to '!' */
 			warning(239);
 		v->v_quad = !l ? 1 : 0;
 		break;
@@ -3234,7 +3115,7 @@ fold_test(tnode_t *tn)
 		lint_assert(/*CONSTCOND*/false);
 	}
 
-	return new_constant_node(tn->tn_type, v);
+	return expr_new_constant(tn->tn_type, v);
 }
 
 /*
@@ -3248,7 +3129,7 @@ fold_float(tnode_t *tn)
 	ldbl_t	l, r = 0;
 
 	fpe = 0;
-	v = xcalloc(1, sizeof *v);
+	v = xcalloc(1, sizeof(*v));
 	v->v_tspec = t = tn->tn_type->t_tspec;
 
 	lint_assert(is_floating(t));
@@ -3320,7 +3201,7 @@ fold_float(tnode_t *tn)
 	    (t == DOUBLE &&
 	     (v->v_ldbl > DBL_MAX || v->v_ldbl < -DBL_MAX))) {
 		/* floating point overflow detected, op %s */
-		warning(142, modtab[tn->tn_op].m_name);
+		warning(142, op_name(tn->tn_op));
 		if (t == FLOAT) {
 			v->v_ldbl = v->v_ldbl < 0 ? -FLT_MAX : FLT_MAX;
 		} else if (t == DOUBLE) {
@@ -3331,7 +3212,7 @@ fold_float(tnode_t *tn)
 	    fpe = 0;
 	}
 
-	return new_constant_node(tn->tn_type, v);
+	return expr_new_constant(tn->tn_type, v);
 }
 
 
@@ -3339,10 +3220,10 @@ fold_float(tnode_t *tn)
  * Create a constant node for sizeof.
  */
 tnode_t *
-build_sizeof(type_t *tp)
+build_sizeof(const type_t *tp)
 {
 	int64_t size_in_bytes = type_size_in_bits(tp) / CHAR_SIZE;
-	tnode_t *tn = new_integer_constant_node(SIZEOF_TSPEC, size_in_bytes);
+	tnode_t *tn = expr_new_integer_constant(SIZEOF_TSPEC, size_in_bytes);
 	tn->tn_system_dependent = true;
 	return tn;
 }
@@ -3351,7 +3232,7 @@ build_sizeof(type_t *tp)
  * Create a constant node for offsetof.
  */
 tnode_t *
-build_offsetof(type_t *tp, sym_t *sym)
+build_offsetof(const type_t *tp, const sym_t *sym)
 {
 	tspec_t t = tp->t_tspec;
 	if (t != STRUCT && t != UNION)
@@ -3360,13 +3241,13 @@ build_offsetof(type_t *tp, sym_t *sym)
 
 	// XXX: wrong size, no checking for sym fixme
 	int64_t offset_in_bytes = type_size_in_bits(tp) / CHAR_SIZE;
-	tnode_t *tn = new_integer_constant_node(SIZEOF_TSPEC, offset_in_bytes);
+	tnode_t *tn = expr_new_integer_constant(SIZEOF_TSPEC, offset_in_bytes);
 	tn->tn_system_dependent = true;
 	return tn;
 }
 
 int64_t
-type_size_in_bits(type_t *tp)
+type_size_in_bits(const type_t *tp)
 {
 	int	elem, elsz;
 	bool	flex;
@@ -3427,7 +3308,7 @@ type_size_in_bits(type_t *tp)
 }
 
 tnode_t *
-build_alignof(type_t *tp)
+build_alignof(const type_t *tp)
 {
 	switch (tp->t_tspec) {
 	case ARRAY:
@@ -3462,7 +3343,7 @@ build_alignof(type_t *tp)
 		break;
 	}
 
-	return new_integer_constant_node(SIZEOF_TSPEC,
+	return expr_new_integer_constant(SIZEOF_TSPEC,
 	    (int64_t)alignment_in_bits(tp) / CHAR_SIZE);
 }
 
@@ -3505,7 +3386,7 @@ cast(tnode_t *tn, type_t *tp)
 		}
 		for (m = str->sou_first_member; m != NULL; m = m->s_next) {
 			if (sametype(m->s_type, tn->tn_type)) {
-				tn = getnode();
+				tn = expr_zalloc_tnode();
 				tn->tn_op = CVT;
 				tn->tn_type = tp;
 				tn->tn_cast = true;
@@ -3571,7 +3452,7 @@ new_function_argument_node(tnode_t *args, tnode_t *arg)
 	 * will not change.
 	 */
 	if (arg == NULL)
-		arg = new_integer_constant_node(INT, (int64_t)0);
+		arg = expr_new_integer_constant(INT, 0);
 
 	ntn = new_tnode(PUSH, arg->tn_type, arg, args);
 
@@ -3596,6 +3477,8 @@ new_function_call_node(tnode_t *func, tnode_t *args)
 	} else {
 		fcop = ICALL;
 	}
+
+	check_ctype_function_call(func, args);
 
 	/*
 	 * after cconv() func will always be a pointer to a function
@@ -3705,8 +3588,8 @@ check_prototype_argument(
 	tnode_t	*ln;
 	bool	dowarn;
 
-	ln = xcalloc(1, sizeof *ln);
-	ln->tn_type = tduptyp(tp);
+	ln = xcalloc(1, sizeof(*ln));
+	ln->tn_type = expr_dup_type(tp);
 	ln->tn_type->t_const = false;
 	ln->tn_lvalue = true;
 	if (typeok(FARG, n, ln, tn)) {
@@ -3733,7 +3616,7 @@ constant(tnode_t *tn, bool required)
 	if (tn != NULL)
 		tn = promote(NOOP, false, tn);
 
-	v = xcalloc(1, sizeof *v);
+	v = xcalloc(1, sizeof(*v));
 
 	if (tn == NULL) {
 		lint_assert(nerr != 0);
@@ -3749,7 +3632,8 @@ constant(tnode_t *tn, bool required)
 	if (tn->tn_op == CON) {
 		lint_assert(tn->tn_type->t_tspec == tn->tn_val->v_tspec);
 		if (is_integer(tn->tn_val->v_tspec)) {
-			v->v_ansiu = tn->tn_val->v_ansiu;
+			v->v_unsigned_since_c90 =
+			    tn->tn_val->v_unsigned_since_c90;
 			v->v_quad = tn->tn_val->v_quad;
 			return v;
 		}
@@ -3787,19 +3671,16 @@ is_constcond_false(const tnode_t *tn, tspec_t t)
  * memory which is used for the expression.
  */
 void
-expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk, bool constcond_false_ok)
+expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk, bool is_do_while)
 {
 
-	lint_assert(tn != NULL || nerr != 0);
-
-	if (tn == NULL) {
-		tfreeblk();
+	if (tn == NULL) {	/* in case of errors */
+		expr_free_all();
 		return;
 	}
 
 	/* expr() is also called in global initializations */
-	/* TODO: rename constcond_false_ok */
-	if (dcs->d_ctx != EXTERN && !constcond_false_ok)
+	if (dcs->d_ctx != EXTERN && !is_do_while)
 		check_statement_reachable();
 
 	check_expr_misc(tn, vctx, tctx, !tctx, false, false, false);
@@ -3810,7 +3691,7 @@ expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk, bool constcond_false_ok)
 	} else if (tn->tn_op == CON) {
 		if (hflag && tctx && !constcond_flag &&
 		    !tn->tn_system_dependent &&
-		    !(constcond_false_ok &&
+		    !(is_do_while &&
 		      is_constcond_false(tn, tn->tn_type->t_tspec)))
 			/* constant in conditional context */
 			warning(161);
@@ -3828,7 +3709,7 @@ expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk, bool constcond_false_ok)
 
 	/* free the tree memory */
 	if (dofreeblk)
-		tfreeblk();
+		expr_free_all();
 }
 
 static bool
@@ -3881,7 +3762,7 @@ display_expression(const tnode_t *tn, int offs)
 		(void)printf("%*s%s\n", offs, "", "NULL");
 		return;
 	}
-	(void)printf("%*sop %s  ", offs, "", modtab[tn->tn_op].m_name);
+	(void)printf("%*sop %s  ", offs, "", op_name(tn->tn_op));
 
 	if (tn->tn_op == NAME) {
 		(void)printf("%s: %s ",
@@ -3894,6 +3775,9 @@ display_expression(const tnode_t *tn, int offs)
 		(void)printf("0x %08lx %08lx ",
 		    (long)(uq >> 32) & 0xffffffffl,
 		    (long)uq & 0xffffffffl);
+	} else if (tn->tn_op == CON && tn->tn_type->t_tspec == BOOL) {
+		(void)printf("%s ",
+		    tn->tn_val->v_quad != 0 ? "true" : "false");
 	} else if (tn->tn_op == CON) {
 		lint_assert(tn->tn_type->t_tspec == PTR);
 		(void)printf("0x%0*lx ", (int)(sizeof(void *) * CHAR_BIT / 4),
@@ -4176,11 +4060,9 @@ static void
 check_integer_comparison(op_t op, tnode_t *ln, tnode_t *rn)
 {
 	tspec_t	lt, rt;
-	const mod_t *mp;
 
 	lt = ln->tn_type->t_tspec;
 	rt = rn->tn_type->t_tspec;
-	mp = &modtab[op];
 
 	if (ln->tn_op != CON && rn->tn_op != CON)
 		return;
@@ -4192,14 +4074,14 @@ check_integer_comparison(op_t op, tnode_t *ln, tnode_t *rn)
 	    (rn->tn_val->v_quad < 0 ||
 	     rn->tn_val->v_quad > (int)~(~0U << (CHAR_SIZE - 1)))) {
 		/* nonportable character comparison, op %s */
-		warning(230, mp->m_name);
+		warning(230, op_name(op));
 		return;
 	}
 	if ((hflag || pflag) && rt == CHAR && ln->tn_op == CON &&
 	    (ln->tn_val->v_quad < 0 ||
 	     ln->tn_val->v_quad > (int)~(~0U << (CHAR_SIZE - 1)))) {
 		/* nonportable character comparison, op %s */
-		warning(230, mp->m_name);
+		warning(230, op_name(op));
 		return;
 	}
 	if (is_uinteger(lt) && !is_uinteger(rt) &&
@@ -4207,10 +4089,10 @@ check_integer_comparison(op_t op, tnode_t *ln, tnode_t *rn)
 		if (rn->tn_val->v_quad < 0) {
 			/* comparison of %s with %s, op %s */
 			warning(162, type_name(ln->tn_type),
-			    "negative constant", mp->m_name);
+			    "negative constant", op_name(op));
 		} else if (op == LT || op == GE || (hflag && op == LE)) {
 			/* comparison of %s with %s, op %s */
-			warning(162, type_name(ln->tn_type), "0", mp->m_name);
+			warning(162, type_name(ln->tn_type), "0", op_name(op));
 		}
 		return;
 	}
@@ -4219,10 +4101,10 @@ check_integer_comparison(op_t op, tnode_t *ln, tnode_t *rn)
 		if (ln->tn_val->v_quad < 0) {
 			/* comparison of %s with %s, op %s */
 			warning(162, "negative constant",
-			    type_name(rn->tn_type), mp->m_name);
+			    type_name(rn->tn_type), op_name(op));
 		} else if (op == GT || op == LE || (hflag && op == GE)) {
 			/* comparison of %s with %s, op %s */
-			warning(162, "0", type_name(rn->tn_type), mp->m_name);
+			warning(162, "0", type_name(rn->tn_type), op_name(op));
 		}
 		return;
 	}
@@ -4239,11 +4121,14 @@ check_integer_comparison(op_t op, tnode_t *ln, tnode_t *rn)
  * The expression can consist of PLUS, MINUS, ADDR, NAME, STRING and
  * CON. Type conversions are allowed if they do not change binary
  * representation (including width).
+ *
+ * C99 6.6 "Constant expressions"
+ * C99 6.7.8p4 restricts initializers for static storage duration
  */
 bool
-constant_addr(const tnode_t *tn, sym_t **symp, ptrdiff_t *offsp)
+constant_addr(const tnode_t *tn, const sym_t **symp, ptrdiff_t *offsp)
 {
-	sym_t	*sym;
+	const sym_t *sym;
 	ptrdiff_t offs1, offs2;
 	tspec_t	t, ot;
 
@@ -4336,7 +4221,7 @@ cat_strings(strg_t *strg1, strg_t *strg2)
 	strg1->F = xrealloc(strg1->F, len * sizeof(*strg1->F)); \
 	(void)memcpy(strg1->F + len1, strg2->F, len2 * sizeof(*strg1->F)); \
 	free(strg2->F); \
-    } while (/*CONSTCOND*/false)
+    } while (false)
 
 	if (strg1->st_tspec == CHAR)
 		COPY(st_cp);

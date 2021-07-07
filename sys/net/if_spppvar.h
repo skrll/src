@@ -1,4 +1,4 @@
-/*	$NetBSD: if_spppvar.h,v 1.32 2020/11/25 10:30:51 yamaguchi Exp $	*/
+/*	$NetBSD: if_spppvar.h,v 1.42 2021/06/01 04:59:50 yamaguchi Exp $	*/
 
 #ifndef _NET_IF_SPPPVAR_H_
 #define _NET_IF_SPPPVAR_H_
@@ -117,10 +117,9 @@ struct sppp_cp {
 	int		 rst_counter;	/* restart counter */
 	int		 fail_counter;	/* negotiation failure counter */
 	struct callout	 ch;		/* per-proto and if callouts */
-	u_char		 rcr_type;
-	void		*rcr_buf;
-	size_t		 rcr_blen;
-	int		 rcr_rlen;
+	u_char		 rcr_type;	/* parsing result of conf-req */
+	struct mbuf	*mbuf_confreq;	/* received conf-req */
+	struct mbuf	*mbuf_confnak;	/* received conf-nak or conf-rej */
 
 	struct sppp_work	 work_up;
 	struct sppp_work	 work_down;
@@ -142,8 +141,10 @@ struct sppp {
 	struct	ifqueue pp_cpq;	/* PPP control protocol queue */
 	struct  sppp *pp_next;  /* next interface in keepalive list */
 	u_int   pp_flags;       /* use Cisco protocol instead of PPP */
+	u_int	pp_ncpflags;	/* enable or disable each NCP */
 	u_int	pp_framebytes;	/* number of bytes added by (hardware) framing */
 	u_int   pp_alivecnt;    /* keepalive packets counter */
+	u_int	pp_alive_interval;	/* keepalive interval */
 	u_int   pp_loopcnt;     /* loopback detection counter */
 	u_int	pp_maxalive;	/* number or echo req. w/o reply */
 	uint64_t	pp_saved_mtu;	/* saved MTU value */
@@ -202,14 +203,18 @@ struct sppp {
 	void	(*pp_chg)(struct sppp *, int);
 };
 
-#define PP_KEEPALIVE    0x01    /* use keepalive protocol */
-#define PP_CISCO        0x02    /* use Cisco protocol instead of PPP */
-				/* 0x04 was PP_TIMO */
-#define PP_CALLIN	0x08	/* we are being called */
-#define PP_NEEDAUTH	0x10	/* remote requested authentication */
-#define	PP_NOFRAMING	0x20	/* do not add/expect encapsulation
-				   around PPP frames (i.e. the serial
-				   HDLC like encapsulation, RFC1662) */
+#define PP_KEEPALIVE		0x01	/* use keepalive protocol */
+					/* 0x02 was PP_CISCO */
+					/* 0x04 was PP_TIMO */
+#define PP_CALLIN		0x08	/* we are being called */
+#define PP_NEEDAUTH		0x10	/* remote requested authentication */
+#define PP_NOFRAMING		0x20	/* do not add/expect encapsulation
+					   around PPP frames (i.e. the serial
+					   HDLC like encapsulation, RFC1662) */
+#define PP_LOOPBACK		0x40	/* in line loopback mode */
+#define PP_LOOPBACK_IFDOWN	0x80	/* if_down() when loopback detected */
+#define PP_KEEPALIVE_IFDOWN	0x100	/* if_down() when no ECHO_REPLY received */
+#define PP_ADMIN_UP		0x200	/* the interface is up */
 
 
 #define PP_MTU          1500    /* default/minimal MRU */
@@ -240,7 +245,7 @@ void sppp_flush (struct ifnet *);
  *     if_spppsubr.c.
  *
  * Locking order:
- *    - spppq_lock => struct sppp->pp_lock
+ *    - IFNET_LOCK => spppq_lock => struct sppp->pp_lock
  *
  * NOTICE
  * - Lower layers must not acquire sppp->pp_lock

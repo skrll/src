@@ -1,4 +1,4 @@
-/*	$NetBSD: duration_test.c,v 1.3 2021/02/19 16:42:22 christos Exp $	*/
+/*	$NetBSD: duration_test.c,v 1.5 2021/04/29 17:26:13 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -41,7 +41,7 @@
 		result = (r);                \
 		if (result != ISC_R_SUCCESS) \
 			goto cleanup;        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 isc_mem_t *mctx = NULL;
 isc_log_t *lctx = NULL;
@@ -197,7 +197,7 @@ main(void) {
 int
 main(void) {
 	printf("1..0 # Skipped: cmocka not available\n");
-	return (0);
+	return (SKIPPED_TEST_EXIT_CODE);
 }
 
 #endif /* if HAVE_CMOCKA */

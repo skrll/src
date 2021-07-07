@@ -1,4 +1,4 @@
-#	$NetBSD: files.i915drmkms,v 1.39 2020/02/14 04:30:05 riastradh Exp $
+#	$NetBSD: files.i915drmkms,v 1.41 2021/06/02 15:45:28 nia Exp $
 
 version	20180827
 
@@ -8,6 +8,10 @@ attach	i915drmkms at pci
 
 device	intelfb: intelfbbus, drmfb, drmfb_pci, wsemuldisplaydev
 attach	intelfb at intelfbbus
+
+# This code comes from the Linux kernel, which assumes signed
+# overflow is OK.
+makeoptions 	i915drmkms	"COPTS.i915drmkms"+="-fwrapv"
 
 makeoptions	i915drmkms	CPPFLAGS+="-I$S/external/bsd/drm2/i915drm"
 
@@ -25,9 +29,9 @@ makeoptions 	i915drmkms 	"CWARNFLAGS.i915_drv.c"+="${${ACTIVE_CC} == clang:? -Wn
 
 makeoptions 	i915drmkms 	"CWARNFLAGS.intel_sprite.c"+="${${ACTIVE_CC} == gcc:? -Wno-maybe-uninitialized :}"
 
-makeoptions 	i915drmkms 	"CWARNFLAGS.intel_ddi.c"+="${${ACTIVE_CC} == gcc && ${HAVE_GCC:U0} >= 7:? -Wno-error=implicit-fallthrough :}"
-makeoptions 	i915drmkms 	"CWARNFLAGS.intel_display.c"+="${${ACTIVE_CC} == gcc && ${HAVE_GCC:U0} >= 7:? -Wno-error=implicit-fallthrough :}"
-makeoptions 	i915drmkms 	"CWARNFLAGS.intel_sdvo.c"+="${${ACTIVE_CC} == gcc && ${HAVE_GCC:U0} >= 7:? -Wno-error=implicit-fallthrough :}"
+makeoptions 	i915drmkms 	"CWARNFLAGS.intel_ddi.c"+="${${ACTIVE_CC} == gcc && ${HAVE_GCC:U0} >= 10:? -Wno-maybe-uninitialized :} ${${ACTIVE_CC} == gcc && ${HAVE_GCC:U0} >= 7:? -Wno-implicit-fallthrough :}"
+makeoptions 	i915drmkms 	"CWARNFLAGS.intel_display.c"+="${${ACTIVE_CC} == gcc && ${HAVE_GCC:U0} >= 7:? -Wno-implicit-fallthrough :}"
+makeoptions 	i915drmkms 	"CWARNFLAGS.intel_sdvo.c"+="${${ACTIVE_CC} == gcc && ${HAVE_GCC:U0} >= 7:? -Wno-implicit-fallthrough :}"
 
 file	external/bsd/drm2/i915drm/i915_module.c		i915drmkms
 file	external/bsd/drm2/i915drm/i915_pci.c		i915drmkms

@@ -1,4 +1,4 @@
-/*	$NetBSD: main1.c,v 1.40 2021/03/27 11:50:34 rillig Exp $	*/
+/*	$NetBSD: main1.c,v 1.49 2021/07/04 05:49:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: main1.c,v 1.40 2021/03/27 11:50:34 rillig Exp $");
+__RCSID("$NetBSD: main1.c,v 1.49 2021/07/04 05:49:20 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -67,6 +67,9 @@ bool	bflag;
 
 /* Print warnings for pointer casts. */
 bool	cflag;
+
+/* Allow features from C11, C99 and C90. */
+bool	c11flag;
 
 /* Print various debug information. */
 bool	dflag;
@@ -135,10 +138,10 @@ static const char builtins[] =
     "int __builtin_isnan(long double);\n"
     "int __builtin_copysign(long double, long double);\n"
 ;
-static const size_t builtinlen = sizeof builtins - 1;
+static const size_t builtinlen = sizeof(builtins) - 1;
 
 static FILE *
-bltin(void)
+gcc_builtins(void)
 {
 #if HAVE_NBTOOL_CONFIG_H
 	char template[] = "/tmp/lint.XXXXXX";
@@ -178,7 +181,7 @@ main(int argc, char *argv[])
 	setprogname(argv[0]);
 
 	ERR_ZERO(&msgset);
-	while ((c = getopt(argc, argv, "abcdeghmprstuvwyzFPR:STX:")) != -1) {
+	while ((c = getopt(argc, argv, "abcdeghmprstuvwyzA:FPR:STX:")) != -1) {
 		switch (c) {
 		case 'a':	aflag++;	break;
 		case 'b':	bflag = true;	break;
@@ -200,6 +203,15 @@ main(int argc, char *argv[])
 		case 'v':	vflag = false;	break;
 		case 'y':	yflag = true;	break;
 		case 'z':	zflag = false;	break;
+
+		case 'A':
+			if (strcmp(optarg, "c11") == 0) {
+				c11flag = true;
+				Sflag = true;
+				sflag = false;
+			} else
+				usage();
+			break;
 
 		case 'm':
 			msglist();
@@ -228,10 +240,8 @@ main(int argc, char *argv[])
 				ERR_SET(msg, &msgset);
 			}
 			break;
-		case '?':
 		default:
 			usage();
-			break;
 		}
 	}
 	argc -= optind;
@@ -244,6 +254,11 @@ main(int argc, char *argv[])
 	/* initialize output */
 	outopen(argv[1]);
 
+#ifdef DEBUG
+	setvbuf(stdout, NULL, _IONBF, 0);
+#endif
+	if (dflag)
+		setvbuf(stdout, NULL, _IONBF, 0);
 #ifdef YYDEBUG
 	if (yflag)
 		yydebug = 1;
@@ -254,10 +269,12 @@ main(int argc, char *argv[])
 	initdecl();
 	initscan();
 
-	if ((yyin = bltin()) == NULL)
-		err(1, "cannot open builtins");
-	yyparse();
-	fclose(yyin);
+	if (gflag && !tflag) {
+		if ((yyin = gcc_builtins()) == NULL)
+			err(1, "cannot open builtins");
+		yyparse();
+		fclose(yyin);
+	}
 
 	/* open the input file */
 	if ((yyin = fopen(argv[0], "r")) == NULL)
@@ -278,16 +295,17 @@ main(int argc, char *argv[])
 	return nerr != 0 ? 1 : 0;
 }
 
-static void
+static void __attribute__((noreturn))
 usage(void)
 {
 	(void)fprintf(stderr,
-	    "Usage: %s [-abcdeghmprstuvwyzFST] [-X <id>[,<id>]... src dest\n",
+	    "usage: %s [-abcdeghmprstuvwyzFST] [-Ac11] [-X <id>[,<id>]... "
+	    "src dest\n",
 	    getprogname());
 	exit(1);
 }
 
-void
+void __attribute__((noreturn))
 norecover(void)
 {
 	/* cannot recover from previous errors */

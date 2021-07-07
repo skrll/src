@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1274 2021/01/17 19:32:52 rillig Exp $
+# $NetBSD: mi,v 1.1280 2021/05/30 01:56:44 joerg Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -675,6 +675,7 @@
 ./usr/bin					base-sys-usr
 ./usr/bin/Mail					base-obsolete		obsolete
 ./usr/bin/agrep					base-util-bin
+./usr/bin/aiomixer				base-audio-bin
 ./usr/bin/apply					base-util-bin
 ./usr/bin/apropos				base-man-bin
 ./usr/bin/arpaname				base-bind-bin
@@ -1120,6 +1121,10 @@
 ./usr/include/c++				base-cxx-usr
 ./usr/include/c++/experimental			base-cxx-usr
 ./usr/include/c++/ext				base-cxx-usr
+./usr/include/c++/__iterator			base-cxx-usr
+./usr/include/c++/__memory			base-cxx-usr
+./usr/include/c++/__ranges			base-cxx-usr
+./usr/include/c++/__utility			base-cxx-usr
 ./usr/include/cdk				base-obsolete		obsolete
 ./usr/include/clang-3.4				base-obsolete		obsolete
 ./usr/include/clang-3.5				base-obsolete		obsolete
@@ -1128,7 +1133,8 @@
 ./usr/include/clang-4.0				base-obsolete		obsolete
 ./usr/include/clang-5.0				base-obsolete		obsolete
 ./usr/include/clang-7.0				base-obsolete		obsolete
-./usr/include/clang-9.0				base-c-usr
+./usr/include/clang-9.0				base-obsolete		obsolete
+./usr/include/clang-13.0			base-c-usr
 ./usr/include/compat				base-obsolete		obsolete
 ./usr/include/crypto				base-c-usr
 ./usr/include/dev				base-c-usr
@@ -1240,10 +1246,12 @@
 ./usr/include/gcc-6/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-7				base-obsolete		obsolete
 ./usr/include/gcc-7/sanitizer			base-obsolete		obsolete
-./usr/include/gcc-8				base-c-usr
-./usr/include/gcc-8/sanitizer			base-c-usr
+./usr/include/gcc-8				base-obsolete		obsolete
+./usr/include/gcc-8/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-9				base-c-usr
 ./usr/include/gcc-9/sanitizer			base-c-usr
+./usr/include/gcc-10				base-c-usr
+./usr/include/gcc-10/sanitizer			base-c-usr
 ./usr/include/gssapi				base-c-usr
 ./usr/include/gssapi/rpc			base-obsolete		obsolete
 ./usr/include/isofs				base-c-usr
@@ -1601,6 +1609,7 @@
 ./usr/libexec/mail.local			base-mail-bin
 ./usr/libexec/makekey				base-crypto-bin
 ./usr/libexec/makewhatis			base-man-bin		!makemandb
+./usr/libexec/named				base-bind-bin
 ./usr/libexec/named-xfer			base-obsolete		obsolete
 ./usr/libexec/ntalkd				base-netutil-bin
 ./usr/libexec/pfspamd				base-obsolete		obsolete

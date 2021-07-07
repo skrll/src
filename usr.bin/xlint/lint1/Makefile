@@ -1,24 +1,30 @@
-#	$NetBSD: Makefile,v 1.64 2021/03/21 13:10:58 rillig Exp $
+#	$NetBSD: Makefile,v 1.78 2021/07/05 10:34:26 hgutch Exp $
 
 .include <bsd.own.mk>
 
 PROG=		lint1
-SRCS=		cgram.y ckgetopt.c decl.c emit.c emit1.c err.c \
-		func.c init.c inittyp.c lex.c \
+SRCS=		cgram.y \
+		ckbool.c ckctype.c ckgetopt.c \
+		decl.c emit.c emit1.c err.c func.c init.c inittyp.c lex.c \
 		main1.c mem.c mem1.c oper.c print.c scan.l tree.c tyname.c
 
 MAN=		lint.7
 YHEADER=
-#DBG=-g
-#CPPFLAGS+=-DYYDEBUG=1
-#YFLAGS+=-v
-#LFLAGS+=-d
+#DBG=		-g
+#CPPFLAGS+=	-DYYDEBUG=1
+#YFLAGS+=	-v
+#LFLAGS+=	-d
 
 CWARNFLAGS.clang+=	-Wno-error=implicit-int-float-conversion
 LINTFLAGS+=		-T
+LOBJS.${PROG}+=		${SRCS:M*.y:.y=.ln}
+LOBJS.${PROG}+=		${SRCS:M*.l:.l=.ln}
 
-CPPFLAGS+=	-I${.CURDIR} -I. -DPASS=\"${PROG}.h\"
+CPPFLAGS+=	-DIS_LINT1
+CPPFLAGS+=	-I${.CURDIR}
 CPPFLAGS+=	${DEBUG:D-DDEBUG}
+
+COPTS.err.c+=	${${ACTIVE_CC} == "clang":? -Wno-format-nonliteral :}
 
 BINDIR=		/usr/libexec
 
@@ -41,8 +47,6 @@ DPADD+=		${LIBM}
 LDADD+=		-ll
 DPADD+=		${LIBL}
 .endif
-
-oper.o: ops.def
 
 .include "Makefile.err-msgs-h"
 ${SRCS:Nerr.c}: err-msgs.h
@@ -83,8 +87,6 @@ add-test: .PHONY
 		"FILES+=		$$test.exp" \
 		'.' 'w' 'q' \
 	| ed Makefile; \
-	${MAKE} sync-mi; \
-	printf '%s\n' '/^test_case /i' "test_case $$test" '.' 'w' 'q' \
-	| ed t_integration.sh
+	${MAKE} sync-mi
 
 .include <bsd.prog.mk>

@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.348 2021/01/14 19:11:48 pgoyette Exp $
+# $NetBSD: mi,v 1.353 2021/05/17 04:07:41 yamaguchi Exp $
 ./etc/mtree/set.debug                           comp-sys-root
 ./usr/lib					comp-sys-usr		compatdir
 ./usr/lib/i18n/libBIG5_g.a			comp-c-debuglib		debuglib,compatfile
@@ -221,6 +221,7 @@
 ./usr/lib/librumpnet_gif_g.a			comp-c-debuglib		debuglib,rump
 ./usr/lib/librumpnet_ipsec_g.a			comp-c-debuglib		debuglib,rump
 ./usr/lib/librumpnet_l2tp_g.a			comp-c-debuglib		debuglib,rump
+./usr/lib/librumpnet_lagg_g.a			comp-c-debuglib		debuglib,rump
 ./usr/lib/librumpnet_local_g.a			comp-c-debuglib		debuglib,rump
 ./usr/lib/librumpnet_net80211_g.a		comp-c-debuglib		debuglib,rump
 ./usr/lib/librumpnet_net_g.a			comp-c-debuglib		debuglib,rump
@@ -264,6 +265,7 @@
 ./usr/lib/libtpm_unseal_g.a			comp-c-debuglib		debuglib,compatfile,tpm
 ./usr/lib/libtre_g.a				comp-c-debuglib		debuglib,compatfile
 ./usr/lib/libtsan_g.a				comp-c-debuglib		debuglib,arch64,cxx,gcc=9,machine=amd64
+./usr/lib/libtsan_g.a				comp-c-debuglib		debuglib,arch64,cxx,gcc=10,machine=amd64
 ./usr/lib/libtspi_g.a				comp-c-debuglib		debuglib,compatfile,tpm
 ./usr/lib/libubsan_g.a				comp-c-debuglib		debuglib,compatfile,cxx,gcc
 ./usr/lib/libukfs_g.a				comp-c-debuglib		debuglib,compatfile,rump
@@ -459,6 +461,7 @@
 ./usr/libdata/debug/usr/bin/addftinfo.debug	comp-groff-debug	groff,debug
 ./usr/libdata/debug/usr/bin/addr2line.debug	comp-debug-debug	binutils,debug
 ./usr/libdata/debug/usr/bin/agrep.debug		comp-util-debug		debug
+./usr/libdata/debug/usr/bin/aiomixer.debug	comp-audio-debug	debug
 ./usr/libdata/debug/usr/bin/apply.debug		comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/apropos.debug	comp-man-debug		debug
 ./usr/libdata/debug/usr/bin/ar.debug		comp-util-debug		binutils,debug
@@ -658,6 +661,7 @@
 ./usr/libdata/debug/usr/bin/lpq.debug		comp-lpr-debug		debug
 ./usr/libdata/debug/usr/bin/lpr.debug		comp-lpr-debug		debug
 ./usr/libdata/debug/usr/bin/lprm.debug		comp-lpr-debug		debug
+./usr/libdata/debug/usr/bin/lto-dump.debug	comp-c-debug		gcccmds,gcc=10,debug
 ./usr/libdata/debug/usr/bin/lua.debug		comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/luac.debug		comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/lzf.debug		comp-util-debug		debug
@@ -955,6 +959,7 @@
 ./usr/libdata/debug/usr/libexec/bozohttpd.debug	comp-netutil-debug	debug
 ./usr/libdata/debug/usr/libexec/cc1.debug	comp-c-debug		gcccmds,debug
 ./usr/libdata/debug/usr/libexec/cc1obj.debug	comp-objc-debug		gcccmds,debug
+./usr/libdata/debug/usr/libexec/cc1objplus.debug	comp-objc-debug		gcccmds,gcc=10,debug
 ./usr/libdata/debug/usr/libexec/cc1plus.debug	comp-cxx-debug		gcccmds,debug
 ./usr/libdata/debug/usr/libexec/ccom.debug	comp-c-debug		pcc,debug
 ./usr/libdata/debug/usr/libexec/ching/castching.debug	comp-games-debug	debug

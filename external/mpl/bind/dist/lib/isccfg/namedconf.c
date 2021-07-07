@@ -1,4 +1,4 @@
-/*	$NetBSD: namedconf.c,v 1.9 2021/02/19 16:42:21 christos Exp $	*/
+/*	$NetBSD: namedconf.c,v 1.11 2021/04/29 17:26:13 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -41,14 +41,14 @@
 		result = (op);               \
 		if (result != ISC_R_SUCCESS) \
 			goto cleanup;        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*% Clean up a configuration object if non-NULL. */
 #define CLEANUP_OBJ(obj)                               \
 	do {                                           \
 		if ((obj) != NULL)                     \
 			cfg_obj_destroy(pctx, &(obj)); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*%
  * Forward declarations of static functions.
@@ -2156,6 +2156,7 @@ static cfg_clausedef_t dnssecpolicy_clauses[] = {
 	{ "parent-registration-delay", &cfg_type_duration,
 	  CFG_CLAUSEFLAG_OBSOLETE },
 	{ "publish-safety", &cfg_type_duration, 0 },
+	{ "purge-keys", &cfg_type_duration, 0 },
 	{ "retire-safety", &cfg_type_duration, 0 },
 	{ "signatures-refresh", &cfg_type_duration, 0 },
 	{ "signatures-validity", &cfg_type_duration, 0 },

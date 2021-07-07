@@ -1,4 +1,4 @@
-/*	$NetBSD: arcmsr.c,v 1.40 2019/10/01 18:00:08 chs Exp $ */
+/*	$NetBSD: arcmsr.c,v 1.42 2021/06/13 10:04:10 mlelstv Exp $ */
 /*	$OpenBSD: arc.c,v 1.68 2007/10/27 03:28:27 dlg Exp $ */
 
 /*
@@ -21,7 +21,7 @@
 #include "bio.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arcmsr.c,v 1.40 2019/10/01 18:00:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arcmsr.c,v 1.42 2021/06/13 10:04:10 mlelstv Exp $");
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -255,7 +255,8 @@ arc_attach(device_t parent, device_t self, void *aux)
 	 * Save the device_t returned, because we could to attach
 	 * devices via the management interface.
 	 */
-	sc->sc_scsibus_dv = config_found(self, &sc->sc_chan, scsiprint);
+	sc->sc_scsibus_dv = config_found(self, &sc->sc_chan, scsiprint,
+	    CFARG_EOL);
 
 	/* enable interrupts */
 	arc_write(sc, ARC_REG_INTRMASK,
@@ -1883,9 +1884,9 @@ arc_create_sensors(void *arg)
 
 bad:
 	sysmon_envsys_destroy(sc->sc_sme);
-	kmem_free(sc->sc_arc_sensors, slen);
-
 	sc->sc_sme = NULL;
+
+	kmem_free(sc->sc_arc_sensors, slen);
 	sc->sc_arc_sensors = NULL;
 
 	kthread_exit(0);

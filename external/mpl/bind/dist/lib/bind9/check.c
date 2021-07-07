@@ -1,4 +1,4 @@
-/*	$NetBSD: check.c,v 1.10 2021/02/19 16:42:15 christos Exp $	*/
+/*	$NetBSD: check.c,v 1.12 2021/04/29 17:26:10 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -16,6 +16,10 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
+
+#ifdef HAVE_DNSTAP
+#include <fstrm.h>
+#endif
 
 #include <isc/aes.h>
 #include <isc/base64.h>
@@ -615,7 +619,7 @@ check_dns64(cfg_aclconfctx_t *actx, const cfg_obj_t *voptions,
 			if (result == ISC_R_SUCCESS)                       \
 				result = ISC_R_RANGE;                      \
 		}                                                          \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define CHECK_RRL_RATE(rate, def, max_rate, name)                          \
 	do {                                                               \
@@ -626,7 +630,7 @@ check_dns64(cfg_aclconfctx_t *actx, const cfg_obj_t *voptions,
 			CHECK_RRL(rate <= max_rate, name " %d > %d", rate, \
 				  max_rate);                               \
 		}                                                          \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 static isc_result_t
 check_ratelimit(cfg_aclconfctx_t *actx, const cfg_obj_t *voptions,

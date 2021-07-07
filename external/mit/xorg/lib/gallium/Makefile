@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.45 2021/02/23 15:16:43 joerg Exp $
+# $NetBSD: Makefile,v 1.47 2021/05/30 01:57:00 joerg Exp $
 
 # Link the gallium mega driver.
 
@@ -983,10 +983,11 @@ LIBDPLIBS+=	m		${.CURDIR}/../../../../../lib/libm
 .if ${BUILD_LLVMPIPE} == 1 || ${BUILD_RADEON} == 1
 
 LLVMRT_LIBS=	\
-		TransformsCoroutines \
-		Passes \
 		MCJIT \
 		ExecutionEngine \
+		ExecutionEngineOrcTargetProcess \
+		ExecutionEngineOrcShared \
+		Orc \
 		RuntimeDyld
 
 .if ${BUILD_RADEON} == 1
@@ -1006,8 +1007,7 @@ LLVMRT_LIBS+=	\
 		X86MCTargetDesc \
 		X86Disassembler \
 		X86MCTargetDesc \
-		X86TargetInfo \
-		X86Utils
+		X86TargetInfo
 .endif
 
 .if ${MACHINE_CPU} == "aarch64"
@@ -1049,6 +1049,9 @@ LLVMRT_LIBS+=	\
 .endif
 
 LLVMRT_LIBS+=	\
+		Passes \
+		TransformsCoroutines \
+		ObjCARC \
 		GlobalISel \
 		MCDisassembler \
 		SelectionDAG \
@@ -1067,19 +1070,21 @@ LLVMRT_LIBS+=	\
 		MCParser \
 		MC \
 		ipo \
+		BitWriter \
+		FrontendOpenMP \
 		Instrumentation \
 		IRReader \
 		AsmParser \
 		Vectorize \
 		TransformsAggressiveInstCombine \
 		ProfileData \
+		TransformsUtils \
 		Analysis \
 		IR \
 		Remarks \
 		BitstreamReader \
 		Linker \
 		BinaryFormat \
-		TransformsUtils \
 		Support \
 		Demangle
 
@@ -1198,6 +1203,8 @@ COPTS+=	${${ACTIVE_CC} == "clang":? -Wa,-Av8plus  :}
 .if ${MACHINE_ARCH} == "vax"
 COPTS.nir.c += -O1
 .endif
+
+COPTS.u_atomic.c+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 10:? -Wno-builtin-declaration-mismatch :}
 
 .include <bsd.lib.mk>
 # Don't regenerate c files

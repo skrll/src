@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.68 2021/01/03 17:42:10 thorpej Exp $	*/
+/*	$NetBSD: autoconf.c,v 1.70 2021/04/27 14:48:29 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1995 Leo Weppelman
@@ -30,8 +30,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define	__SUBR_AUTOCONF_PRIVATE		/* XXX atari_config_found() */
+
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.68 2021/01/03 17:42:10 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.70 2021/04/27 14:48:29 thorpej Exp $");
 
 #include "opt_md.h"
 
@@ -138,14 +140,21 @@ simple_devprint(void *aux, const char *pnp)
  * by checking for NULL.
  */
 int
-atari_config_found(cfdata_t pcfp, device_t parent, void *aux, cfprint_t pfn)
+atari_config_found(cfdata_t pcfp, device_t parent, void *aux, cfprint_t pfn,
+    cfarg_t tag, ...)
 {
 	struct device temp;
 	cfdata_t cf;
 	const struct cfattach *ca;
+	int rv = 0;
+	va_list ap;
 
-	if (atari_realconfig)
-		return config_found(parent, aux, pfn) != NULL;
+	va_start(ap, tag);
+
+	if (atari_realconfig) {
+		rv = config_vfound(parent, aux, pfn, tag, ap) != NULL;
+		goto out;
+	}
 
 	memset(&temp, 0, sizeof(temp));
 	if (parent == NULL)
@@ -155,16 +164,18 @@ atari_config_found(cfdata_t pcfp, device_t parent, void *aux, cfprint_t pfn)
 	parent->dv_cfdriver = config_cfdriver_lookup(pcfp->cf_name);
 	parent->dv_unit = pcfp->cf_unit;
 
-	if ((cf = config_search_ia(NULL, parent, NULL, aux)) != NULL) {
+	if ((cf = config_vsearch(parent, aux, tag, ap)) != NULL) {
 		ca = config_cfattach_lookup(cf->cf_name, cf->cf_atname);
 		if (ca != NULL) {
 			(*ca->ca_attach)(parent, NULL, aux);
-			parent->dv_cfdata = NULL;
-			return 1;
+			rv = 1;
+			goto out;
 		}
 	}
 	parent->dv_cfdata = NULL;
-	return 0;
+ out:
+	va_end(ap);
+	return rv;
 }
 
 /*
@@ -192,9 +203,9 @@ config_console(void)
 	 * some setup for the 'grf-side'. This make it possible to use
 	 * a PCI card for both wscons and grfabs.
 	 */
-	atari_config_found(cf, NULL, __UNCONST("pcib")  , NULL);
-	atari_config_found(cf, NULL, __UNCONST("isab")  , NULL);
-	atari_config_found(cf, NULL, __UNCONST("grfbus"), NULL);
+	atari_config_found(cf, NULL, __UNCONST("pcib")  , NULL, CFARG_EOL);
+	atari_config_found(cf, NULL, __UNCONST("isab")  , NULL, CFARG_EOL);
+	atari_config_found(cf, NULL, __UNCONST("grfbus"), NULL, CFARG_EOL);
 }
 
 /*
@@ -314,20 +325,20 @@ mbattach(device_t parent, device_t self, void *aux)
 	mb_attached = 1;
 
 	printf ("\n");
-	config_found(self, __UNCONST("clock")   , simple_devprint);
-	config_found(self, __UNCONST("grfbus")  , simple_devprint);
-	config_found(self, __UNCONST("kbd")     , simple_devprint);
-	config_found(self, __UNCONST("fdc")     , simple_devprint);
-	config_found(self, __UNCONST("ser")     , simple_devprint);
-	config_found(self, __UNCONST("zs")      , simple_devprint);
-	config_found(self, __UNCONST("ncrscsi") , simple_devprint);
-	config_found(self, __UNCONST("nvr")     , simple_devprint);
-	config_found(self, __UNCONST("lpt")     , simple_devprint);
-	config_found(self, __UNCONST("wdc")     , simple_devprint);
-	config_found(self, __UNCONST("ne")      , simple_devprint);
-	config_found(self, __UNCONST("isab")    , simple_devprint);
-	config_found(self, __UNCONST("pcib")    , simple_devprint);
-	config_found(self, __UNCONST("avmebus") , simple_devprint);
+	config_found(self, __UNCONST("clock")   , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("grfbus")  , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("kbd")     , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("fdc")     , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("ser")     , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("zs")      , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("ncrscsi") , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("nvr")     , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("lpt")     , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("wdc")     , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("ne")      , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("isab")    , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("pcib")    , simple_devprint, CFARG_EOL);
+	config_found(self, __UNCONST("avmebus") , simple_devprint, CFARG_EOL);
 }
 
 #if 0

@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.130 2020/03/10 03:49:56 christos Exp $ */
+/*	$NetBSD: cpu.h,v 1.132 2021/04/05 22:36:27 nakayama Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -198,7 +198,7 @@ struct cpu_info {
 
 	/* TSB description (sun4v). */
 	struct tsb_desc         *ci_tsb_desc;
-	
+
 	/* MMU Fault Status Area (sun4v).
 	 * Will be initialized to the physical address of the bottom of
 	 * the interrupt stack.
@@ -212,12 +212,14 @@ struct cpu_info {
 	paddr_t			ci_devmq;  /* device mondo queue address */
 	paddr_t			ci_cpuset; /* mondo recipient address */ 
 	paddr_t			ci_mondo;  /* mondo message address */
-	
+
 	/* probe fault in PCI config space reads */
 	bool			ci_pci_probe;
 	bool			ci_pci_fault;
 
 	volatile void		*ci_ddb_regs;	/* DDB regs */
+
+	void (*ci_idlespin)(void);
 };
 
 #endif /* _KERNEL || _KMEMUSER */

@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.x11.mk,v 1.137 2020/12/05 22:44:57 mrg Exp $
+#	$NetBSD: bsd.x11.mk,v 1.139 2021/06/03 07:40:48 rin Exp $
 
 .include <bsd.init.mk>
 
@@ -82,7 +82,6 @@ X11FLAGS.OS_DEFINES=	-DDDXOSINIT -DSERVER_LOCK -DDDXOSFATALERROR \
 			-DDDXOSVERRORF -DDDXTIME -DUSB_HID
 
 .if !(${MACHINE} == "acorn32"	|| \
-    ${MACHINE} == "amiga"	|| \
     ${MACHINE} == "pmax"	|| \
     ${MACHINE} == "sun3"	|| \
     ${MACHINE} == "x68k"	|| \
@@ -134,7 +133,7 @@ XORG_SERVER_MINOR=	10
 XORG_SERVER_TEENY=	6
 .else
 XORG_SERVER_MINOR=	20
-XORG_SERVER_TEENY=	10
+XORG_SERVER_TEENY=	11
 .endif
 
 XVENDORNAMESHORT=	'"X.Org"'

@@ -1,4 +1,4 @@
-/*	$NetBSD: addbytes.c,v 1.54 2021/02/13 14:30:37 rillig Exp $	*/
+/*	$NetBSD: addbytes.c,v 1.57 2021/06/22 07:49:09 blymn Exp $	*/
 
 /*
  * Copyright (c) 1987, 1993, 1994
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)addbytes.c	8.4 (Berkeley) 5/4/94";
 #else
-__RCSID("$NetBSD: addbytes.c,v 1.54 2021/02/13 14:30:37 rillig Exp $");
+__RCSID("$NetBSD: addbytes.c,v 1.57 2021/06/22 07:49:09 blymn Exp $");
 #endif
 #endif				/* not lint */
 
@@ -170,6 +170,7 @@ _cursesi_waddbytes(WINDOW *win, const char *bytes, int count, attr_t attr,
 		} else if (wc == 0) {
 			break;
 		}
+
 #ifdef DEBUG
 		__CTRACE(__CTRACE_INPUT,
 		    "ADDBYTES WIDE(0x%x [%s], %x) at (%d, %d), ate %d bytes\n",
@@ -214,6 +215,19 @@ _cursesi_addbyte(WINDOW *win, __LINE **lp, int *y, int *x, int c,
 		case '\t':
 			tabsize = win->screen->TABSIZE;
 			newx = tabsize - (*x % tabsize);
+			/* if at the bottom of the window and
+			   not allowed to scroll then just do
+			   what we can */
+			if ((*y == win->scr_b) &&
+			    !(win->flags & __SCROLLOK)) {
+				if ((*lp)->flags & __ISPASTEOL) {
+					return OK;
+				}
+
+				if (*x + newx > win->maxx - 1)
+					newx = win->maxx - *x - 1;
+			}
+
 			for (i = 0; i < newx; i++) {
 				if (waddbytes(win, blank, 1) == ERR)
 					return ERR;
@@ -349,16 +363,17 @@ _cursesi_addwchar(WINDOW *win, __LINE **lnp, int *y, int *x,
 			*x = 0;
 			return OK;
 		case L'\n':
-			wclrtoeol(win);
-			*x = 0;
-			(*lnp)->flags &= ~__ISPASTEOL;
 			if (*y == win->scr_b) {
 				if (!(win->flags & __SCROLLOK))
 					return ERR;
+				wclrtoeol(win);
 				scroll(win);
 			} else {
+				wclrtoeol(win);
 				(*y)++;
 			}
+			*x = 0;
+			(*lnp)->flags &= ~__ISPASTEOL;
 			return OK;
 		case L'\t':
 			cc.vals[0] = L' ';
@@ -366,6 +381,20 @@ _cursesi_addwchar(WINDOW *win, __LINE **lnp, int *y, int *x,
 			cc.attributes = win->wattr;
 			tabsize = win->screen->TABSIZE;
 			newx = tabsize - (*x % tabsize);
+
+			/* if at the bottom of the window and
+			   not allowed to scroll then just do
+			   what we can */
+			if ((*y == win->scr_b) &&
+			    !(win->flags & __SCROLLOK)) {
+				if ((*lnp)->flags & __ISPASTEOL) {
+					return ERR;
+				}
+
+				if (*x + newx > win->maxx - 1)
+					newx = win->maxx - *x - 1;
+			}
+
 			for (i = 0; i < newx; i++) {
 				if (wadd_wch(win, &cc) == ERR)
 					return ERR;
@@ -453,6 +482,12 @@ _cursesi_addwchar(WINDOW *win, __LINE **lnp, int *y, int *x,
 			 "_cursesi_addwchar: clear EOL (%d,%d)\n",
 			 *y, *x);
 #endif /* DEBUG */
+		if (*y == win->scr_b) {
+			if (!(win->flags & __SCROLLOK))
+				return ERR;
+			scroll(win);
+		}
+
 		(*lnp)->flags |= __ISDIRTY;
 		newx = *x + win->ch_off;
 		if (newx < *(*lnp)->firstchp)
@@ -469,11 +504,7 @@ _cursesi_addwchar(WINDOW *win, __LINE **lnp, int *y, int *x,
 			*(*lnp)->lastchp = newx;
 		__touchline(win, *y, sx, (int) win->maxx - 1);
 		sx = *x = 0;
-		if (*y == win->scr_b) {
-			if (!(win->flags & __SCROLLOK))
-				return ERR;
-			scroll(win);
-		} else {
+		if (*y != win->scr_b) {
 			(*y)++;
 		}
 		lp = &win->alines[*y]->line[0];
@@ -552,16 +583,23 @@ _cursesi_addwchar(WINDOW *win, __LINE **lnp, int *y, int *x,
 #ifdef DEBUG
 	__CTRACE(__CTRACE_INPUT, "_cursesi_addwchar: do line wrap\n");
 #endif /* DEBUG */
+		if (*y == win->scr_b) {
+#ifdef DEBUG
+	__CTRACE(__CTRACE_INPUT, "_cursesi_addwchar: at bottom of screen\n");
+#endif /* DEBUG */
+			if (!(win->flags & __SCROLLOK))
+				return ERR;
+#ifdef DEBUG
+	__CTRACE(__CTRACE_INPUT, "_cursesi_addwchar: do a scroll\n");
+#endif /* DEBUG */
+			scroll(win);
+		}
 		newx = win->maxx - 1 + win->ch_off;
 		if (newx > *(*lnp)->lastchp)
 			*(*lnp)->lastchp = newx;
 		__touchline(win, *y, sx, (int) win->maxx - 1);
 		*x = sx = 0;
-		if (*y == win->scr_b) {
-			if (!(win->flags & __SCROLLOK))
-				return ERR;
-			scroll(win);
-		} else {
+		if (*y != win->scr_b) {
 			(*y)++;
 		}
 		lp = &win->alines[*y]->line[0];

@@ -1,4 +1,4 @@
-/*	$NetBSD: d_c99_bool_strict.c,v 1.27 2021/03/23 23:12:21 rillig Exp $	*/
+/*	$NetBSD: d_c99_bool_strict.c,v 1.30 2021/07/04 07:09:39 rillig Exp $	*/
 # 3 "d_c99_bool_strict.c"
 
 /*
@@ -166,7 +166,7 @@ enum strict_bool_constant_expressions {
 	 * The parenthesized expression has type int and thus cannot be
 	 * used as the controlling expression in the '?:' operator.
 	 */
-	Q2 = (13 > 12 ? 1 : 7) ? 100 : 101,	/* expect: 161, 331 */
+	Q2 = (13 > 12 ? 1 : 7) ? 100 : 101,	/* expect: 161 *//* expect: 331 */
 
 	BINAND_BOOL = __lint_false & __lint_true, /* expect: 55 */
 	BINAND_INT = 0 & 1,
@@ -177,11 +177,11 @@ enum strict_bool_constant_expressions {
 	BINOR_BOOL = __lint_false | __lint_true, /* expect: 55 */
 	BINOR_INT = 0 | 1,
 
-	LOGOR_BOOL = __lint_false || __lint_true, /* expect: 161, 55 */
-	LOGOR_INT = 0 || 1,	/* expect: 331, 332 */
+	LOGOR_BOOL = __lint_false || __lint_true, /* expect: 161 *//* expect: 55 */
+	LOGOR_INT = 0 || 1,	/* expect: 331 *//* expect: 332 */
 
-	LOGAND_BOOL = __lint_false && __lint_true, /* expect: 161, 55 */
-	LOGAND_INT = 0 && 1,	/* expect: 331, 332 */
+	LOGAND_BOOL = __lint_false && __lint_true, /* expect: 161 *//* expect: 55 */
+	LOGAND_INT = 0 && 1,	/* expect: 331 *//* expect: 332 */
 };
 
 /*
@@ -298,13 +298,13 @@ strict_bool_conversion_function_argument_pass(bool b, int i, const char *p)
 	take_arguments(b, i, p);
 
 	/* Implicitly converting bool to other scalar types. */
-	take_arguments(b, b, b);	/* expect: 334, 334 */
+	take_arguments(b, b, b);	/* expect: 334 *//* expect: 334 */
 
 	/* Implicitly converting int to bool (arg #1). */
-	take_arguments(i, i, i);	/* expect: 334, 154 */
+	take_arguments(i, i, i);	/* expect: 334 *//* expect: 154 */
 
 	/* Implicitly converting pointer to bool (arg #1). */
-	take_arguments(p, p, p);	/* expect: 334, 154 */
+	take_arguments(p, p, p);	/* expect: 334 *//* expect: 154 */
 
 	/* Passing bool as vararg. */
 	take_arguments(b, i, p, b, i, p); /* TODO: expect: arg#4 */
@@ -373,13 +373,13 @@ strict_bool_controlling_expression(bool b, int i, double d, const void *p)
 	if (b)
 		do_nothing();
 
-	if (0)			/* expect: 333 */
+	if (/*CONSTCOND*/0)	/* expect: 333 */
+		do_nothing();	/* expect: statement not reached [193] */
+
+	if (/*CONSTCOND*/1)	/* expect: 333 */
 		do_nothing();
 
-	if (1)			/* expect: 333 */
-		do_nothing();
-
-	if (2)			/* expect: 333 */
+	if (/*CONSTCOND*/2)	/* expect: 333 */
 		do_nothing();
 
 	/* Not allowed: There is no implicit conversion from scalar to bool. */
@@ -416,8 +416,8 @@ strict_bool_operand_unary_not(void)
 
 	b = !b;
 	b = !!!b;
-	b = !__lint_false;	/* expect: 161, 239 */
-	b = !__lint_true;	/* expect: 161, 239 */
+	b = !__lint_false;	/* expect: 161 *//* expect: 239 */
+	b = !__lint_true;	/* expect: 161 *//* expect: 239 */
 
 	int i = 0;
 
@@ -438,6 +438,8 @@ strict_bool_operand_unary_address(void)
 	*bp = b;
 	b = *bp;
 }
+
+/* see strict_bool_operand_unary_all below for the other unary operators. */
 
 /*
  * strict-bool-operand-binary:
@@ -500,8 +502,8 @@ strict_bool_operand_binary(bool b, int i)
 	 * scalar to bool.
 	 */
 	b = !i;			/* expect: 330 */
-	b = i && i;		/* expect: 331, 332 */
-	b = i || i;		/* expect: 331, 332 */
+	b = i && i;		/* expect: 331 *//* expect: 332 */
+	b = i || i;		/* expect: 331 *//* expect: 332 */
 
 	b = b && 0;		/* expect: 332 */
 	b = 0 && b;		/* expect: 331 */
@@ -512,7 +514,7 @@ strict_bool_operand_binary(bool b, int i)
 }
 
 void
-strict_bool_operand_binary_all(bool b, unsigned u)
+strict_bool_operand_unary_all(bool b)
 {
 	b = !b;
 	b = ~b;			/* expect: 335 */
@@ -522,19 +524,23 @@ strict_bool_operand_binary_all(bool b, unsigned u)
 	b--;			/* expect: 335 */
 	b = +b;			/* expect: 335 */
 	b = -b;			/* expect: 335 */
+}
 
-	b = b * b;		/* expect: 336, 337 */
-	b = b / b;		/* expect: 336, 337 */
-	b = b % b;		/* expect: 336, 337 */
-	b = b + b;		/* expect: 336, 337 */
-	b = b - b;		/* expect: 336, 337 */
-	b = b << b;		/* expect: 336, 337 */
-	b = b >> b;		/* expect: 336, 337 */
+void
+strict_bool_operand_binary_all(bool b, unsigned u)
+{
+	b = b * b;		/* expect: 336 *//* expect: 337 */
+	b = b / b;		/* expect: 336 *//* expect: 337 */
+	b = b % b;		/* expect: 336 *//* expect: 337 */
+	b = b + b;		/* expect: 336 *//* expect: 337 */
+	b = b - b;		/* expect: 336 *//* expect: 337 */
+	b = b << b;		/* expect: 336 *//* expect: 337 */
+	b = b >> b;		/* expect: 336 *//* expect: 337 */
 
-	b = b < b;		/* expect: 336, 337 */
-	b = b <= b;		/* expect: 336, 337 */
-	b = b > b;		/* expect: 336, 337 */
-	b = b >= b;		/* expect: 336, 337 */
+	b = b < b;		/* expect: 336 *//* expect: 337 */
+	b = b <= b;		/* expect: 336 *//* expect: 337 */
+	b = b > b;		/* expect: 336 *//* expect: 337 */
+	b = b >= b;		/* expect: 336 *//* expect: 337 */
 	b = b == b;
 	b = b != b;
 
@@ -546,13 +552,13 @@ strict_bool_operand_binary_all(bool b, unsigned u)
 	b = b ? b : b;
 
 	b = b;
-	b *= b;			/* expect: 336, 337 */
-	b /= b;			/* expect: 336, 337 */
-	b %= b;			/* expect: 336, 337 */
-	b += b;			/* expect: 336, 337 */
-	b -= b;			/* expect: 336, 337 */
-	b <<= b;		/* expect: 336, 337 */
-	b >>= b;		/* expect: 336, 337 */
+	b *= b;			/* expect: 336 *//* expect: 337 */
+	b /= b;			/* expect: 336 *//* expect: 337 */
+	b %= b;			/* expect: 336 *//* expect: 337 */
+	b += b;			/* expect: 336 *//* expect: 337 */
+	b -= b;			/* expect: 336 *//* expect: 337 */
+	b <<= b;		/* expect: 336 *//* expect: 337 */
+	b >>= b;		/* expect: 336 *//* expect: 337 */
 	b &= b;
 	b ^= b;
 	b |= b;

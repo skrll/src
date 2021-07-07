@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.90 2021/03/27 12:42:22 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.112 2021/07/06 04:44:20 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -57,10 +57,15 @@
 
 /*
  * Describes the position of a declaration or anything else.
+ *
+ * FIXME: Just a single file:lineno pair is not enough to accurately describe
+ *  the position of a symbol.  The whole inclusion path at that point must be
+ *  stored as well.  This makes a difference for symbols from included
+ *  headers, see print_stack_trace.
  */
 typedef struct {
-	int	p_line;
 	const	char *p_file;
+	int	p_line;
 	int	p_uniq;			/* uniquifier */
 } pos_t;
 
@@ -71,7 +76,7 @@ typedef struct {
 		curr_pos.p_uniq++;					\
 		if (curr_pos.p_file == csrc_pos.p_file)			\
 			csrc_pos.p_uniq++;				\
-	} while (/*CONSTCOND*/false)
+	} while (false)
 
 /*
  * Strings cannot be referenced to simply by a pointer to its first
@@ -99,13 +104,16 @@ typedef enum {
 	CONST, VOLATILE, RESTRICT, THREAD
 } tqual_t;
 
-/*
- * Integer and floating point values are stored in this structure
- */
+/* An integer or floating-point value. */
 typedef struct {
 	tspec_t	v_tspec;
-	bool	v_ansiu;		/* set if an integer constant is
-					   unsigned in ANSI C */
+	/*
+	 * Set if an integer constant is unsigned only in C90 and later, but
+	 * not in traditional C.
+	 *
+	 * See the operators table in ops.def, columns "l r".
+	 */
+	bool	v_unsigned_since_c90;
 	union {
 		int64_t	_v_quad;	/* integers */
 		ldbl_t	_v_ldbl;	/* floats */
@@ -145,10 +153,10 @@ typedef	struct {
 } enumeration;
 
 /*
- * Types are represented by concatenation of structures of type type_t
- * via t_subt.
+ * The type of an expression or object. Complex types are formed via t_subt
+ * (for arrays, pointers and functions), as well as t_str.
  */
-struct type {
+struct lint1_type {
 	tspec_t	t_tspec;	/* type specifier */
 	bool	t_incomplete_array : 1;
 	bool	t_const : 1;	/* const modifier */
@@ -157,7 +165,16 @@ struct type {
 	bool	t_vararg : 1;	/* prototype with '...' */
 	bool	t_typedef : 1;	/* type defined with typedef */
 	bool	t_bitfield : 1;
-	bool	t_is_enum : 1;	/* type is (or was) enum (t_enum valid) */
+	/*
+	 * Either the type is currently an enum (having t_tspec ENUM), or
+	 * it is an integer type (typically INT) that has been implicitly
+	 * converted from an enum type.  In both cases, t_enum is valid.
+	 *
+	 * The information about a former enum type is retained to allow
+	 * type checks in expressions such as ((var1 & 0x0001) == var2), to
+	 * detect when var1 and var2 are from incompatible enum types.
+	 */
+	bool	t_is_enum : 1;
 	bool	t_packed : 1;
 	union {
 		int	_t_dim;		/* dimension (if ARRAY) */
@@ -169,8 +186,9 @@ struct type {
 		u_int	_t_flen : 8;	/* length of bit-field */
 		u_int	_t_foffs : 24;	/* offset of bit-field */
 	} t_b;
-	struct	type *t_subt;	/* element type (arrays), return value
-				   (functions), or type pointer points to */
+	struct	lint1_type *t_subt; /* element type (if ARRAY),
+				 * return value (if FUNC),
+				 * target type (if PTR) */
 };
 
 #define	t_dim	t_u._t_dim
@@ -288,7 +306,10 @@ typedef	struct tnode {
 	bool	tn_lvalue : 1;	/* node is lvalue */
 	bool	tn_cast : 1;	/* if tn_op == CVT, it's an explicit cast */
 	bool	tn_parenthesized : 1;
-	bool	tn_from_system_header : 1;
+	bool	tn_relaxed : 1;	/* in strict bool mode, allow mixture between
+				 * bool and scalar, for backwards
+				 * compatibility
+				 */
 	bool	tn_system_dependent : 1; /* depends on sizeof or offsetof */
 	union {
 		struct {
@@ -301,11 +322,17 @@ typedef	struct tnode {
 	} tn_u;
 } tnode_t;
 
-#define	tn_left	tn_u.tn_s._tn_left
-#define tn_right tn_u.tn_s._tn_right
-#define tn_sym	tn_u._tn_sym
-#define	tn_val	tn_u._tn_val
+#define	tn_left		tn_u.tn_s._tn_left
+#define tn_right	tn_u.tn_s._tn_right
+#define tn_sym		tn_u._tn_sym
+#define	tn_val		tn_u._tn_val
 #define	tn_string	tn_u._tn_string
+
+struct generic_association {
+	type_t *ga_arg;		/* NULL means default or error */
+	tnode_t *ga_result;	/* NULL means error */
+	struct generic_association *ga_prev;
+};
 
 /*
  * For nested declarations a stack exists, which holds all information
@@ -334,7 +361,8 @@ typedef	struct dinfo {
 				   for all declarators */
 	sym_t	*d_redeclared_symbol;
 	int	d_offset;	/* offset of next structure member */
-	int	d_stralign;	/* alignment required for current structure */
+	int	d_sou_align_in_bits; /* alignment required for current
+				 * structure */
 	scl_t	d_ctx;		/* context of declaration */
 	bool	d_const : 1;	/* const in declaration specifiers */
 	bool	d_volatile : 1;	/* volatile in declaration specifiers */
@@ -359,19 +387,17 @@ typedef	struct dinfo {
 	struct	dinfo *d_next;	/* next level */
 } dinfo_t;
 
-/*
- * Used to collect information about pointers and qualifiers in
- * declarators.
- */
-typedef	struct pqinf {
-	int	p_pcnt;			/* number of asterisks */
-	bool	p_const : 1;
-	bool	p_volatile : 1;
-	struct	pqinf *p_next;
-} pqinf_t;
+/* One level of pointer indirection in declarators, including qualifiers. */
+typedef	struct qual_ptr {
+	bool	p_const: 1;
+	bool	p_volatile: 1;
+	bool	p_pointer: 1;
+	struct	qual_ptr *p_next;
+} qual_ptr;
 
 /*
- * Case values are stored in a list of type case_label_t.
+ * The values of the 'case' labels, linked via cl_next in reverse order of
+ * appearance in the code, that is from bottom to top.
  */
 typedef	struct case_label {
 	val_t	cl_val;
@@ -409,9 +435,10 @@ typedef struct control_statement {
 	bool	c_had_return_value : 1;	/* had "return expr;" */
 
 	type_t	*c_switch_type;		/* type of switch expression */
+	tnode_t	*c_switch_expr;
 	case_label_t *c_case_labels;	/* list of case values */
 
-	struct	mbl *c_for_expr3_mem;	/* saved memory for end of loop
+	struct	memory_block *c_for_expr3_mem; /* saved memory for end of loop
 					 * expression in for() */
 	tnode_t	*c_for_expr3;		/* end of loop expr in for() */
 	pos_t	c_for_expr3_pos;	/* position of end of loop expr */
@@ -449,7 +476,7 @@ typedef	struct err_set {
 	do {								\
 		if (!(cond))						\
 			assert_failed(__FILE__, __LINE__, __func__, #cond); \
-	} while (/*CONSTCOND*/false)
+	} while (false)
 
 #ifdef BLKDEBUG
 #define ZERO	0xa5
@@ -469,17 +496,31 @@ check_printf(const char *fmt, ...)
 {
 }
 
-#  define wrap_check_printf(func, id, args...)				\
+#  define wrap_check_printf_at(func, msgid, pos, args...)		\
 	do {								\
-		check_printf(__CONCAT(MSG_, id), ##args);		\
-		(func)(id, ##args);					\
-	} while (/*CONSTCOND*/false)
+		check_printf(__CONCAT(MSG_, msgid), ##args);		\
+		(func)(msgid, pos, ##args);				\
+	} while (false)
 
-#  define error(id, args...) wrap_check_printf(error, id, ##args)
-#  define warning(id, args...) wrap_check_printf(warning, id, ##args)
-#  define message(id, args...) wrap_check_printf(message, id, ##args)
-#  define gnuism(id, args...) wrap_check_printf(gnuism, id, ##args)
-#  define c99ism(id, args...) wrap_check_printf(c99ism, id, ##args)
+#  define error_at(msgid, pos, args...) \
+	wrap_check_printf_at(error_at, msgid, pos, ##args)
+#  define warning_at(msgid, pos, args...) \
+	wrap_check_printf_at(warning_at, msgid, pos, ##args)
+#  define message_at(msgid, pos, args...) \
+	wrap_check_printf_at(message_at, msgid, pos, ##args)
+
+#  define wrap_check_printf(func, msgid, args...)			\
+	do {								\
+		check_printf(__CONCAT(MSG_, msgid), ##args);		\
+		(func)(msgid, ##args);					\
+	} while (false)
+
+#  define error(msgid, args...) wrap_check_printf(error, msgid, ##args)
+#  define warning(msgid, args...) wrap_check_printf(warning, msgid, ##args)
+#  define message(msgid, args...) wrap_check_printf(message, msgid, ##args)
+#  define gnuism(msgid, args...) wrap_check_printf(gnuism, msgid, ##args)
+#  define c99ism(msgid, args...) wrap_check_printf(c99ism, msgid, ##args)
+#  define c11ism(msgid, args...) wrap_check_printf(c11ism, msgid, ##args)
 #endif
 
 static inline bool
@@ -508,4 +549,35 @@ static inline bool
 is_nonzero(const tnode_t *tn)
 {
 	return tn != NULL && tn->tn_op == CON && is_nonzero_val(tn->tn_val);
+}
+
+static inline uint64_t
+bit(unsigned i)
+{
+	lint_assert(i < 64);
+	return (uint64_t)1 << i;
+}
+
+static inline uint64_t
+value_bits(unsigned bitsize)
+{
+	lint_assert(bitsize > 0);
+
+	/* for long double (80 or 128), double _Complex (128) */
+	/*
+	 * XXX: double _Complex does not have 128 bits of precision,
+	 * therefore it should never be necessary to query the value bits
+	 * of such a type; see d_c99_complex_split.c to trigger this case.
+	 */
+	if (bitsize >= 64)
+		return ~((uint64_t)0);
+
+	return ~(~(uint64_t)0 << bitsize);
+}
+
+/* C99 6.7.8p7 */
+static inline bool
+is_struct_or_union(tspec_t t)
+{
+	return t == STRUCT || t == UNION;
 }

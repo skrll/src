@@ -1,4 +1,4 @@
-/* $NetBSD: axppmic.c,v 1.33 2021/01/27 02:29:48 thorpej Exp $ */
+/* $NetBSD: axppmic.c,v 1.35 2021/05/24 05:58:42 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014-2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: axppmic.c,v 1.33 2021/01/27 02:29:48 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: axppmic.c,v 1.35 2021/05/24 05:58:42 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1052,7 +1052,7 @@ axppmic_attach(device_t parent, device_t self, void *aux)
 				continue;
 			aaa.reg_ctrl = ctrl;
 			aaa.reg_phandle = child;
-			config_found(sc->sc_dev, &aaa, NULL);
+			config_found(sc->sc_dev, &aaa, NULL, CFARG_EOL);
 		}
 	}
 
@@ -1161,7 +1161,10 @@ axpreg_attach(device_t parent, device_t self, void *aux)
 	else
 		aprint_normal("\n");
 
-	axpreg_get_voltage(self, &uvol);
+	int error = axpreg_get_voltage(self, &uvol);
+	if (error)
+		return;
+
 	if (of_getprop_uint32(phandle, "regulator-min-microvolt", &min_uvol) == 0 &&
 	    of_getprop_uint32(phandle, "regulator-max-microvolt", &max_uvol) == 0) {
 		if (uvol < min_uvol || uvol > max_uvol) {

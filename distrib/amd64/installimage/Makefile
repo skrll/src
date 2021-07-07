@@ -1,10 +1,10 @@
-#	$NetBSD: Makefile,v 1.15 2021/03/26 21:18:29 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.17 2021/06/02 16:07:33 pgoyette Exp $
 
 .include <bsd.own.mk>
 
 INSTIMGBASE=	NetBSD-${DISTRIBVER}-amd64-install	# gives ${IMGBASE}.img
 
-INSTIMAGEMB?=	1600			# for all installation binaries
+INSTIMAGEMB?=	1800			# for all installation binaries
 
 PRIMARY_BOOT=		bootxx_ffsv1
 SECONDARY_BOOT=		boot

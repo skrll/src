@@ -1,4 +1,4 @@
-/*	$NetBSD: machfb.c,v 1.103 2020/10/10 08:29:32 jdc Exp $	*/
+/*	$NetBSD: machfb.c,v 1.105 2021/06/21 03:19:21 christos Exp $	*/
 
 /*
  * Copyright (c) 2002 Bang Jun-Young
@@ -34,7 +34,7 @@
 
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0,
-	"$NetBSD: machfb.c,v 1.103 2020/10/10 08:29:32 jdc Exp $");
+	"$NetBSD: machfb.c,v 1.105 2021/06/21 03:19:21 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -520,7 +520,7 @@ mach64_attach(device_t parent, device_t self, void *aux)
 	default_mode.hdisplay = width;
 	default_mode.vdisplay = height;
 
-	prop_dictionary_get_cstring_nocopy(device_properties(sc->sc_dev),
+	prop_dictionary_get_string(device_properties(sc->sc_dev),
 	    "videomode", &mptr);
 
 	memset(&sc->sc_ei, 0, sizeof(sc->sc_ei));
@@ -785,7 +785,9 @@ mach64_attach(device_t parent, device_t self, void *aux)
 	aa.accessops = &sc->sc_accessops;
 	aa.accesscookie = &sc->vd;
 
-	config_found(self, &aa, wsemuldisplaydevprint);
+	config_found(self, &aa, wsemuldisplaydevprint,
+	    CFARG_IATTR, "wsemuldisplaydev",
+	    CFARG_EOL);
 #if 0
 	/* XXX
 	 * turns out some firmware doesn't turn these back on when needed
@@ -806,7 +808,9 @@ mach64_attach(device_t parent, device_t self, void *aux)
 		regw(sc, BUS_CNTL, reg);
 	}
 #endif
-	config_found_ia(self, "drm", aux, machfb_drm_print);
+	config_found(self, aux, machfb_drm_print,
+	    CFARG_IATTR, "drm",
+	    CFARG_EOL);
 }
 
 static int

@@ -1,4 +1,4 @@
-/*	$NetBSD: tsig_test.c,v 1.6 2021/02/19 16:42:18 christos Exp $	*/
+/*	$NetBSD: tsig_test.c,v 1.8 2021/04/29 17:26:12 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -41,7 +41,7 @@
 		if (result != ISC_R_SUCCESS) { \
 			goto cleanup;          \
 		}                              \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 #define TEST_ORIGIN "test"
 
@@ -599,7 +599,7 @@ main(void) {
 int
 main(void) {
 	printf("1..0 # Skipped: cmocka not available\n");
-	return (0);
+	return (SKIPPED_TEST_EXIT_CODE);
 }
 
 #endif /* if HAVE_CMOCKA */

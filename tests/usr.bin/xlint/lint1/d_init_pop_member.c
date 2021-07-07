@@ -1,8 +1,8 @@
-/*	$NetBSD: d_init_pop_member.c,v 1.6 2021/03/19 17:40:37 rillig Exp $	*/
+/*	$NetBSD: d_init_pop_member.c,v 1.8 2021/06/20 18:11:21 rillig Exp $	*/
 # 3 "d_init_pop_member.c"
 
 /*
- * Since init.c 1.27 from 2015-07-28,
+ * Since init.c 1.27 from 2015-07-28 and before init.c 1.178 from 2021-03-29,
  * a bug in memberpop or pop_member led to a wrong error message
  * "undefined struct/union member: capital [101]" in the second and third
  * named initializer.
@@ -35,7 +35,7 @@ struct state {
 
 void func(void)
 {
-	struct state st = {
+	struct state st = {	/* expect: set but not used */
 	    .capital.mayor.hobbies.dancing = 1,
 	    /*
 	     * Since 2015-07-28:
@@ -45,7 +45,7 @@ void func(void)
 	     * Before init.c 1.52 from 2020-01-01:
 	     * wrong "warning: bit-field initializer does not fit [180]"
 	     */
-	    .capital.mayor.favorite_color.green = 0xFF,	/*FIXME*//* expect: 101 */
+	    .capital.mayor.favorite_color.green = 0xFF,
 	    /*
 	     * Since 2015-07-28:
 	     * wrong "undefined struct/union member: capital [101]"
@@ -54,6 +54,6 @@ void func(void)
 	     * Before init.c 1.52 from 2020-01-01:
 	     * wrong "warning: bit-field initializer does not fit [180]"
 	     */
-	    .capital.mayor.favorite_color.red = 0xFF, /*FIXME*//* expect: 101 */
+	    .capital.mayor.favorite_color.red = 0xFF,
 	};
 }

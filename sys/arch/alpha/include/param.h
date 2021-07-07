@@ -1,4 +1,4 @@
-/* $NetBSD: param.h,v 1.47 2020/10/10 21:59:03 thorpej Exp $ */
+/* $NetBSD: param.h,v 1.49 2021/07/06 12:20:52 thorpej Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -38,6 +38,10 @@
  *	@(#)param.h	8.1 (Berkeley) 6/10/93
  */
 
+#ifdef _KERNEL_OPT
+#include "opt_param.h"
+#endif
+
 /*
  * Machine dependent constants for the Alpha.
  */
@@ -52,6 +56,12 @@
 #else
 #define ALPHA_PGSHIFT	13
 #endif
+
+/*
+ * Compiler assumes 16 byte stack alignment, per recommendation of
+ * Alpha Architecture Handbook.
+ */
+#define	STACK_ALIGNBYTES	(16 - 1)
 
 #define	NBPG		(1 << ALPHA_PGSHIFT)		/* bytes/page */
 #define	PGOFSET		(NBPG-1)			/* byte off. into pg */

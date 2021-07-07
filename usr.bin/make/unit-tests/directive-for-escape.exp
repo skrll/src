@@ -72,4 +72,21 @@ make: "directive-for-escape.mk" line 107: .    ${i\}}: inner}
 make: "directive-for-escape.mk" line 108: .     ${i2}: two
 make: "directive-for-escape.mk" line 109: .     ${i,}: comma
 make: "directive-for-escape.mk" line 110: .  adjacent: innerinnerinnerinner
-exit status 0
+For: end for 1
+For: loop body:
+.  info eight $$$$$$$$ and no cents.
+.  info eight ${:Udollar}${:Udollar}${:Udollar}${:Udollar} and no cents.
+make: "directive-for-escape.mk" line 118: eight $$$$ and no cents.
+make: "directive-for-escape.mk" line 119: eight dollardollardollardollar and no cents.
+make: "directive-for-escape.mk" line 128: eight  and no cents.
+For: end for 1
+make: "directive-for-escape.mk" line 135: newline in .for value
+make: "directive-for-escape.mk" line 135: newline in .for value
+For: loop body:
+.  info short: ${:U" "}
+.  info long: ${:U" "}
+make: "directive-for-escape.mk" line 136: short: " "
+make: "directive-for-escape.mk" line 137: long: " "
+make: Fatal errors encountered -- cannot continue
+make: stopped in unit-tests
+exit status 1

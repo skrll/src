@@ -846,6 +846,9 @@ err_mounted:
 	if (error2 == 0)
 		vfs_resume(mp);
 
+	if (error2 == 0)
+		vfs_resume(mp);
+
 err_unmounted:
 	vp->v_mountedhere = NULL;
 	mutex_exit(mp->mnt_updating);

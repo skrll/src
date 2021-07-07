@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.712 2021/03/01 18:01:05 jakllsch Exp $
+#	$NetBSD: Makefile,v 1.714 2021/06/29 10:22:37 nia Exp $
 #	@(#)Makefile	8.1 (Berkeley) 6/18/93
 
 MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
@@ -37,7 +37,7 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	ixl.4 ixpide.4 ixv.4 \
 	jme.4 jmide.4 jmphy.4 joy.4 \
 	kcov.4 kloader.4 kse.4 ksyms.4 kttcp.4 \
-	l2tp.4 lc.4 ld.4 lii.4 lo.4 lua.4 lxtphy.4 \
+	l2tp.4 lagg.4 lc.4 ld.4 lii.4 lo.4 lua.4 lxtphy.4 \
 	mainbus.4 makphy.4 malo.4 mbe.4 mca.4 mcclock.4 mcx.4 md.4 mfb.4 \
 	mfi.4 mfii.4 mhzc.4 \
 	micphy.4 midi.4 mii.4 mk48txx.4 mlx.4 mly.4 mpls.4 mpii.4 mpt.4 \
@@ -88,7 +88,7 @@ MAN+=	atu.4 aubtfwl.4 aue.4 axe.4 axen.4 cdce.4 cue.4 ehci.4 kue.4 \
 	uhidev.4 uhmodem.4 uhso.4 uipad.4 uipaq.4 uirda.4 ukbd.4 ukyopon.4 \
 	ulpt.4 umass.4 umcs.4 umct.4 umidi.4 umodem.4 ums.4 upgt.4 upl.4 \
 	uplcom.4 ure.4 url.4 urndis.4 urtw.4 urtwn.4 \
-	usb.4 usbnet.4 uscanner.4 uslsa.4 usmsc.4 usscanner.4 \
+	usb.4 usbnet.4 uslsa.4 usmsc.4 usscanner.4 \
 	ustir.4 uthum.4 utoppy.4 uts.4 uvideo.4 uvisor.4 uvscom.4 uxrcom.4 \
 	xhci.4
 

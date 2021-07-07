@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.207 2021/02/06 16:14:55 dbj Exp $
+#	$NetBSD: Makefile,v 1.211 2021/05/27 08:41:35 cjep Exp $
 
 .include <bsd.own.mk>
 .include <bsd.endian.mk>
@@ -80,18 +80,22 @@ LINT_BITS= lint lint2
 # XXX .ORDER does not work when multiple targets are passed on the
 # make command line without "-j", so use dependencies in addition to .ORDER.
 #
-.ORDER: dependall-host-mkdep dependall-compat dependall-binstall
+.ORDER: dependall-host-mkdep dependall-compat dependall-binstall \
+	dependall-date
 .if make(dependall-host-mkdep) && make(dependall-compat)
 dependall-compat: dependall-host-mkdep
 .endif
 .if make(dependall-compat) && make(dependall-binstall)
 dependall-binstall: dependall-compat
 .endif
+.if make(dependall-date)
+dependall-date: dependall-host-mkdep dependall-compat
+.endif
 
 # Dependencies in SUBDIR below ordered to maximize parallel ability.
 # See above for special treatment for host-mkdep, compat, and binstall.
 #
-SUBDIR=	host-mkdep compat binstall \
+SUBDIR=	host-mkdep compat binstall date \
 	.WAIT mktemp .WAIT sed .WAIT genassym
 .if ${TOOLS_BUILDRUMP} == "no"
 SUBDIR+= cap_mkdb crunchgen ctags gencat hexdump \
@@ -180,8 +184,7 @@ SUBDIR+=	arm-elf2aout
 SUBDIR+=	m68k-elf2aout
 .endif
 
-.if (${MACHINE_ARCH} == "mipsel" || ${MACHINE_ARCH} == "mipseb" || \
-     ${MACHINE_ARCH} == "mips64el" || ${MACHINE_ARCH} == "mips64eb")
+.if !empty(MACHINE_ARCH:Mmips*)
 SUBDIR+=	mips-elf2ecoff
 .endif
 
@@ -218,6 +221,10 @@ SUBDIR+=	elftosb
 SUBDIR+=	mkubootimage
 SUBDIR+=	libfdt .WAIT
 SUBDIR+=	dtc
+.endif
+
+.if ${MACHINE} == "mvme68k"
+SUBDIR+=	mvme68k-wrtvid
 .endif
 
 .if ${MKX11} != "no"

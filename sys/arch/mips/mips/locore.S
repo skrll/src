@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.226 2020/09/26 08:21:10 simonb Exp $	*/
+/*	$NetBSD: locore.S,v 1.228 2021/05/29 12:35:27 simonb Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -63,7 +63,7 @@
 #include <mips/trap.h>
 #include <mips/locore.h>
 
-RCSID("$NetBSD: locore.S,v 1.226 2020/09/26 08:21:10 simonb Exp $")
+RCSID("$NetBSD: locore.S,v 1.228 2021/05/29 12:35:27 simonb Exp $")
 
 #include "assym.h"
 
@@ -162,7 +162,7 @@ EXPORT_OBJECT(kernel_text)			# libkvm refers this
 	mtc0	k0, MIPS_COP_0_STATUS
 	COP0_HAZARD_FPUENABLE
 
-	cfc1	t1, MIPS_FPU_ID
+	cfc1	t1, MIPS_FIR
 
 	/* Disable again, we don't want it on in the kernel */
 	and	k0, ~MIPS_SR_COP_1_BIT
@@ -384,36 +384,6 @@ END(cpu_switchto)
  *
  * called at IPL_HIGH
  *
- */
-softint_cleanup:
-#ifdef PARANOIA
-	mfc0	t1, MIPS_COP_0_STATUS
-	MFC0_HAZARD
-	and	v0, t1, MIPS_SR_INT_IE
-#if __mips >= 32
-	teqi	v0, 0
-#else
-1:	beqz	v0, 1b
-	 nop
-#endif
-#endif /* PARANOIA */
-	PTR_L	t0, L_CPU(MIPS_CURLWP)
-	NOP_L					# load delay
-	INT_L	t1, CPU_INFO_MTX_COUNT(t0)
-	NOP_L					# load delay
-	INT_ADDU t1, 1
-	INT_S	t1, CPU_INFO_MTX_COUNT(t0)
-	REG_L	ra, CALLFRAME_RA(sp)
-	REG_L	v0, CALLFRAME_S0(sp)		# get softint lwp
-	NOP_L					# load delay
-#if IPL_SCHED != IPL_HIGH
-	j	_C_LABEL(splhigh_noprof)
-#else
-	jr	ra
-#endif
-	 PTR_ADDU sp, CALLFRAME_SIZ
-
-/*
  * Arguments:
  *	a0	the LWP to switch to
  *	a1	IPL to execute at
@@ -495,6 +465,34 @@ NESTED(softint_fast_dispatch, CALLFRAME_SIZ, ra)
 	 * Almost everything (all except sp) is restored so we can return.
 	 */
 	jr	ra
+	 PTR_ADDU sp, CALLFRAME_SIZ
+
+softint_cleanup:
+#ifdef PARANOIA
+	mfc0	t1, MIPS_COP_0_STATUS
+	MFC0_HAZARD
+	and	v0, t1, MIPS_SR_INT_IE
+#if __mips >= 32
+	teqi	v0, 0
+#else
+1:	beqz	v0, 1b
+	 nop
+#endif
+#endif /* PARANOIA */
+	PTR_L	t0, L_CPU(MIPS_CURLWP)
+	NOP_L					# load delay
+	INT_L	t1, CPU_INFO_MTX_COUNT(t0)
+	NOP_L					# load delay
+	INT_ADDU t1, 1
+	INT_S	t1, CPU_INFO_MTX_COUNT(t0)
+	REG_L	ra, CALLFRAME_RA(sp)
+	REG_L	v0, CALLFRAME_S0(sp)		# get softint lwp
+	NOP_L					# load delay
+#if IPL_SCHED != IPL_HIGH
+	j	_C_LABEL(splhigh_noprof)
+#else
+	jr	ra
+#endif
 	 PTR_ADDU sp, CALLFRAME_SIZ
 END(softint_fast_dispatch)
 #endif /* __HAVE_FAST_SOFTINTS */
@@ -700,8 +698,8 @@ XNESTED(mips_fpu_trap)
 	REG_L		a2, TF_REG_CAUSE(a1)
 	REG_EPILOGUE
 
-	cfc1		t0, MIPS_FPU_CSR	# stall til FP done
-	cfc1		t0, MIPS_FPU_CSR	# now get status
+	cfc1		t0, MIPS_FCSR		# stall til FP done
+	cfc1		t0, MIPS_FCSR		# now get status
 	nop
 	sll		t2, t0, (31 - 17)	# unimplemented operation?
 	bgez		t2, 3f			# no, normal trap
@@ -738,8 +736,8 @@ XNESTED(mips_fpu_trap)
 	REG_S		a2, TF_REG_CAUSE(a1)
 	REG_EPILOGUE
 
-	and		t2, t0, ~MIPS_FPU_EXCEPTION_BITS
-	ctc1		t2, MIPS_FPU_CSR
+	and		t2, t0, ~MIPS_FCSR_CAUSE
+	ctc1		t2, MIPS_FCSR
 
 	move		a1, a0				# code = instruction
 	jal		_C_LABEL(mips_fpuillinst)
@@ -757,8 +755,8 @@ XNESTED(mips_fpu_trap)
 	REG_S		a2, TF_REG_CAUSE(a1)
 	REG_EPILOGUE
 
-	and		a0, t0, ~MIPS_FPU_EXCEPTION_BITS
-	ctc1		a0, MIPS_FPU_CSR
+	and		a0, t0, ~MIPS_FCSR_CAUSE
+	ctc1		a0, MIPS_FCSR
 
 	move		a1, t0			# FPU status
 	jal		_C_LABEL(mips_fpuexcept)

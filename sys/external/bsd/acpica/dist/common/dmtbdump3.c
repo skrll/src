@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2020, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -314,6 +314,65 @@ AcpiDmDumpStao (
 
 /*******************************************************************************
  *
+ * FUNCTION:    AcpiDmDumpSvkl
+ *
+ * PARAMETERS:  Table               - A SVKL table
+ *
+ * RETURN:      None
+ *
+ * DESCRIPTION: Format the contents of a SVKL. This is a variable-length
+ *              table that contains an open-ended number of key subtables at
+ *              the end of the header.
+ *
+ * NOTES: SVKL is essentially a flat table, with a small main table and
+ *          a variable number of a single type of subtable.
+ *
+ ******************************************************************************/
+
+void
+AcpiDmDumpSvkl (
+    ACPI_TABLE_HEADER       *Table)
+{
+    ACPI_STATUS             Status;
+    UINT32                  Length = Table->Length;
+    UINT32                  Offset = sizeof (ACPI_TABLE_SVKL);
+    ACPI_SVKL_KEY           *Subtable;
+
+
+    /* Main table */
+
+    Status = AcpiDmDumpTable (Length, 0, Table, 0, AcpiDmTableInfoSvkl);
+    if (ACPI_FAILURE (Status))
+    {
+        return;
+    }
+
+    /* The rest of the table consists of subtables (single type) */
+
+    Subtable = ACPI_ADD_PTR (ACPI_SVKL_KEY, Table, Offset);
+    while (Offset < Table->Length)
+    {
+        /* Dump the subtable */
+
+        AcpiOsPrintf ("\n");
+        Status = AcpiDmDumpTable (Table->Length, Offset, Subtable,
+            sizeof (ACPI_SVKL_KEY), AcpiDmTableInfoSvkl0);
+        if (ACPI_FAILURE (Status))
+        {
+            return;
+        }
+
+        /* Point to next subtable */
+
+        Offset += sizeof (ACPI_SVKL_KEY);
+        Subtable = ACPI_ADD_PTR (ACPI_SVKL_KEY, Subtable,
+            sizeof (ACPI_SVKL_KEY));
+    }
+}
+
+
+/*******************************************************************************
+ *
  * FUNCTION:    AcpiDmDumpTcpa
  *
  * PARAMETERS:  Table               - A TCPA table
@@ -394,6 +453,7 @@ AcpiDmDumpTcpa (
  * DESCRIPTION: Format the contents of a TPM2.
  *
  ******************************************************************************/
+
 static void
 AcpiDmDumpTpm2Rev3 (
     ACPI_TABLE_HEADER       *Table)
@@ -495,53 +555,100 @@ AcpiDmDumpTpm2 (
 
 /*******************************************************************************
  *
- * FUNCTION:    AcpiDmDumpVrtc
+ * FUNCTION:    AcpiDmDumpViot
  *
- * PARAMETERS:  Table               - A VRTC table
+ * PARAMETERS:  Table               - A VIOT table
  *
  * RETURN:      None
  *
- * DESCRIPTION: Format the contents of a VRTC
+ * DESCRIPTION: Format the contents of a VIOT
  *
  ******************************************************************************/
 
 void
-AcpiDmDumpVrtc (
+AcpiDmDumpViot (
     ACPI_TABLE_HEADER       *Table)
 {
     ACPI_STATUS             Status;
-    UINT32                  Offset = sizeof (ACPI_TABLE_VRTC);
-    ACPI_VRTC_ENTRY         *Subtable;
-
+    ACPI_TABLE_VIOT         *Viot;
+    ACPI_VIOT_HEADER        *ViotHeader;
+    UINT16                  Length;
+    UINT16                  Offset;
+    ACPI_DMTABLE_INFO       *InfoTable;
 
     /* Main table */
 
-    Status = AcpiDmDumpTable (Table->Length, 0, Table, 0, AcpiDmTableInfoVrtc);
+    Status = AcpiDmDumpTable (Table->Length, 0, Table, 0, AcpiDmTableInfoViot);
     if (ACPI_FAILURE (Status))
     {
         return;
     }
 
-    /* Subtables */
+    Viot = ACPI_CAST_PTR (ACPI_TABLE_VIOT, Table);
 
-    Subtable = ACPI_ADD_PTR (ACPI_VRTC_ENTRY, Table, Offset);
+    Offset = Viot->NodeOffset;
     while (Offset < Table->Length)
     {
         /* Common subtable header */
-
+        ViotHeader = ACPI_ADD_PTR (ACPI_VIOT_HEADER, Table, Offset);
         AcpiOsPrintf ("\n");
-        Status = AcpiDmDumpTable (Table->Length, Offset, Subtable,
-            sizeof (ACPI_VRTC_ENTRY), AcpiDmTableInfoVrtc0);
+
+        Length = sizeof (ACPI_VIOT_HEADER);
+        Status = AcpiDmDumpTable (Table->Length, Offset, ViotHeader, Length,
+            AcpiDmTableInfoViotHeader);
         if (ACPI_FAILURE (Status))
         {
             return;
         }
 
-        /* Point to next subtable */
+        Length = ViotHeader->Length;
+        switch (ViotHeader->Type)
+        {
+        case ACPI_VIOT_NODE_PCI_RANGE:
 
-        Offset += sizeof (ACPI_VRTC_ENTRY);
-        Subtable = ACPI_ADD_PTR (ACPI_VRTC_ENTRY, Subtable,
-            sizeof (ACPI_VRTC_ENTRY));
+            InfoTable = AcpiDmTableInfoViot1;
+            break;
+
+        case ACPI_VIOT_NODE_MMIO:
+
+            InfoTable = AcpiDmTableInfoViot2;
+            break;
+
+        case ACPI_VIOT_NODE_VIRTIO_IOMMU_PCI:
+
+            InfoTable = AcpiDmTableInfoViot3;
+            break;
+
+        case ACPI_VIOT_NODE_VIRTIO_IOMMU_MMIO:
+
+            InfoTable = AcpiDmTableInfoViot4;
+            break;
+
+        default:
+
+            AcpiOsPrintf ("\n*** Unknown VIOT node type 0x%X\n",
+                ViotHeader->Type);
+
+            /* Attempt to continue */
+
+            if (!Length)
+            {
+                AcpiOsPrintf ("Invalid zero length VIOT node\n");
+                return;
+            }
+            goto NextSubtable;
+        }
+
+        AcpiOsPrintf ("\n");
+        Status = AcpiDmDumpTable (Table->Length, Offset, ViotHeader, Length,
+            InfoTable);
+        if (ACPI_FAILURE (Status))
+        {
+            return;
+        }
+
+NextSubtable:
+        Offset += Length;
     }
 }
 

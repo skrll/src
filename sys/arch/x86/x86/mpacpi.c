@@ -1,4 +1,4 @@
-/*	$NetBSD: mpacpi.c,v 1.104 2020/01/17 17:06:32 jmcneill Exp $	*/
+/*	$NetBSD: mpacpi.c,v 1.106 2021/05/12 22:17:40 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mpacpi.c,v 1.104 2020/01/17 17:06:32 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mpacpi.c,v 1.106 2021/05/12 22:17:40 thorpej Exp $");
 
 #include "acpica.h"
 #include "opt_acpi.h"
@@ -90,7 +90,7 @@ ACPI_MODULE_NAME       ("mpacpi")
 #if NPCI > 0
 struct mpacpi_pcibus {
 	TAILQ_ENTRY(mpacpi_pcibus) mpr_list;
-	ACPI_HANDLE mpr_handle;		/* Same thing really, but.. */
+	devhandle_t mpr_devhandle;
 	ACPI_BUFFER mpr_buf;		/* preserve _PRT */
 	int mpr_seg;			/* PCI segment number */
 	int mpr_bus;			/* PCI bus number */
@@ -383,8 +383,11 @@ mpacpi_config_cpu(ACPI_SUBTABLE_HEADER *hdrp, void *aux)
 			caa.cpu_number = lapic->Id;
 			caa.cpu_func = &mp_cpu_funcs;
 			locs[CPUBUSCF_APID] = caa.cpu_number;
-			config_found_sm_loc(parent, "cpubus", locs,
-				&caa, mpacpi_cpuprint, config_stdsubmatch);
+			config_found(parent, &caa, mpacpi_cpuprint,
+			    CFARG_SUBMATCH, config_stdsubmatch,
+			    CFARG_IATTR, "cpubus",
+			    CFARG_LOCATORS, locs,
+			    CFARG_EOL);
 		}
 		break;
 
@@ -410,8 +413,11 @@ mpacpi_config_cpu(ACPI_SUBTABLE_HEADER *hdrp, void *aux)
 			caa.cpu_number = x2apic->LocalApicId;
 			caa.cpu_func = &mp_cpu_funcs;
 			locs[CPUBUSCF_APID] = caa.cpu_number;
-			config_found_sm_loc(parent, "cpubus", locs,
-				&caa, mpacpi_cpuprint, config_stdsubmatch);
+			config_found(parent, &caa, mpacpi_cpuprint,
+			    CFARG_SUBMATCH, config_stdsubmatch,
+			    CFARG_IATTR, "cpubus",
+			    CFARG_LOCATORS, locs,
+			    CFARG_EOL);
 		}
 		break;
 
@@ -435,8 +441,11 @@ mpacpi_config_ioapic(ACPI_SUBTABLE_HEADER *hdrp, void *aux)
 		aaa.flags = IOAPIC_VWIRE;
 		aaa.apic_vecbase = p->GlobalIrqBase;
 		locs[IOAPICBUSCF_APID] = aaa.apic_id;
-		config_found_sm_loc(parent, "ioapicbus", locs, &aaa,
-			mpacpi_ioapicprint, config_stdsubmatch);
+		config_found(parent, &aaa, mpacpi_ioapicprint,
+		    CFARG_SUBMATCH, config_stdsubmatch,
+		    CFARG_IATTR, "ioapicbus",
+		    CFARG_LOCATORS, locs,
+		    CFARG_EOL);
 	}
 	return AE_OK;
 }
@@ -500,7 +509,7 @@ mpacpi_pci_foundbus(struct acpi_devnode *ad)
 	}
 
 	mpr = kmem_zalloc(sizeof(struct mpacpi_pcibus), KM_SLEEP);
-	mpr->mpr_handle = ad->ad_handle;
+	mpr->mpr_devhandle = devhandle_from_acpi(ad->ad_handle);
 	mpr->mpr_buf = buf;
 	mpr->mpr_seg = ad->ad_pciinfo->ap_segment;
 	mpr->mpr_bus = ad->ad_pciinfo->ap_downbus;
@@ -944,6 +953,29 @@ mpacpi_find_interrupts(void *self)
 
 #if NPCI > 0
 
+static void
+mpacpi_set_devhandle(device_t self, struct pcibus_attach_args *pba)
+{
+	devhandle_t devhandle = device_handle(self);
+	struct mpacpi_pcibus *mpr;
+
+	/* If we already have a valid handle, eject now. */
+	if (devhandle_type(devhandle) != DEVHANDLE_TYPE_INVALID) {
+		return;
+	}
+
+	TAILQ_FOREACH(mpr, &mpacpi_pcibusses, mpr_list) {
+		/* XXX Assuming always segment 0 on x86. */
+		if (mpr->mpr_seg != 0) {
+			continue;
+		}
+		if (mpr->mpr_bus == pba->pba_bus) {
+			device_set_handle(self, mpr->mpr_devhandle);
+			return;
+		}
+	}
+}
+
 int
 mpacpi_pci_attach_hook(device_t parent, device_t self,
 		       struct pcibus_attach_args *pba)
@@ -975,13 +1007,16 @@ mpacpi_pci_attach_hook(device_t parent, device_t self,
 	if (mpb->mb_name != NULL) {
 		if (strcmp(mpb->mb_name, "pci"))
 			return EINVAL;
-	} else
+	} else {
 		/*
 		 * As we cannot find all PCI-to-PCI bridge in
 		 * mpacpi_find_pcibusses, some of the MP_busses may remain
 		 * uninitialized.
 		 */
 		mpb->mb_name = "pci";
+	}
+
+	mpacpi_set_devhandle(self, pba);
 
 	mpb->mb_dev = self;
 	mpb->mb_pci_bridge_tag = pba->pba_bridgetag;

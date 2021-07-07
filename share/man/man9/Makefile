@@ -1,4 +1,4 @@
-#       $NetBSD: Makefile,v 1.456 2021/03/10 13:27:51 simonb Exp $
+#       $NetBSD: Makefile,v 1.458 2021/04/28 00:49:22 thorpej Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
@@ -120,13 +120,9 @@ MLINKS+=accept_filter.9 accept_filt_generic_mod_event.9
 MLINKS+=accept_filter.9 accept_filt_get.9
 
 MLINKS+=arp.9 arp_ifinit.9 arp.9 arpresolve.9 arp.9 arpintr.9
-MLINKS+=autoconf.9 config_search_loc.9 \
-	autoconf.9 config_search_ia.9 \
-	autoconf.9 config_found_sm_loc.9 \
-	autoconf.9 config_found_ia.9 \
+MLINKS+=autoconf.9 config_search.9 \
 	autoconf.9 config_found.9 \
 	autoconf.9 config_match.9 \
-	autoconf.9 config_attach_loc.9 \
 	autoconf.9 config_attach.9 \
 	autoconf.9 config_attach_pseudo.9 \
 	autoconf.9 config_detach.9 \
@@ -138,6 +134,7 @@ MLINKS+=autoconf.9 config_search_loc.9 \
 	autoconf.9 config_mountroot.9 \
 	autoconf.9 config_pending_incr.9 \
 	autoconf.9 config_pending_decr.9 \
+	autoconf.9 config_probe.9 \
 	autoconf.9 config_finalize_register.9
 MLINKS+=bcdtobin.9 bintobcd.9
 MLINKS+=bintime_add.9 bintime_addx.9 \
@@ -496,7 +493,8 @@ MLINKS+=malloc.9 malloc_type_attach.9
 MLINKS+=malloc.9 malloc_type_detach.9
 MLINKS+=malloc.9 MALLOC_DEFINE.9
 MLINKS+=malloc.9 MALLOC_DECLARE.9
-MLINKS+=mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
+MLINKS+=mbuf.9 m_align.9 \
+	mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
 	mbuf.9 m_copym.9 mbuf.9 m_copypacket.9 mbuf.9 m_copydata.9 \
 	mbuf.9 m_copyback.9 mbuf.9 m_cat.9 mbuf.9 m_dup.9 mbuf.9 m_prepend.9 \
 	mbuf.9 m_copyback_cow.9 \
@@ -504,7 +502,7 @@ MLINKS+=mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
 	mbuf.9 m_pulldown.9 mbuf.9 m_pullup.9 mbuf.9 m_copyup.9 \
 	mbuf.9 m_split.9 mbuf.9 m_adj.9 mbuf.9 m_free.9 \
 	mbuf.9 m_apply.9 \
-	mbuf.9 m_freem.9 mbuf.9 mtod.9 mbuf.9 mtocl.9 mbuf.9 cltom.9 \
+	mbuf.9 m_freem.9 mbuf.9 mtod.9 \
 	mbuf.9 MGET.9 mbuf.9 MGETHDR.9 mbuf.9 MEXTMALLOC.9 \
 	mbuf.9 MEXTADD.9 mbuf.9 MCLGET.9 \
 	mbuf.9 M_LEADINGSPACE.9 \

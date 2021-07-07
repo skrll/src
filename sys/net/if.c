@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.484 2020/10/15 10:20:44 roy Exp $	*/
+/*	$NetBSD: if.c,v 1.487 2021/07/01 22:08:13 blymn Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.484 2020/10/15 10:20:44 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.487 2021/07/01 22:08:13 blymn Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -158,6 +158,11 @@ __KERNEL_RCSID(0, "$NetBSD: if.c,v 1.484 2020/10/15 10:20:44 roy Exp $");
 #include "carp.h"
 #if NCARP > 0
 #include <netinet/ip_carp.h>
+#endif
+
+#include "lagg.h"
+#if NLAGG > 0
+#include <net/lagg/if_laggvar.h>
 #endif
 
 #include <compat/sys/sockio.h>
@@ -697,10 +702,9 @@ skip:
  *     ether_ifattach(ifp, enaddr);
  *     if_register(ifp);
  */
-int
+void
 if_initialize(ifnet_t *ifp)
 {
-	int rv = 0;
 
 	KASSERT(if_indexlim > 0);
 	TAILQ_INIT(&ifp->if_addrlist);
@@ -743,25 +747,11 @@ if_initialize(ifnet_t *ifp)
 	psref_target_init(&ifp->if_psref, ifnet_psref_class);
 	ifp->if_ioctl_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 	LIST_INIT(&ifp->if_multiaddrs);
-	if ((rv = if_stats_init(ifp)) != 0) {
-		goto fail;
-	}
+	if_stats_init(ifp);
 
 	IFNET_GLOBAL_LOCK();
 	if_getindex(ifp);
 	IFNET_GLOBAL_UNLOCK();
-
-	return 0;
-
-fail:
-	IF_AFDATA_LOCK_DESTROY(ifp);
-
-	pfil_run_ifhooks(if_pfil, PFIL_IFNET_DETACH, ifp);
-	(void)pfil_head_destroy(ifp->if_pfil);
-
-	IFQ_LOCK_DESTROY(&ifp->if_snd);
-
-	return rv;
 }
 
 /*
@@ -771,11 +761,13 @@ void
 if_register(ifnet_t *ifp)
 {
 	/*
-	 * If the driver has not supplied its own if_ioctl, then
-	 * supply the default.
+	 * If the driver has not supplied its own if_ioctl or if_stop,
+	 * then supply the default.
 	 */
 	if (ifp->if_ioctl == NULL)
 		ifp->if_ioctl = ifioctl_common;
+	if (ifp->if_stop == NULL)
+		ifp->if_stop = if_nullstop;
 
 	sysctl_sndq_setup(&ifp->if_sysctl_log, ifp->if_xname, &ifp->if_snd);
 
@@ -1137,19 +1129,13 @@ if_input(struct ifnet *ifp, struct mbuf *m)
  * migrate softint-based if_input without much changes. If you don't
  * want to enable it, use if_initialize instead.
  */
-int
+void
 if_attach(ifnet_t *ifp)
 {
-	int rv;
 
-	rv = if_initialize(ifp);
-	if (rv != 0)
-		return rv;
-
+	if_initialize(ifp);
 	ifp->if_percpuq = if_percpuq_create(ifp);
 	if_register(ifp);
-
-	return 0;
 }
 
 void
@@ -2419,6 +2405,11 @@ if_link_state_change_process(struct ifnet *ifp, int link_state)
 #if NBRIDGE > 0
 	if (ifp->if_bridge != NULL)
 		bridge_calc_link_state(ifp->if_bridge);
+#endif
+
+#if NLAGG > 0
+	if (ifp->if_lagg != NULL)
+		lagg_linkstate_changed(ifp);
 #endif
 
 	DOMAIN_FOREACH(dp) {

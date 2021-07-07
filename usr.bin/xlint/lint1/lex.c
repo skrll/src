@@ -1,4 +1,4 @@
-/* $NetBSD: lex.c,v 1.20 2021/03/27 12:42:22 rillig Exp $ */
+/* $NetBSD: lex.c,v 1.51 2021/07/06 20:17:15 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: lex.c,v 1.20 2021/03/27 12:42:22 rillig Exp $");
+__RCSID("$NetBSD: lex.c,v 1.51 2021/07/06 20:17:15 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -56,13 +56,13 @@ __RCSID("$NetBSD: lex.c,v 1.20 2021/03/27 12:42:22 rillig Exp $");
 
 
 /* Current position (it's also updated when an included file is parsed) */
-pos_t	curr_pos = { 1, "", 0 };
+pos_t	curr_pos = { "", 1, 0 };
 
 /*
  * Current position in C source (not updated when an included file is
  * parsed).
  */
-pos_t	csrc_pos = { 1, "", 0 };
+pos_t	csrc_pos = { "", 1, 0 };
 
 /* Are we parsing a gcc attribute? */
 bool attron;
@@ -112,6 +112,10 @@ lex_unknown_character(int c)
 	kwdef(name, T_TYPE, 0, tspec, 0,	c89, c99, gcc, attr, deco)
 #define kwdef_tqual(name, tqual,		c89, c99, gcc, attr, deco) \
 	kwdef(name, T_QUAL, 0, 0, tqual,	c89, c99, gcc, attr, deco)
+#define kwdef_keyword(name, token) \
+	kwdef(name, token, 0, 0, 0,		0, 0, 0, 0, 1)
+#define kwdef_gcc_attr(name, token) \
+	kwdef(name, token, 0, 0, 0,		0, 0, 1, 1, 5)
 
 /*
  * Keywords.
@@ -135,120 +139,116 @@ static	struct	kwtab {
 	kwdef_type(	"__uint128_t",	UINT128,		0,1,0,0,1),
 #endif
 	kwdef_tqual(	"__thread",	THREAD,			0,0,1,0,1),
-	kwdef_token(	"_Alignas",	T_ALIGNAS,		0,0,0,0,1),
-	kwdef_token(	"_Alignof",	T_ALIGNOF,		0,0,0,0,1),
+	kwdef_keyword(	"_Alignas",	T_ALIGNAS),
+	kwdef_keyword(	"_Alignof",	T_ALIGNOF),
 	kwdef_type(	"_Bool",	BOOL,			0,1,0,0,1),
 	kwdef_type(	"_Complex",	COMPLEX,		0,1,0,0,1),
 	kwdef_token(	"_Generic",	T_GENERIC,		0,1,0,0,1),
 	kwdef_token(	"_Noreturn",	T_NORETURN,		0,1,0,0,1),
 	kwdef_tqual(	"_Thread_local", THREAD,		0,1,0,0,1),
-	kwdef_token(	"alias",	T_AT_ALIAS,		0,0,1,1,5),
-	kwdef_token(	"aligned",	T_AT_ALIGNED,		0,0,1,1,5),
+	kwdef_gcc_attr(	"alias",	T_AT_ALIAS),
+	kwdef_gcc_attr(	"aligned",	T_AT_ALIGNED),
 	kwdef_token(	"alignof",	T_ALIGNOF,		0,0,0,0,4),
-	kwdef_token(	"alloc_size",	T_AT_ALLOC_SIZE,	0,0,1,1,5),
-	kwdef_token(	"always_inline", T_AT_ALWAYS_INLINE,	0,0,1,1,5),
+	kwdef_gcc_attr(	"alloc_size",	T_AT_ALLOC_SIZE),
+	kwdef_gcc_attr(	"always_inline",T_AT_ALWAYS_INLINE),
 	kwdef_token(	"asm",		T_ASM,			0,0,1,0,7),
 	kwdef_token(	"attribute",	T_ATTRIBUTE,		0,0,1,0,6),
 	kwdef_sclass(	"auto",		AUTO,			0,0,0,0,1),
-	kwdef_token(	"bounded",	T_AT_BOUNDED,		0,0,1,1,5),
-	kwdef_token(	"break",	T_BREAK,		0,0,0,0,1),
-	kwdef_token(	"buffer",	T_AT_BUFFER,		0,0,1,1,5),
+	kwdef_gcc_attr(	"bounded",	T_AT_BOUNDED),
+	kwdef_keyword(	"break",	T_BREAK),
+	kwdef_gcc_attr(	"buffer",	T_AT_BUFFER),
 	kwdef_token(	"builtin_offsetof", T_BUILTIN_OFFSETOF,	0,0,1,0,2),
-	kwdef_token(	"case",		T_CASE,			0,0,0,0,1),
+	kwdef_keyword(	"case",		T_CASE),
 	kwdef_type(	"char",		CHAR,			0,0,0,0,1),
-	kwdef_token(	"cold",		T_AT_COLD,		0,0,1,1,5),
+	kwdef_gcc_attr(	"cold",		T_AT_COLD),
+	kwdef_gcc_attr(	"common",	T_AT_COMMON),
 	kwdef_tqual(	"const",	CONST,			1,0,0,0,7),
-	kwdef_token(	"constructor",	T_AT_CONSTRUCTOR,	0,0,1,1,5),
-	kwdef_token(	"continue",	T_CONTINUE,		0,0,0,0,1),
-	kwdef_token(	"default",	T_DEFAULT,		0,0,0,0,1),
-	kwdef_token(	"deprecated",	T_AT_DEPRECATED,	0,0,1,1,5),
-	kwdef_token(	"destructor",	T_AT_DESTRUCTOR,	0,0,1,1,5),
-	kwdef_token(	"do",		T_DO,			0,0,0,0,1),
+	kwdef_gcc_attr(	"constructor",	T_AT_CONSTRUCTOR),
+	kwdef_keyword(	"continue",	T_CONTINUE),
+	kwdef_keyword(	"default",	T_DEFAULT),
+	kwdef_gcc_attr(	"deprecated",	T_AT_DEPRECATED),
+	kwdef_gcc_attr(	"destructor",	T_AT_DESTRUCTOR),
+	kwdef_keyword(	"do",		T_DO),
 	kwdef_type(	"double",	DOUBLE,			0,0,0,0,1),
-	kwdef_token(	"else",		T_ELSE,			0,0,0,0,1),
-	kwdef_token(	"enum",		T_ENUM,			0,0,0,0,1),
+	kwdef_keyword(	"else",		T_ELSE),
+	kwdef_keyword(	"enum",		T_ENUM),
 	kwdef_token(	"extension",	T_EXTENSION,		0,0,1,0,4),
 	kwdef_sclass(	"extern",	EXTERN,			0,0,0,0,1),
+	kwdef_gcc_attr(	"fallthrough",	T_AT_FALLTHROUGH),
 	kwdef_type(	"float",	FLOAT,			0,0,0,0,1),
-	kwdef_token(	"for",		T_FOR,			0,0,0,0,1),
-	kwdef_token(	"format",	T_AT_FORMAT,		0,0,1,1,5),
-	kwdef_token(	"format_arg",	T_AT_FORMAT_ARG,	0,0,1,1,5),
-	kwdef_token(	"gnu_inline",	T_AT_GNU_INLINE,	0,0,1,1,5),
-	kwdef_token(	"gnu_printf",	T_AT_FORMAT_GNU_PRINTF,	0,0,1,1,5),
-	kwdef_token(	"goto",		T_GOTO,			0,0,0,0,1),
-	kwdef_token(	"if",		T_IF,			0,0,0,0,1),
-	kwdef_token(	"imag",		T_IMAG,			0,1,0,0,4),
+	kwdef_keyword(	"for",		T_FOR),
+	kwdef_gcc_attr(	"format",	T_AT_FORMAT),
+	kwdef_gcc_attr(	"format_arg",	T_AT_FORMAT_ARG),
+	kwdef_gcc_attr(	"gnu_inline",	T_AT_GNU_INLINE),
+	kwdef_gcc_attr(	"gnu_printf",	T_AT_FORMAT_GNU_PRINTF),
+	kwdef_keyword(	"goto",		T_GOTO),
+	kwdef_keyword(	"if",		T_IF),
+	kwdef_token(	"imag",		T_IMAG,			0,0,1,0,4),
 	kwdef_sclass(	"inline",	INLINE,			0,1,0,0,7),
 	kwdef_type(	"int",		INT,			0,0,0,0,1),
 	kwdef_type(	"long",		LONG,			0,0,0,0,1),
-	kwdef_token(	"malloc",	T_AT_MALLOC,		0,0,1,1,5),
-	kwdef_token(	"may_alias",	T_AT_MAY_ALIAS,		0,0,1,1,5),
-	kwdef_token(	"minbytes",	T_AT_MINBYTES,		0,0,1,1,5),
-	kwdef_token(	"mode",		T_AT_MODE,		0,0,1,1,5),
-	kwdef_token(	"no_instrument_function",
-				T_AT_NO_INSTRUMENT_FUNCTION,	0,0,1,1,5),
-	kwdef_token(	"nonnull",	T_AT_NONNULL,		0,0,1,1,5),
-	kwdef_token(	"noinline",	T_AT_NOINLINE,		0,0,1,1,5),
-	kwdef_token(	"noreturn",	T_AT_NORETURN,		0,0,1,1,5),
-	kwdef_token(	"nothrow",	T_AT_NOTHROW,		0,0,1,1,5),
-	kwdef_token(	"optimize",	T_AT_OPTIMIZE,		0,0,1,1,5),
-	kwdef_token(	"packed",	T_AT_PACKED,		0,0,1,1,5),
+	kwdef_gcc_attr(	"malloc",	T_AT_MALLOC),
+	kwdef_gcc_attr(	"may_alias",	T_AT_MAY_ALIAS),
+	kwdef_gcc_attr(	"minbytes",	T_AT_MINBYTES),
+	kwdef_gcc_attr(	"mode",		T_AT_MODE),
+	kwdef_gcc_attr("no_instrument_function",
+					T_AT_NO_INSTRUMENT_FUNCTION),
+	kwdef_gcc_attr(	"noinline",	T_AT_NOINLINE),
+	kwdef_gcc_attr(	"nonnull",	T_AT_NONNULL),
+	kwdef_gcc_attr(	"nonstring",	T_AT_NONSTRING),
+	kwdef_gcc_attr(	"noreturn",	T_AT_NORETURN),
+	kwdef_gcc_attr(	"nothrow",	T_AT_NOTHROW),
+	kwdef_gcc_attr(	"optimize",	T_AT_OPTIMIZE),
+	kwdef_gcc_attr(	"packed",	T_AT_PACKED),
 	kwdef_token(	"packed",	T_PACKED,		0,0,0,0,2),
-	kwdef_token(	"pcs",		T_AT_PCS,		0,0,0,0,5),
-	kwdef_token(	"printf",	T_AT_FORMAT_PRINTF,	0,0,1,1,5),
-	kwdef_token(	"pure",		T_AT_PURE,		0,0,1,1,5),
-	kwdef_token(	"real",		T_REAL,			0,1,0,0,4),
+	kwdef_gcc_attr(	"pcs",		T_AT_PCS),
+	kwdef_gcc_attr(	"printf",	T_AT_FORMAT_PRINTF),
+	kwdef_gcc_attr(	"pure",		T_AT_PURE),
+	kwdef_token(	"real",		T_REAL,			0,0,1,0,4),
 	kwdef_sclass(	"register",	REG,			0,0,0,0,1),
 	kwdef_tqual(	"restrict",	RESTRICT,		0,1,0,0,5),
-	kwdef_token(	"return",	T_RETURN,		0,0,0,0,1),
-	kwdef_token(	"returns_twice", T_AT_RETURNS_TWICE,	0,0,1,1,5),
-	kwdef_token(	"scanf",	T_AT_FORMAT_SCANF,	0,0,1,1,5),
+	kwdef_keyword(	"return",	T_RETURN),
+	kwdef_gcc_attr(	"returns_twice",T_AT_RETURNS_TWICE),
+	kwdef_gcc_attr(	"scanf",	T_AT_FORMAT_SCANF),
 	kwdef_token(	"section",	T_AT_SECTION,		0,0,1,1,7),
-	kwdef_token(	"sentinel",	T_AT_SENTINEL,		0,0,1,1,5),
+	kwdef_gcc_attr(	"sentinel",	T_AT_SENTINEL),
 	kwdef_type(	"short",	SHORT,			0,0,0,0,1),
 	kwdef_type(	"signed",	SIGNED,			1,0,0,0,3),
-	kwdef_token(	"sizeof",	T_SIZEOF,		0,0,0,0,1),
+	kwdef_keyword(	"sizeof",	T_SIZEOF),
 	kwdef_sclass(	"static",	STATIC,			0,0,0,0,1),
-	kwdef_token(	"strfmon",	T_AT_FORMAT_STRFMON,	0,0,1,1,5),
-	kwdef_token(	"strftime",	T_AT_FORMAT_STRFTIME,	0,0,1,1,5),
-	kwdef_token(	"string",	T_AT_STRING,		0,0,1,1,5),
+	kwdef_gcc_attr(	"strfmon",	T_AT_FORMAT_STRFMON),
+	kwdef_gcc_attr(	"strftime",	T_AT_FORMAT_STRFTIME),
+	kwdef_gcc_attr(	"string",	T_AT_STRING),
 	kwdef("struct",	T_STRUCT_OR_UNION, 0,	STRUCT,	0,	0,0,0,0,1),
-	kwdef_token(	"switch",	T_SWITCH,		0,0,0,0,1),
+	kwdef_keyword(	"switch",	T_SWITCH),
 	kwdef_token(	"symbolrename",	T_SYMBOLRENAME,		0,0,0,0,2),
-	kwdef_token(	"syslog",	T_AT_FORMAT_SYSLOG,	0,0,1,1,5),
-	kwdef_token(	"transparent_union", T_AT_TUNION,	0,0,1,1,5),
-	kwdef_token(	"tls_model",	T_AT_TLS_MODEL,		0,0,1,1,5),
+	kwdef_gcc_attr(	"syslog",	T_AT_FORMAT_SYSLOG),
+	kwdef_gcc_attr(	"transparent_union", T_AT_TUNION),
+	kwdef_gcc_attr(	"tls_model",	T_AT_TLS_MODEL),
 	kwdef_sclass(	"typedef",	TYPEDEF,		0,0,0,0,1),
 	kwdef_token(	"typeof",	T_TYPEOF,		0,0,1,0,7),
 	kwdef("union",	T_STRUCT_OR_UNION, 0,	UNION,	0,	0,0,0,0,1),
 	kwdef_type(	"unsigned",	UNSIGN,			0,0,0,0,1),
-	kwdef_token(	"unused",	T_AT_UNUSED,		0,0,1,1,5),
-	kwdef_token(	"used",		T_AT_USED,		0,0,1,1,5),
-	kwdef_token(	"visibility",	T_AT_VISIBILITY,	0,0,1,1,5),
+	kwdef_gcc_attr(	"unused",	T_AT_UNUSED),
+	kwdef_gcc_attr(	"used",		T_AT_USED),
+	kwdef_gcc_attr(	"visibility",	T_AT_VISIBILITY),
 	kwdef_type(	"void",		VOID,			0,0,0,0,1),
 	kwdef_tqual(	"volatile",	VOLATILE,		1,0,0,0,7),
-	kwdef_token("warn_unused_result", T_AT_WARN_UNUSED_RESULT, 0,0,1,1,5),
-	kwdef_token(	"weak",		T_AT_WEAK,		0,0,1,1,5),
-	kwdef_token(	"while",	T_WHILE,		0,0,0,0,1),
+	kwdef_gcc_attr(	"warn_unused_result", T_AT_WARN_UNUSED_RESULT),
+	kwdef_gcc_attr(	"weak",		T_AT_WEAK),
+	kwdef_keyword(	"while",	T_WHILE),
 	kwdef(NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0),
 #undef kwdef
 #undef kwdef_token
 #undef kwdef_sclass
 #undef kwdef_type
 #undef kwdef_tqual
+#undef kwdef_keyword
+#undef kwdef_gcc_attr
 };
 
 /* Symbol table */
 static	sym_t	*symtab[HSHSIZ1];
-
-/* bit i of the entry with index i is set */
-uint64_t qbmasks[64];
-
-/* least significant i bits are set in the entry with index i */
-uint64_t qlmasks[64 + 1];
-
-/* least significant i bits are not set in the entry with index i */
-uint64_t qumasks[64 + 1];
 
 /* free list for sbuf structures */
 static	sbuf_t	 *sbfrlst;
@@ -258,7 +258,7 @@ symt_t	symtyp;
 
 
 static void
-add_keyword(struct kwtab *kw, int deco)
+add_keyword(struct kwtab *kw, u_int deco)
 {
 	sym_t *sym;
 	size_t h;
@@ -273,12 +273,12 @@ add_keyword(struct kwtab *kw, int deco)
 		name = kw->kw_name;
 		break;
 	case 2:
-		snprintf(buf, sizeof buf, "__%s", kw->kw_name);
+		snprintf(buf, sizeof(buf), "__%s", kw->kw_name);
 		name = strdup(buf);
 		break;
 	default:
 		lint_assert(deco == 4);
-		snprintf(buf, sizeof buf, "__%s__", kw->kw_name);
+		snprintf(buf, sizeof(buf), "__%s__", kw->kw_name);
 		name = strdup(buf);
 		break;
 	}
@@ -286,7 +286,7 @@ add_keyword(struct kwtab *kw, int deco)
 	if (name == NULL)
 		err(1, "Can't init symbol table");
 
-	sym = getblk(sizeof *sym);
+	sym = getblk(sizeof(*sym));
 	sym->s_name = name;
 	sym->s_keyword = kw;
 	sym->s_value.v_quad = kw->kw_token;
@@ -312,8 +312,6 @@ void
 initscan(void)
 {
 	struct	kwtab *kw;
-	size_t	i;
-	uint64_t uq;
 
 	for (kw = kwtab; kw->kw_name != NULL; kw++) {
 		if ((kw->kw_c89 || kw->kw_c99) && tflag)
@@ -326,16 +324,6 @@ initscan(void)
 		add_keyword(kw, 2);
 		add_keyword(kw, 4);
 	}
-
-	/* initialize bit-masks for quads */
-	for (i = 0; i < 64; i++) {
-		qbmasks[i] = (uint64_t)1 << i;
-		uq = ~(uint64_t)0 << i;
-		qumasks[i] = uq;
-		qlmasks[i] = ~uq;
-	}
-	qumasks[i] = 0;
-	qlmasks[i] = ~(uint64_t)0;
 }
 
 /*
@@ -349,13 +337,13 @@ allocsb(void)
 	if ((sb = sbfrlst) != NULL) {
 		sbfrlst = sb->sb_next;
 #ifdef BLKDEBUG
-		(void)memset(sb, 0, sizeof *sb);
+		(void)memset(sb, 0, sizeof(*sb));
 #else
 		sb->sb_next = NULL;
 #endif
 	} else {
-		sb = xmalloc(sizeof *sb);
-		(void)memset(sb, 0, sizeof *sb);
+		sb = xmalloc(sizeof(*sb));
+		(void)memset(sb, 0, sizeof(*sb));
 	}
 	return sb;
 }
@@ -367,7 +355,7 @@ static void
 freesb(sbuf_t *sb)
 {
 
-	(void)memset(sb, ZERO, sizeof *sb);
+	(void)memset(sb, ZERO, sizeof(*sb));
 	sb->sb_next = sbfrlst;
 	sbfrlst = sb;
 }
@@ -381,7 +369,12 @@ inpc(void)
 {
 	int	c;
 
-	if ((c = lex_input()) != EOF && (c &= CHAR_MASK) == '\n')
+	if ((c = lex_input()) == EOF)
+		return c;
+	c &= CHAR_MASK;
+	if (c == '\0')
+		return EOF;	/* lex returns 0 on EOF. */
+	if (c == '\n')
 		lex_next_line();
 	return c;
 }
@@ -394,8 +387,8 @@ hash(const char *s)
 
 	v = 0;
 	for (us = (const u_char *)s; *us != '\0'; us++) {
-		v = (v << sizeof v) + *us;
-		v ^= v >> (sizeof v * CHAR_BIT - sizeof v);
+		v = (v << sizeof(v)) + *us;
+		v ^= v >> (sizeof(v) * CHAR_BIT - sizeof(v));
 	}
 	return v % HSHSIZ1;
 }
@@ -487,7 +480,7 @@ keyw(sym_t *sym)
 
 /*
  * Convert a string representing an integer into internal representation.
- * The value is returned in yylval. icon() (and yylex()) returns T_CON.
+ * Return T_CON, storing the numeric value in yylval, for yylex.
  */
 int
 lex_integer_constant(const char *yytext, size_t yyleng, int base)
@@ -675,29 +668,14 @@ lex_integer_constant(const char *yytext, size_t yyleng, int base)
 		break;
 	}
 
-	uq = (uint64_t)xsign((int64_t)uq, typ, -1);
+	uq = (uint64_t)convert_integer((int64_t)uq, typ, -1);
 
-	yylval.y_val = xcalloc(1, sizeof *yylval.y_val);
+	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = typ;
-	yylval.y_val->v_ansiu = ansiu;
+	yylval.y_val->v_unsigned_since_c90 = ansiu;
 	yylval.y_val->v_quad = (int64_t)uq;
 
 	return T_CON;
-}
-
-/*
- * Returns whether t is a signed type and the value is negative.
- *
- * len is the number of significant bits. If len is -1, len is set
- * to the width of type t.
- */
-static bool
-sign(int64_t q, tspec_t t, int len)
-{
-
-	if (t == PTR || is_uinteger(t))
-		return false;
-	return msb(q, t, len) != 0;
 }
 
 int
@@ -706,25 +684,27 @@ msb(int64_t q, tspec_t t, int len)
 
 	if (len <= 0)
 		len = size_in_bits(t);
-	return (q & qbmasks[len - 1]) != 0 ? 1 : 0;
+	return (q & bit(len - 1)) != 0 ? 1 : 0;
 }
 
 /*
- * Extends the sign of q.
+ * Extend or truncate q to match t.  If t is signed, sign-extend.
+ *
+ * len is the number of significant bits. If len is -1, len is set
+ * to the width of type t.
  */
 int64_t
-xsign(int64_t q, tspec_t t, int len)
+convert_integer(int64_t q, tspec_t t, int len)
 {
+	uint64_t vbits;
 
 	if (len <= 0)
 		len = size_in_bits(t);
 
-	if (t == PTR || is_uinteger(t) || !sign(q, t, len)) {
-		q &= qlmasks[len];
-	} else {
-		q |= qumasks[len];
-	}
-	return q;
+	vbits = value_bits(len);
+	return t == PTR || is_uinteger(t) || msb(q, t, len) == 0
+	    ? q & vbits
+	    : q | ~vbits;
 }
 
 /*
@@ -801,7 +781,7 @@ lex_floating_constant(const char *yytext, size_t yyleng)
 		}
 	}
 
-	yylval.y_val = xcalloc(1, sizeof *yylval.y_val);
+	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = typ;
 	if (typ == FLOAT) {
 		yylval.y_val->v_ldbl = f;
@@ -828,7 +808,6 @@ lex_character_constant(void)
 {
 	size_t	n;
 	int val, c;
-	char	cv;
 
 	n = 0;
 	val = 0;
@@ -839,25 +818,28 @@ lex_character_constant(void)
 	if (c == -2) {
 		/* unterminated character constant */
 		error(253);
-	} else {
+	} else if (n > sizeof(int) || (n > 1 && (pflag || hflag))) {
 		/* XXX: should rather be sizeof(TARG_INT) */
-		if (n > sizeof(int) || (n > 1 && (pflag || hflag))) {
-			/* too many characters in character constant */
-			error(71);
-		} else if (n > 1) {
-			/* multi-character character constant */
-			warning(294);
-		} else if (n == 0) {
-			/* empty character constant */
-			error(73);
-		}
+
+		/* too many characters in character constant */
+		error(71);
+	} else if (n > 1) {
+		/* multi-character character constant */
+		warning(294);
+	} else if (n == 0) {
+		/* empty character constant */
+		error(73);
 	}
 	if (n == 1) {
-		cv = (char)val;
-		val = cv;
+		/*
+		 * XXX: use the target platform's 'char' instead of the
+		 *  'char' from the execution environment, to be able to
+		 *  run lint for powerpc on x86_64.
+		 */
+		val = (char)val;
 	}
 
-	yylval.y_val = xcalloc(1, sizeof *yylval.y_val);
+	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = INT;
 	yylval.y_val->v_quad = val;
 
@@ -871,17 +853,17 @@ int
 lex_wide_character_constant(void)
 {
 	static	char buf[MB_LEN_MAX + 1];
-	size_t	i, imax;
+	size_t	n, nmax;
 	int c;
 	wchar_t	wc;
 
-	imax = MB_CUR_MAX;
+	nmax = MB_CUR_MAX;
 
-	i = 0;
+	n = 0;
 	while ((c = get_escaped_char('\'')) >= 0) {
-		if (i < imax)
-			buf[i] = (char)c;
-		i++;
+		if (n < nmax)
+			buf[n] = (char)c;
+		n++;
 	}
 
 	wc = 0;
@@ -889,24 +871,22 @@ lex_wide_character_constant(void)
 	if (c == -2) {
 		/* unterminated character constant */
 		error(253);
-	} else if (c == 0) {
+	} else if (n == 0) {
 		/* empty character constant */
 		error(73);
+	} else if (n > nmax) {
+		n = nmax;
+		/* too many characters in character constant */
+		error(71);
 	} else {
-		if (i > imax) {
-			i = imax;
-			/* too many characters in character constant */
-			error(71);
-		} else {
-			buf[i] = '\0';
-			(void)mbtowc(NULL, NULL, 0);
-			if (mbtowc(&wc, buf, imax) < 0)
-				/* invalid multibyte character */
-				error(291);
-		}
+		buf[n] = '\0';
+		(void)mbtowc(NULL, NULL, 0);
+		if (mbtowc(&wc, buf, nmax) < 0)
+			/* invalid multibyte character */
+			error(291);
 	}
 
-	yylval.y_val = xcalloc(1, sizeof *yylval.y_val);
+	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = WCHAR;
 	yylval.y_val->v_quad = wc;
 
@@ -945,6 +925,10 @@ get_escaped_char(int delim)
 			return -2;
 		}
 		return c;
+	case 0:
+		/* syntax error '%s' */
+		error(249, "EOF or null byte in literal");
+		return -2;
 	case EOF:
 		return -2;
 	case '\\':
@@ -994,10 +978,7 @@ get_escaped_char(int delim)
 			do {
 				v = (v << 3) + (c - '0');
 				c = inpc();
-			} while (--n > 0 && isdigit(c) && (tflag || c <= '7'));
-			if (tflag && n > 0 && isdigit(c))
-				/* bad octal digit %c */
-				warning(77, c);
+			} while (--n > 0 && '0' <= c && c <= '7');
 			pbc = c;
 			if (v > TARG_UCHAR_MAX) {
 				/* character escape does not fit in character */
@@ -1052,10 +1033,13 @@ get_escaped_char(int delim)
 
 /* See https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html */
 static void
-parse_line_directive_flags(const char *p)
+parse_line_directive_flags(const char *p,
+			   bool *is_begin, bool *is_end, bool *is_system)
 {
 
-	in_system_header = false;
+	*is_begin = false;
+	*is_end = false;
+	*is_system = false;
 
 	while (*p != '\0') {
 		while (ch_isspace(*p))
@@ -1066,13 +1050,20 @@ parse_line_directive_flags(const char *p)
 			p++;
 		const char *word_end = p;
 
+		if (word_end - word_start == 1 && word_start[0] == '1')
+			*is_begin = true;
+		if (word_end - word_start == 1 && word_start[0] == '2')
+			*is_end = true;
 		if (word_end - word_start == 1 && word_start[0] == '3')
-			in_system_header = true;
+			*is_system = true;
+		/* Flag '4' would only be interesting if lint handled C++. */
 	}
 
 #if 0
-	if (c != '\0')
-		warning("extra character(s) after directive");
+	if (*p != '\0') {
+		/* syntax error '%s' */
+		warning(249, "extra character(s) after directive");
+	}
 #endif
 }
 
@@ -1089,6 +1080,8 @@ lex_directive(const char *yytext)
 	char	c, *eptr;
 	size_t	fnl;
 	long	ln;
+	bool	is_begin, is_end, is_system;
+
 	static	bool first = true;
 
 	/* Go to first non-whitespace after # */
@@ -1120,8 +1113,6 @@ lex_directive(const char *yytext)
 			goto error;
 		if ((fnl = cp++ - fn) > PATH_MAX)
 			goto error;
-		parse_line_directive_flags(cp);
-
 		/* empty string means stdin */
 		if (fnl == 0) {
 			fn = "{standard input}";
@@ -1139,6 +1130,10 @@ lex_directive(const char *yytext)
 			    strlen(curr_pos.p_file)));
 			first = false;
 		}
+
+		parse_line_directive_flags(cp, &is_begin, &is_end, &is_system);
+		update_location(curr_pos.p_file, (int)ln, is_begin, is_end);
+		in_system_header = is_system;
 	}
 	curr_pos.p_line = (int)ln - 1;
 	curr_pos.p_uniq = 0;
@@ -1194,18 +1189,18 @@ lex_comment(void)
 
 	/* Read the potential keyword to keywd */
 	l = 0;
-	while (c != EOF && isupper(c) && l < sizeof keywd - 1) {
+	while (c != EOF && isupper(c) && l < sizeof(keywd) - 1) {
 		keywd[l++] = (char)c;
 		c = inpc();
 	}
 	keywd[l] = '\0';
 
 	/* look for the keyword */
-	for (i = 0; i < sizeof keywtab / sizeof keywtab[0]; i++) {
+	for (i = 0; i < sizeof(keywtab) / sizeof(keywtab[0]); i++) {
 		if (strcmp(keywtab[i].keywd, keywd) == 0)
 			break;
 	}
-	if (i == sizeof keywtab / sizeof keywtab[0])
+	if (i == sizeof(keywtab) / sizeof(keywtab[0]))
 		goto skip_rest;
 
 	/* skip whitespace after the keyword */
@@ -1215,7 +1210,7 @@ lex_comment(void)
 	/* read the argument, if the keyword accepts one and there is one */
 	l = 0;
 	if (keywtab[i].arg) {
-		while (c != EOF && isdigit(c) && l < sizeof arg - 1) {
+		while (c != EOF && isdigit(c) && l < sizeof(arg) - 1) {
 			arg[l++] = (char)c;
 			c = inpc();
 		}
@@ -1314,7 +1309,7 @@ lex_string(void)
 		/* unterminated string constant */
 		error(258);
 
-	strg = xcalloc(1, sizeof *strg);
+	strg = xcalloc(1, sizeof(*strg));
 	strg->st_tspec = CHAR;
 	strg->st_len = len;
 	strg->st_cp = s;
@@ -1358,7 +1353,7 @@ lex_wide_string(void)
 			n = 1;
 	}
 
-	ws = xmalloc((wlen + 1) * sizeof *ws);
+	ws = xmalloc((wlen + 1) * sizeof(*ws));
 
 	/* convert from multibyte to wide char */
 	(void)mbtowc(NULL, NULL, 0);
@@ -1371,7 +1366,7 @@ lex_wide_string(void)
 	ws[wi] = 0;
 	free(s);
 
-	strg = xcalloc(1, sizeof *strg);
+	strg = xcalloc(1, sizeof(*strg));
 	strg->st_tspec = WCHAR;
 	strg->st_len = wlen;
 	strg->st_wcp = ws;
@@ -1426,7 +1421,7 @@ getsym(sbuf_t *sb)
 
 	/* labels must always be allocated at level 1 (outermost block) */
 	if (symtyp == FLABEL) {
-		sym = getlblk(1, sizeof *sym);
+		sym = getlblk(1, sizeof(*sym));
 		s = getlblk(1, sb->sb_len + 1);
 		(void)memcpy(s, sb->sb_name, sb->sb_len + 1);
 		sym->s_name = s;
@@ -1436,7 +1431,7 @@ getsym(sbuf_t *sb)
 			di = di->d_next;
 		lint_assert(di->d_ctx == AUTO);
 	} else {
-		sym = getblk(sizeof *sym);
+		sym = getblk(sizeof(*sym));
 		sym->s_name = sb->sb_name;
 		sym->s_block_level = block_level;
 		di = dcs;
@@ -1470,15 +1465,20 @@ mktempsym(type_t *t)
 	static int n = 0;
 	int h;
 	char *s = getlblk(block_level, 64);
-	sym_t *sym = getblk(sizeof *sym);
+	sym_t *sym = getblk(sizeof(*sym));
+	scl_t scl;
 
 	(void)snprintf(s, 64, "%.8d_tmp", n++);
 	h = hash(s);
 
+	scl = dcs->d_scl;
+	if (scl == NOSCL)
+		scl = block_level > 0 ? AUTO : EXTERN;
+
 	sym->s_name = s;
 	sym->s_type = t;
 	sym->s_block_level = block_level;
-	sym->s_scl = AUTO;
+	sym->s_scl = scl;
 	sym->s_kind = FVFT;
 	sym->s_used = true;
 	sym->s_set = true;
@@ -1577,13 +1577,13 @@ cleanup(void)
  * Create a new symbol with the name of an existing symbol.
  */
 sym_t *
-pushdown(sym_t *sym)
+pushdown(const sym_t *sym)
 {
 	int	h;
 	sym_t	*nsym;
 
 	h = hash(sym->s_name);
-	nsym = getblk(sizeof *nsym);
+	nsym = getblk(sizeof(*nsym));
 	lint_assert(sym->s_block_level <= block_level);
 	nsym->s_name = sym->s_name;
 	UNIQUE_CURR_POS(nsym->s_def_pos);

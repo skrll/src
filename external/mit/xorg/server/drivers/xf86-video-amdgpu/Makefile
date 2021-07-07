@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1 2016/08/18 07:49:09 mrg Exp $
+#	$NetBSD: Makefile,v 1.3 2021/05/31 21:45:41 joerg Exp $
 
 .include <bsd.own.mk>
 
@@ -25,6 +25,6 @@ CPPFLAGS+=	-I${DESTDIR}${X11INCDIR}/X11 \
 		-I${X11SRCDIR.${DRIVER}}/../include
 
 # XXX
-COPTS+=	-Wno-error
+COPTS+=		-Wno-error
 
 .include "../Makefile.xf86-driver"

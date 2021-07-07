@@ -1,5 +1,5 @@
 %{
-/*	$NetBSD: testlang_parse.y,v 1.49 2021/02/15 15:55:50 joerg Exp $	*/
+/*	$NetBSD: testlang_parse.y,v 1.53 2021/06/13 11:06:20 rillig Exp $	*/
 
 /*-
  * Copyright 2009 Brett Lymn <blymn@NetBSD.org>
@@ -82,9 +82,9 @@ static bool no_input;	/* don't need more input */
 static wchar_t *vals = NULL;	/* wchars to attach to a cchar type */
 static unsigned nvals;		/* number of wchars */
 
-const char *enum_names[] = {
-	"unused", "static", "numeric", "string", "byte", "cchar", "wchar", "ERR",
-	"OK", "NULL", "not NULL", "variable", "reference", "returns count",
+const char *const enum_names[] = {	/* for data_enum_t */
+	"unused", "numeric", "static", "string", "byte", "cchar", "wchar", "ERR",
+	"OK", "NULL", "not NULL", "variable", "reference", "return count",
 	"slave error"
 };
 
@@ -116,7 +116,7 @@ typedef struct {
 static size_t nvars; 		/* Number of declared variables */
 static var_t *vars; 		/* Variables defined during the test. */
 
-static int	check_function_table(char *, const char *[], int);
+static int	check_function_table(char *, const char *const[], int);
 static int	find_var_index(const char *);
 static void 	assign_arg(data_enum_t, void *);
 static int	assign_var(const char *);
@@ -148,16 +148,20 @@ static void	set_cchar(char *, void *);
 static void	set_wchar(char *);
 static wchar_t *add_to_vals(data_enum_t, void *);
 
-static const char *input_functions[] = {
-	"getch", "mvgetch", "mvwgetch", "wgetch", "getnstr", "getstr", "mvgetnstr",
-	"mvgetstr", "mvwgetnstr", "mvwgetstr", "wgetnstr", "wgetstr", "mvscanw",
-	"mvwscanw", "scanw", "wscanw", "get_wch", "mvget_wch", "mvwget_wch",
-	"wget_wch", "getn_wstr", "get_wstr", "mvgetn_wstr", "mvget_wstr",
-	"mvwgetn_wstr","mvwget_wstr", "wgetn_wstr", "wget_wstr"
+#define variants(fn) "" fn, "mv" fn, "w" fn, "mvw" fn
+static const char *const input_functions[] = {
+	variants("getch"),
+	variants("getnstr"),
+	variants("getstr"),
+	variants("getn_wstr"),
+	variants("get_wch"),
+	variants("get_wstr"),
+	variants("scanw"),
 };
+#undef variants
 
 static const unsigned ninput_functions =
-	sizeof(input_functions) / sizeof(char *);
+	sizeof(input_functions) / sizeof(input_functions[0]);
 
 extern saved_data_t saved_output;
 
@@ -871,13 +875,12 @@ find_var_index(const char *var_name)
  * there is a match.
  */
 static int
-check_function_table(char *function, const char *table[], int nfunctions)
+check_function_table(char *function, const char *const table[], int nfunctions)
 {
 	int i;
 
 	for (i = 0; i < nfunctions; i++) {
-		if ((strlen(function) == strlen(table[i])) &&
-		    (strcmp(function, table[i]) == 0))
+		if (strcmp(function, table[i]) == 0)
 			return 1;
 	}
 

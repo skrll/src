@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.113 2021/02/22 20:45:46 rillig Exp $
+#	$NetBSD: Makefile,v 1.115 2021/05/30 21:03:08 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -23,20 +23,6 @@ SRCS+=  targ.c
 SRCS+=  trace.c
 SRCS+=  var.c
 SRCS+=  util.c
-HDRS=   buf.h
-HDRS+=  config.h
-HDRS+=  dir.h
-HDRS+=  enum.h
-HDRS+=  hash.h
-HDRS+=  job.h
-HDRS+=  lst.h
-HDRS+=  make.h
-HDRS+=  make_malloc.h
-HDRS+=  meta.h
-HDRS+=  metachar.h
-HDRS+=  nonints.h
-HDRS+=  pathnames.h
-HDRS+=  trace.h
 
 # Whether to generate a coverage report after running the tests.
 USE_COVERAGE?=	no		# works only with gcc; clang9 fails to link
@@ -49,8 +35,11 @@ GCOV_PERL+=	} elsif (/^Function '(\S+)'/) {
 GCOV_PERL+=		$$func = $$1;
 GCOV_PERL+=	} elsif (/^Lines executed:(\d+\.\d+)% of (\d+)/ && defined($$file)) {
 GCOV_PERL+=		my ($$percent, $$lines) = ($$1, $$2);
-GCOV_PERL+=		my $$uncovered = `grep -c '\#\#\#\#\#:' < \$$(basename $$file.gcov)`;
-GCOV_PERL+=		printf("%7.2f  %4d/%4d  %s%s\n",
+GCOV_PERL+=		my $$uncovered = $$file =~ /\.h$$/
+GCOV_PERL+=		    ? '?'
+GCOV_PERL+=		    : `grep -c '\#\#\#\#\#:' < \$$(basename $$file.gcov)`;
+GCOV_PERL+=		chomp($$uncovered);
+GCOV_PERL+=		printf("%7.2f  %4s/%4d  %s%s\n",
 GCOV_PERL+=		    $$percent, $$uncovered, $$lines, $$file, $$func);
 GCOV_PERL+=		$$file = undef;
 GCOV_PERL+=	}
@@ -128,9 +117,7 @@ SUBDIR+=	unit-tests
 .endif
 
 LINTFLAGS+=	-T	# strict bool mode, available since 2021-01-11
-
-${SRCS:M*.c:.c=.o}: ${HDRS}
-CLEANFILES+=	*.o
+CLEANFILES+=	*.o	# for filemon objects
 
 COPTS.arch.c+=	${GCC_NO_FORMAT_TRUNCATION}
 COPTS.dir.c+=	${GCC_NO_FORMAT_TRUNCATION}

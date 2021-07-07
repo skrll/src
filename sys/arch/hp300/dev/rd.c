@@ -1,4 +1,4 @@
-/*	$NetBSD: rd.c,v 1.103 2021/01/10 00:58:56 tsutsui Exp $	*/
+/*	$NetBSD: rd.c,v 1.107 2021/07/05 14:51:23 tsutsui Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997 The NetBSD Foundation, Inc.
@@ -72,7 +72,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rd.c,v 1.103 2021/01/10 00:58:56 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rd.c,v 1.107 2021/07/05 14:51:23 tsutsui Exp $");
 
 #include "opt_useleds.h"
 
@@ -172,13 +172,13 @@ static const char *err_info[] = {
 	0, 0
 };
 
-int	rddebug = 0x80;
 #define RDB_FOLLOW	0x01
 #define RDB_STATUS	0x02
 #define RDB_IDENT	0x04
 #define RDB_IO		0x08
 #define RDB_ASYNC	0x10
 #define RDB_ERROR	0x80
+int	rddebug = RDB_ERROR | RDB_IDENT;
 #endif
 
 /*
@@ -312,25 +312,7 @@ rdmatch(device_t parent, cfdata_t cf, void *aux)
 {
 	struct hpibbus_attach_args *ha = aux;
 
-	/*
-	 * Set punit if operator specified one in the kernel
-	 * configuration file.
-	 */
-	if (cf->hpibbuscf_punit != HPIBBUSCF_PUNIT_DEFAULT &&
-	    cf->hpibbuscf_punit < HPIB_NPUNITS)
-		ha->ha_punit = cf->hpibbuscf_punit;
-
-	if (rdident(parent, NULL, ha) == 0) {
-		/*
-		 * XXX Some aging HP-IB drives are slow to
-		 * XXX respond; give them a chance to catch
-		 * XXX up and probe them again.
-		 */
-		delay(10000);
-		ha->ha_id = hpibid(device_unit(parent), ha->ha_slave);
-		return rdident(parent, NULL, ha);
-	}
-	return 1;
+	return rdident(parent, NULL, ha);
 }
 
 static void
@@ -338,6 +320,8 @@ rdattach(device_t parent, device_t self, void *aux)
 {
 	struct rd_softc *sc = device_private(self);
 	struct hpibbus_attach_args *ha = aux;
+	int id;
+	char pbuf[9];
 
 	sc->sc_dev = self;
 	bufq_alloc(&sc->sc_tab, "disksort", BUFQ_SORT_RAWBLOCK);
@@ -346,6 +330,21 @@ rdattach(device_t parent, device_t self, void *aux)
 		aprint_error(": didn't respond to describe command!\n");
 		return;
 	}
+
+	/*
+	 * XXX We use DEV_BSIZE instead of the sector size value pulled
+	 * XXX off the driver because all of this code assumes 512 byte
+	 * XXX blocks.  ICK!
+	 */
+	id = sc->sc_type;
+	aprint_normal(": %s\n", rdidentinfo[id].ri_desc);
+	format_bytes(pbuf, sizeof(pbuf),
+	    rdidentinfo[id].ri_nblocks * DEV_BSIZE);
+	aprint_normal_dev(sc->sc_dev, "%s, %d cyl, %d head, %d sec,"
+	    " %d bytes/block x %u blocks\n",
+	    pbuf, rdidentinfo[id].ri_ncyl, rdidentinfo[id].ri_ntpc,
+	    rdidentinfo[id].ri_nbpt,
+	    DEV_BSIZE, rdidentinfo[id].ri_nblocks);
 
 	/*
 	 * Initialize and attach the disk structure.
@@ -382,9 +381,9 @@ rdattach(device_t parent, device_t self, void *aux)
 static int
 rdident(device_t parent, struct rd_softc *sc, struct hpibbus_attach_args *ha)
 {
-	struct rd_describe *desc = sc != NULL ? &sc->sc_rddesc : NULL;
+	struct cs80_describe desc;
 	u_char stat, cmd[3];
-	char name[7], pbuf[9];
+	char name[7];
 	int i, id, n, ctlr, slave;
 
 	ctlr = device_unit(parent);
@@ -396,9 +395,10 @@ rdident(device_t parent, struct rd_softc *sc, struct hpibbus_attach_args *ha)
 
 	/* Is it one of the disks we support? */
 	for (id = 0; id < numrdidentinfo; id++)
-		if (ha->ha_id == rdidentinfo[id].ri_hwid)
+		if (ha->ha_id == rdidentinfo[id].ri_hwid &&
+		    ha->ha_punit <= rdidentinfo[id].ri_maxunum)
 			break;
-	if (id == numrdidentinfo || ha->ha_punit > rdidentinfo[id].ri_maxunum)
+	if (id == numrdidentinfo)
 		return 0;
 
 	/*
@@ -416,11 +416,11 @@ rdident(device_t parent, struct rd_softc *sc, struct hpibbus_attach_args *ha)
 	cmd[1] = C_SVOL(0);
 	cmd[2] = C_DESC;
 	hpibsend(ctlr, slave, C_CMD, cmd, sizeof(cmd));
-	hpibrecv(ctlr, slave, C_EXEC, desc, 37);
+	hpibrecv(ctlr, slave, C_EXEC, &desc, sizeof(desc));
 	hpibrecv(ctlr, slave, C_QSTAT, &stat, sizeof(stat));
 	memset(name, 0, sizeof(name));
 	if (stat == 0) {
-		n = desc->d_name;
+		n = desc.d_name;
 		for (i = 5; i >= 0; i--) {
 			name[i] = (n & 0xf) + '0';
 			n >>= 4;
@@ -429,23 +429,23 @@ rdident(device_t parent, struct rd_softc *sc, struct hpibbus_attach_args *ha)
 
 #ifdef DEBUG
 	if (rddebug & RDB_IDENT) {
-		aprint_debug("\n");
-		aprint_debug_dev(sc->sc_dev, "name: %x ('%s')\n",
-		    desc->d_name, name);
-		aprint_debug("  iuw %x, maxxfr %d, ctype %d\n",
-		    desc->d_iuw, desc->d_cmaxxfr, desc->d_ctype);
-		aprint_debug("  utype %d, bps %d, blkbuf %d, burst %d,"
+		aprint_normal("\n");
+		aprint_normal_dev(sc->sc_dev, "id: 0x%04x, name: %x ('%s')\n",
+		    ha->ha_id, desc.d_name, name);
+		aprint_normal("  iuw %x, maxxfr %d, ctype %d\n",
+		    desc.d_iuw, desc.d_cmaxxfr, desc.d_ctype);
+		aprint_normal("  utype %d, bps %d, blkbuf %d, burst %d,"
 		    " blktime %d\n",
-		    desc->d_utype, desc->d_sectsize,
-		    desc->d_blkbuf, desc->d_burstsize, desc->d_blocktime);
-		aprint_debug("  avxfr %d, ort %d, atp %d, maxint %d, fv %x"
+		    desc.d_utype, desc.d_sectsize,
+		    desc.d_blkbuf, desc.d_burstsize, desc.d_blocktime);
+		aprint_normal("  avxfr %d, ort %d, atp %d, maxint %d, fv %x"
 		    ", rv %x\n",
-		    desc->d_uavexfr, desc->d_retry, desc->d_access,
-		    desc->d_maxint, desc->d_fvbyte, desc->d_rvbyte);
-		aprint_debug("  maxcyl/head/sect %d/%d/%d, maxvsect %d,"
+		    desc.d_uavexfr, desc.d_retry, desc.d_access,
+		    desc.d_maxint, desc.d_fvbyte, desc.d_rvbyte);
+		aprint_normal("  maxcyl/head/sect %d/%d/%d, maxvsect %d,"
 		    " inter %d\n",
-		    desc->d_maxcyl, desc->d_maxhead, desc->d_maxsect,
-		    desc->d_maxvsectl, desc->d_interleave);
+		    desc.d_maxcyl, desc.d_maxhead, desc.d_maxsect,
+		    desc.d_maxvsectl, desc.d_interleave);
 		aprint_normal("%s", device_xname(sc->sc_dev));
 	}
 #endif
@@ -480,20 +480,6 @@ rdident(device_t parent, struct rd_softc *sc, struct hpibbus_attach_args *ha)
 	}
 
 	sc->sc_type = id;
-
-	/*
-	 * XXX We use DEV_BSIZE instead of the sector size value pulled
-	 * XXX off the driver because all of this code assumes 512 byte
-	 * XXX blocks.  ICK!
-	 */
-	aprint_normal(": %s\n", rdidentinfo[id].ri_desc);
-	format_bytes(pbuf, sizeof(pbuf),
-	    rdidentinfo[id].ri_nblocks * DEV_BSIZE);
-	aprint_normal_dev(sc->sc_dev, "%s, %d cyl, %d head, %d sec,"
-	    " %d bytes/block x %u blocks\n",
-	    pbuf, rdidentinfo[id].ri_ncyl, rdidentinfo[id].ri_ntpc,
-	    rdidentinfo[id].ri_nbpt,
-	    DEV_BSIZE, rdidentinfo[id].ri_nblocks);
 
 	return 1;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.27 2020/05/01 08:21:27 isaki Exp $	*/
+/*	$NetBSD: param.h,v 1.29 2021/05/31 14:38:55 simonb Exp $	*/
 
 /*	$OpenBSD: param.h,v 1.12 2001/07/06 02:07:41 provos Exp $	*/
 
@@ -27,6 +27,9 @@
 
 #ifdef _KERNEL
 #include <machine/cpu.h>
+#ifdef _KERNEL_OPT
+#include "opt_param.h"
+#endif
 #endif
 
 /*
@@ -41,11 +44,11 @@
 
 #define	PGSHIFT		12		/* LOG2(NBPG) */
 #define	NBPG		(1 << PGSHIFT)	/* bytes/page */
-#define	PGOFSET		(NBPG-1)	/* byte offset into page */
+#define	PGOFSET		(NBPG - 1)	/* byte offset into page */
 
 #define	SEGSHIFT	(PGSHIFT + (PGSHIFT-PTESHIFT))	/* LOG2(NBSEG) */
 #define NBSEG		(1 << SEGSHIFT)	/* bytes/segment (quadrant) */
-#define	SEGOFSET	(NBSEG-1)	/* byte offset into segment */
+#define	SEGOFSET	(NBSEG - 1)	/* byte offset into segment */
 
 #define	KERNBASE	0x00000000	/* start of kernel virtual */
 #define	BTOPKERNBASE	((u_long)KERNBASE >> PGSHIFT)
@@ -61,7 +64,7 @@
 #define	USPACE		(UPAGES * NBPG)	/* pages for user struct and kstack */
 
 #ifndef	MSGBUFSIZE
-#define	MSGBUFSIZE	(2*NBPG)	/* default message buffer size */
+#define	MSGBUFSIZE	(2 * NBPG)	/* default message buffer size */
 #endif
 
 /*

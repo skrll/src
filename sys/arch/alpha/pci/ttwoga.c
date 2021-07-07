@@ -1,4 +1,4 @@
-/* $NetBSD: ttwoga.c,v 1.15 2012/02/06 02:14:15 matt Exp $ */
+/* $NetBSD: ttwoga.c,v 1.19 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -34,12 +34,11 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: ttwoga.c,v 1.15 2012/02/06 02:14:15 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ttwoga.c,v 1.19 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
 #include <sys/device.h>
 
 #include <machine/autoconf.h>
@@ -62,27 +61,27 @@ __KERNEL_RCSID(0, "$NetBSD: ttwoga.c,v 1.15 2012/02/06 02:14:15 matt Exp $");
 
 #include "locators.h"
 
-int	ttwogamatch(device_t, cfdata_t, void *);
-void	ttwogaattach(device_t, device_t, void *);
+static int	ttwogamatch(device_t, cfdata_t, void *);
+static void	ttwogaattach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(ttwoga, 0,
     ttwogamatch, ttwogaattach, NULL, NULL);
 
-int	ttwogaprint(void *, const char *);
+static int	ttwogaprint(void *, const char *);
 
-int	ttwopcimatch(device_t, cfdata_t, void *);
-void	ttwopciattach(device_t, device_t, void *);
+static int	ttwopcimatch(device_t, cfdata_t, void *);
+static void	ttwopciattach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(ttwopci, 0,
     ttwopcimatch, ttwopciattach, NULL, NULL);
 
-int	ttwosableioprint(void *, const char *);
+static int	ttwosableioprint(void *, const char *);
 
 /*
  * There can be only one, but it might have 2 primary PCI busses.
  */
-int ttwogafound;
-struct ttwoga_config ttwoga_configuration[2];
+static int ttwogafound;
+static struct ttwoga_config ttwoga_configuration[2];
 
 /* CBUS address bias for Gamma systems. */
 bus_addr_t ttwoga_gamma_cbus_bias;
@@ -90,7 +89,7 @@ bus_addr_t ttwoga_gamma_cbus_bias;
 #define	GIGABYTE	(1024UL * 1024UL * 1024UL)
 #define	MEGABYTE	(1024UL * 1024UL)
 
-const struct ttwoga_sysmap ttwoga_sysmap[2] = {
+static const struct ttwoga_sysmap ttwoga_sysmap[2] = {
 /*	  Base			System size	Bus size	*/
 	{ T2_PCI0_SIO_BASE,	256UL * MEGABYTE, 8UL * MEGABYTE,
 	  T2_PCI0_SMEM_BASE,	4UL * GIGABYTE,	128UL * MEGABYTE,
@@ -107,7 +106,7 @@ const struct ttwoga_sysmap ttwoga_sysmap[2] = {
 #undef GIGABYTE
 #undef MEGABYTE
 
-int
+static int
 ttwogamatch(device_t parent, cfdata_t match, void *aux)
 {
 	struct mainbus_attach_args *ma = aux;
@@ -122,7 +121,7 @@ ttwogamatch(device_t parent, cfdata_t match, void *aux)
 	return (1);
 }
 
-void
+static void
 ttwogaattach(device_t parent, device_t self, void *aux)
 {
 	struct pcibus_attach_args pba;
@@ -145,11 +144,11 @@ ttwogaattach(device_t parent, device_t self, void *aux)
 		memset(&pba, 0, sizeof(pba));
 		pba.pba_bus = hose;
 
-		(void) config_found_ia(self, "ttwoga", &pba, ttwogaprint);
+		config_found(self, &pba, ttwogaprint, CFARG_EOL);
 	}
 }
 
-int
+static int
 ttwogaprint(void *aux, const char *pnp)
 {
 	struct pcibus_attach_args *pba = aux;
@@ -204,7 +203,7 @@ ttwoga_init(int hose, int mallocsafe)
 	return (tcp);
 }
 
-int
+static int
 ttwopcimatch(device_t parent, cfdata_t match, void *aux)
 {
 	struct pcibus_attach_args *pba = aux;
@@ -216,7 +215,7 @@ ttwopcimatch(device_t parent, cfdata_t match, void *aux)
 	return (1);
 }
 
-void
+static void
 ttwopciattach(device_t parent, device_t self, void *aux)
 {
 	struct pcibus_attach_args *pba = aux, npba;
@@ -235,19 +234,10 @@ ttwopciattach(device_t parent, device_t self, void *aux)
 	    tcp->tc_rev);
 
 	if (tcp->tc_rev < 1)
-		aprint_normal_dev(self, "WARNING: T2 NOT PASS2... NO BETS...\n");
+		aprint_normal_dev(self,
+		    "WARNING: T2 NOT PASS2... NO BETS...\n");
 
-	switch (cputype) {
-#if defined(DEC_2100_A500) || defined(DEC_2100A_A500)
-	case ST_DEC_2100_A500:
-	case ST_DEC_2100A_A500:
-		pci_2100_a500_pickintr(tcp);
-		break;
-#endif
-	
-	default:
-		panic("ttwogaattach: shouldn't be here, really...");
-	}
+	alpha_pci_intr_init(tcp, &tcp->tc_iot, &tcp->tc_memt, &tcp->tc_pc);
 
 	npba.pba_iot = &tcp->tc_iot;
 	npba.pba_memt = &tcp->tc_memt;
@@ -263,14 +253,17 @@ ttwopciattach(device_t parent, device_t self, void *aux)
 	 * Hose 0 has the STDIO module.
 	 */
 	if (pba->pba_bus == 0) {
-		(void) config_found_ia(self, "sableiobus", &npba,
-				       ttwosableioprint);
+		config_found(self, &npba, ttwosableioprint,
+		    CFARG_IATTR, "sableiobus",
+		    CFARG_EOL);
 	}
 
-	(void) config_found_ia(self, "pcibus", &npba, pcibusprint);
+	config_found(self, &npba, pcibusprint,
+	    CFARG_IATTR, "pcibus",
+	    CFARG_EOL);
 }
 
-int
+static int
 ttwosableioprint(void *aux, const char *pnp)
 {
 	struct pcibus_attach_args *pba = aux;

@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.74 2021/01/23 19:38:53 christos Exp $	*/
+/*	$NetBSD: types.h,v 1.76 2021/05/15 02:37:07 simonb Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -49,13 +49,10 @@ typedef __uint64_t		__fpregister64_t;
 typedef	unsigned int		__cpu_simple_lock_nv_t;
 #if defined(__mips_o32)
 typedef __register32_t		__register_t;
+typedef __fpregister32_t	__fpregister_t;
 #else
 typedef __register64_t		__register_t;
-#endif
-#if defined(__mips_o64) || defined(__mips_o32)
-typedef	__fpregister32_t	__fpregister_t;
-#else
-typedef	__fpregister64_t	__fpregister_t;
+typedef __fpregister64_t	__fpregister_t;
 #endif
 
 /*
@@ -97,6 +94,9 @@ typedef __uint32_t	vsize_t;
 #define	PRIxVSIZE	PRIx32
 #define	PRIdVSIZE	PRId32
 #endif
+
+typedef	vaddr_t	vm_offset_t;	/* deprecated (cddl/FreeBSD compat) */
+typedef	vsize_t	vm_size_t;	/* deprecated (cddl/FreeBSD compat) */
 
 
 typedef int		mips_prid_t;

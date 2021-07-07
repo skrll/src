@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.9 2018/05/28 21:05:08 chs Exp $
+#	$NetBSD: Makefile,v 1.11 2021/04/07 09:57:02 simonb Exp $
 #
 #
 

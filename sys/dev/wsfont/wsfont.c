@@ -185,11 +185,6 @@ __KERNEL_RCSID(0, "$NetBSD: wsfont.c,v 1.71 2020/11/23 12:15:39 rin Exp $");
 #include <dev/wsfont/Liberation_Mono_12x21.h>
 #endif
 
-#ifdef FONT_LIBERATION_MONO12x21
-#define HAVE_FONT 1
-#include <dev/wsfont/Liberation_Mono_12x21.h>
-#endif
-
 #ifdef FONT_BOLD16x32
 #define HAVE_FONT 1
 #include <dev/wsfont/bold16x32.h>
@@ -310,9 +305,6 @@ static struct font builtin_fonts[] = {
 #endif
 #ifdef FONT_SPLEEN32x64
 	{ { NULL, NULL }, &spleen32x64, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
-#endif
-#ifdef FONT_LIBERATION_MONO12x21
-	{ { NULL, NULL }, &Liberation_Mono_12x21, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
 #endif
 #ifdef FONT_LIBERATION_MONO12x21
 	{ { NULL, NULL }, &Liberation_Mono_12x21, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },

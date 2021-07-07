@@ -1,5 +1,5 @@
 #! /usr/bin/env sh
-#	$NetBSD: build.sh,v 1.346 2021/01/28 10:36:27 martin Exp $
+#	$NetBSD: build.sh,v 1.353 2021/06/07 17:11:16 christos Exp $
 #
 # Copyright (c) 2001-2011 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -616,7 +616,6 @@ level of source directory"
 # and with a blank MACHINE_ARCH.
 #
 valid_MACHINE_ARCH='
-MACHINE=acorn32		MACHINE_ARCH=arm
 MACHINE=acorn32		MACHINE_ARCH=earmv4	ALIAS=eacorn32 DEFAULT
 MACHINE=algor		MACHINE_ARCH=mips64el	ALIAS=algor64
 MACHINE=algor		MACHINE_ARCH=mipsel	DEFAULT
@@ -628,14 +627,12 @@ MACHINE=arc		MACHINE_ARCH=mips64el	ALIAS=arc64
 MACHINE=arc		MACHINE_ARCH=mipsel	DEFAULT
 MACHINE=atari		MACHINE_ARCH=m68k
 MACHINE=bebox		MACHINE_ARCH=powerpc
-MACHINE=cats		MACHINE_ARCH=arm	ALIAS=ocats
 MACHINE=cats		MACHINE_ARCH=earmv4	ALIAS=ecats DEFAULT
 MACHINE=cesfic		MACHINE_ARCH=m68k
 MACHINE=cobalt		MACHINE_ARCH=mips64el	ALIAS=cobalt64
 MACHINE=cobalt		MACHINE_ARCH=mipsel	DEFAULT
 MACHINE=dreamcast	MACHINE_ARCH=sh3el
 MACHINE=emips		MACHINE_ARCH=mipseb
-MACHINE=epoc32		MACHINE_ARCH=arm
 MACHINE=epoc32		MACHINE_ARCH=earmv4	ALIAS=eepoc32 DEFAULT
 MACHINE=evbarm		MACHINE_ARCH=		NO_DEFAULT
 MACHINE=evbarm		MACHINE_ARCH=earmv4	ALIAS=evbearmv4-el	ALIAS=evbarmv4-el
@@ -660,6 +657,8 @@ MACHINE=evbmips		MACHINE_ARCH=mips64eb	ALIAS=evbmips64-eb
 MACHINE=evbmips		MACHINE_ARCH=mips64el	ALIAS=evbmips64-el
 MACHINE=evbmips		MACHINE_ARCH=mipseb	ALIAS=evbmips-eb
 MACHINE=evbmips		MACHINE_ARCH=mipsel	ALIAS=evbmips-el
+MACHINE=evbmips		MACHINE_ARCH=mipsn64eb	ALIAS=evbmipsn64-eb
+MACHINE=evbmips		MACHINE_ARCH=mipsn64el	ALIAS=evbmipsn64-el
 MACHINE=evbppc		MACHINE_ARCH=powerpc	DEFAULT
 MACHINE=evbppc		MACHINE_ARCH=powerpc64	ALIAS=evbppc64
 MACHINE=evbsh3		MACHINE_ARCH=		NO_DEFAULT
@@ -668,14 +667,12 @@ MACHINE=evbsh3		MACHINE_ARCH=sh3el	ALIAS=evbsh3-el
 MACHINE=ews4800mips	MACHINE_ARCH=mipseb
 MACHINE=hp300		MACHINE_ARCH=m68k
 MACHINE=hppa		MACHINE_ARCH=hppa
-MACHINE=hpcarm		MACHINE_ARCH=arm	ALIAS=hpcoarm
 MACHINE=hpcarm		MACHINE_ARCH=earmv4	ALIAS=hpcearm DEFAULT
 MACHINE=hpcmips		MACHINE_ARCH=mipsel
 MACHINE=hpcsh		MACHINE_ARCH=sh3el
 MACHINE=i386		MACHINE_ARCH=i386
 MACHINE=ia64		MACHINE_ARCH=ia64
 MACHINE=ibmnws		MACHINE_ARCH=powerpc
-MACHINE=iyonix		MACHINE_ARCH=arm	ALIAS=oiyonix
 MACHINE=iyonix		MACHINE_ARCH=earm	ALIAS=eiyonix DEFAULT
 MACHINE=landisk		MACHINE_ARCH=sh3el
 MACHINE=luna68k		MACHINE_ARCH=m68k
@@ -686,7 +683,6 @@ MACHINE=mipsco		MACHINE_ARCH=mipseb
 MACHINE=mmeye		MACHINE_ARCH=sh3eb
 MACHINE=mvme68k		MACHINE_ARCH=m68k
 MACHINE=mvmeppc		MACHINE_ARCH=powerpc
-MACHINE=netwinder	MACHINE_ARCH=arm	ALIAS=onetwinder
 MACHINE=netwinder	MACHINE_ARCH=earmv4	ALIAS=enetwinder DEFAULT
 MACHINE=news68k		MACHINE_ARCH=m68k
 MACHINE=newsmips	MACHINE_ARCH=mipseb
@@ -709,7 +705,6 @@ MACHINE=sbmips		MACHINE_ARCH=mipseb	ALIAS=sbmips-eb
 MACHINE=sbmips		MACHINE_ARCH=mipsel	ALIAS=sbmips-el
 MACHINE=sgimips		MACHINE_ARCH=mips64eb	ALIAS=sgimips64
 MACHINE=sgimips		MACHINE_ARCH=mipseb	DEFAULT
-MACHINE=shark		MACHINE_ARCH=arm	ALIAS=oshark
 MACHINE=shark		MACHINE_ARCH=earmv4	ALIAS=eshark DEFAULT
 MACHINE=sparc		MACHINE_ARCH=sparc
 MACHINE=sparc64		MACHINE_ARCH=sparc64
@@ -717,7 +712,6 @@ MACHINE=sun2		MACHINE_ARCH=m68000
 MACHINE=sun3		MACHINE_ARCH=m68k
 MACHINE=vax		MACHINE_ARCH=vax
 MACHINE=x68k		MACHINE_ARCH=m68k
-MACHINE=zaurus		MACHINE_ARCH=arm	ALIAS=ozaurus
 MACHINE=zaurus		MACHINE_ARCH=earm	ALIAS=ezaurus DEFAULT
 '
 
@@ -1971,7 +1965,7 @@ createmakewrapper()
 	eval cat <<EOF ${makewrapout}
 #! ${HOST_SH}
 # Set proper variables to allow easy "make" building of a NetBSD subtree.
-# Generated from:  \$NetBSD: build.sh,v 1.346 2021/01/28 10:36:27 martin Exp $
+# Generated from:  \$NetBSD: build.sh,v 1.353 2021/06/07 17:11:16 christos Exp $
 # with these arguments: ${_args}
 #
 
@@ -2297,22 +2291,63 @@ dorump()
 	statusmsg "Rump build&link tests successful"
 }
 
+repro_date() {
+	# try the bsd date fail back the the linux one
+	date -u -r "$1" 2> /dev/null || date -u -d "@$1"
+}
+
 setup_mkrepro()
 {
 	if [ ${MKREPRO-no} != "yes" ]; then
 		return
 	fi
+
 	local dirs=${NETBSDSRCDIR-/usr/src}/
 	if [ ${MKX11-no} = "yes" ]; then
 		dirs="$dirs ${X11SRCDIR-/usr/xsrc}/"
 	fi
+
 	local cvslatest=$(print_tooldir_program cvslatest)
 	if [ ! -x "${cvslatest}" ]; then
 		buildtools
 	fi
-	MKREPRO_TIMESTAMP=$("${cvslatest}" ${dirs})
-	[ -n "${MKREPRO_TIMESTAMP}" ] || bomb "Failed to compute timestamp"
-	statusmsg2 "MKREPRO_TIMESTAMP" "$(TZ=UTC date -r ${MKREPRO_TIMESTAMP})"
+
+	local cvslatestflags=
+	if ${do_expertmode}; then
+		cvslatestflags=-i
+	fi
+
+	MKREPRO_TIMESTAMP=0
+	local d
+	local t
+	local vcs
+	for d in ${dirs}; do
+		if [ -d "${d}CVS" ]; then
+			t=$("${cvslatest}" ${cvslatestflags} "${d}")
+			vcs=cvs
+		elif [ -d "${d}.git" ]; then
+			t=$(cd "${d}" && git log -1 --format=%ct)
+			vcs=git
+		elif [ -d "${d}.hg" ]; then
+			t=$(cd "${d}" &&
+			    hg log -r . --template '{date(date, "%s")}\n')
+			vcs=hg
+		else
+			bomb "Cannot determine VCS for '$d'"
+		fi
+
+		if [ -z "$t" ]; then
+			bomb "Failed to get timestamp for vcs=$vcs in '$d'"
+		fi
+
+		#echo "latest $d $vcs $t"
+		if [ "$t" -gt "$MKREPRO_TIMESTAMP" ]; then
+			MKREPRO_TIMESTAMP="$t"
+		fi
+	done
+
+	[ "${MKREPRO_TIMESTAMP}" != "0" ] || bomb "Failed to compute timestamp"
+	statusmsg2 "MKREPRO_TIMESTAMP" "$(repro_date "${MKREPRO_TIMESTAMP}")"
 	export MKREPRO MKREPRO_TIMESTAMP
 }
 

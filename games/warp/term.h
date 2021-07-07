@@ -3,13 +3,13 @@
 /* Log:	term.h,v
  * Revision 7.0.1.2  86/12/12  17:05:15  lwall
  * Baseline for net release.
- * 
+ *
  * Revision 7.0.1.1  86/10/16  10:53:33  lwall
  * Added Damage.  Fixed random bugs.
- * 
+ *
  * Revision 7.0  86/10/08  15:14:07  lwall
  * Split into separate files.  Added amoebas and pirates.
- * 
+ *
  */
 
 #ifndef TERM_H
@@ -201,7 +201,7 @@ EXT bool bizarre INIT(false);			/* do we need to restore terminal? */
 /* terminal mode diddling routines */
 
 #if defined(TERMIO) || defined(TERMIOS)
-  
+
 #define raw() ((bizarre=1),_tty.c_lflag &=~ISIG,_tty.c_cc[VMIN] = 1,tcsetattr(_tty_ch,TCSAFLUSH,&_tty))
 #define noraw() ((bizarre=1),_tty.c_lflag |= ISIG,_tty.c_cc[VEOF] = CEOF,tcsetattr(_tty_ch,TCSAFLUSH,&_tty))
 #define crmode() ((bizarre=1),_tty.c_lflag &=~ICANON,_tty.c_cc[VMIN] = 1,tcsetattr(_tty_ch,TCSAFLUSH,&_tty))
@@ -252,8 +252,10 @@ EXT bool bizarre INIT(false);			/* do we need to restore terminal? */
  */
 
 #ifdef HAVETERMLIB
+#if 0
 EXT char *BC INIT(NULL);		/* backspace character */
 EXT char *UP INIT(NULL);		/* move cursor up one line */
+#endif
 EXT char *myUP;
 EXT char *ND INIT(NULL);		/* non-destructive cursor right */
 EXT char *myND;
@@ -275,8 +277,10 @@ EXT char *UC INIT(NULL);		/* underline a character, if that's how it's done */
 EXT int UG INIT(0);		/* blanks left by US and UE */
 EXT bool AM INIT(false);		/* does terminal have automatic margins? */
 EXT bool XN INIT(false);		/* does it eat 1st newline after automatic wrap? */
+#if 0
 EXT char PC INIT(0);		/* pad character for use by tputs() */
 EXT short ospeed INIT(0);	/* terminal output speed, for use by tputs() */
+#endif
 EXT int LINES INIT(0), COLS INIT(0);	/* size of screen */
 EXT int just_a_sec INIT(960);			/* 1 sec at current baud rate */
 					/* (number of nulls) */

@@ -1,4 +1,4 @@
-/* $NetBSD: kern_tc.c,v 1.59 2020/05/27 09:09:50 rin Exp $ */
+/* $NetBSD: kern_tc.c,v 1.62 2021/06/02 21:34:58 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -40,14 +40,18 @@
 
 #include <sys/cdefs.h>
 /* __FBSDID("$FreeBSD: src/sys/kern/kern_tc.c,v 1.166 2005/09/19 22:16:31 andre Exp $"); */
-__KERNEL_RCSID(0, "$NetBSD: kern_tc.c,v 1.59 2020/05/27 09:09:50 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_tc.c,v 1.62 2021/06/02 21:34:58 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ntp.h"
 #endif
 
 #include <sys/param.h>
+#include <sys/atomic.h>
+#include <sys/evcnt.h>
+#include <sys/kauth.h>
 #include <sys/kernel.h>
+#include <sys/mutex.h>
 #include <sys/reboot.h>	/* XXX just to get AB_VERBOSE */
 #include <sys/sysctl.h>
 #include <sys/syslog.h>
@@ -55,10 +59,6 @@ __KERNEL_RCSID(0, "$NetBSD: kern_tc.c,v 1.59 2020/05/27 09:09:50 rin Exp $");
 #include <sys/timepps.h>
 #include <sys/timetc.h>
 #include <sys/timex.h>
-#include <sys/evcnt.h>
-#include <sys/kauth.h>
-#include <sys/mutex.h>
-#include <sys/atomic.h>
 #include <sys/xcall.h>
 
 /*
@@ -551,6 +551,9 @@ tc_init(struct timecounter *tc)
 {
 	u_int u;
 
+	KASSERTMSG(tc->tc_next == NULL, "timecounter %s already initialised",
+	    tc->tc_name);
+
 	u = tc->tc_frequency / tc->tc_counter_mask;
 	/* XXX: We need some margin here, 10% is a guess */
 	u *= 11;
@@ -695,10 +698,13 @@ tc_detach(struct timecounter *target)
 		 * before retrying.
 		 */
 		if (l == NULL) {
-			return 0;
+			break;
 		}
 		(void)kpause("tcdetach", false, mstohz(10), NULL);
 	}
+
+	tc->tc_next = NULL;
+	return 0;
 }
 
 /* Report the frequency of the current timecounter. */

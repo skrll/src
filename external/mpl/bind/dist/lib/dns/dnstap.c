@@ -1,4 +1,4 @@
-/*	$NetBSD: dnstap.c,v 1.9 2021/02/19 16:42:15 christos Exp $	*/
+/*	$NetBSD: dnstap.c,v 1.11 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -49,11 +49,10 @@
 #error DNSTAP not configured.
 #endif /* HAVE_DNSTAP */
 
+#include <fstrm.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
-
-#include <protobuf-c/protobuf-c.h>
 
 #include <isc/buffer.h>
 #include <isc/file.h>
@@ -130,7 +129,7 @@ struct dns_dtenv {
 		result = (x);                \
 		if (result != ISC_R_SUCCESS) \
 			goto cleanup;        \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 typedef struct ioq {
 	unsigned int generation;
@@ -983,7 +982,8 @@ dns_dt_open(const char *filename, dns_dtmode_t mode, isc_mem_t *mctx,
 		}
 		break;
 	case dns_dtmode_unix:
-		return (ISC_R_NOTIMPLEMENTED);
+		result = ISC_R_NOTIMPLEMENTED;
+		goto cleanup;
 	default:
 		INSIST(0);
 		ISC_UNREACHABLE();

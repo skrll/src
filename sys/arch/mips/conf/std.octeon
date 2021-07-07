@@ -1,4 +1,4 @@
-#	$NetBSD: std.octeon,v 1.4 2015/06/01 22:55:12 matt Exp $
+#	$NetBSD: std.octeon,v 1.6 2021/05/11 09:21:24 simonb Exp $
 
 machine evbmips mips
 include 	"conf/std"	# MI standard options

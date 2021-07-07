@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.h,v 1.34 2021/02/10 07:19:54 simonb Exp $ */
+/* $NetBSD: db_machdep.h,v 1.38 2021/05/18 06:38:24 skrll Exp $ */
 
 /*
  * Copyright (c) 1997 Jonathan Stone (hereinafter referred to as the author)
@@ -83,22 +83,27 @@ extern db_regs_t	ddb_regs;	/* register state */
 #define	IS_WATCHPOINT_TRAP(type, code)	(0)	/* XXX mips3 watchpoint */
 
 /*
- * Interface to  disassembly (shared with mdb)
+ * Interface to disassembly (shared with mdb)
  */
 db_addr_t	db_disasm_insn(int insn, db_addr_t loc, bool altfmt);
-
 
 /*
  * Entrypoints to DDB for kernel, keyboard drivers, init hook
  */
 void 	kdb_kbd_trap(db_regs_t *);
-int 	kdb_trap(int type, struct reg *);
+int 	kdb_trap(int, struct reg *);
 
 static inline void
 db_set_ddb_regs(int type, struct reg *regs)
 {
 	ddb_regs = *regs;
 }
+
+/*
+ * Helper functions for fetching 32-bit and 64-bit kernel memory.
+ */
+bool		kdbpeek(vaddr_t, unsigned *);
+mips_reg_t	kdbrpeek(vaddr_t, size_t);
 
 
 /*
@@ -129,9 +134,14 @@ bool ddb_running_on_any_cpu_p(void);
 void db_resume_others(void);
 void db_mips_stack_trace(void *, void *, void (*pr)(const char *, ...));
 
-extern void (*cpu_reset_address)(void);
 
 #ifdef _KERNEL
+/*
+ * Optional function to perform machine- or cpu-specific reset.
+ * Called from ddb "machine reset".
+ */
+extern void (*cpu_reset_address)(void);
+
 /*
  * We have machine-dependent commands.
  */

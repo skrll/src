@@ -1,4 +1,4 @@
-/*	$NetBSD: ioasic_subr.c,v 1.13 2011/06/04 01:49:44 tsutsui Exp $	*/
+/*	$NetBSD: ioasic_subr.c,v 1.15 2021/05/07 16:55:58 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995, 1996 Carnegie-Mellon University.
@@ -29,7 +29,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ioasic_subr.c,v 1.13 2011/06/04 01:49:44 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ioasic_subr.c,v 1.15 2021/05/07 16:55:58 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -53,8 +53,8 @@ ioasicprint(void *aux, const char *pnp)
 }
 
 void
-ioasic_attach_devs(struct ioasic_softc *sc, struct ioasic_dev *ioasic_devs,
-    int ioasic_ndevs)
+ioasic_attach_devs(struct ioasic_softc *sc,
+    const struct ioasic_dev *ioasic_devs, int ioasic_ndevs)
 {
 	struct ioasicdev_attach_args idev;
 	int i;
@@ -72,7 +72,9 @@ ioasic_attach_devs(struct ioasic_softc *sc, struct ioasic_dev *ioasic_devs,
 
                 /* Tell the autoconfig machinery we've found the hardware. */
 		locs[IOASICCF_OFFSET] = ioasic_devs[i].iad_offset;
-		config_found_sm_loc(sc->sc_dev, "ioasic", locs, &idev,
-				    ioasicprint, config_stdsubmatch);
+		config_found(sc->sc_dev, &idev, ioasicprint,
+		    CFARG_SUBMATCH, config_stdsubmatch,
+		    CFARG_LOCATORS, locs,
+		    CFARG_EOL);
         }
 }

@@ -1,10 +1,11 @@
-# $NetBSD: ad.mips,v 1.86 2020/09/07 00:19:04 mrg Exp $
+# $NetBSD: ad.mips,v 1.90 2021/05/30 01:56:45 joerg Exp $
 -./usr/lib/64/libgomp.a
 -./usr/lib/64/libgomp.so
 -./usr/lib/64/libgomp.so.1
 -./usr/lib/64/libgomp.so.1.1
 -./usr/lib/64/libgomp.so.2
 -./usr/lib/64/libgomp.so.2.0
+-./usr/lib/64/libgomp.so.2.1
 -./usr/lib/64/libgomp_p.a
 -./usr/lib/64/libgomp_pic.a
 ./usr/bin/elf2aout				comp-obsolete		obsolete
@@ -12,7 +13,8 @@
 ./usr/include/clang-4.0/msa.h			comp-obsolete		obsolete
 ./usr/include/clang-5.0/msa.h			comp-obsolete		obsolete
 ./usr/include/clang-7.0/msa.h			comp-obsolete		obsolete
-./usr/include/clang-9.0/msa.h			comp-c-include		llvm
+./usr/include/clang-9.0/msa.h			comp-obsolete		obsolete
+./usr/include/clang-13.0/msa.h			comp-c-include		llvm
 ./usr/include/g++/bits/mips32			comp-c-include		compat,arch64
 ./usr/include/g++/bits/mips32/c++config.h	comp-c-include		compat,arch64,gcc
 ./usr/include/g++/bits/mips64			comp-c-include		compat,arch64
@@ -30,13 +32,17 @@
 ./usr/include/gcc-7/loongson.h			comp-c-include		obsolete
 ./usr/include/gcc-7/msa.h			comp-c-include		obsolete
 ./usr/include/gcc-7/tgmath.h			comp-c-include		obsolete
-./usr/include/gcc-8/loongson.h			comp-c-include		gcc=8
-./usr/include/gcc-8/msa.h			comp-c-include		gcc=8
-./usr/include/gcc-8/tgmath.h			comp-c-include		gcc=8
+./usr/include/gcc-8/loongson.h			comp-c-include		obsolete
+./usr/include/gcc-8/msa.h			comp-c-include		obsolete
+./usr/include/gcc-8/tgmath.h			comp-c-include		obsolete
 ./usr/include/gcc-9/loongson.h			comp-c-include		gcc=9
 ./usr/include/gcc-9/loongson-mmiintrin.h	comp-c-include		gcc=9
 ./usr/include/gcc-9/msa.h			comp-c-include		gcc=9
 ./usr/include/gcc-9/tgmath.h			comp-c-include		gcc=9
+./usr/include/gcc-10/loongson.h			comp-c-include		gcc=10
+./usr/include/gcc-10/loongson-mmiintrin.h	comp-c-include		gcc=10
+./usr/include/gcc-10/msa.h			comp-c-include		gcc=10
+./usr/include/gcc-10/tgmath.h			comp-c-include		gcc=10
 ./usr/include/mips				comp-c-include
 ./usr/include/mips/ansi.h			comp-c-include
 ./usr/include/mips/aout_machdep.h		comp-obsolete		obsolete
@@ -55,6 +61,7 @@
 ./usr/include/mips/endian_machdep.h		comp-c-include
 ./usr/include/mips/fenv.h			comp-c-include
 ./usr/include/mips/float.h			comp-c-include
+./usr/include/mips/frame.h			comp-c-include
 ./usr/include/mips/ieee.h			comp-c-include
 ./usr/include/mips/ieeefp.h			comp-c-include
 ./usr/include/mips/int_const.h			comp-c-include
@@ -98,15 +105,18 @@
 ./usr/include/mips/varargs.h			comp-obsolete		obsolete
 ./usr/include/mips/vmparam.h			comp-c-include
 ./usr/include/mips/wchar_limits.h		comp-c-include
-./usr/lib/64/libc_fp.a				comp-c-lib		softfloat,compat,arch64
-./usr/lib/64/libc_fp_p.a			comp-c-lib		profile,softfloat,compat,arch64
-./usr/lib/64/libc_fp_pic.a			comp-c-piclib		softfloat,picinstall,compat,arch64
+./usr/lib/64/libc_fp.a				comp-c-lib		softfloat,compat,arch64,!machine_arch=mipsn64eb,!machine_arch=mipsn64el
+./usr/lib/64/libc_fp_p.a			comp-c-lib		profile,softfloat,compat,arch64,!machine_arch=mipsn64eb,!machine_arch=mipsn64el
+./usr/lib/64/libc_fp_pic.a			comp-c-piclib		softfloat,picinstall,compat,arch64,!machine_arch=mipsn64eb,!machine_arch=mipsn64el
 ./usr/lib/libc_fp.a				comp-c-lib		softfloat,arch64
 ./usr/lib/libc_fp_p.a				comp-c-lib		profile,softfloat,arch64
 ./usr/lib/libc_fp_pic.a				comp-c-piclib		softfloat,picinstall,arch64
 ./usr/lib/o32/libc_fp.a				comp-c-lib		softfloat,compat,arch64
 ./usr/lib/o32/libc_fp_p.a			comp-c-lib		profile,softfloat,compat,arch64
 ./usr/lib/o32/libc_fp_pic.a			comp-c-piclib		softfloat,picinstall,compat,arch64
+./usr/lib/n32/libc_fp.a				comp-c-lib		softfloat,compat,arch64,!machine_arch=mips64eb,!machine_arch=mips64el
+./usr/lib/n32/libc_fp_p.a			comp-c-lib		profile,softfloat,compat,arch64,!machine_arch=mips64eb,!machine_arch=mips64el
+./usr/lib/n32/libc_fp_pic.a			comp-c-piclib		softfloat,picinstall,compat,arch64,!machine_arch=mips64eb,!machine_arch=mips64el
 ./usr/libdata/ldscripts/elf32btsmip.x		comp-util-bin		binutils,arch64
 ./usr/libdata/ldscripts/elf32btsmip.xbn		comp-util-bin		binutils,arch64
 ./usr/libdata/ldscripts/elf32btsmip.xc		comp-util-bin		binutils,arch64

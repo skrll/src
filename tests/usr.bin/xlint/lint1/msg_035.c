@@ -1,7 +1,10 @@
-/*	$NetBSD: msg_035.c,v 1.7 2021/02/28 02:45:37 rillig Exp $	*/
+/*	$NetBSD: msg_035.c,v 1.9 2021/05/02 21:22:09 rillig Exp $	*/
 # 3 "msg_035.c"
 
 // Test for message: illegal bit-field type '%s' [35]
+
+/* Omit -g, see gcc_bit_field_types.c. */
+/* lint1-flags: -Sw */
 
 /*
  * In traditional C, only unsigned int is a portable bit-field type.
@@ -47,14 +50,14 @@ struct example {
 	float float_flag: 1;				/* expect: 35 */
 	double double_flag: 1;				/* expect: 35 */
 	long double long_double_flag: 1;		/* expect: 35 */
-	void void_flag: 1;				/* expect: 19, 37 */
+	void void_flag: 1;				/* expect: 19 *//* expect: 37 */
 	example_struct struct_flag: 1;			/* expect: 35 */
 	example_union union_flag: 1;			/* expect: 35 */
 	example_enum enum_flag: 1;
 	void *pointer_flag: 1;				/* expect: 35 */
 	unsigned int array_flag[4]: 1;			/* expect: 35 */
 	example_function function_flag: 1;		/* expect: 35 */
-	_Complex complex_flag: 1;			/* expect: 35, 308 */
+	_Complex complex_flag: 1;			/* expect: 35 *//* expect: 308 */
 	float _Complex float_complex_flag: 1;		/* expect: 35 */
 	double _Complex double_complex_flag: 1;		/* expect: 35 */
 	long double _Complex long_double_complex_flag: 1; /* expect: 35 */

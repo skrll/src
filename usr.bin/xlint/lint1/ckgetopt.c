@@ -1,4 +1,4 @@
-/* $NetBSD: ckgetopt.c,v 1.7 2021/03/22 19:25:08 rillig Exp $ */
+/* $NetBSD: ckgetopt.c,v 1.10 2021/06/04 21:12:10 rillig Exp $ */
 
 /*-
  * Copyright (c) 2021 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: ckgetopt.c,v 1.7 2021/03/22 19:25:08 rillig Exp $");
+__RCSID("$NetBSD: ckgetopt.c,v 1.10 2021/06/04 21:12:10 rillig Exp $");
 #endif
 
 #include <stdbool.h>
@@ -81,8 +81,9 @@ static struct {
 			return false;	\
 	} while (false)
 
+/* Return whether tn has the form 'getopt(argc, argv, "literal") != -1'. */
 static bool
-is_getopt_call(const tnode_t *tn, char **out_options)
+is_getopt_condition(const tnode_t *tn, char **out_options)
 {
 	NEED(tn != NULL);
 	NEED(tn->tn_op == NE);
@@ -134,11 +135,8 @@ check_unhandled_option(void)
 		if (*opt == ' ' || *opt == ':')
 			continue;
 
-		pos_t prev_pos = curr_pos;
-		curr_pos = ck.options_pos;
 		/* option '%c' should be handled in the switch */
-		warning(338, *opt);
-		curr_pos = prev_pos;
+		warning_at(338, &ck.options_pos, *opt);
 	}
 }
 
@@ -147,7 +145,7 @@ void
 check_getopt_begin_while(const tnode_t *tn)
 {
 	if (ck.while_level == 0) {
-		if (!is_getopt_call(tn, &ck.options))
+		if (!is_getopt_condition(tn, &ck.options))
 			return;
 		ck.options_pos = curr_pos;
 	}
@@ -160,7 +158,6 @@ check_getopt_begin_switch(void)
 	if (ck.while_level > 0)
 		ck.switch_level++;
 }
-
 
 void
 check_getopt_case_label(int64_t value)

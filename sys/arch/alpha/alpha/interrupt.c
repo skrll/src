@@ -1,4 +1,4 @@
-/* $NetBSD: interrupt.c,v 1.92 2020/10/10 03:05:04 thorpej Exp $ */
+/* $NetBSD: interrupt.c,v 1.98 2021/07/04 22:42:35 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -65,14 +65,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: interrupt.c,v 1.92 2020/10/10 03:05:04 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: interrupt.c,v 1.98 2021/07/04 22:42:35 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
 #include <sys/vmmeter.h>
 #include <sys/sched.h>
-#include <sys/malloc.h>
 #include <sys/kernel.h>
 #include <sys/time.h>
 #include <sys/intr.h>
@@ -92,7 +91,7 @@ __KERNEL_RCSID(0, "$NetBSD: interrupt.c,v 1.92 2020/10/10 03:05:04 thorpej Exp $
 struct scbvec scb_iovectab[SCB_VECTOIDX(SCB_SIZE - SCB_IOVECBASE)]
 							__read_mostly;
 
-void	scb_stray(void *, u_long);
+static void	scb_stray(void *, u_long);
 
 void
 scb_init(void)
@@ -105,7 +104,7 @@ scb_init(void)
 	}
 }
 
-void
+static void
 scb_stray(void *arg, u_long vec)
 {
 
@@ -193,7 +192,7 @@ interrupt(unsigned long a0, unsigned long a1, unsigned long a2,
 	switch (a0) {
 	case ALPHA_INTR_XPROC:	/* interprocessor interrupt */
 #if defined(MULTIPROCESSOR)
-		atomic_inc_ulong(&ci->ci_intrdepth);
+		ci->ci_intrdepth++;
 
 		alpha_ipi_process(ci, framep);
 
@@ -205,7 +204,7 @@ interrupt(unsigned long a0, unsigned long a1, unsigned long a2,
 		    hwrpb->rpb_txrdy != 0)
 			cpu_iccb_receive();
 
-		atomic_dec_ulong(&ci->ci_intrdepth);
+		ci->ci_intrdepth--;
 #else
 		printf("WARNING: received interprocessor interrupt!\n");
 #endif /* MULTIPROCESSOR */
@@ -213,11 +212,20 @@ interrupt(unsigned long a0, unsigned long a1, unsigned long a2,
 		
 	case ALPHA_INTR_CLOCK:	/* clock interrupt */
 		/*
-		 * We don't increment the interrupt depth for the
-		 * clock interrupt, since it is *sampled* from
-		 * the clock interrupt, so if we did, all system
-		 * time would be counted as interrupt time.
+		 * Rather than simply increment the interrupt depth
+		 * for the clock interrupt, we add 0x10.  Why?  Because
+		 * while we only call out a single device interrupt
+		 * level, technically the architecture specification
+		 * suports two, meaning we could have intrdepth > 1
+		 * just for device interrupts.
+		 *
+		 * Adding 0x10 here means that cpu_intr_p() can check
+		 * for "intrdepth != 0" for "in interrupt context" and
+		 * CLKF_INTR() can check "(intrdepth & 0xf) != 0" for
+		 * "was processing interrupts when the clock interrupt
+		 * happened".
 		 */
+		ci->ci_intrdepth += 0x10;
 		sc->sc_evcnt_clock.ev_count++;
 		ci->ci_data.cpu_nintr++;
 		if (platform.clockintr) {
@@ -242,17 +250,18 @@ interrupt(unsigned long a0, unsigned long a1, unsigned long a2,
 			    schedhz != 0)
 				schedclock(ci->ci_curlwp);
 		}
+		ci->ci_intrdepth -= 0x10;
 		break;
 
 	case ALPHA_INTR_ERROR:	/* Machine Check or Correctable Error */
-		atomic_inc_ulong(&ci->ci_intrdepth);
+		ci->ci_intrdepth++;
 		a0 = alpha_pal_rdmces();
 		if (platform.mcheck_handler != NULL &&
 		    (void *)framep->tf_regs[FRAME_PC] != XentArith)
 			(*platform.mcheck_handler)(a0, framep, a1, a2);
 		else
 			machine_check(a0, framep, a1, a2);
-		atomic_dec_ulong(&ci->ci_intrdepth);
+		ci->ci_intrdepth--;
 		break;
 
 	case ALPHA_INTR_DEVICE:	/* I/O device interrupt */
@@ -262,14 +271,14 @@ interrupt(unsigned long a0, unsigned long a1, unsigned long a2,
 		KDASSERT(a1 >= SCB_IOVECBASE && a1 < SCB_SIZE);
 
 		atomic_inc_ulong(&sc->sc_evcnt_device.ev_count);
-		atomic_inc_ulong(&ci->ci_intrdepth);
+		ci->ci_intrdepth++;
 
 		ci->ci_data.cpu_nintr++;
 
 		struct scbvec * const scb = &scb_iovectab[idx];
 		(*scb->scb_func)(scb->scb_arg, a1);
 
-		atomic_dec_ulong(&ci->ci_intrdepth);
+		ci->ci_intrdepth--;
 		break;
 	    }
 
@@ -373,6 +382,9 @@ badaddr(void *addr, size_t size)
 int
 badaddr_read(void *addr, size_t size, void *rptr)
 {
+	lwp_t * const l = curlwp;
+	KPREEMPT_DISABLE(l);
+
 	struct mchkinfo *mcp = &curcpu()->ci_mcinfo;
 	long rcpt;
 	int rv;
@@ -440,6 +452,9 @@ badaddr_read(void *addr, size_t size, void *rptr)
 			break;
 		}
 	}
+
+	KPREEMPT_ENABLE(l);
+
 	/* Return non-zero (i.e. true) if it's a bad address. */
 	return (rv);
 }

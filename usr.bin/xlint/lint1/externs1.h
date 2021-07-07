@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.91 2021/03/27 12:42:22 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.115 2021/07/06 04:44:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,6 +37,7 @@
 extern	int	aflag;
 extern	bool	bflag;
 extern	bool	cflag;
+extern	bool	c11flag;
 extern	bool	dflag;
 extern	bool	eflag;
 extern	bool	Fflag;
@@ -74,15 +75,14 @@ extern	pos_t	csrc_pos;
 extern	bool	in_system_header;
 extern	symt_t	symtyp;
 extern	FILE	*yyin;
-extern	uint64_t qbmasks[], qlmasks[], qumasks[];
 
 extern	void	initscan(void);
 extern	int	msb(int64_t, tspec_t, int);
-extern	int64_t	xsign(int64_t, tspec_t, int);
+extern	int64_t	convert_integer(int64_t, tspec_t, int);
 extern	void	clear_warn_flags(void);
 extern	sym_t	*getsym(sbuf_t *);
 extern	void	cleanup(void);
-extern	sym_t	*pushdown(sym_t *);
+extern	sym_t	*pushdown(const sym_t *);
 extern	sym_t	*mktempsym(type_t *);
 extern	void	rmsym(sym_t *);
 extern	void	rmsyms(sym_t *);
@@ -105,29 +105,34 @@ extern	void	*getlblk(size_t, size_t);
 extern	void	freeblk(void);
 extern	void	freelblk(int);
 
-extern	void	*tgetblk(size_t);
-extern	tnode_t	*getnode(void);
-extern	void	tfreeblk(void);
-extern	struct	mbl *tsave(void);
-extern	void	trestor(struct mbl *);
+extern	void	*expr_zalloc(size_t);
+extern	tnode_t	*expr_zalloc_tnode(void);
+extern	void	expr_free_all(void);
+extern	struct	memory_block *expr_save_memory(void);
+extern	void	expr_restore_memory(struct memory_block *);
 
 /*
  * err.c
  */
 extern	int	nerr;
 extern	int	sytxerr;
-extern	const	char *msgs[];
+extern	const char *const msgs[];
 
 extern	void	msglist(void);
+extern	void	error_at(int, const pos_t *, ...);
+extern	void	warning_at(int, const pos_t *, ...);
+extern	void	message_at(int, const pos_t *, ...);
 extern	void	error(int, ...);
 extern	void	warning(int, ...);
 extern	void	message(int, ...);
 extern	void	gnuism(int, ...);
 extern	void	c99ism(int, ...);
+extern	void	c11ism(int, ...);
 extern	void	internal_error(const char *, int, const char *, ...)
      __attribute__((__noreturn__,__format__(__printf__, 3, 4)));
 extern	void	assert_failed(const char *, int, const char *, const char *)
 		__attribute__((__noreturn__));
+extern	void	update_location(const char *, int, bool, bool);
 
 /*
  * decl.c
@@ -138,8 +143,8 @@ extern	int	enumval;
 
 extern	void	initdecl(void);
 extern	type_t	*gettyp(tspec_t);
-extern	type_t	*duptyp(const type_t *);
-extern	type_t	*tduptyp(const type_t *);
+extern	type_t	*dup_type(const type_t *);
+extern	type_t	*expr_dup_type(const type_t *);
 extern	bool	is_incomplete(const type_t *);
 extern	void	setcomplete(type_t *, bool);
 extern	void	add_storage_class(scl_t);
@@ -158,8 +163,8 @@ extern	sym_t	*lnklst(sym_t *, sym_t *);
 extern	void	check_type(sym_t *);
 extern	sym_t	*declarator_1_struct_union(sym_t *);
 extern	sym_t	*bitfield(sym_t *, int);
-extern	pqinf_t	*merge_pointers_and_qualifiers(pqinf_t *, pqinf_t *);
-extern	sym_t	*add_pointer(sym_t *, pqinf_t *);
+extern	qual_ptr *merge_qualified_pointer(qual_ptr *, qual_ptr *);
+extern	sym_t	*add_pointer(sym_t *, qual_ptr *);
 extern	sym_t	*add_array(sym_t *, bool, int);
 extern	sym_t	*add_function(sym_t *, sym_t *);
 extern	void	check_function_definition(sym_t *, bool);
@@ -171,7 +176,6 @@ extern	type_t	*complete_tag_struct_or_union(type_t *, sym_t *);
 extern	type_t	*complete_tag_enum(type_t *, sym_t *);
 extern	sym_t	*enumeration_constant(sym_t *, int, bool);
 extern	void	declare(sym_t *, bool, sbuf_t *);
-extern	void	decl1ext(sym_t *, bool);
 extern	void	copy_usage_info(sym_t *, sym_t *);
 extern	bool	check_redeclaration(sym_t *, bool *);
 extern	bool	eqptrtype(const type_t *, const type_t *, bool);
@@ -197,22 +201,26 @@ extern	int	to_int_constant(tnode_t *, bool);
 /*
  * tree.c
  */
-extern	type_t	*incref(type_t *, tspec_t);
-extern	type_t	*tincref(type_t *, tspec_t);
-extern	tnode_t	*new_constant_node(type_t *, val_t *);
+extern	const tnode_t *before_conversion(const tnode_t *);
+extern	type_t	*derive_type(type_t *, tspec_t);
+extern	type_t	*expr_derive_type(type_t *, tspec_t);
+extern	tnode_t	*expr_new_constant(type_t *, val_t *);
 extern	tnode_t	*new_name_node(sym_t *, int);
 extern	tnode_t	*new_string_node(strg_t *);
 extern	sym_t	*struct_or_union_member(tnode_t *, op_t, sym_t *);
+extern	tnode_t	*build_generic_selection(const tnode_t *,
+		    struct generic_association *);
+
 extern	tnode_t	*build(op_t, tnode_t *, tnode_t *);
 extern	tnode_t	*cconv(tnode_t *);
 extern	bool	is_typeok_bool_operand(const tnode_t *);
 extern	bool	typeok(op_t, int, const tnode_t *, const tnode_t *);
 extern	tnode_t	*promote(op_t, bool, tnode_t *);
 extern	tnode_t	*convert(op_t, int, type_t *, tnode_t *);
-extern	void	convert_constant(op_t, int, type_t *, val_t *, val_t *);
-extern	tnode_t	*build_sizeof(type_t *);
-extern	tnode_t	*build_offsetof(type_t *, sym_t *);
-extern	tnode_t	*build_alignof(type_t *);
+extern	void	convert_constant(op_t, int, const type_t *, val_t *, val_t *);
+extern	tnode_t	*build_sizeof(const type_t *);
+extern	tnode_t	*build_offsetof(const type_t *, const sym_t *);
+extern	tnode_t	*build_alignof(const type_t *);
 extern	tnode_t	*cast(tnode_t *, type_t *);
 extern	tnode_t	*new_function_argument_node(tnode_t *, tnode_t *);
 extern	tnode_t	*new_function_call_node(tnode_t *, tnode_t *);
@@ -220,9 +228,9 @@ extern	val_t	*constant(tnode_t *, bool);
 extern	void	expr(tnode_t *, bool, bool, bool, bool);
 extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
 		    bool, bool, bool);
-extern	bool	constant_addr(const tnode_t *, sym_t **, ptrdiff_t *);
+extern	bool	constant_addr(const tnode_t *, const sym_t **, ptrdiff_t *);
 extern	strg_t	*cat_strings(strg_t *, strg_t *);
-extern  int64_t type_size_in_bits(type_t *);
+extern  int64_t type_size_in_bits(const type_t *);
 #ifdef DEBUG
 extern	void	debug_node(const tnode_t *, int);
 #else
@@ -293,15 +301,13 @@ extern	void	bitfieldtype(int);
  */
 extern	void	begin_initialization(sym_t *);
 extern	void	end_initialization(void);
-extern	bool	*current_initerr(void);
 extern	sym_t	**current_initsym(void);
 
-extern	void	initstack_init(void);
 extern	void	init_rbrace(void);
 extern	void	init_lbrace(void);
-extern	void	init_using_expr(tnode_t *);
-extern	void	designation_add_name(sbuf_t *);
-extern	void	designation_add_subscript(range_t);
+extern	void	init_expr(tnode_t *);
+extern	void	add_designator_member(sbuf_t *);
+extern	void	add_designator_subscript(range_t);
 
 /*
  * emit.c
@@ -335,7 +341,20 @@ extern	int	lex_input(void);
 /*
  * print.c
  */
-extern	char	*print_tnode(char *, size_t, const tnode_t *);
+const char	*scl_name(scl_t);
+
+/*
+ * ckbool.c
+ */
+extern	bool	typeok_scalar_strict_bool(op_t, const mod_t *, int,
+		    const tnode_t *, const tnode_t *);
+extern	bool	fallback_symbol_strict_bool(sym_t *);
+
+/*
+ * ckctype.c
+ */
+extern	void	check_ctype_function_call(const tnode_t *, const tnode_t *);
+extern	void	check_ctype_macro_invocation(const tnode_t *, const tnode_t *);
 
 /*
  * ckgetopt.c

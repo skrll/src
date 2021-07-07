@@ -1,4 +1,4 @@
-/*	$NetBSD: bozohttpd.c,v 1.128 2021/02/27 12:55:25 mrg Exp $	*/
+/*	$NetBSD: bozohttpd.c,v 1.132 2021/05/05 07:41:48 mrg Exp $	*/
 
 /*	$eterna: bozohttpd.c,v 1.178 2011/11/18 09:21:15 mrg Exp $	*/
 
@@ -108,7 +108,7 @@
 #define INDEX_HTML		"index.html"
 #endif
 #ifndef SERVER_SOFTWARE
-#define SERVER_SOFTWARE		"bozohttpd/20210227"
+#define SERVER_SOFTWARE		"bozohttpd/20210504"
 #endif
 #ifndef PUBLIC_HTML
 #define PUBLIC_HTML		"public_html"
@@ -138,6 +138,7 @@
 #include <grp.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <strings.h>
 #include <string.h>
 #include <syslog.h>
@@ -852,6 +853,10 @@ bozo_read_request(bozohttpd_t *httpd)
 next_header:
 		alarm(httpd->header_timeout);
 	}
+	if (str == NULL) {
+		bozo_http_error(httpd, 413, request, "request too large");
+		goto cleanup;
+	}
 
 	/* now, clear it all out */
 	alarm(0);
@@ -1106,7 +1111,7 @@ handle_redirect(bozo_httpreq_t *request, const char *url, int absolute)
 		 */
 		if (sep) {
 			for (s = url; s != sep;) {
-				if (!isalnum((int)*s) &&
+				if (!isalnum((unsigned char)*s) &&
 				    *s != '+' && *s != '-' && *s != '.')
 					break;
 				if (++s == sep) {
@@ -2124,7 +2129,7 @@ bozo_escape_html(bozohttpd_t *httpd, const char *url)
 	if (httpd)
 		tmp = bozomalloc(httpd, len);
 	else if ((tmp = malloc(len)) == 0)
-			return NULL;
+		return NULL;
 
 	for (i = 0, j = 0; url[i]; i++) {
 		switch (url[i]) {
@@ -2270,7 +2275,7 @@ bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 		}
 #endif /* !NO_USER_SUPPORT */
 
-		size = snprintf(httpd->errorbuf, BUFSIZ,
+		size = snprintf(httpd->errorbuf, BOZO_MINBUFSIZE,
 		    "<html><head><title>%s</title></head>\n"
 		    "<body><h1>%s</h1>\n"
 		    "%s%s: <pre>%s</pre>\n"
@@ -2280,10 +2285,10 @@ bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 		    user ? user : "", file,
 		    reason, hostname, portbuf, hostname, portbuf);
 		free(user);
-		if (size >= (int)BUFSIZ) {
+		if (size >= (int)BOZO_MINBUFSIZE) {
 			bozowarn(httpd,
 				"bozo_http_error buffer too small, truncated");
-			size = (int)BUFSIZ;
+			size = (int)BOZO_MINBUFSIZE;
 		}
 
 		if (file_alloc)
@@ -2373,6 +2378,9 @@ bozostrnsep(char **strp, const char *delim, ssize_t	*lenp)
  * inspired by fgetln(3), but works for fd's.  should work identically
  * except it, however, does *not* return the newline, and it does nul
  * terminate the string.
+ *
+ * returns NULL if the line grows too large.  empty lines will be
+ * returned with *lenp set to 0.
  */
 char *
 bozodgetln(bozohttpd_t *httpd, int fd, ssize_t *lenp,
@@ -2386,11 +2394,8 @@ bozodgetln(bozohttpd_t *httpd, int fd, ssize_t *lenp,
 	if (httpd->getln_buflen == 0) {
 		/* should be plenty for most requests */
 		httpd->getln_buflen = 128;
-		httpd->getln_buffer = malloc((size_t)httpd->getln_buflen);
-		if (httpd->getln_buffer == NULL) {
-			httpd->getln_buflen = 0;
-			return NULL;
-		}
+		httpd->getln_buffer =
+		    bozomalloc(httpd, (size_t)httpd->getln_buflen);
 	}
 	len = 0;
 
@@ -2405,6 +2410,9 @@ bozodgetln(bozohttpd_t *httpd, int fd, ssize_t *lenp,
 	 */
 	for (; readfn(httpd, fd, &c, 1) == 1; ) {
 		debug((httpd, DEBUG_EXPLODING, "bozodgetln read %c", c));
+
+		if (httpd->getln_buflen > BOZO_HEADERS_MAX_SIZE)
+			return NULL;
 
 		if (len >= httpd->getln_buflen - 1) {
 			httpd->getln_buflen *= 2;
@@ -2507,7 +2515,7 @@ bozo_init_httpd(bozohttpd_t *httpd)
 	httpd->mmapsz = BOZO_MMAPSZ;
 
 	/* error buffer for bozo_http_error() */
-	if ((httpd->errorbuf = malloc(BUFSIZ)) == NULL) {
+	if ((httpd->errorbuf = malloc(BOZO_MINBUFSIZE)) == NULL) {
 		fprintf(stderr,
 			"bozohttpd: memory_allocation failure\n");
 		return 0;

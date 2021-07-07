@@ -1,4 +1,4 @@
-/*	$NetBSD: task.c,v 1.11 2021/03/23 20:59:03 christos Exp $	*/
+/*	$NetBSD: task.c,v 1.14 2021/04/29 17:26:12 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -63,13 +63,14 @@
  */
 
 #ifdef ISC_TASK_TRACE
-#define XTRACE(m)                                                            \
-	fprintf(stderr, "task %p thread %lu: %s\n", task, isc_thread_self(), \
-		(m))
-#define XTTRACE(t, m) \
-	fprintf(stderr, "task %p thread %lu: %s\n", (t), isc_thread_self(), (m))
+#define XTRACE(m)                                                  \
+	fprintf(stderr, "task %p thread %" PRIuPTR ": %s\n", task, \
+		isc_thread_self(), (m))
+#define XTTRACE(t, m)                                             \
+	fprintf(stderr, "task %p thread %" PRIuPTR ": %s\n", (t), \
+		isc_thread_self(), (m))
 #define XTHREADTRACE(m) \
-	fprintf(stderr, "thread %lu: %s\n", isc_thread_self(), (m))
+	fprintf(stderr, "thread %" PRIuPTR ": %s\n", isc_thread_self(), (m))
 #else /* ifdef ISC_TASK_TRACE */
 #define XTRACE(m)
 #define XTTRACE(t, m)
@@ -1386,10 +1387,8 @@ isc_taskmgr_create(isc_mem_t *mctx, unsigned int workers,
 	REQUIRE(managerp != NULL && *managerp == NULL);
 
 	manager = isc_mem_get(mctx, sizeof(*manager));
-#ifndef __lint__ // XXX: bug
 	*manager = (isc__taskmgr_t){ .common.impmagic = TASK_MANAGER_MAGIC,
 				     .common.magic = ISCAPI_TASKMGR_MAGIC };
-#endif
 
 	atomic_store(&manager->mode, isc_taskmgrmode_normal);
 	isc_mutex_init(&manager->lock);
@@ -1807,7 +1806,7 @@ isc_task_exiting(isc_task_t *t) {
 		xmlrc = (a);        \
 		if (xmlrc < 0)      \
 			goto error; \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 int
 isc_taskmgr_renderxml(isc_taskmgr_t *mgr0, void *writer0) {
 	isc__taskmgr_t *mgr = (isc__taskmgr_t *)mgr0;
@@ -1916,7 +1915,7 @@ error:
 			result = ISC_R_NOMEMORY; \
 			goto error;              \
 		}                                \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 isc_result_t
 isc_taskmgr_renderjson(isc_taskmgr_t *mgr0, void *tasks0) {

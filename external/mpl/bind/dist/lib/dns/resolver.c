@@ -1,4 +1,4 @@
-/*	$NetBSD: resolver.c,v 1.11 2021/02/19 16:42:16 christos Exp $	*/
+/*	$NetBSD: resolver.c,v 1.13 2021/04/29 17:26:11 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -111,46 +111,46 @@
 #define RTRACE(m)          \
 	do {               \
 		UNUSED(m); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define RRTRACE(r, m)      \
 	do {               \
 		UNUSED(r); \
 		UNUSED(m); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define FCTXTRACE(m)       \
 	do {               \
 		UNUSED(m); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define FCTXTRACE2(m1, m2)  \
 	do {                \
 		UNUSED(m1); \
 		UNUSED(m2); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define FCTXTRACE3(m1, res)  \
 	do {                 \
 		UNUSED(m1);  \
 		UNUSED(res); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define FCTXTRACE4(m1, m2, res) \
 	do {                    \
 		UNUSED(m1);     \
 		UNUSED(m2);     \
 		UNUSED(res);    \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define FCTXTRACE5(m1, m2, v) \
 	do {                  \
 		UNUSED(m1);   \
 		UNUSED(m2);   \
 		UNUSED(v);    \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define FTRACE(m)          \
 	do {               \
 		UNUSED(m); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define QTRACE(m)          \
 	do {               \
 		UNUSED(m); \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #endif /* WANT_QUERYTRACE */
 
 #define US_PER_SEC  1000000U
@@ -5071,7 +5071,6 @@ fctx_create(dns_resolver_t *res, const dns_name_t *name, dns_rdatatype_t type,
 	isc_interval_t interval;
 	unsigned int findoptions = 0;
 	char buf[DNS_NAME_FORMATSIZE + DNS_RDATATYPE_FORMATSIZE + 1];
-	char typebuf[DNS_RDATATYPE_FORMATSIZE];
 	isc_mem_t *mctx;
 	size_t p;
 	bool try_stale;
@@ -5100,9 +5099,9 @@ fctx_create(dns_resolver_t *res, const dns_name_t *name, dns_rdatatype_t type,
 	 * "name/type".
 	 */
 	dns_name_format(name, buf, sizeof(buf));
-	dns_rdatatype_format(type, typebuf, sizeof(typebuf));
 	p = strlcat(buf, "/", sizeof(buf));
-	strlcat(buf + p, typebuf, sizeof(buf));
+	INSIST(p + DNS_RDATATYPE_FORMATSIZE < sizeof(buf));
+	dns_rdatatype_format(type, buf + p, sizeof(buf) - p);
 	fctx->info = isc_mem_strdup(mctx, buf);
 
 	FCTXTRACE("create");
@@ -10564,23 +10563,10 @@ dns_resolver_create(dns_view_t *view, isc_taskmgr_t *taskmgr,
 	}
 
 #if USE_ALGLOCK
-	result = isc_rwlock_init(&res->alglock, 0, 0);
-	if (result != ISC_R_SUCCESS) {
-		goto cleanup_spillattimer;
-	}
+	isc_rwlock_init(&res->alglock, 0, 0);
 #endif /* if USE_ALGLOCK */
 #if USE_MBSLOCK
-	result = isc_rwlock_init(&res->mbslock, 0, 0);
-	if (result != ISC_R_SUCCESS)
-#if USE_ALGLOCK
-	{
-		goto cleanup_alglock;
-	}
-#else  /* if USE_ALGLOCK */
-	{
-		goto cleanup_spillattimer;
-	}
-#endif /* if USE_ALGLOCK */
+	isc_rwlock_init(&res->mbslock, 0, 0);
 #endif /* if USE_MBSLOCK */
 
 	res->magic = RES_MAGIC;
@@ -10588,16 +10574,6 @@ dns_resolver_create(dns_view_t *view, isc_taskmgr_t *taskmgr,
 	*resp = res;
 
 	return (ISC_R_SUCCESS);
-
-#if USE_ALGLOCK && USE_MBSLOCK
-cleanup_alglock:
-	isc_rwlock_destroy(&res->alglock);
-#endif /* if USE_ALGLOCK && USE_MBSLOCK */
-
-#if USE_ALGLOCK || USE_MBSLOCK
-cleanup_spillattimer:
-	isc_timer_detach(&res->spillattimer);
-#endif /* if USE_ALGLOCK || USE_MBSLOCK */
 
 cleanup_primelock:
 	isc_mutex_destroy(&res->primelock);

@@ -1,5 +1,5 @@
 ;;- Machine description for Renesas / SuperH SH.
-;;  Copyright (C) 1993-2018 Free Software Foundation, Inc.
+;;  Copyright (C) 1993-2019 Free Software Foundation, Inc.
 ;;  Contributed by Steve Chamberlain (sac@cygnus.com).
 ;;  Improved by Jim Wilson (wilson@cygnus.com).
 
@@ -842,7 +842,7 @@
   if (SUBREG_P (reg))
     reg = SUBREG_REG (reg);
   gcc_assert (REG_P (reg));
-  if (find_regno_note (curr_insn, REG_DEAD, REGNO (reg)) != NULL_RTX)
+  if (find_regno_note (curr_insn, REG_DEAD, REGNO (reg)) == NULL_RTX)
     FAIL;
 
   /* FIXME: Maybe also search the predecessor basic blocks to catch
@@ -7170,7 +7170,7 @@
 })
 
 ;; The use of operand 1 / 2 helps us distinguish case table jumps
-;; which can be present in structured code from indirect jumps which can not
+;; which can be present in structured code from indirect jumps which cannot
 ;; be present in structured code.  This allows -fprofile-arcs to work.
 
 ;; For SH1 processors.

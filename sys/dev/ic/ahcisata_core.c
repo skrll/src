@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisata_core.c,v 1.97 2021/03/04 07:29:40 skrll Exp $	*/
+/*	$NetBSD: ahcisata_core.c,v 1.99 2021/06/23 00:56:41 mrg Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.97 2021/03/04 07:29:40 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.99 2021/06/23 00:56:41 mrg Exp $");
 
 #include <sys/types.h>
 #include <sys/malloc.h>
@@ -144,18 +144,30 @@ static int
 ahci_reset(struct ahci_softc *sc)
 {
 	int i;
+	uint32_t timeout_ms = 1000;	/* default to 1s timeout */
+	prop_dictionary_t dict;
 
 	/* reset controller */
 	AHCI_WRITE(sc, AHCI_GHC, AHCI_GHC_HR);
-	/* wait up to 1s for reset to complete */
-	for (i = 0; i < 1000; i++) {
+
+	/* some systems (rockchip rk3399) need extra reset time for ahcisata. */
+	dict = device_properties(sc->sc_atac.atac_dev);
+	if (dict)
+		prop_dictionary_get_uint32(dict, "ahci-reset-ms", &timeout_ms);
+
+	/* wait for reset to complete */
+	for (i = 0; i < timeout_ms; i++) {
 		delay(1000);
 		if ((AHCI_READ(sc, AHCI_GHC) & AHCI_GHC_HR) == 0)
 			break;
 	}
-	if ((AHCI_READ(sc, AHCI_GHC) & AHCI_GHC_HR)) {
-		aprint_error("%s: reset failed\n", AHCINAME(sc));
+	if ((AHCI_READ(sc, AHCI_GHC) & AHCI_GHC_HR) != 0) {
+		aprint_error_dev(sc->sc_atac.atac_dev, "reset failed\n");
 		return -1;
+	}
+	if (i > 1000) {
+		aprint_normal_dev(sc->sc_atac.atac_dev,
+		    "reset took %d milliseconds\n", i);
 	}
 	/* enable ahci mode */
 	ahci_enable(sc);
@@ -1804,8 +1816,9 @@ ahci_atapibus_attach(struct atabus_softc * ata_sc)
 	chan->chan_max_periph = 1;
 	chan->chan_ntargets = 1;
 	chan->chan_nluns = 1;
-	chp->atapibus = config_found_ia(ata_sc->sc_dev, "atapi", chan,
-		atapiprint);
+	chp->atapibus = config_found(ata_sc->sc_dev, chan, atapiprint,
+	    CFARG_IATTR, "atapi",
+	    CFARG_EOL);
 }
 
 static void

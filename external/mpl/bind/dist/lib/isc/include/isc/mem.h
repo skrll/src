@@ -1,4 +1,4 @@
-/*	$NetBSD: mem.h,v 1.5 2021/02/19 16:42:19 christos Exp $	*/
+/*	$NetBSD: mem.h,v 1.7 2021/04/29 17:26:12 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -23,6 +23,7 @@
 #include <isc/mutex.h>
 #include <isc/platform.h>
 #include <isc/types.h>
+#include <isc/util.h>
 
 ISC_LANG_BEGINDECLS
 
@@ -117,7 +118,7 @@ LIBISC_EXTERNAL_DATA extern unsigned int isc_mem_defaultflags;
  * by carefully separating memory contexts.
  */
 
-#ifndef ISC_MEM_USE_INTERNAL_MALLOC
+#if !defined(ISC_MEM_USE_INTERNAL_MALLOC) && !__SANITIZE_ADDRESS__
 #define ISC_MEM_USE_INTERNAL_MALLOC 1
 #endif /* ifndef ISC_MEM_USE_INTERNAL_MALLOC */
 
@@ -234,22 +235,22 @@ struct isc_mempool {
 	do {                                                     \
 		ISCMEMFUNC(put)((c), (p), (s)_ISC_MEM_FILELINE); \
 		(p) = NULL;                                      \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define isc_mem_putanddetach(c, p, s)                                     \
 	do {                                                              \
 		ISCMEMFUNC(putanddetach)((c), (p), (s)_ISC_MEM_FILELINE); \
 		(p) = NULL;                                               \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define isc_mem_free(c, p)                                   \
 	do {                                                 \
 		ISCMEMFUNC(free)((c), (p)_ISC_MEM_FILELINE); \
 		(p) = NULL;                                  \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 #define isc_mempool_put(c, p)                                   \
 	do {                                                    \
 		ISCMEMPOOLFUNC(put)((c), (p)_ISC_MEM_FILELINE); \
 		(p) = NULL;                                     \
-	} while (/*CONSTCOND*/0)
+	} while (0)
 
 /*@{*/
 void

@@ -1,4 +1,4 @@
-/* $NetBSD: jensenio_intr.c,v 1.13 2020/09/25 03:40:11 thorpej Exp $ */
+/* $NetBSD: jensenio_intr.c,v 1.17 2021/07/04 22:42:35 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999, 2000 The NetBSD Foundation, Inc.
@@ -31,14 +31,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: jensenio_intr.c,v 1.13 2020/09/25 03:40:11 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: jensenio_intr.c,v 1.17 2021/07/04 22:42:35 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/systm.h>
 #include <sys/errno.h>
-#include <sys/malloc.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
 #include <sys/syslog.h>
@@ -56,26 +55,26 @@ static bus_space_tag_t pic_iot;
 static bus_space_handle_t pic_ioh[2];
 static bus_space_handle_t pic_elcr_ioh;
 
-int	jensenio_eisa_intr_map(void *, u_int, eisa_intr_handle_t *);
-const char *jensenio_eisa_intr_string(void *, int, char *, size_t);
-const struct evcnt *jensenio_eisa_intr_evcnt(void *, int);
-void	*jensenio_eisa_intr_establish(void *, int, int, int,
-	    int (*)(void *), void *);
-void	jensenio_eisa_intr_disestablish(void *, void *);
-int	jensenio_eisa_intr_alloc(void *, int, int, int *);
+static int		jensenio_eisa_intr_map(void *, u_int,
+			    eisa_intr_handle_t *);
+static const char *	jensenio_eisa_intr_string(void *, int, char *, size_t);
+static const struct evcnt *jensenio_eisa_intr_evcnt(void *, int);
+static void *		jensenio_eisa_intr_establish(void *, int, int, int,
+			    int (*)(void *), void *);
+static void		jensenio_eisa_intr_disestablish(void *, void *);
+static int		jensenio_eisa_intr_alloc(void *, int, int, int *);
 
 #define	JENSEN_MAX_IRQ		16
-#define	JENSEN_MAX_IRQ_STR	16
 
-struct alpha_shared_intr *jensenio_eisa_intr;
+static struct alpha_shared_intr *jensenio_eisa_intr;
 
-void	jensenio_iointr(void *, u_long);
+static void	jensenio_iointr(void *, u_long);
 
-void	jensenio_enable_intr(int, int);
-void	jensenio_setlevel(int, int);
-void	jensenio_pic_init(void);
+static void	jensenio_enable_intr(int, int);
+static void	jensenio_setlevel(int, int);
+static void	jensenio_pic_init(void);
 
-const int jensenio_intr_deftype[JENSEN_MAX_IRQ] = {
+static const int jensenio_intr_deftype[JENSEN_MAX_IRQ] = {
 	IST_EDGE,		/*  0: interval timer 0 output */
 	IST_EDGE,		/*  1: line printer */
 	IST_UNUSABLE,		/*  2: (cascade) */
@@ -110,27 +109,23 @@ jensenio_intr_init(struct jensenio_config *jcp)
 {
 	eisa_chipset_tag_t ec = &jcp->jc_ec;
 	isa_chipset_tag_t ic = &jcp->jc_ic;
-	char *cp;
+	struct evcnt *ev;
+	const char *cp;
 	int i;
 
 	pic_iot = &jcp->jc_eisa_iot;
 
 	jensenio_pic_init();
 
-	jensenio_eisa_intr = alpha_shared_intr_alloc(JENSEN_MAX_IRQ,
-	    JENSEN_MAX_IRQ_STR);
+	jensenio_eisa_intr = alpha_shared_intr_alloc(JENSEN_MAX_IRQ);
 	for (i = 0; i < JENSEN_MAX_IRQ; i++) {
 		alpha_shared_intr_set_dfltsharetype(jensenio_eisa_intr,
 		    i, jensenio_intr_deftype[i]);
-		/* Don't bother with stray interrupts. */
-		alpha_shared_intr_set_maxstrays(jensenio_eisa_intr,
-		    i, 0);
 
+		ev = alpha_shared_intr_evcnt(jensenio_eisa_intr, i);
 		cp = alpha_shared_intr_string(jensenio_eisa_intr, i);
-		snprintf(cp, JENSEN_MAX_IRQ_STR, "irq %d", i);
-		evcnt_attach_dynamic(alpha_shared_intr_evcnt(
-		    jensenio_eisa_intr, i), EVCNT_TYPE_INTR,
-		    NULL, "eisa", cp);
+
+		evcnt_attach_dynamic(ev, EVCNT_TYPE_INTR, NULL, "eisa", cp);
 	}
 
 	/*
@@ -211,7 +206,7 @@ jensenio_intr_establish(struct jensenio_scb_intrhand *jih,
 	mutex_exit(&cpu_lock);
 }
 
-int
+static int
 jensenio_eisa_intr_map(void *v, u_int eirq, eisa_intr_handle_t *ihp)
 {
 
@@ -232,7 +227,7 @@ jensenio_eisa_intr_map(void *v, u_int eirq, eisa_intr_handle_t *ihp)
 	return (0);
 }
 
-const char *
+static const char *
 jensenio_eisa_intr_string(void *v, int eirq, char *buf, size_t len)
 {
 	if (eirq >= JENSEN_MAX_IRQ)
@@ -242,7 +237,7 @@ jensenio_eisa_intr_string(void *v, int eirq, char *buf, size_t len)
 	return buf;
 }
 
-const struct evcnt *
+static const struct evcnt *
 jensenio_eisa_intr_evcnt(void *v, int eirq)
 {
 
@@ -252,7 +247,7 @@ jensenio_eisa_intr_evcnt(void *v, int eirq)
 	return (alpha_shared_intr_evcnt(jensenio_eisa_intr, eirq));
 }
 
-void *
+static void *
 jensenio_eisa_intr_establish(void *v, int irq, int type, int level,
     int (*fn)(void *), void *arg)
 {
@@ -268,14 +263,14 @@ jensenio_eisa_intr_establish(void *v, int irq, int type, int level,
 	}
 
 	cookie = alpha_shared_intr_alloc_intrhand(jensenio_eisa_intr, irq,
-	    type, level, 0, fn, arg, "eisa irq");
+	    type, level, 0, fn, arg, "eisa");
 
 	if (cookie == NULL)
 		return NULL;
 
 	mutex_enter(&cpu_lock);
 
-	if (! alpha_shared_intr_link(jensenio_eisa_intr, cookie, "eisa irq")) {
+	if (! alpha_shared_intr_link(jensenio_eisa_intr, cookie, "eisa")) {
 		mutex_exit(&cpu_lock);
 		alpha_shared_intr_free_intrhand(cookie);
 		return NULL;
@@ -294,7 +289,7 @@ jensenio_eisa_intr_establish(void *v, int irq, int type, int level,
 	return cookie;
 }
 
-void
+static void
 jensenio_eisa_intr_disestablish(void *v, void *cookie)
 {
 	struct alpha_shared_intrhand *ih = cookie;
@@ -309,14 +304,14 @@ jensenio_eisa_intr_disestablish(void *v, void *cookie)
 		scb_free(0x800 + SCB_IDXTOVEC(irq));
 	}
 
-	alpha_shared_intr_unlink(jensenio_eisa_intr, cookie, "eisa irq");
+	alpha_shared_intr_unlink(jensenio_eisa_intr, cookie, "eisa");
 
 	mutex_exit(&cpu_lock);
 
 	alpha_shared_intr_free_intrhand(cookie);
 }
 
-int
+static int
 jensenio_eisa_intr_alloc(void *v, int mask, int type, int *rqp)
 {
 
@@ -324,7 +319,7 @@ jensenio_eisa_intr_alloc(void *v, int mask, int type, int *rqp)
 	return (1);
 }
 
-void
+static void
 jensenio_iointr(void *framep, u_long vec)
 {
 	int irq;
@@ -332,12 +327,12 @@ jensenio_iointr(void *framep, u_long vec)
 	irq = SCB_VECTOIDX(vec - 0x800);
 
 	if (!alpha_shared_intr_dispatch(jensenio_eisa_intr, irq))
-		alpha_shared_intr_stray(jensenio_eisa_intr, irq, "eisa irq");
+		alpha_shared_intr_stray(jensenio_eisa_intr, irq, "eisa");
 
 	jensenio_specific_eoi(irq);
 }
 
-void
+static void
 jensenio_enable_intr(int irq, int onoff)
 {
 	int pic;
@@ -371,7 +366,7 @@ jensenio_setlevel(int irq, int level)
 	bus_space_write_1(pic_iot, pic_elcr_ioh, elcr, mask);
 }
 
-void
+static void
 jensenio_pic_init(void)
 {
 	static const int picaddr[2] = { IO_ICU1, IO_ICU2 };

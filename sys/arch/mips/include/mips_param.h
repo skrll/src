@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_param.h,v 1.47 2020/08/26 10:51:45 simonb Exp $	*/
+/*	$NetBSD: mips_param.h,v 1.51 2021/05/31 14:38:56 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -25,31 +25,46 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
+#ifdef _KERNEL_OPT
+#include "opt_param.h"
+#endif
+
 /*
  * No reason this can't be common
  */
 #if defined(__MIPSEB__)
-# if defined(__mips_n32) || defined(__mips_n64)
-#  define	_MACHINE_ARCH	mips64eb
-#  define	MACHINE_ARCH	"mips64eb"
-#  define	_MACHINE32_ARCH	mipseb
-#  define	MACHINE32_ARCH	"mipseb"
-# else
-#  define	_MACHINE_ARCH	mipseb
-#  define	MACHINE_ARCH	"mipseb"
-# endif
+# define _MACHINE_SUFFIX eb
+# define MACHINE_SUFFIX "eb"
 #elif defined(__MIPSEL__)
-# if defined(__mips_n32) || defined(__mips_n64)
-#  define	_MACHINE_ARCH	mips64el
-#  define	MACHINE_ARCH	"mips64el"
-#  define	_MACHINE32_ARCH	mipsel
-#  define	MACHINE32_ARCH	"mipsel"
-# else
-#  define	_MACHINE_ARCH	mipsel
-#  define	MACHINE_ARCH	"mipsel"
-#endif
+# define _MACHINE_SUFFIX el
+# define MACHINE_SUFFIX "el"
 #else
-#error neither __MIPSEL__ nor __MIPSEB__ are defined.
+# error neither __MIPSEL__ nor __MIPSEB__ are defined.
+#endif
+
+#define	___MACHINE32_OARCH		mips##_MACHINE_SUFFIX
+#define	__MACHINE32_OARCH		"mips" MACHINE_SUFFIX
+#define	___MACHINE32_NARCH		mips64##_MACHINE_SUFFIX
+#define	__MACHINE32_NARCH		"mips64" MACHINE_SUFFIX
+#define	___MACHINE64_NARCH		mipsn64##_MACHINE_SUFFIX
+#define	__MACHINE64_NARCH		"mipsn64" MACHINE_SUFFIX
+
+#if defined(__mips_n32) || defined(__mips_n64)
+# if defined(__mips_n32)
+#  define	_MACHINE_ARCH		___MACHINE32_NARCH
+#  define	MACHINE_ARCH		__MACHINE32_NARCH
+# else /* __mips_n64 */
+#  define	_MACHINE_ARCH		___MACHINE64_NARCH
+#  define	MACHINE_ARCH		__MACHINE64_NARCH
+#  define	_MACHINE32_NARCH	___MACHINE32_NARCH
+#  define	MACHINE32_NARCH		__MACHINE32_NARCH
+# endif
+# define	_MACHINE32_OARCH	___MACHINE32_OARCH
+# define	MACHINE32_OARCH		__MACHINE32_OARCH
+#else /* o32 */
+# define	_MACHINE_ARCH		___MACHINE32_OARCH
+# define	MACHINE_ARCH		__MACHINE32_OARCH
 #endif
 
 /*
@@ -103,7 +118,7 @@
 
 #define	SEGSHIFT	(PGSHIFT + PTPLENGTH)	/* LOG2(NBSEG) */
 #define	NBSEG		(1 << SEGSHIFT)	/* bytes/segment */
-#define	SEGOFSET	(NBSEG-1)	/* byte offset into segment */
+#define	SEGOFSET	(NBSEG - 1)	/* byte offset into segment */
 
 #ifdef _LP64
 #define	SEGLENGTH	(PGSHIFT - 3)

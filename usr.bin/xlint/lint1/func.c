@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.98 2021/03/26 20:31:07 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.113 2021/07/04 07:09:39 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.98 2021/03/26 20:31:07 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.113 2021/07/04 07:09:39 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -157,7 +157,7 @@ begin_control_statement(control_statement_kind kind)
 {
 	cstk_t	*ci;
 
-	ci = xcalloc(1, sizeof *ci);
+	ci = xcalloc(1, sizeof(*ci));
 	ci->c_kind = kind;
 	ci->c_surrounding = cstmt;
 	cstmt = ci;
@@ -173,7 +173,9 @@ end_control_statement(control_statement_kind kind)
 	case_label_t *cl, *next;
 
 	lint_assert(cstmt != NULL);
-	lint_assert(cstmt->c_kind == kind);
+
+	while (cstmt->c_kind != kind)
+		cstmt = cstmt->c_surrounding;
 
 	ci = cstmt;
 	cstmt = ci->c_surrounding;
@@ -190,6 +192,11 @@ end_control_statement(control_statement_kind kind)
 static void
 set_reached(bool new_reached)
 {
+#ifdef DEBUG
+	printf("%s:%d: %s -> %s\n", curr_pos.p_file, curr_pos.p_line,
+	    reached ? "reachable" : "unreachable",
+	    new_reached ? "reachable" : "unreachable");
+#endif
 	reached = new_reached;
 	warn_about_unreachable = true;
 }
@@ -408,6 +415,10 @@ funcend(void)
 		    dcs->d_func_args);
 	}
 
+	/* clean up after syntax errors, see test stmt_for.c. */
+	while (dcs->d_next != NULL)
+		dcs = dcs->d_next;
+
 	/*
 	 * remove all symbols declared during argument declaration from
 	 * the symbol table
@@ -435,6 +446,25 @@ named_label(sym_t *sym)
 }
 
 static void
+check_case_label_bitand(const tnode_t *case_expr, const tnode_t *switch_expr)
+{
+	uint64_t case_value, mask;
+
+	if (switch_expr->tn_op != BITAND ||
+	    switch_expr->tn_right->tn_op != CON)
+		return;
+
+	lint_assert(case_expr->tn_op == CON);
+	case_value = case_expr->tn_val->v_quad;
+	mask = switch_expr->tn_right->tn_val->v_quad;
+
+	if ((case_value & ~mask) != 0) {
+		/* statement not reached */
+		warning(193);
+	}
+}
+
+static void
 check_case_label_enum(const tnode_t *tn, const cstk_t *ci)
 {
 	/* similar to typeok_enum in tree.c */
@@ -447,7 +477,7 @@ check_case_label_enum(const tnode_t *tn, const cstk_t *ci)
 
 #if 0 /* not yet ready, see msg_130.c */
 	/* enum type mismatch: '%s' '%s' '%s' */
-	warning(130, type_name(ci->c_switch_type), getopname(EQ),
+	warning(130, type_name(ci->c_switch_type), op_name(EQ),
 	    type_name(tn->tn_type));
 #endif
 }
@@ -478,6 +508,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 		return;
 	}
 
+	check_case_label_bitand(tn, ci->c_switch_expr);
 	check_case_label_enum(tn, ci);
 
 	lint_assert(ci->c_switch_type != NULL);
@@ -501,7 +532,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 	 * to the type of the switch expression
 	 */
 	v = constant(tn, true);
-	(void)memset(&nv, 0, sizeof nv);
+	(void)memset(&nv, 0, sizeof(nv));
 	convert_constant(CASE, 0, ci->c_switch_type, &nv, v);
 	free(v);
 
@@ -519,11 +550,8 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 	} else {
 		check_getopt_case_label(nv.v_quad);
 
-		/*
-		 * append the value to the list of
-		 * case values
-		 */
-		cl = xcalloc(1, sizeof *cl);
+		/* append the value to the list of case values */
+		cl = xcalloc(1, sizeof(*cl));
 		cl->cl_val = nv;
 		cl->cl_next = ci->c_case_labels;
 		ci->c_case_labels = cl;
@@ -541,7 +569,7 @@ case_label(tnode_t *tn)
 
 	check_case_label(tn, ci);
 
-	tfreeblk();
+	expr_free_all();
 
 	set_reached(true);
 }
@@ -594,7 +622,6 @@ check_controlling_expression(tnode_t *tn)
 	if (tn != NULL && Tflag && !is_typeok_bool_operand(tn)) {
 		/* controlling expression must be bool, not '%s' */
 		error(333, tspec_name(tn->tn_type->t_tspec));
-		return NULL;
 	}
 
 	return tn;
@@ -683,7 +710,7 @@ switch1(tnode_t *tn)
 	 * duplicated. This is not too complicated because it is
 	 * only an integer type.
 	 */
-	tp = xcalloc(1, sizeof *tp);
+	tp = xcalloc(1, sizeof(*tp));
 	if (tn != NULL) {
 		tp->t_tspec = tn->tn_type->t_tspec;
 		if ((tp->t_is_enum = tn->tn_type->t_is_enum) != false)
@@ -692,12 +719,16 @@ switch1(tnode_t *tn)
 		tp->t_tspec = INT;
 	}
 
+	/* leak the memory, for check_case_label_bitand */
+	expr_save_memory();
+
 	check_getopt_begin_switch();
-	expr(tn, true, false, true, false);
+	expr(tn, true, false, false, false);
 
 	begin_control_statement(CS_SWITCH);
 	cstmt->c_switch = true;
 	cstmt->c_switch_type = tp;
+	cstmt->c_switch_expr = tn;
 
 	set_reached(false);
 	seen_fallthrough = true;
@@ -715,12 +746,11 @@ switch2(void)
 
 	lint_assert(cstmt->c_switch_type != NULL);
 
-	/*
-	 * If the switch expression was of type enumeration, count the case
-	 * labels and the number of enumerators. If both counts are not
-	 * equal print a warning.
-	 */
 	if (cstmt->c_switch_type->t_is_enum) {
+		/*
+		 * Warn if the number of case labels is different from the
+		 * number of enumerators.
+		 */
 		nenum = nclab = 0;
 		lint_assert(cstmt->c_switch_type->t_enum != NULL);
 		for (esym = cstmt->c_switch_type->t_enum->en_first_enumerator;
@@ -739,22 +769,25 @@ switch2(void)
 
 	if (cstmt->c_break) {
 		/*
-		 * end of switch always reached (c_break is only set if the
-		 * break statement can be reached).
+		 * The end of the switch statement is always reached since
+		 * c_break is only set if a break statement can actually
+		 * be reached.
 		 */
 		set_reached(true);
-	} else if (!cstmt->c_default &&
-		   (!hflag || !cstmt->c_switch_type->t_is_enum ||
-		    nenum != nclab)) {
+	} else if (cstmt->c_default ||
+		   (hflag && cstmt->c_switch_type->t_is_enum &&
+		    nenum == nclab)) {
 		/*
-		 * there are possible values which are not handled in
-		 * switch
+		 * The end of the switch statement is reached if the end
+		 * of the last statement inside it is reached.
+		 */
+	} else {
+		/*
+		 * There are possible values that are not handled in the
+		 * switch statement.
 		 */
 		set_reached(true);
-	}	/*
-		 * otherwise the end of the switch expression is reached
-		 * if the end of the last statement inside it is reached.
-		 */
+	}
 
 	end_control_statement(CS_SWITCH);
 }
@@ -883,7 +916,7 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 	 * Also remember this expression itself. We must check it at
 	 * the end of the loop to get "used but not set" warnings correct.
 	 */
-	cstmt->c_for_expr3_mem = tsave();
+	cstmt->c_for_expr3_mem = expr_save_memory();
 	cstmt->c_for_expr3 = tn3;
 	cstmt->c_for_expr3_pos = curr_pos;
 	cstmt->c_for_expr3_csrc_pos = csrc_pos;
@@ -920,7 +953,7 @@ for2(void)
 	cspos = csrc_pos;
 
 	/* Restore the tree memory for the reinitialization expression */
-	trestor(cstmt->c_for_expr3_mem);
+	expr_restore_memory(cstmt->c_for_expr3_mem);
 	tn3 = cstmt->c_for_expr3;
 	curr_pos = cstmt->c_for_expr3_pos;
 	csrc_pos = cstmt->c_for_expr3_csrc_pos;
@@ -935,7 +968,7 @@ for2(void)
 	if (tn3 != NULL) {
 		expr(tn3, false, false, true, false);
 	} else {
-		tfreeblk();
+		expr_free_all();
 	}
 
 	curr_pos = cpos;
@@ -1023,7 +1056,14 @@ do_return(tnode_t *tn)
 	cstk_t	*ci;
 	op_t	op;
 
-	for (ci = cstmt; ci->c_surrounding != NULL; ci = ci->c_surrounding)
+	ci = cstmt;
+	if (ci == NULL) {
+		/* syntax error '%s' */
+		error(249, "return outside function");
+		return;
+	}
+
+	for (; ci->c_surrounding != NULL; ci = ci->c_surrounding)
 		continue;
 
 	if (tn != NULL)
@@ -1034,7 +1074,7 @@ do_return(tnode_t *tn)
 	if (tn != NULL && funcsym->s_type->t_subt->t_tspec == VOID) {
 		/* void function %s cannot return value */
 		error(213, funcsym->s_name);
-		tfreeblk();
+		expr_free_all();
 		tn = NULL;
 	} else if (tn == NULL && funcsym->s_type->t_subt->t_tspec != VOID) {
 		/*
@@ -1049,9 +1089,9 @@ do_return(tnode_t *tn)
 	if (tn != NULL) {
 
 		/* Create a temporary node for the left side */
-		ln = tgetblk(sizeof *ln);
+		ln = expr_zalloc(sizeof(*ln));
 		ln->tn_op = NAME;
-		ln->tn_type = tduptyp(funcsym->s_type->t_subt);
+		ln->tn_type = expr_dup_type(funcsym->s_type->t_subt);
 		ln->tn_type->t_const = false;
 		ln->tn_lvalue = true;
 		ln->tn_sym = funcsym;		/* better than nothing */
@@ -1087,46 +1127,43 @@ do_return(tnode_t *tn)
 void
 global_clean_up_decl(bool silent)
 {
-	pos_t	cpos;
-
-	cpos = curr_pos;
 
 	if (nargusg != -1) {
 		if (!silent) {
-			curr_pos = argsused_pos;
 			/* must precede function definition: ** %s ** */
-			warning(282, "ARGSUSED");
+			warning_at(282, &argsused_pos, "ARGSUSED");
 		}
 		nargusg = -1;
 	}
 	if (nvararg != -1) {
 		if (!silent) {
-			curr_pos = vapos;
 			/* must precede function definition: ** %s ** */
-			warning(282, "VARARGS");
+			warning_at(282, &vapos, "VARARGS");
 		}
 		nvararg = -1;
 	}
 	if (printflike_argnum != -1) {
 		if (!silent) {
-			curr_pos = printflike_pos;
 			/* must precede function definition: ** %s ** */
-			warning(282, "PRINTFLIKE");
+			warning_at(282, &printflike_pos, "PRINTFLIKE");
 		}
 		printflike_argnum = -1;
 	}
 	if (scanflike_argnum != -1) {
 		if (!silent) {
-			curr_pos = scanflike_pos;
 			/* must precede function definition: ** %s ** */
-			warning(282, "SCANFLIKE");
+			warning_at(282, &scanflike_pos, "SCANFLIKE");
 		}
 		scanflike_argnum = -1;
 	}
 
-	curr_pos = cpos;
-
 	dcs->d_asm = false;
+
+	/*
+	 * Needed for BSD yacc in case of parse errors; GNU Bison 3.0.4 is
+	 * fine.  See gcc_attribute.c, function_with_unknown_attribute.
+	 */
+	attron = false;
 }
 
 /*
