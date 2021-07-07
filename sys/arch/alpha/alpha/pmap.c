@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.c,v 1.293 2021/05/31 17:16:04 thorpej Exp $ */
+/* $NetBSD: pmap.c,v 1.296 2021/07/05 15:12:00 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001, 2007, 2008, 2020
@@ -135,13 +135,12 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.293 2021/05/31 17:16:04 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.296 2021/07/05 15:12:00 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/proc.h>
-#include <sys/malloc.h>
 #include <sys/pool.h>
 #include <sys/buf.h>
 #include <sys/evcnt.h>
@@ -257,6 +256,11 @@ int		pmap_pv_lowat __read_mostly = PMAP_PV_LOWAT;
  * pmap_activate().
  */
 static TAILQ_HEAD(, pmap) pmap_all_pmaps __cacheline_aligned;
+
+/*
+ * Instrument the number of calls to pmap_growkernel().
+ */
+static struct evcnt pmap_growkernel_evcnt __read_mostly;
 
 /*
  * The pools from which pmap structures and sub-structures are allocated.
@@ -1549,6 +1553,10 @@ pmap_init(void)
 	/* Initialize TLB handling. */
 	pmap_tlb_init();
 
+	/* Instrument pmap_growkernel(). */
+	evcnt_attach_dynamic_nozero(&pmap_growkernel_evcnt, EVCNT_TYPE_MISC,
+	    NULL, "pmap", "growkernel");
+
 	/*
 	 * Set a low water mark on the pv_entry pool, so that we are
 	 * more likely to have these around even in extreme memory
@@ -2345,7 +2353,7 @@ pmap_enter(pmap_t pmap, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 
 		lock = pmap_pvh_lock(pg);
 		mutex_enter(lock);
-		md->pvh_listx |= attrs;
+		attrs = (md->pvh_listx |= attrs);
 		mutex_exit(lock);
 
 		/* Set up referenced/modified emulation for new mapping. */
@@ -3593,6 +3601,8 @@ pmap_growkernel(vaddr_t maxkvaddr)
 
 	if (maxkvaddr <= virtual_end)
 		goto out;		/* we are OK */
+
+	pmap_growkernel_evcnt.ev_count++;
 
 	va = virtual_end;
 
