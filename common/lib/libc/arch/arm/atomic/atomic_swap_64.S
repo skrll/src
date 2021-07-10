@@ -59,7 +59,7 @@ ENTRY_NP(__sync_lock_release_8)
 	mov	r2, #0
 	mov	r3, #0
 
-	DMBST
+	DMB
 	strd	r2, r3, [r0]
 	RET
 END(__sync_lock_release_8)

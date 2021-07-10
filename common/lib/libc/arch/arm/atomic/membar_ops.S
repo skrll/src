@@ -30,7 +30,8 @@
 
 #include "atomic_op_asm.h"
 
-#ifdef _ARM_ARCH_6
+#if defined(_ARM_ARCH_6)
+
 ENTRY_NP(_membar_producer)
 	DMBST
 	RET

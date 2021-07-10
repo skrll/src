@@ -31,7 +31,7 @@
 
 #include "atomic_op_asm.h"
 
-#ifdef _ARM_ARCH_6
+#if defined(_ARM_ARCH_6)
 
 ENTRY_NP(_atomic_sub_32)
 	negs	r1, r1
@@ -95,6 +95,7 @@ ENTRY_NP(_atomic_add_32_nv)
 	RET				/* return new value */
 END(_atomic_add_32_nv)
 END(_atomic_sub_32_nv)
+
 ATOMIC_OP_ALIAS(atomic_add_32_nv,_atomic_add_32_nv)
 ATOMIC_OP_ALIAS(atomic_add_int_nv,_atomic_add_32_nv)
 ATOMIC_OP_ALIAS(atomic_add_long_nv,_atomic_add_32_nv)

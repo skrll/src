@@ -31,7 +31,26 @@
 
 #include "atomic_op_asm.h"
 
-#ifdef _ARM_ARCH_6
+#if defined(_ARM_ARCH_6)
+
+ENTRY_NP(__sync_fetch_and_sub_8)
+	push	{r4, lr}
+	DMB
+	mov	ip, r0			/* need r0 for return value */
+#ifndef __ARM_EABI__
+	mov	r3, r2
+	mov	r2, r1
+#endif
+1:	ldrexd	r0, [ip]		/* load old value */
+	subs	NLO, LO, NLO		/* calculate new value lo */
+	sbcs	NHI, HI, NHI		/* calculate new value hi */
+	strexd	r4, r2, [ip]		/* try to store */
+	cmp	r4, #0			/*   succeed? */
+	bne	1b			/*     no, try again? */
+	DMB
+	pop	{r4, pc}
+END(__sync_sub_and_fetch_8)
+
 
 ENTRY_NP(_atomic_sub_64_nv)
 	push	{r3, r4}		/* save temporary */

@@ -30,7 +30,7 @@
 
 #include "atomic_op_asm.h"
 
-#ifdef _ARM_ARCH_6
+#if defined(_ARM_ARCH_6)
 
 ENTRY_NP(_atomic_dec_64_nv)
 	mov	ip, r0			/* need r0 for return value */
@@ -45,6 +45,6 @@ END(_atomic_dec_64_nv)
 
 STRONG_ALIAS(_atomic_dec_64,_atomic_dec_64_nv)
 ATOMIC_OP_ALIAS(atomic_dec_64_nv,_atomic_dec_64_nv)
-ATOMIC_OP_ALIAS(atomic_dec_64,_atomic_dec_64)
+ATOMIC_OP_ALIAS(atomic_dec_64,_atomic_dec_64_nv)
 
 #endif /* _ARM_ARCH_6 */

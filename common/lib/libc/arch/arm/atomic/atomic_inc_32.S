@@ -30,7 +30,7 @@
 
 #include "atomic_op_asm.h"
 
-#ifdef _ARM_ARCH_6
+#if defined(_ARM_ARCH_6)
 
 ENTRY_NP(_atomic_inc_32)
 1:	ldrex	r3, [r0]		/* load old value (return value) */
@@ -40,6 +40,7 @@ ENTRY_NP(_atomic_inc_32)
 	bne	1b			/*     no, try again? */
 	RET				/* return new value */
 END(_atomic_inc_32)
+
 ATOMIC_OP_ALIAS(atomic_inc_32,_atomic_inc_32)
 ATOMIC_OP_ALIAS(atomic_inc_uint,_atomic_inc_32)
 ATOMIC_OP_ALIAS(atomic_inc_ulong,_atomic_inc_32)
@@ -47,6 +48,7 @@ ATOMIC_OP_ALIAS(atomic_inc_ptr,_atomic_inc_32)
 STRONG_ALIAS(_atomic_inc_uint,_atomic_inc_32)
 STRONG_ALIAS(_atomic_inc_ulong,_atomic_inc_32)
 STRONG_ALIAS(_atomic_inc_ptr,_atomic_inc_32)
+
 
 ENTRY_NP(_atomic_inc_32_nv)
 	mov	ip, r0			/* need r0 for return value */

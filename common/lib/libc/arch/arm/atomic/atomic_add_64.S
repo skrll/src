@@ -30,7 +30,7 @@
 
 #include "atomic_op_asm.h"
 
-#ifdef _ARM_ARCH_6
+#if defined(_ARM_ARCH_6)
 
 
 ENTRY_NP(_atomic_add_64)
@@ -46,14 +46,11 @@ ENTRY_NP(_atomic_add_64)
 	strexd	r6, r4, r5, [ip]	/* try to store */
 	cmp	r6, #0			/*   succeed? */
 	bne	1b			/*     no, try again */
-#ifdef _ARM_ARCH_7
-	dmb
-#else
-	mcr	p15, 0, r2, c7, c10, 5	/* data memory barrier */
-#endif
 	pop	{r4-r7}
 	RET				/* return old value */
 END(_atomic_add_64)
+
+ATOMIC_OP_ALIAS(atomic_add_64,_atomic_add_64)
 
 ENTRY_NP(__sync_fetch_add_and_8)
 	push	{r4, lr}
@@ -62,8 +59,6 @@ ENTRY_NP(__sync_fetch_add_and_8)
 	DMB
 	pop	{r4, pc}
 END(__sync_fetch_add_and_8)
-
-ATOMIC_OP_ALIAS(atomic_add_64,_atomic_add_64)
 
 
 ENTRY_NP(_atomic_add_64_nv)
