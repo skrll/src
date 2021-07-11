@@ -1,4 +1,4 @@
-/* $NetBSD: ix_txrx.c,v 1.79 2021/05/27 06:11:34 msaitoh Exp $ */
+/* $NetBSD: ix_txrx.c,v 1.81 2021/07/07 08:58:19 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ix_txrx.c,v 1.79 2021/05/27 06:11:34 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ix_txrx.c,v 1.81 2021/07/07 08:58:19 msaitoh Exp $");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
@@ -1577,7 +1577,7 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 
 	/* Setup our descriptor indices */
 	rxr->next_to_check = 0;
-	rxr->next_to_refresh = 0;
+	rxr->next_to_refresh = adapter->num_rx_desc - 1; /* Fully allocated */
 	rxr->lro_enabled = FALSE;
 	rxr->rx_copies.ev_count = 0;
 #if 0 /* NetBSD */
@@ -1976,7 +1976,7 @@ ixgbe_rxeof(struct ix_queue *que)
 			 * is cache aligned into a new mbuf, and
 			 * leave the old mbuf+cluster for re-use.
 			 */
-			if (eop && len <= IXGBE_RX_COPY_LEN) {
+			if (eop && len <= adapter->rx_copy_len) {
 				sendmp = m_gethdr(M_NOWAIT, MT_DATA);
 				if (sendmp != NULL) {
 					sendmp->m_data += IXGBE_RX_COPY_ALIGN;
