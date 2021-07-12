@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1077 2021/07/06 17:33:07 rillig Exp $
+# $NetBSD: mi,v 1.1080 2021/07/09 05:54:11 yamaguchi Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -3063,12 +3063,16 @@
 ./usr/tests/lib/libc/stdio				tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/stdio/Atffile			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/stdio/Kyuafile			tests-lib-tests		compattestfile,atf,kyua
+./usr/tests/lib/libc/stdio/h_intr			tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/stdio/h_makenumbers		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/stdio/h_testnumbers		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/stdio/t_clearerr			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/stdio/t_fflush			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/stdio/t_fmemopen			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/stdio/t_fopen			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/stdio/t_format			tests-obsolete		obsolete
 ./usr/tests/lib/libc/stdio/t_fputc			tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/stdio/t_intr			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/stdio/t_mktemp			tests-obsolete		obsolete
 ./usr/tests/lib/libc/stdio/t_open_memstream		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/stdio/t_popen			tests-lib-tests		compattestfile,atf
@@ -4138,6 +4142,7 @@
 ./usr/tests/net/if_vlan					tests-net-tests		compattestfile,atf
 ./usr/tests/net/if_vlan/Atffile				tests-net-tests		atf,rump
 ./usr/tests/net/if_vlan/Kyuafile			tests-net-tests		atf,rump,kyua
+./usr/tests/net/if_vlan/bpfopen				tests-net-tests		atf,rump
 ./usr/tests/net/if_vlan/siocXmulti			tests-net-tests		atf,rump
 ./usr/tests/net/if_vlan/t_vlan				tests-net-tests		atf,rump
 ./usr/tests/net/if_wg					tests-net-tests		compattestfile,atf
@@ -6257,8 +6262,12 @@
 ./usr/tests/usr.bin/xlint/lint1/lex_wide_string.exp		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_000.c			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_000.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_000_c90.c			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_000_c90.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_001.c			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_001.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_001_c90.c			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_001_c90.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_002.c			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_002.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_003.c			tests-usr.bin-tests	compattestfile,atf
@@ -6805,6 +6814,8 @@
 ./usr/tests/usr.bin/xlint/lint1/msg_271.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_272.c			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_272.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_272_c90.c			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/xlint/lint1/msg_272_c90.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_273.c			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_273.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/xlint/lint1/msg_274.c			tests-usr.bin-tests	compattestfile,atf
