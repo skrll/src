@@ -1,4 +1,4 @@
-/*	$NetBSD: fvwrite.c,v 1.25 2012/03/27 15:05:42 christos Exp $	*/
+/*	$NetBSD: fvwrite.c,v 1.27 2021/07/08 09:06:51 christos Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)fvwrite.c	8.1 (Berkeley) 6/4/93";
 #else
-__RCSID("$NetBSD: fvwrite.c,v 1.25 2012/03/27 15:05:42 christos Exp $");
+__RCSID("$NetBSD: fvwrite.c,v 1.27 2021/07/08 09:06:51 christos Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
@@ -97,15 +97,23 @@ __sfvwrite(FILE *fp, struct __suio *uio)
 		len = iov->iov_len; \
 		iov++; \
 	}
+#define WRITE(nw) \
+	w = (*fp->_write)(fp->_cookie, p, nw); \
+	if (w <= 0) \
+		goto err
+#define FLUSH(nw) \
+	if (fflush(fp)) { \
+		fp->_p -= nw;	/* rewind unwritten */ \
+		goto err; \
+	}
+
 	if (fp->_flags & __SNBF) {
 		/*
 		 * Unbuffered: write up to BUFSIZ bytes at a time.
 		 */
 		do {
 			GETIOV(;);
-			w = (*fp->_write)(fp->_cookie, p, MIN(len, BUFSIZ));
-			if (w <= 0)
-				goto err;
+			WRITE(MIN(len, BUFSIZ));
 			p += w;
 			len -= w;
 		} while ((uio->uio_resid -= w) != 0);
@@ -156,13 +164,10 @@ __sfvwrite(FILE *fp, struct __suio *uio)
 				COPY(w);
 				/* fp->_w -= w; */ /* unneeded */
 				fp->_p += w;
-				if (fflush(fp))
-					goto err;
+				FLUSH(w);
 			} else if (len >= (size_t)(w = fp->_bf._size)) {
 				/* write directly */
-				w = (*fp->_write)(fp->_cookie, p, (size_t)w);
-				if (w <= 0)
-					goto err;
+				WRITE((size_t)w);
 			} else {
 				/* fill and done */
 				w = len;
@@ -196,12 +201,9 @@ __sfvwrite(FILE *fp, struct __suio *uio)
 				COPY(w);
 				/* fp->_w -= w; */
 				fp->_p += w;
-				if (fflush(fp))
-					goto err;
+				FLUSH(w);
 			} else if (s >= (w = fp->_bf._size)) {
-				w = (*fp->_write)(fp->_cookie, p, (size_t)w);
-				if (w <= 0)
-				 	goto err;
+				WRITE((size_t)w);
 			} else {
 				w = s;
 				COPY(w);
@@ -210,8 +212,7 @@ __sfvwrite(FILE *fp, struct __suio *uio)
 			}
 			if ((nldist -= w) == 0) {
 				/* copied the newline: flush and forget */
-				if (fflush(fp))
-					goto err;
+				FLUSH(w);
 				nlknown = 0;
 			}
 			p += w;

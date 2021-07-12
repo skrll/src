@@ -1,4 +1,4 @@
-/* $NetBSD: lex.c,v 1.50 2021/06/30 10:25:02 rillig Exp $ */
+/* $NetBSD: lex.c,v 1.53 2021/07/08 03:10:39 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: lex.c,v 1.50 2021/06/30 10:25:02 rillig Exp $");
+__RCSID("$NetBSD: lex.c,v 1.53 2021/07/08 03:10:39 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -183,7 +183,7 @@ static	struct	kwtab {
 	kwdef_gcc_attr(	"gnu_printf",	T_AT_FORMAT_GNU_PRINTF),
 	kwdef_keyword(	"goto",		T_GOTO),
 	kwdef_keyword(	"if",		T_IF),
-	kwdef_token(	"imag",		T_IMAG,			0,1,0,0,4),
+	kwdef_token(	"imag",		T_IMAG,			0,0,1,0,4),
 	kwdef_sclass(	"inline",	INLINE,			0,1,0,0,7),
 	kwdef_type(	"int",		INT,			0,0,0,0,1),
 	kwdef_type(	"long",		LONG,			0,0,0,0,1),
@@ -204,7 +204,7 @@ static	struct	kwtab {
 	kwdef_gcc_attr(	"pcs",		T_AT_PCS),
 	kwdef_gcc_attr(	"printf",	T_AT_FORMAT_PRINTF),
 	kwdef_gcc_attr(	"pure",		T_AT_PURE),
-	kwdef_token(	"real",		T_REAL,			0,1,0,0,4),
+	kwdef_token(	"real",		T_REAL,			0,0,1,0,4),
 	kwdef_sclass(	"register",	REG,			0,0,0,0,1),
 	kwdef_tqual(	"restrict",	RESTRICT,		0,1,0,0,5),
 	kwdef_keyword(	"return",	T_RETURN),
@@ -258,7 +258,7 @@ symt_t	symtyp;
 
 
 static void
-add_keyword(struct kwtab *kw, u_int deco)
+add_keyword(const struct kwtab *kw, u_int deco)
 {
 	sym_t *sym;
 	size_t h;
@@ -452,7 +452,7 @@ search(sbuf_t *sb)
 	for (sym = symtab[sb->sb_hash]; sym != NULL; sym = sym->s_link) {
 		if (strcmp(sym->s_name, sb->sb_name) == 0) {
 			if (sym->s_keyword != NULL) {
-				struct kwtab *kw = sym->s_keyword;
+				const struct kwtab *kw = sym->s_keyword;
 				if (!kw->kw_attr || attron)
 					return sym;
 			} else if (!attron && sym->s_kind == symtyp)
@@ -1381,11 +1381,10 @@ lex_wide_string(void)
  * putting undeclared symbols into the symbol table if a syntax error
  * occurs.
  *
- * getsym() is called as soon as it is probably ok to put the symbol to
- * the symbol table. This does not mean that it is not possible that
- * symbols are put to the symbol table which are not completely
- * declared due to syntax errors. To avoid too many problems in this
- * case, symbols get type int in getsym().
+ * getsym() is called as soon as it is probably ok to put the symbol to the
+ * symbol table. It is still possible that symbols are put in the symbol
+ * table that are not completely declared due to syntax errors. To avoid too
+ * many problems in this case, symbols get type int in getsym().
  *
  * XXX calls to getsym() should be delayed until decl1*() is called.
  */
@@ -1456,8 +1455,8 @@ getsym(sbuf_t *sb)
 }
 
 /*
- * Construct a temporary symbol. The symbol starts with a digit, so that
- * it is illegal.
+ * Construct a temporary symbol. The symbol name starts with a digit, making
+ * the name illegal.
  */
 sym_t *
 mktempsym(type_t *t)

@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.192 2021/06/28 10:07:43 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.195 2021/07/05 19:55:51 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.192 2021/06/28 10:07:43 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.195 2021/07/05 19:55:51 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -917,8 +917,8 @@ length(const type_t *tp, const char *name)
 	case STRUCT:
 	case UNION:
 		if (is_incomplete(tp) && name != NULL) {
-			/* incomplete structure or union %s: %s */
-			error(31, tp->t_str->sou_tag->s_name, name);
+			/* argument '%s' has type '%s' */
+			error(31, name, type_name(tp));
 		}
 		elsz = tp->t_str->sou_size_in_bits;
 		break;
@@ -1255,8 +1255,8 @@ align(int al, int len)
 	 * the struct/union if it is larger than the current alignment
 	 * of the struct/union.
 	 */
-	if (al > dcs->d_stralign)
-		dcs->d_stralign = al;
+	if (al > dcs->d_sou_align_in_bits)
+		dcs->d_sou_align_in_bits = al;
 
 	no = (dcs->d_offset + (al - 1)) & ~(al - 1);
 	if (len == 0 || dcs->d_offset + len > no)
@@ -1783,20 +1783,17 @@ newtag(sym_t *tag, scl_t scl, bool decl, bool semi)
 const char *
 storage_class_name(scl_t sc)
 {
-	const	char *s;
-
 	switch (sc) {
-	case EXTERN:	s = "extern";	break;
-	case STATIC:	s = "static";	break;
-	case AUTO:	s = "auto";	break;
-	case REG:	s = "register";	break;
-	case TYPEDEF:	s = "typedef";	break;
-	case STRUCT_TAG:s = "struct";	break;
-	case UNION_TAG:	s = "union";	break;
-	case ENUM_TAG:	s = "enum";	break;
+	case EXTERN:	return "extern";
+	case STATIC:	return "static";
+	case AUTO:	return "auto";
+	case REG:	return "register";
+	case TYPEDEF:	return "typedef";
+	case STRUCT_TAG:return "struct";
+	case UNION_TAG:	return "union";
+	case ENUM_TAG:	return "enum";
 	default:	lint_assert(/*CONSTCOND*/false);
 	}
-	return s;
 }
 
 /*
@@ -1816,9 +1813,9 @@ complete_tag_struct_or_union(type_t *tp, sym_t *fmem)
 	setcomplete(tp, true);
 
 	t = tp->t_tspec;
-	align(dcs->d_stralign, 0);
+	align(dcs->d_sou_align_in_bits, 0);
 	sp = tp->t_str;
-	sp->sou_align_in_bits = dcs->d_stralign;
+	sp->sou_align_in_bits = dcs->d_sou_align_in_bits;
 	sp->sou_first_member = fmem;
 	if (tp->t_packed)
 		setpackedsize(tp);
