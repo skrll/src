@@ -1,4 +1,4 @@
-/* $NetBSD: pci_6600.c,v 1.30 2021/06/19 16:59:07 thorpej Exp $ */
+/* $NetBSD: pci_6600.c,v 1.33 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 by Ross Harvey.  All rights reserved.
@@ -33,13 +33,12 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pci_6600.c,v 1.30 2021/06/19 16:59:07 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_6600.c,v 1.33 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 #include <sys/cpu.h>
 
 #include <machine/autoconf.h>
@@ -96,6 +95,7 @@ static void	dec_6600_intr_enable(pci_chipset_tag_t, int irq);
 static void	dec_6600_intr_disable(pci_chipset_tag_t, int irq);
 static void	dec_6600_intr_set_affinity(pci_chipset_tag_t, int,
 		    struct cpu_info *);
+static void	dec_6600_intr_program(pci_chipset_tag_t);
 
 static void	dec_6600_intr_redistribute(void);
 
@@ -110,8 +110,6 @@ static void
 pci_6600_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
     pci_chipset_tag_t pc)
 {
-	char *cp;
-	int i;
 	struct cpu_info *ci;
 	CPU_INFO_ITERATOR cii;
 
@@ -124,7 +122,7 @@ pci_6600_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
 
 	pc->pc_pciide_compat_intr_establish = NULL;
 
-	pc->pc_intr_desc = "dec 6600 irq";
+	pc->pc_intr_desc = "dec 6600";
 	pc->pc_vecbase = 0x900;
 	pc->pc_nirq = PCI_NIRQ;
 
@@ -153,21 +151,11 @@ pci_6600_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
 		    __BITS(0,63);
 		pc->pc_pciide_compat_intr_establish =
 		    dec_6600_pciide_compat_intr_establish;
-#define PCI_6600_IRQ_STR	8
-		pc->pc_shared_intrs = alpha_shared_intr_alloc(PCI_NIRQ,
-		    PCI_6600_IRQ_STR);
-		for (i = 0; i < PCI_NIRQ; i++) {
-			alpha_shared_intr_set_maxstrays(pc->pc_shared_intrs, i,
-			    PCI_STRAY_MAX);
-			alpha_shared_intr_set_private(pc->pc_shared_intrs, i,
-			    sioprimary);
 
-			cp = alpha_shared_intr_string(pc->pc_shared_intrs, i);
-			snprintf(cp, PCI_6600_IRQ_STR, "irq %d", i);
-			evcnt_attach_dynamic(alpha_shared_intr_evcnt(
-			    pc->pc_shared_intrs, i), EVCNT_TYPE_INTR, NULL,
-			    "dec 6600", cp);
-		}
+		KASSERT(dec_6600_intr_enables == 0);
+		dec_6600_intr_program(pc);
+
+		alpha_pci_intr_alloc(pc, PCI_STRAY_MAX);
 #if NSIO
 		sio_intr_setup(pc, iot);
 

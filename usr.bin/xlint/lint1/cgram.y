@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.230 2021/06/20 18:15:12 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.275 2021/07/09 06:37:11 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.230 2021/06/20 18:15:12 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.275 2021/07/09 06:37:11 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -123,7 +123,7 @@ anonymize(sym_t *s)
 }
 %}
 
-%expect 182
+%expect 162
 
 %union {
 	val_t	*y_val;
@@ -137,8 +137,9 @@ anonymize(sym_t *s)
 	tnode_t	*y_tnode;
 	range_t	y_range;
 	strg_t	*y_string;
-	pqinf_t	*y_pqinf;
+	qual_ptr *y_qual_ptr;
 	bool	y_seen_statement;
+	struct generic_association *y_generic;
 };
 
 %token			T_LBRACE T_RBRACE T_LBRACK T_RBRACK T_LPAREN T_RPAREN
@@ -206,54 +207,54 @@ anonymize(sym_t *s)
 %token			T_SWITCH
 %token			T_SYMBOLRENAME
 %token			T_WHILE
-/* Type Attributes */
-%token <y_type>		T_ATTRIBUTE
-%token <y_type>		T_AT_ALIAS
-%token <y_type>		T_AT_ALIGNED
-%token <y_type>		T_AT_ALLOC_SIZE
-%token <y_type>		T_AT_ALWAYS_INLINE
-%token <y_type>		T_AT_BOUNDED
-%token <y_type>		T_AT_BUFFER
-%token <y_type>		T_AT_COLD
-%token <y_type>		T_AT_COMMON
-%token <y_type>		T_AT_CONSTRUCTOR
-%token <y_type>		T_AT_DEPRECATED
-%token <y_type>		T_AT_DESTRUCTOR
-%token <y_type>		T_AT_FALLTHROUGH
-%token <y_type>		T_AT_FORMAT
-%token <y_type>		T_AT_FORMAT_ARG
-%token <y_type>		T_AT_FORMAT_GNU_PRINTF
-%token <y_type>		T_AT_FORMAT_PRINTF
-%token <y_type>		T_AT_FORMAT_SCANF
-%token <y_type>		T_AT_FORMAT_STRFMON
-%token <y_type>		T_AT_FORMAT_STRFTIME
-%token <y_type>		T_AT_FORMAT_SYSLOG
-%token <y_type>		T_AT_GNU_INLINE
-%token <y_type>		T_AT_MALLOC
-%token <y_type>		T_AT_MAY_ALIAS
-%token <y_type>		T_AT_MINBYTES
-%token <y_type>		T_AT_MODE
-%token <y_type>		T_AT_NOINLINE
-%token <y_type>		T_AT_NONNULL
-%token <y_type>		T_AT_NONSTRING
-%token <y_type>		T_AT_NORETURN
-%token <y_type>		T_AT_NOTHROW
-%token <y_type>		T_AT_NO_INSTRUMENT_FUNCTION
-%token <y_type>		T_AT_OPTIMIZE
-%token <y_type>		T_AT_PACKED
-%token <y_type>		T_AT_PCS
-%token <y_type>		T_AT_PURE
-%token <y_type>		T_AT_RETURNS_TWICE
-%token <y_type>		T_AT_SECTION
-%token <y_type>		T_AT_SENTINEL
-%token <y_type>		T_AT_STRING
-%token <y_type>		T_AT_TLS_MODEL
-%token <y_type>		T_AT_TUNION
-%token <y_type>		T_AT_UNUSED
-%token <y_type>		T_AT_USED
-%token <y_type>		T_AT_VISIBILITY
-%token <y_type>		T_AT_WARN_UNUSED_RESULT
-%token <y_type>		T_AT_WEAK
+
+%token			T_ATTRIBUTE
+%token			T_AT_ALIAS
+%token			T_AT_ALIGNED
+%token			T_AT_ALLOC_SIZE
+%token			T_AT_ALWAYS_INLINE
+%token			T_AT_BOUNDED
+%token			T_AT_BUFFER
+%token			T_AT_COLD
+%token			T_AT_COMMON
+%token			T_AT_CONSTRUCTOR
+%token			T_AT_DEPRECATED
+%token			T_AT_DESTRUCTOR
+%token			T_AT_FALLTHROUGH
+%token			T_AT_FORMAT
+%token			T_AT_FORMAT_ARG
+%token			T_AT_FORMAT_GNU_PRINTF
+%token			T_AT_FORMAT_PRINTF
+%token			T_AT_FORMAT_SCANF
+%token			T_AT_FORMAT_STRFMON
+%token			T_AT_FORMAT_STRFTIME
+%token			T_AT_FORMAT_SYSLOG
+%token			T_AT_GNU_INLINE
+%token			T_AT_MALLOC
+%token			T_AT_MAY_ALIAS
+%token			T_AT_MINBYTES
+%token			T_AT_MODE
+%token			T_AT_NOINLINE
+%token			T_AT_NONNULL
+%token			T_AT_NONSTRING
+%token			T_AT_NORETURN
+%token			T_AT_NOTHROW
+%token			T_AT_NO_INSTRUMENT_FUNCTION
+%token			T_AT_OPTIMIZE
+%token			T_AT_PACKED
+%token			T_AT_PCS
+%token			T_AT_PURE
+%token			T_AT_RETURNS_TWICE
+%token			T_AT_SECTION
+%token			T_AT_SENTINEL
+%token			T_AT_STRING
+%token			T_AT_TLS_MODEL
+%token			T_AT_TUNION
+%token			T_AT_UNUSED
+%token			T_AT_USED
+%token			T_AT_VISIBILITY
+%token			T_AT_WARN_UNUSED_RESULT
+%token			T_AT_WEAK
 
 %left	T_COMMA
 %right	T_ASSIGN T_OPASSIGN
@@ -284,13 +285,12 @@ anonymize(sym_t *s)
 %type	<y_type>	notype_typespec
 %type	<y_type>	struct_spec
 %type	<y_type>	enum_spec
-%type	<y_type>	type_attribute
 %type	<y_sym>		struct_tag
 %type	<y_sym>		enum_tag
 %type	<y_tspec>	struct
 %type	<y_sym>		struct_declaration
 %type	<y_sb>		identifier
-%type	<y_sym>		member_declaration_list_with_rbrace
+%type	<y_sym>		member_declaration_list_semi
 %type	<y_sym>		member_declaration_list
 %type	<y_sym>		member_declaration
 %type	<y_sym>		notype_member_decls
@@ -300,46 +300,48 @@ anonymize(sym_t *s)
 %type	<y_tnode>	constant_expr
 %type	<y_tnode>	array_size
 %type	<y_sym>		enum_declaration
-%type	<y_sym>		enums_with_opt_comma
-%type	<y_sym>		enums
+%type	<y_sym>		enumerator_list
 %type	<y_sym>		enumerator
 %type	<y_sym>		enumeration_constant
 %type	<y_sym>		notype_direct_decl
 %type	<y_sym>		type_direct_decl
-%type	<y_pqinf>	pointer
-%type	<y_pqinf>	asterisk
-%type	<y_sym>		param_decl
+%type	<y_qual_ptr>	pointer
+%type	<y_qual_ptr>	asterisk
+%type	<y_sym>		type_param_decl
 %type	<y_sym>		param_list
 %type	<y_sym>		abstract_decl_param_list
 %type	<y_sym>		direct_param_decl
 %type	<y_sym>		notype_param_decl
 %type	<y_sym>		direct_notype_param_decl
-%type	<y_pqinf>	type_qualifier_list
-%type	<y_pqinf>	type_qualifier
+%type	<y_qual_ptr>	type_qualifier_list_opt
+%type	<y_qual_ptr>	type_qualifier_list
+%type	<y_qual_ptr>	type_qualifier
 %type	<y_sym>		identifier_list
-%type	<y_sym>		abstract_decl
-%type	<y_sym>		direct_abstract_decl
+%type	<y_sym>		abstract_declarator
+%type	<y_sym>		direct_abstract_declarator
 %type	<y_sym>		vararg_parameter_type_list
 %type	<y_sym>		parameter_type_list
 %type	<y_sym>		parameter_declaration
 %type	<y_tnode>	expr
+%type	<y_tnode>	assignment_expression
 %type	<y_tnode>	gcc_statement_expr_list
 %type	<y_tnode>	gcc_statement_expr_item
 %type	<y_tnode>	term
-%type	<y_tnode>	generic_expr
+%type	<y_tnode>	generic_selection
 %type	<y_tnode>	func_arg_list
 %type	<y_op>		point_or_arrow
 %type	<y_type>	type_name
 %type	<y_sym>		abstract_declaration
 %type	<y_tnode>	do_while_expr
-%type	<y_tnode>	opt_expr
+%type	<y_tnode>	expr_opt
 %type	<y_string>	string
 %type	<y_string>	string2
-%type	<y_sb>		opt_asm_or_symbolrename
+%type	<y_sb>		asm_or_symbolrename_opt
 %type	<y_range>	range
 %type	<y_seen_statement> block_item_list
 %type	<y_seen_statement> block_item
-
+%type	<y_generic>	generic_assoc_list
+%type	<y_generic>	generic_association
 
 %%
 
@@ -535,114 +537,6 @@ declaration:			/* C99 6.7 */
 	| error T_SEMI
 	;
 
-type_attribute_format_type:
-	  T_AT_FORMAT_GNU_PRINTF
-	| T_AT_FORMAT_PRINTF
-	| T_AT_FORMAT_SCANF
-	| T_AT_FORMAT_STRFMON
-	| T_AT_FORMAT_STRFTIME
-	| T_AT_FORMAT_SYSLOG
-	;
-
-type_attribute_bounded_type:
-	  T_AT_MINBYTES
-	| T_AT_STRING
-	| T_AT_BUFFER
-	;
-
-
-type_attribute_spec:
-	  /* empty */
-	| T_AT_ALWAYS_INLINE
-	| T_AT_ALIAS T_LPAREN string T_RPAREN
-	| T_AT_ALIGNED T_LPAREN constant_expr T_RPAREN
-	| T_AT_ALIGNED
-	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_COMMA constant_expr T_RPAREN
-	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_RPAREN
-	| T_AT_BOUNDED T_LPAREN type_attribute_bounded_type
-	  T_COMMA constant_expr T_COMMA constant_expr T_RPAREN
-	| T_AT_COLD
-	| T_AT_COMMON
-	| T_AT_CONSTRUCTOR T_LPAREN constant_expr T_RPAREN
-	| T_AT_CONSTRUCTOR
-	| T_AT_DEPRECATED T_LPAREN string T_RPAREN
-	| T_AT_DEPRECATED
-	| T_AT_DESTRUCTOR T_LPAREN constant_expr T_RPAREN
-	| T_AT_DESTRUCTOR
-	| T_AT_FALLTHROUGH {
-		fallthru(1);
-	}
-	| T_AT_FORMAT T_LPAREN type_attribute_format_type T_COMMA
-	    constant_expr T_COMMA constant_expr T_RPAREN
-	| T_AT_FORMAT_ARG T_LPAREN constant_expr T_RPAREN
-	| T_AT_GNU_INLINE
-	| T_AT_MALLOC
-	| T_AT_MAY_ALIAS
-	| T_AT_MODE T_LPAREN T_NAME T_RPAREN
-	| T_AT_NOINLINE
-	| T_AT_NONNULL T_LPAREN constant_expr_list_opt T_RPAREN
-	| T_AT_NONNULL
-	| T_AT_NONSTRING
-	| T_AT_NORETURN
-	| T_AT_NOTHROW
-	| T_AT_NO_INSTRUMENT_FUNCTION
-	| T_AT_OPTIMIZE T_LPAREN string T_RPAREN
-	| T_AT_PACKED {
-		addpacked();
-	  }
-	| T_AT_PCS T_LPAREN string T_RPAREN
-	| T_AT_PURE
-	| T_AT_RETURNS_TWICE
-	| T_AT_SECTION T_LPAREN string T_RPAREN
-	| T_AT_SENTINEL T_LPAREN constant_expr T_RPAREN
-	| T_AT_SENTINEL
-	| T_AT_TLS_MODEL T_LPAREN string T_RPAREN
-	| T_AT_TUNION
-	| T_AT_UNUSED {
-		add_attr_used();
-	  }
-	| T_AT_USED {
-		add_attr_used();
-	  }
-	| T_AT_VISIBILITY T_LPAREN constant_expr T_RPAREN
-	| T_AT_WARN_UNUSED_RESULT
-	| T_AT_WEAK
-	| T_QUAL {
-		if ($1 != CONST)
-			yyerror("Bad attribute");
-	  }
-	;
-
-type_attribute_spec_list:
-	  type_attribute_spec
-	| type_attribute_spec_list T_COMMA type_attribute_spec
-	;
-
-align_as:
-	  typespec
-	| constant_expr
-	;
-
-type_attribute:
-	  T_ATTRIBUTE T_LPAREN T_LPAREN {
-	    attron = true;
-	  } type_attribute_spec_list {
-	    attron = false;
-	  } T_RPAREN T_RPAREN
-	| T_ALIGNAS T_LPAREN align_as T_RPAREN {
-	  }
-	| T_PACKED {
-		addpacked();
-	  }
-	| T_NORETURN {
-	  }
-	;
-
-type_attribute_list:
-	  type_attribute
-	| type_attribute_list type_attribute
-	;
-
 clrtyp:
 	  /* empty */ {
 		clrtyp();
@@ -686,7 +580,7 @@ declmod:
 	| T_SCLASS {
 		add_storage_class($1);
 	  }
-	| type_attribute_list
+	| type_attribute
 	;
 
 clrtyp_typespec:
@@ -699,9 +593,7 @@ clrtyp_typespec:
 	;
 
 typespec:
-	  notype_typespec {
-		$$ = $1;
-	  }
+	  notype_typespec
 	| T_TYPENAME {
 		$$ = getsym($1)->s_type;
 	  }
@@ -752,14 +644,12 @@ struct_spec:
 	;
 
 struct:
-	  struct type_attribute
-	| T_STRUCT_OR_UNION {
+	  T_STRUCT_OR_UNION {
 		symtyp = FTAG;
 		begin_declaration_level($1 == STRUCT ? MOS : MOU);
 		dcs->d_offset = 0;
-		dcs->d_stralign = CHAR_SIZE;
-		$$ = $1;
-	  }
+		dcs->d_sou_align_in_bits = CHAR_SIZE;
+	  } type_attribute_list_opt
 	;
 
 struct_tag:
@@ -769,22 +659,19 @@ struct_tag:
 	;
 
 struct_declaration:
-	  struct_decl_lbrace member_declaration_list_with_rbrace {
-		$$ = $2;
-	  }
-	;
-
-struct_decl_lbrace:
 	  T_LBRACE {
 		symtyp = FVFT;
+	  } member_declaration_list_semi T_RBRACE {
+		$$ = $3;
 	  }
 	;
 
-member_declaration_list_with_rbrace:
-	  member_declaration_list T_SEMI T_RBRACE {
-		$$ = $1;
+member_declaration_list_semi:
+	  /* empty */ {
+		$$ = NULL;
 	  }
-	| member_declaration_list T_RBRACE {
+	| member_declaration_list T_SEMI
+	| member_declaration_list {
 		if (sflag) {
 			/* syntax req. ';' after last struct/union member */
 			error(66);
@@ -794,20 +681,10 @@ member_declaration_list_with_rbrace:
 		}
 		$$ = $1;
 	  }
-	| T_RBRACE {
-		$$ = NULL;
-	  }
-	;
-
-opt_type_attribute:
-	  /* empty */
-	| type_attribute
 	;
 
 member_declaration_list:
-	  member_declaration {
-		$$ = $1;
-	  }
+	  member_declaration
 	| member_declaration_list T_SEMI member_declaration {
 		$$ = lnklst($1, $3);
 	  }
@@ -817,27 +694,28 @@ member_declaration:
 	  noclass_declmods deftyp {
 		/* too late, i know, but getsym() compensates it */
 		symtyp = FMEMBER;
-	  } notype_member_decls opt_type_attribute {
+	  } notype_member_decls type_attribute_opt {
 		symtyp = FVFT;
 		$$ = $4;
 	  }
 	| noclass_declspecs deftyp {
 		symtyp = FMEMBER;
-	  } type_member_decls opt_type_attribute {
+	  } type_member_decls type_attribute_opt {
 		symtyp = FVFT;
 		$$ = $4;
 	  }
-	| noclass_declmods deftyp opt_type_attribute {
+	| noclass_declmods deftyp type_attribute_opt {
 		symtyp = FVFT;
 		/* struct or union member must be named */
 		if (!Sflag)
 			/* anonymous struct/union members is a C9X feature */
 			warning(49);
 		/* add all the members of the anonymous struct/union */
+		lint_assert(is_struct_or_union(dcs->d_type->t_tspec));
 		$$ = dcs->d_type->t_str->sou_first_member;
 		anonymize($$);
 	  }
-	| noclass_declspecs deftyp opt_type_attribute {
+	| noclass_declspecs deftyp type_attribute_opt {
 		symtyp = FVFT;
 		/* struct or union member must be named */
 		if (!Sflag)
@@ -850,6 +728,7 @@ member_declaration:
 		} else {
 			/* syntax error '%s' */
 			error(249, "unnamed member");
+			$$ = NULL;
 		}
 	  }
 	| error {
@@ -858,6 +737,11 @@ member_declaration:
 	  }
 	;
 
+/*
+ * XXX: shift/reduce conflict, caused by:
+ *	type_attribute noclass_declspecs
+ *	noclass_declspecs type_attribute
+ */
 noclass_declspecs:
 	  clrtyp_typespec {
 		add_type($1);
@@ -907,9 +791,7 @@ type_member_decls:
 	;
 
 notype_member_decl:
-	  notype_decl {
-		$$ = $1;
-	  }
+	  notype_decl
 	| notype_decl T_COLON constant_expr {		/* C99 6.7.2.1 */
 		$$ = bitfield($1, to_int_constant($3, true));
 	  }
@@ -921,9 +803,7 @@ notype_member_decl:
 	;
 
 type_member_decl:
-	  type_decl {
-		$$ = $1;
-	  }
+	  type_decl
 	| type_decl T_COLON constant_expr {
 		$$ = bitfield($1, to_int_constant($3, true));
 	  }
@@ -968,39 +848,17 @@ enum_tag:
 	;
 
 enum_declaration:
-	  enum_decl_lbrace enums_with_opt_comma T_RBRACE {
-		$$ = $2;
-	  }
-	;
-
-enum_decl_lbrace:
 	  T_LBRACE {
 		symtyp = FVFT;
 		enumval = 0;
+	  } enumerator_list enumerator_list_comma_opt T_RBRACE {
+		$$ = $3;
 	  }
 	;
 
-enums_with_opt_comma:
-	  enums {
-		$$ = $1;
-	  }
-	| enums T_COMMA {
-		if (sflag) {
-			/* trailing ',' prohibited in enum declaration */
-			error(54);
-		} else {
-			/* trailing ',' prohibited in enum declaration */
-			c99ism(54);
-		}
-		$$ = $1;
-	  }
-	;
-
-enums:
-	  enumerator {
-		$$ = $1;
-	  }
-	| enums T_COMMA enumerator {
+enumerator_list:		/* C99 6.7.2.2 */
+	  enumerator
+	| enumerator_list T_COMMA enumerator {
 		$$ = lnklst($1, $3);
 	  }
 	| error {
@@ -1008,7 +866,20 @@ enums:
 	  }
 	;
 
-enumerator:
+enumerator_list_comma_opt:
+	  /* empty */
+	| T_COMMA {
+		if (sflag) {
+			/* trailing ',' prohibited in enum declaration */
+			error(54);
+		} else {
+			/* trailing ',' prohibited in enum declaration */
+			c99ism(54);
+		}
+	  }
+	;
+
+enumerator:			/* C99 6.7.2.2 */
 	  enumeration_constant {
 		$$ = enumeration_constant($1, enumval, true);
 	  }
@@ -1024,6 +895,11 @@ enumeration_constant:		/* C99 6.4.4.3 */
 	;
 
 
+/*
+ * For an explanation of 'notype' in the following rules, see the Bison
+ * manual, section 7.1 "Semantic Info in Token Kinds".
+ */
+
 notype_init_decls:
 	  notype_init_decl
 	| notype_init_decls T_COMMA type_init_decl
@@ -1035,11 +911,11 @@ type_init_decls:
 	;
 
 notype_init_decl:
-	  notype_decl opt_asm_or_symbolrename {
+	  notype_decl asm_or_symbolrename_opt {
 		cgram_declare($1, false, $2);
 		check_size($1);
 	  }
-	| notype_decl opt_asm_or_symbolrename {
+	| notype_decl asm_or_symbolrename_opt {
 		begin_initialization($1);
 		cgram_declare($1, true, $2);
 	  } T_ASSIGN initializer {
@@ -1049,11 +925,11 @@ notype_init_decl:
 	;
 
 type_init_decl:
-	  type_decl opt_asm_or_symbolrename {
+	  type_decl asm_or_symbolrename_opt {
 		cgram_declare($1, false, $2);
 		check_size($1);
 	  }
-	| type_decl opt_asm_or_symbolrename {
+	| type_decl asm_or_symbolrename_opt {
 		begin_initialization($1);
 		cgram_declare($1, true, $2);
 	  } T_ASSIGN initializer {
@@ -1063,14 +939,24 @@ type_init_decl:
 	;
 
 notype_decl:
-	  notype_direct_decl {
-		$$ = $1;
-	  }
+	  notype_direct_decl
 	| pointer notype_direct_decl {
 		$$ = add_pointer($2, $1);
 	  }
 	;
 
+type_decl:
+	  type_direct_decl
+	| pointer type_direct_decl {
+		$$ = add_pointer($2, $1);
+	  }
+	;
+
+/*
+ * XXX: shift/reduce conflict, caused by:
+ *	type_attribute notype_direct_decl
+ *	notype_direct_decl type_attribute
+ */
 notype_direct_decl:
 	  T_NAME {
 		$$ = declarator_name(getsym($1));
@@ -1087,23 +973,19 @@ notype_direct_decl:
 	| notype_direct_decl T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
-	| notype_direct_decl param_list opt_asm_or_symbolrename {
+	| notype_direct_decl param_list asm_or_symbolrename_opt {
 		$$ = add_function(symbolrename($1, $3), $2);
 		end_declaration_level();
 		block_level--;
 	  }
-	| notype_direct_decl type_attribute_list
+	| notype_direct_decl type_attribute
 	;
 
-type_decl:
-	  type_direct_decl {
-		$$ = $1;
-	  }
-	| pointer type_direct_decl {
-		$$ = add_pointer($2, $1);
-	  }
-	;
-
+/*
+ * XXX: shift/reduce conflict, caused by:
+ *	type_attribute type_direct_decl
+ *	type_direct_decl type_attribute
+ */
 type_direct_decl:
 	  identifier {
 		$$ = declarator_name(getsym($1));
@@ -1120,54 +1002,37 @@ type_direct_decl:
 	| type_direct_decl T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
-	| type_direct_decl param_list opt_asm_or_symbolrename {
+	| type_direct_decl param_list asm_or_symbolrename_opt {
 		$$ = add_function(symbolrename($1, $3), $2);
 		end_declaration_level();
 		block_level--;
 	  }
-	| type_direct_decl type_attribute_list
+	| type_direct_decl type_attribute
 	;
 
 /*
- * param_decl and notype_param_decl exist to avoid a conflict in
- * argument lists. A typename enclosed in parens should always be
- * treated as a typename, not an argument.
- * "typedef int a; f(int (a));" is  "typedef int a; f(int foo(a));"
- *				not "typedef int a; f(int a);"
+ * The two distinct rules type_param_decl and notype_param_decl avoid a
+ * conflict in argument lists. A typename enclosed in parentheses is always
+ * treated as a typename, not an argument name. For example, after
+ * "typedef double a;", the declaration "f(int (a));" is interpreted as
+ * "f(int (double));", not "f(int a);".
  */
-param_decl:
-	  direct_param_decl {
-		$$ = $1;
-	  }
+type_param_decl:
+	  direct_param_decl
 	| pointer direct_param_decl {
 		$$ = add_pointer($2, $1);
 	  }
 	;
 
-opt_type_qualifier_list:
-	  /* empty */
-	| type_qualifier_list
-	;
-
-array_size:
-	  opt_type_qualifier_list T_SCLASS constant_expr {
-		/* C11 6.7.6.3p7 */
-		if ($2 != STATIC)
-			yyerror("Bad attribute");
-		/* static array size is a C11 extension */
-		c11ism(343);
-		$$ = $3;
+notype_param_decl:
+	  direct_notype_param_decl
+	| pointer direct_notype_param_decl {
+		$$ = add_pointer($2, $1);
 	  }
-	| constant_expr {
-		$$ = $1;
-	}
 	;
 
 direct_param_decl:
-	  identifier type_attribute_list {
-		$$ = declarator_name(getsym($1));
-	  }
-	| identifier {
+	  identifier type_attribute_list_opt {
 		$$ = declarator_name(getsym($1));
 	  }
 	| T_LPAREN notype_param_decl T_RPAREN {
@@ -1179,24 +1044,15 @@ direct_param_decl:
 	| direct_param_decl T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
-	| direct_param_decl param_list opt_asm_or_symbolrename {
+	| direct_param_decl param_list asm_or_symbolrename_opt {
 		$$ = add_function(symbolrename($1, $3), $2);
 		end_declaration_level();
 		block_level--;
 	  }
 	;
 
-notype_param_decl:
-	  direct_notype_param_decl {
-		$$ = $1;
-	  }
-	| pointer direct_notype_param_decl {
-		$$ = add_pointer($2, $1);
-	  }
-	;
-
 direct_notype_param_decl:
-	  identifier {
+	  identifier /* XXX: missing type_attribute_list_opt? */ {
 		$$ = declarator_name(getsym($1));
 	  }
 	| T_LPAREN notype_param_decl T_RPAREN {
@@ -1208,42 +1064,41 @@ direct_notype_param_decl:
 	| direct_notype_param_decl T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
-	| direct_notype_param_decl param_list opt_asm_or_symbolrename {
+	| direct_notype_param_decl param_list asm_or_symbolrename_opt {
 		$$ = add_function(symbolrename($1, $3), $2);
 		end_declaration_level();
 		block_level--;
 	  }
 	;
 
-pointer:
-	  asterisk {
-		$$ = $1;
+pointer:			/* C99 6.7.5 */
+	  asterisk type_qualifier_list_opt {
+		$$ = merge_qualified_pointer($1, $2);
 	  }
-	| asterisk type_qualifier_list {
-		$$ = merge_pointers_and_qualifiers($1, $2);
-	  }
-	| asterisk pointer {
-		$$ = merge_pointers_and_qualifiers($1, $2);
-	  }
-	| asterisk type_qualifier_list pointer {
-		$$ = merge_pointers_and_qualifiers($1, $2);
-		$$ = merge_pointers_and_qualifiers($$, $3);
+	| asterisk type_qualifier_list_opt pointer {
+		$$ = merge_qualified_pointer($1, $2);
+		$$ = merge_qualified_pointer($$, $3);
 	  }
 	;
 
 asterisk:
 	  T_ASTERISK {
 		$$ = xcalloc(1, sizeof(*$$));
-		$$->p_pcnt = 1;
+		$$->p_pointer = true;
 	  }
 	;
 
-type_qualifier_list:
-	  type_qualifier {
-		$$ = $1;
+type_qualifier_list_opt:
+	  /* empty */ {
+		$$ = NULL;
 	  }
+	| type_qualifier_list
+	;
+
+type_qualifier_list:		/* C99 6.7.5 */
+	  type_qualifier
 	| type_qualifier_list type_qualifier {
-		$$ = merge_pointers_and_qualifiers($1, $2);
+		$$ = merge_qualified_pointer($1, $2);
 	  }
 	;
 
@@ -1260,13 +1115,16 @@ type_qualifier:
 	  }
 	;
 
+align_as:			/* See alignment-specifier in C11 6.7.5 */
+	  typespec
+	| constant_expr
+	;
+
 param_list:
 	  id_list_lparen identifier_list T_RPAREN {
 		$$ = $2;
 	  }
-	| abstract_decl_param_list {
-		$$ = $1;
-	  }
+	| abstract_decl_param_list
 	;
 
 id_list_lparen:
@@ -1283,20 +1141,18 @@ identifier_list:
 	| identifier_list T_COMMA T_NAME {
 		$$ = lnklst($1, old_style_function_name(getsym($3)));
 	  }
-	| identifier_list error {
-		$$ = $1;
-	  }
+	| identifier_list error
 	;
 
 abstract_decl_param_list:
-	  abstract_decl_lparen T_RPAREN opt_type_attribute {
+	  abstract_decl_lparen T_RPAREN type_attribute_opt {
 		$$ = NULL;
 	  }
-	| abstract_decl_lparen vararg_parameter_type_list T_RPAREN opt_type_attribute {
+	| abstract_decl_lparen vararg_parameter_type_list T_RPAREN type_attribute_opt {
 		dcs->d_proto = true;
 		$$ = $2;
 	  }
-	| abstract_decl_lparen error T_RPAREN opt_type_attribute {
+	| abstract_decl_lparen error T_RPAREN type_attribute_opt {
 		$$ = NULL;
 	  }
 	;
@@ -1309,9 +1165,7 @@ abstract_decl_lparen:
 	;
 
 vararg_parameter_type_list:
-	  parameter_type_list {
-		$$ = $1;
-	  }
+	  parameter_type_list
 	| parameter_type_list T_COMMA T_ELLIPSIS {
 		dcs->d_vararg = true;
 		$$ = $1;
@@ -1330,14 +1184,13 @@ vararg_parameter_type_list:
 	;
 
 parameter_type_list:
-	  parameter_declaration {
-		$$ = $1;
-	  }
+	  parameter_declaration
 	| parameter_type_list T_COMMA parameter_declaration {
 		$$ = lnklst($1, $3);
 	  }
 	;
 
+/* XXX: C99 6.7.5 defines the same name, but it looks completely different. */
 parameter_declaration:
 	  declmods deftyp {
 		$$ = declare_argument(abstract_name(), false);
@@ -1348,25 +1201,18 @@ parameter_declaration:
 	| declmods deftyp notype_param_decl {
 		$$ = declare_argument($3, false);
 	  }
-	/*
-	 * param_decl is needed because of following conflict:
-	 * "typedef int a; f(int (a));" could be parsed as
-	 * "function with argument a of type int", or
-	 * "function with an abstract argument of type function".
-	 * This grammar realizes the second case.
-	 */
-	| declaration_specifiers deftyp param_decl {
+	| declaration_specifiers deftyp type_param_decl {
 		$$ = declare_argument($3, false);
 	  }
-	| declmods deftyp abstract_decl {
+	| declmods deftyp abstract_declarator {
 		$$ = declare_argument($3, false);
 	  }
-	| declaration_specifiers deftyp abstract_decl {
+	| declaration_specifiers deftyp abstract_declarator {
 		$$ = declare_argument($3, false);
 	  }
 	;
 
-opt_asm_or_symbolrename:		/* expect only one */
+asm_or_symbolrename_opt:		/* expect only one */
 	  /* empty */ {
 		$$ = NULL;
 	  }
@@ -1380,7 +1226,7 @@ opt_asm_or_symbolrename:		/* expect only one */
 	;
 
 initializer:			/* C99 6.7.8 "Initialization" */
-	  expr				%prec T_COMMA {
+	  expr %prec T_COMMA {
 		init_expr($1);
 	  }
 	| init_lbrace init_rbrace {
@@ -1400,17 +1246,18 @@ initializer_list_item:
 	| initializer
 	;
 
-range:
-	  constant_expr {
-		$$.lo = to_int_constant($1, true);
-		$$.hi = $$.lo;
+designation:			/* C99 6.7.8 "Initialization" */
+	  designator_list T_ASSIGN
+	| identifier T_COLON {
+		/* GCC style struct or union member name in initializer */
+		gnuism(315);
+		add_designator_member($1);
 	  }
-	| constant_expr T_ELLIPSIS constant_expr {
-		$$.lo = to_int_constant($1, true);
-		$$.hi = to_int_constant($3, true);
-		/* initialization with '[a...b]' is a GNU extension */
-		gnuism(340);
-	  }
+	;
+
+designator_list:		/* C99 6.7.8 "Initialization" */
+	  designator
+	| designator_list designator
 	;
 
 designator:			/* C99 6.7.8 "Initialization" */
@@ -1428,17 +1275,16 @@ designator:			/* C99 6.7.8 "Initialization" */
 	  }
 	;
 
-designator_list:		/* C99 6.7.8 "Initialization" */
-	  designator
-	| designator_list designator
-	;
-
-designation:			/* C99 6.7.8 "Initialization" */
-	  designator_list T_ASSIGN
-	| identifier T_COLON {
-		/* GCC style struct or union member name in initializer */
-		gnuism(315);
-		add_designator_member($1);
+range:
+	  constant_expr {
+		$$.lo = to_int_constant($1, true);
+		$$.hi = $$.lo;
+	  }
+	| constant_expr T_ELLIPSIS constant_expr {
+		$$.lo = to_int_constant($1, true);
+		$$.hi = to_int_constant($3, true);
+		/* initialization with '[a...b]' is a GCC extension */
+		gnuism(340);
 	  }
 	;
 
@@ -1454,7 +1300,7 @@ init_rbrace:
 	  }
 	;
 
-type_name:
+type_name:			/* C99 6.7.6 */
 	  {
 		begin_declaration_level(ABSTRACT);
 	  } abstract_declaration {
@@ -1470,31 +1316,34 @@ abstract_declaration:
 	| noclass_declspecs deftyp {
 		$$ = declare_1_abstract(abstract_name());
 	  }
-	| noclass_declmods deftyp abstract_decl {
+	| noclass_declmods deftyp abstract_declarator {
 		$$ = declare_1_abstract($3);
 	  }
-	| noclass_declspecs deftyp abstract_decl {
+	| noclass_declspecs deftyp abstract_declarator {
 		$$ = declare_1_abstract($3);
 	  }
 	;
 
-abstract_decl:
+abstract_declarator:		/* C99 6.7.6 */
 	  pointer {
 		$$ = add_pointer(abstract_name(), $1);
 	  }
-	| direct_abstract_decl {
-		$$ = $1;
-	  }
-	| pointer direct_abstract_decl {
+	| direct_abstract_declarator
+	| pointer direct_abstract_declarator {
 		$$ = add_pointer($2, $1);
 	  }
-	| T_TYPEOF term {
+	| T_TYPEOF term {	/* GCC extension */
 		$$ = mktempsym($2->tn_type);
 	  }
 	;
 
-direct_abstract_decl:
-	  T_LPAREN abstract_decl T_RPAREN {
+/*
+ * XXX: shift/reduce conflict, caused by:
+ *	type_attribute direct_abstract_declarator
+ *	direct_abstract_declarator type_attribute
+ */
+direct_abstract_declarator:		/* C99 6.7.6 */
+	  T_LPAREN abstract_declarator T_RPAREN {
 		$$ = $2;
 	  }
 	| T_LBRACK T_RBRACK {
@@ -1503,26 +1352,41 @@ direct_abstract_decl:
 	| T_LBRACK array_size T_RBRACK {
 		$$ = add_array(abstract_name(), true, to_int_constant($2, false));
 	  }
-	| type_attribute direct_abstract_decl {
+	| type_attribute direct_abstract_declarator {
 		$$ = $2;
 	  }
-	| direct_abstract_decl T_LBRACK T_RBRACK {
+	| direct_abstract_declarator T_LBRACK T_RBRACK {
 		$$ = add_array($1, false, 0);
 	  }
-	| direct_abstract_decl T_LBRACK array_size T_RBRACK {
+	| direct_abstract_declarator T_LBRACK T_ASTERISK T_RBRACK { /* C99 */
+		$$ = add_array($1, false, 0);
+	  }
+	| direct_abstract_declarator T_LBRACK array_size T_RBRACK {
 		$$ = add_array($1, true, to_int_constant($3, false));
 	  }
-	| abstract_decl_param_list opt_asm_or_symbolrename {
+	| abstract_decl_param_list asm_or_symbolrename_opt {
 		$$ = add_function(symbolrename(abstract_name(), $2), $1);
 		end_declaration_level();
 		block_level--;
 	  }
-	| direct_abstract_decl abstract_decl_param_list opt_asm_or_symbolrename {
+	| direct_abstract_declarator abstract_decl_param_list asm_or_symbolrename_opt {
 		$$ = add_function(symbolrename($1, $3), $2);
 		end_declaration_level();
 		block_level--;
 	  }
-	| direct_abstract_decl type_attribute_list
+	| direct_abstract_declarator type_attribute
+	;
+
+array_size:
+	  type_qualifier_list_opt T_SCLASS constant_expr {
+		/* C11 6.7.6.3p7 */
+		if ($2 != STATIC)
+			yyerror("Bad attribute");
+		/* static array size is a C11 extension */
+		c11ism(343);
+		$$ = $3;
+	  }
+	| constant_expr
 	;
 
 non_expr_statement:
@@ -1538,12 +1402,12 @@ non_expr_statement:
 	;
 
 statement:			/* C99 6.8 */
-	  expr_statement
+	  expression_statement
 	| non_expr_statement
 	;
 
 labeled_statement:		/* C99 6.8.1 */
-	  label opt_type_attribute statement
+	  label gcc_attribute_list_opt statement
 	;
 
 label:
@@ -1567,8 +1431,8 @@ label:
 	;
 
 compound_statement:		/* C99 6.8.2 */
-	  compound_statement_lbrace compound_statement_rbrace
-	| compound_statement_lbrace block_item_list compound_statement_rbrace
+	  compound_statement_lbrace block_item_list_opt
+	    compound_statement_rbrace
 	;
 
 compound_statement_lbrace:
@@ -1589,13 +1453,19 @@ compound_statement_rbrace:
 	  }
 	;
 
+block_item_list_opt:		/* C99 6.8.2 */
+	  /* empty */
+	| block_item_list
+	;
+
 block_item_list:
 	  block_item
 	| block_item_list block_item {
 		if (!Sflag && $1 && !$2)
 			/* declarations after statements is a C99 feature */
 			c99ism(327);
-	}
+		$$ = $1 || $2;
+	  }
 	;
 
 block_item:
@@ -1609,7 +1479,7 @@ block_item:
 	  }
 	;
 
-expr_statement:
+expression_statement:		/* C99 6.8.3 */
 	  expr T_SEMI {
 		expr($1, false, false, false, false);
 		seen_fallthrough = false;
@@ -1646,42 +1516,26 @@ selection_statement:		/* C99 6.8.4 */
 	  }
 	;
 
-if_without_else:
+if_without_else:		/* see C99 6.8.4 */
 	  if_expr statement
 	| if_expr error
 	;
 
-if_expr:
+if_expr:			/* see C99 6.8.4 */
 	  T_IF T_LPAREN expr T_RPAREN {
 		if1($3);
 		clear_warning_flags();
 	  }
 	;
 
-switch_expr:
+switch_expr:			/* see C99 6.8.4 */
 	  T_SWITCH T_LPAREN expr T_RPAREN {
 		switch1($3);
 		clear_warning_flags();
 	  }
 	;
 
-association:
-	  type_name T_COLON expr
-	| T_DEFAULT T_COLON expr
-	;
-
-association_list:
-	  association
-	| association_list T_COMMA association
-	;
-
-generic_expr:
-	  T_GENERIC T_LPAREN expr T_COMMA association_list T_RPAREN {
-		$$ = $3;
-	  }
-	;
-
-do_statement:
+do_statement:			/* C99 6.8.5 */
 	  do statement {
 		clear_warning_flags();
 	  }
@@ -1718,51 +1572,43 @@ iteration_statement:		/* C99 6.8.5 */
 	  }
 	;
 
-while_expr:
+while_expr:			/* see C99 6.8.5 */
 	  T_WHILE T_LPAREN expr T_RPAREN {
 		while1($3);
 		clear_warning_flags();
 	  }
 	;
 
-do:
+do:				/* see C99 6.8.5 */
 	  T_DO {
 		do1();
 	  }
 	;
 
-do_while_expr:
+do_while_expr:			/* see C99 6.8.5 */
 	  T_WHILE T_LPAREN expr T_RPAREN T_SEMI {
 		$$ = $3;
 	  }
 	;
 
-for_start:
+for_start:			/* see C99 6.8.5 */
 	  T_FOR T_LPAREN {
 		begin_declaration_level(AUTO);
 		block_level++;
 	  }
 	;
-for_exprs:
+
+for_exprs:			/* see C99 6.8.5 */
 	  for_start declaration_specifiers deftyp notype_init_decls T_SEMI
-	    opt_expr T_SEMI opt_expr T_RPAREN {
+	    expr_opt T_SEMI expr_opt T_RPAREN {
 		/* variable declaration in for loop */
 		c99ism(325);
 		for1(NULL, $6, $8);
 		clear_warning_flags();
 	    }
-	  | for_start opt_expr T_SEMI opt_expr T_SEMI opt_expr T_RPAREN {
+	  | for_start expr_opt T_SEMI expr_opt T_SEMI expr_opt T_RPAREN {
 		for1($2, $4, $6);
 		clear_warning_flags();
-	  }
-	;
-
-opt_expr:
-	  /* empty */ {
-		$$ = NULL;
-	  }
-	| expr {
-		$$ = $1;
 	  }
 	;
 
@@ -1820,12 +1666,17 @@ constant_expr_list:
 	;
 
 constant_expr:			/* C99 6.6 */
-	  expr				%prec T_ASSIGN {
-		  $$ = $1;
-	  }
+	  expr %prec T_ASSIGN
 	;
 
-expr:
+expr_opt:
+	  /* empty */ {
+		$$ = NULL;
+	  }
+	| expr
+	;
+
+expr:				/* C99 6.5 */
 	  expr T_ASTERISK expr {
 		$$ = build(MULT, $1, $3);
 	  }
@@ -1871,15 +1722,15 @@ expr:
 	| expr T_COMMA expr {
 		$$ = build(COMMA, $1, $3);
 	  }
-	| term {
-		$$ = $1;
-	  }
-	| generic_expr {
-		$$ = $1;
-	  }
+	| term
+	| generic_selection
 	;
 
-term:
+assignment_expression:		/* C99 6.5.16 */
+	  expr %prec T_ASSIGN
+	;
+
+term:				/* see C99 6.5.1 */
 	  T_NAME {
 		/* XXX really necessary? */
 		if (yychar < 0)
@@ -1969,12 +1820,6 @@ term:
 	| T_EXTENSION term {
 		$$ = $2;
 	  }
-	| T_REAL T_LPAREN term T_RPAREN {
-		$$ = build(REAL, $3, NULL);
-	  }
-	| T_IMAG T_LPAREN term T_RPAREN {
-		$$ = build(IMAG, $3, NULL);
-	  }
 	| T_BUILTIN_OFFSETOF T_LPAREN type_name T_COMMA identifier T_RPAREN {
 		symtyp = FMEMBER;
 		$$ = build_offsetof($3, getsym($5));
@@ -1984,13 +1829,13 @@ term:
 		if ($$ != NULL)
 			check_expr_misc($2, false, false, false, false, false, true);
 	  }
-	| T_SIZEOF T_LPAREN type_name T_RPAREN		%prec T_SIZEOF {
+	| T_SIZEOF T_LPAREN type_name T_RPAREN %prec T_SIZEOF {
 		$$ = build_sizeof($3);
 	  }
 	| T_ALIGNOF T_LPAREN type_name T_RPAREN {
 		$$ = build_alignof($3);
 	  }
-	| T_LPAREN type_name T_RPAREN term		%prec T_UNARY {
+	| T_LPAREN type_name T_RPAREN term %prec T_UNARY {
 		$$ = cast($4, $2);
 	  }
 	| T_LPAREN type_name T_RPAREN {	/* C99 6.5.2.5 "Compound literals" */
@@ -2003,6 +1848,36 @@ term:
 			 gnuism(319);
 		$$ = new_name_node(*current_initsym(), 0);
 		end_initialization();
+	  }
+	;
+
+generic_selection:		/* C11 6.5.1.1 */
+	  T_GENERIC T_LPAREN assignment_expression T_COMMA
+	    generic_assoc_list T_RPAREN {
+	  	/* generic selection requires C11 or later */
+	  	c11ism(345);
+		$$ = build_generic_selection($3, $5);
+	  }
+	;
+
+generic_assoc_list:		/* C11 6.5.1.1 */
+	  generic_association
+	| generic_assoc_list T_COMMA generic_association {
+		$3->ga_prev = $1;
+		$$ = $3;
+	  }
+	;
+
+generic_association:		/* C11 6.5.1.1 */
+	  type_name T_COLON assignment_expression {
+		$$ = getblk(sizeof(*$$));
+		$$->ga_arg = $1;
+		$$->ga_result = $3;
+	  }
+	| T_DEFAULT T_COLON assignment_expression {
+		$$ = getblk(sizeof(*$$));
+		$$->ga_arg = NULL;
+		$$->ga_result = $3;
 	  }
 	;
 
@@ -2039,13 +1914,11 @@ gcc_statement_expr_item:
 			expr($1, false, false, false, false);
 			seen_fallthrough = false;
 		}
-	}
+	  }
 	;
 
 string:
-	  T_STRING {
-		$$ = $1;
-	  }
+	  T_STRING
 	| T_STRING string2 {
 		$$ = cat_strings($1, $2);
 	  }
@@ -2065,7 +1938,7 @@ string2:
 	;
 
 func_arg_list:
-	  expr						%prec T_COMMA {
+	  expr %prec T_COMMA {
 		$$ = new_function_argument_node(NULL, $1);
 	  }
 	| func_arg_list T_COMMA expr {
@@ -2096,9 +1969,137 @@ identifier:			/* C99 6.4.2.1 */
 	;
 
 comma_opt:
-	  T_COMMA
-	| /* empty */
+	  /* empty */
+	| T_COMMA
 	;
+
+/* GCC extensions */
+
+type_attribute_list_opt:
+	  /* empty */
+	| type_attribute_list
+	;
+
+type_attribute_list:
+	  type_attribute
+	| type_attribute_list type_attribute
+	;
+
+type_attribute_opt:
+	  /* empty */
+	| type_attribute
+	;
+
+type_attribute:
+	  gcc_attribute
+	| T_ALIGNAS T_LPAREN align_as T_RPAREN
+	| T_PACKED {
+		addpacked();
+	  }
+	| T_NORETURN
+	;
+
+gcc_attribute_list_opt:
+	  /* empty */
+	| gcc_attribute_list
+	;
+
+gcc_attribute_list:
+	  gcc_attribute
+	| gcc_attribute_list gcc_attribute
+	;
+
+/* https://gcc.gnu.org/onlinedocs/gcc/Attribute-Syntax.html */
+gcc_attribute:
+	  T_ATTRIBUTE T_LPAREN T_LPAREN {
+		attron = true;
+	  } gcc_attribute_spec_list {
+		attron = false;
+	  } T_RPAREN T_RPAREN
+	;
+
+gcc_attribute_spec_list:
+	  gcc_attribute_spec
+	| gcc_attribute_spec_list T_COMMA gcc_attribute_spec
+	;
+
+gcc_attribute_spec:
+	  /* empty */
+	| T_AT_ALWAYS_INLINE
+	| T_AT_ALIAS T_LPAREN string T_RPAREN
+	| T_AT_ALIGNED T_LPAREN constant_expr T_RPAREN
+	| T_AT_ALIGNED
+	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_COMMA constant_expr T_RPAREN
+	| T_AT_ALLOC_SIZE T_LPAREN constant_expr T_RPAREN
+	| T_AT_BOUNDED T_LPAREN gcc_attribute_bounded
+	  T_COMMA constant_expr T_COMMA constant_expr T_RPAREN
+	| T_AT_COLD
+	| T_AT_COMMON
+	| T_AT_CONSTRUCTOR T_LPAREN constant_expr T_RPAREN
+	| T_AT_CONSTRUCTOR
+	| T_AT_DEPRECATED T_LPAREN string T_RPAREN
+	| T_AT_DEPRECATED
+	| T_AT_DESTRUCTOR T_LPAREN constant_expr T_RPAREN
+	| T_AT_DESTRUCTOR
+	| T_AT_FALLTHROUGH {
+		fallthru(1);
+	  }
+	| T_AT_FORMAT T_LPAREN gcc_attribute_format T_COMMA
+	    constant_expr T_COMMA constant_expr T_RPAREN
+	| T_AT_FORMAT_ARG T_LPAREN constant_expr T_RPAREN
+	| T_AT_GNU_INLINE
+	| T_AT_MALLOC
+	| T_AT_MAY_ALIAS
+	| T_AT_MODE T_LPAREN T_NAME T_RPAREN
+	| T_AT_NOINLINE
+	| T_AT_NONNULL T_LPAREN constant_expr_list_opt T_RPAREN
+	| T_AT_NONNULL
+	| T_AT_NONSTRING
+	| T_AT_NORETURN
+	| T_AT_NOTHROW
+	| T_AT_NO_INSTRUMENT_FUNCTION
+	| T_AT_OPTIMIZE T_LPAREN string T_RPAREN
+	| T_AT_PACKED {
+		addpacked();
+	  }
+	| T_AT_PCS T_LPAREN string T_RPAREN
+	| T_AT_PURE
+	| T_AT_RETURNS_TWICE
+	| T_AT_SECTION T_LPAREN string T_RPAREN
+	| T_AT_SENTINEL T_LPAREN constant_expr T_RPAREN
+	| T_AT_SENTINEL
+	| T_AT_TLS_MODEL T_LPAREN string T_RPAREN
+	| T_AT_TUNION
+	| T_AT_UNUSED {
+		add_attr_used();
+	  }
+	| T_AT_USED {
+		add_attr_used();
+	  }
+	| T_AT_VISIBILITY T_LPAREN constant_expr T_RPAREN
+	| T_AT_WARN_UNUSED_RESULT
+	| T_AT_WEAK
+	| T_QUAL {
+		if ($1 != CONST)
+			yyerror("Bad attribute");
+	  }
+	;
+
+gcc_attribute_bounded:
+	  T_AT_MINBYTES
+	| T_AT_STRING
+	| T_AT_BUFFER
+	;
+
+gcc_attribute_format:
+	  T_AT_FORMAT_GNU_PRINTF
+	| T_AT_FORMAT_PRINTF
+	| T_AT_FORMAT_SCANF
+	| T_AT_FORMAT_STRFMON
+	| T_AT_FORMAT_STRFTIME
+	| T_AT_FORMAT_SYSLOG
+	;
+
 %%
 
 /* ARGSUSED */

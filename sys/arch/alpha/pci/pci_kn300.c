@@ -1,4 +1,4 @@
-/* $NetBSD: pci_kn300.c,v 1.40 2021/06/19 16:59:07 thorpej Exp $ */
+/* $NetBSD: pci_kn300.c,v 1.43 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*
  * Copyright (c) 1998 by Matthew Jacob
@@ -32,14 +32,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pci_kn300.c,v 1.40 2021/06/19 16:59:07 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_kn300.c,v 1.43 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/systm.h>
 #include <sys/errno.h>
-#include <sys/malloc.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
 #include <sys/syslog.h>
@@ -71,6 +70,7 @@ static void	*dec_kn300_intr_establish(pci_chipset_tag_t,
 static void	dec_kn300_intr_disestablish(pci_chipset_tag_t, void *);
 
 #define	KN300_PCEB_IRQ	16
+#define	KN300_STRAY_MAX	25
 #define	NPIN		4
 
 #define	NIRQ	(MAX_MC_BUS * MCPCIA_PER_MCBUS * MCPCIA_MAXSLOT * NPIN)
@@ -89,21 +89,23 @@ pci_kn300_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
     pci_chipset_tag_t pc)
 {
 	struct mcpcia_config *ccp = core;
-	char *cp;
+	struct evcnt *ev;
+	const char *cp;
 
 	if (kn300_pci_intr == NULL) {
 		int g;
 
-#define PCI_KN300_IRQ_STR	16
-		kn300_pci_intr = alpha_shared_intr_alloc(NIRQ,
-		    PCI_KN300_IRQ_STR);
+		kn300_pci_intr = alpha_shared_intr_alloc(NIRQ);
 		for (g = 0; g < NIRQ; g++) {
-			alpha_shared_intr_set_maxstrays(kn300_pci_intr, g, 25);
+			alpha_shared_intr_set_maxstrays(kn300_pci_intr, g,
+			    KN300_STRAY_MAX);
+
+			ev = alpha_shared_intr_evcnt(kn300_pci_intr, g);
 			cp = alpha_shared_intr_string(kn300_pci_intr, g);
-			snprintf(cp, PCI_KN300_IRQ_STR, "irq %d", g);
-			evcnt_attach_dynamic(alpha_shared_intr_evcnt(
-			    kn300_pci_intr, g), EVCNT_TYPE_INTR, NULL,
+
+			evcnt_attach_dynamic(ev, EVCNT_TYPE_INTR, NULL,
 			    "kn300", cp);
+
 			savirqs[g] = (char) -1;
 		}
 	}
@@ -217,14 +219,14 @@ dec_kn300_intr_establish(
 	const u_int flags = alpha_pci_intr_handle_get_flags(&ih);
 
 	cookie = alpha_shared_intr_alloc_intrhand(kn300_pci_intr, irq,
-	    IST_LEVEL, level, flags, func, arg, "kn300 irq");
+	    IST_LEVEL, level, flags, func, arg, "kn300");
 
 	if (cookie == NULL)
 		return NULL;
 
 	mutex_enter(&cpu_lock);
 
-	if (! alpha_shared_intr_link(kn300_pci_intr, cookie, "kn300 irq")) {
+	if (! alpha_shared_intr_link(kn300_pci_intr, cookie, "kn300")) {
 		mutex_exit(&cpu_lock);
 		alpha_shared_intr_free_intrhand(cookie);
 		return NULL;
@@ -289,7 +291,7 @@ kn300_iointr(void * const arg __unused, unsigned long const vec)
 	 * Stray interrupt; disable the IRQ on the appropriate MCPCIA
 	 * if we've reached the limit.
 	 */
-	alpha_shared_intr_stray(kn300_pci_intr, irq, "kn300 irq");
+	alpha_shared_intr_stray(kn300_pci_intr, irq, "kn300");
 	if (ALPHA_SHARED_INTR_DISABLE(kn300_pci_intr, irq) == 0)
 		return;
 	kn300_disable_intr(mcp->mcpcia_cc, savirqs[irq]);

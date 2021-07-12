@@ -1,4 +1,4 @@
-/*	$NetBSD: msg_101.c,v 1.4 2021/03/30 15:18:19 rillig Exp $	*/
+/*	$NetBSD: msg_101.c,v 1.9 2021/07/04 17:28:06 rillig Exp $	*/
 # 3 "msg_101.c"
 
 // Test for message: type '%s' does not have member '%s' [101]
@@ -7,8 +7,30 @@ struct point {
 	int x, y;
 };
 
-int
-get_z(const struct point *p)
+void sink(int);
+
+void
+test(const struct point *ptr, const struct point pt)
 {
-	return p.z;		/* expect: 101 */
+	/* accessing an existing member */
+	sink(ptr->x);
+	sink(pt.x);
+
+	/* accessing a nonexistent member */
+	/* expect+1: error: type 'pointer to const struct point' does not have member 'z' [101] */
+	sink(ptr->z);
+	/* expect+1: error: type 'const struct point' does not have member 'z' [101] */
+	sink(pt.z);
+
+	/* mixed up '.' and '->' */
+	/* expect+1: error: left operand of '.' must be struct or union, not 'pointer to const struct point' [103] */
+	sink(ptr.x);
+	/* expect+1: error: left operand of '->' must be pointer to struct or union, not 'struct point' [104] */
+	sink(pt->x);
+
+	/* accessing a nonexistent member via the wrong operator */
+	/* expect+1: error: type 'pointer to const struct point' does not have member 'z' [101] */
+	sink(ptr.z);
+	/* expect+1: error: type 'struct point' does not have member 'z' [101] */
+	sink(pt->z);
 }

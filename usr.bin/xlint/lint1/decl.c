@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.188 2021/06/20 11:24:32 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.195 2021/07/05 19:55:51 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.188 2021/06/20 11:24:32 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.195 2021/07/05 19:55:51 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -917,8 +917,8 @@ length(const type_t *tp, const char *name)
 	case STRUCT:
 	case UNION:
 		if (is_incomplete(tp) && name != NULL) {
-			/* incomplete structure or union %s: %s */
-			error(31, tp->t_str->sou_tag->s_name, name);
+			/* argument '%s' has type '%s' */
+			error(31, name, type_name(tp));
 		}
 		elsz = tp->t_str->sou_size_in_bits;
 		break;
@@ -1255,8 +1255,8 @@ align(int al, int len)
 	 * the struct/union if it is larger than the current alignment
 	 * of the struct/union.
 	 */
-	if (al > dcs->d_stralign)
-		dcs->d_stralign = al;
+	if (al > dcs->d_sou_align_in_bits)
+		dcs->d_sou_align_in_bits = al;
 
 	no = (dcs->d_offset + (al - 1)) & ~(al - 1);
 	if (len == 0 || dcs->d_offset + len > no)
@@ -1286,40 +1286,44 @@ bitfield(sym_t *dsym, int len)
 }
 
 /*
- * Collect information about a sequence of asterisks and qualifiers in a
- * list of type pqinf_t.
- * Qualifiers always refer to the left asterisk.
- * The rightmost asterisk will be at the top of the list.
+ * A sequence of asterisks and qualifiers, from right to left.  For example,
+ * 'const ***volatile **const volatile' results in [cvp, p, vp, p, p].  The
+ * leftmost 'const' is not included in this list, it is stored in dcs->d_const
+ * instead.
  */
-pqinf_t *
-merge_pointers_and_qualifiers(pqinf_t *p1, pqinf_t *p2)
+qual_ptr *
+merge_qualified_pointer(qual_ptr *p1, qual_ptr *p2)
 {
-	pqinf_t	*p;
+	qual_ptr *tail;
 
-	if (p2->p_pcnt != 0) {
-		/* left '*' at the end of the list */
-		for (p = p2; p->p_next != NULL; p = p->p_next)
+	if (p2 == NULL)
+		return p1;	/* for optional qualifiers */
+
+	if (p2->p_pointer) {
+		/* append p1 to p2, keeping p2 */
+		for (tail = p2; tail->p_next != NULL; tail = tail->p_next)
 			continue;
-		p->p_next = p1;
+		tail->p_next = p1;
 		return p2;
-	} else {
-		if (p2->p_const) {
-			if (p1->p_const) {
-				/* duplicate '%s' */
-				warning(10, "const");
-			}
-			p1->p_const = true;
-		}
-		if (p2->p_volatile) {
-			if (p1->p_volatile) {
-				/* duplicate '%s' */
-				warning(10, "volatile");
-			}
-			p1->p_volatile = true;
-		}
-		free(p2);
-		return p1;
 	}
+
+	/* merge p2 into p1, keeping p1 */
+	if (p2->p_const) {
+		if (p1->p_const) {
+			/* duplicate '%s' */
+			warning(10, "const");
+		}
+		p1->p_const = true;
+	}
+	if (p2->p_volatile) {
+		if (p1->p_volatile) {
+			/* duplicate '%s' */
+			warning(10, "volatile");
+		}
+		p1->p_volatile = true;
+	}
+	free(p2);
+	return p1;
 }
 
 /*
@@ -1331,10 +1335,10 @@ merge_pointers_and_qualifiers(pqinf_t *p1, pqinf_t *p2)
  * declarator. The new type extension is inserted between both.
  */
 sym_t *
-add_pointer(sym_t *decl, pqinf_t *pi)
+add_pointer(sym_t *decl, qual_ptr *p)
 {
-	type_t	**tpp, *tp;
-	pqinf_t	*npi;
+	type_t **tpp, *tp;
+	qual_ptr *next;
 
 	tpp = &decl->s_type;
 	while (*tpp != NULL && *tpp != dcs->d_type)
@@ -1342,15 +1346,15 @@ add_pointer(sym_t *decl, pqinf_t *pi)
 	if (*tpp == NULL)
 		return decl;
 
-	while (pi != NULL) {
+	while (p != NULL) {
 		*tpp = tp = getblk(sizeof(*tp));
 		tp->t_tspec = PTR;
-		tp->t_const = pi->p_const;
-		tp->t_volatile = pi->p_volatile;
+		tp->t_const = p->p_const;
+		tp->t_volatile = p->p_volatile;
 		*(tpp = &tp->t_subt) = dcs->d_type;
-		npi = pi->p_next;
-		free(pi);
-		pi = npi;
+		next = p->p_next;
+		free(p);
+		p = next;
 	}
 	return decl;
 }
@@ -1779,20 +1783,17 @@ newtag(sym_t *tag, scl_t scl, bool decl, bool semi)
 const char *
 storage_class_name(scl_t sc)
 {
-	const	char *s;
-
 	switch (sc) {
-	case EXTERN:	s = "extern";	break;
-	case STATIC:	s = "static";	break;
-	case AUTO:	s = "auto";	break;
-	case REG:	s = "register";	break;
-	case TYPEDEF:	s = "typedef";	break;
-	case STRUCT_TAG:s = "struct";	break;
-	case UNION_TAG:	s = "union";	break;
-	case ENUM_TAG:	s = "enum";	break;
+	case EXTERN:	return "extern";
+	case STATIC:	return "static";
+	case AUTO:	return "auto";
+	case REG:	return "register";
+	case TYPEDEF:	return "typedef";
+	case STRUCT_TAG:return "struct";
+	case UNION_TAG:	return "union";
+	case ENUM_TAG:	return "enum";
 	default:	lint_assert(/*CONSTCOND*/false);
 	}
-	return s;
 }
 
 /*
@@ -1812,9 +1813,9 @@ complete_tag_struct_or_union(type_t *tp, sym_t *fmem)
 	setcomplete(tp, true);
 
 	t = tp->t_tspec;
-	align(dcs->d_stralign, 0);
+	align(dcs->d_sou_align_in_bits, 0);
 	sp = tp->t_str;
-	sp->sou_align_in_bits = dcs->d_stralign;
+	sp->sou_align_in_bits = dcs->d_sou_align_in_bits;
 	sp->sou_first_member = fmem;
 	if (tp->t_packed)
 		setpackedsize(tp);
@@ -2429,6 +2430,7 @@ declare_argument(sym_t *sym, bool initflg)
 		error(52, sym->s_name);
 	}
 
+	lint_assert(sym->s_type != NULL);
 	if ((t = sym->s_type->t_tspec) == ARRAY) {
 		sym->s_type = derive_type(sym->s_type->t_subt, PTR);
 	} else if (t == FUNC) {

@@ -1,4 +1,4 @@
-/* $NetBSD: pci_550.c,v 1.39 2021/06/19 16:59:07 thorpej Exp $ */
+/* $NetBSD: pci_550.c,v 1.42 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 2000 The NetBSD Foundation, Inc.
@@ -59,14 +59,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pci_550.c,v 1.39 2021/06/19 16:59:07 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_550.c,v 1.42 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/systm.h>
 #include <sys/errno.h>
-#include <sys/malloc.h>
 #include <sys/device.h>
 #include <sys/syslog.h>
 
@@ -121,7 +120,6 @@ static void
 pci_550_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
     pci_chipset_tag_t pc)
 {
-	char *cp;
 	int i;
 
 	pc->pc_intr_v = core;
@@ -134,18 +132,7 @@ pci_550_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
 	pc->pc_pciide_compat_intr_establish =
 	    sio_pciide_compat_intr_establish;
 
-	/*
-	 * DEC 550's interrupts are enabled via the Pyxis interrupt
-	 * mask register.  Nothing to map.
-	 */
-
-	for (i = 0; i < DEC_550_MAX_IRQ; i++)
-		dec_550_intr_disable(pc, i);
-
-#define PCI_550_IRQ_STR	8
-	pc->pc_shared_intrs = alpha_shared_intr_alloc(DEC_550_MAX_IRQ,
-	    PCI_550_IRQ_STR);
-	pc->pc_intr_desc = "dec 550 irq";
+	pc->pc_intr_desc = "dec 550";
 	pc->pc_vecbase = 0x900;
 	pc->pc_nirq = DEC_550_MAX_IRQ;
 
@@ -153,16 +140,10 @@ pci_550_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
 	pc->pc_intr_disable = dec_550_intr_disable;
 
 	for (i = 0; i < DEC_550_MAX_IRQ; i++) {
-		alpha_shared_intr_set_maxstrays(pc->pc_shared_intrs, i,
-		    PCI_STRAY_MAX);
-		alpha_shared_intr_set_private(pc->pc_shared_intrs, i, core);
-		
-		cp = alpha_shared_intr_string(pc->pc_shared_intrs, i);
-		snprintf(cp, PCI_550_IRQ_STR, "irq %d", i);
-		evcnt_attach_dynamic(alpha_shared_intr_evcnt(
-		    pc->pc_shared_intrs, i), EVCNT_TYPE_INTR, NULL,
-		    "dec 550", cp);
+		dec_550_intr_disable(pc, i);
 	}
+
+	alpha_pci_intr_alloc(pc, PCI_STRAY_MAX);
 
 #if NSIO
 	sio_intr_setup(pc, iot);

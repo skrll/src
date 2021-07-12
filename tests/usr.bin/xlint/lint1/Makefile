@@ -1,7 +1,7 @@
-# $NetBSD: Makefile,v 1.65 2021/06/20 18:09:48 rillig Exp $
+# $NetBSD: Makefile,v 1.81 2021/07/08 05:18:49 rillig Exp $
 
 NOMAN=		# defined
-MAX_MESSAGE=	344		# see lint1/err.c
+MAX_MESSAGE=	345		# see lint1/err.c
 
 .include <bsd.own.mk>
 
@@ -10,6 +10,11 @@ TESTSDIR=	${TESTSBASE}/usr.bin/xlint/lint1
 TESTS_SH=	t_integration
 
 FILESDIR=	${TESTSDIR}
+FILES+=		c11_generic_expression.c
+FILES+=		c11_generic_expression.exp
+FILES+=		c99_bool_strict_suppressed.c
+FILES+=		c99_init_array.c
+FILES+=		c99_init_array.exp
 FILES+=		c99_init_designator.c
 FILES+=		c99_init_designator.exp
 FILES+=		d_alignof.c
@@ -50,6 +55,7 @@ FILES+=		d_cast_fun_array_param.c
 FILES+=		d_cast_init.c
 FILES+=		d_cast_init2.c
 FILES+=		d_cast_lhs.c
+FILES+=		d_cast_lhs.exp
 FILES+=		d_cast_typeof.c
 FILES+=		d_compound_literals1.c
 FILES+=		d_compound_literals2.c
@@ -106,7 +112,7 @@ FILES+=		decl_struct_member.c
 FILES+=		decl_struct_member.exp
 FILES+=		emit.c
 FILES+=		emit.exp
-FILES+=		emit.ln
+FILES+=		emit.exp-ln
 FILES+=		expr_range.c
 FILES+=		expr_range.exp
 FILES+=		feat_stacktrace.c
@@ -115,6 +121,18 @@ FILES+=		gcc_attribute.c
 FILES+=		gcc_attribute.exp
 FILES+=		gcc_attribute_aligned.c
 FILES+=		gcc_attribute_aligned.exp
+FILES+=		gcc_attribute_enum.c
+FILES+=		gcc_attribute_enum.exp
+FILES+=		gcc_attribute_func.c
+FILES+=		gcc_attribute_func.exp
+FILES+=		gcc_attribute_label.c
+FILES+=		gcc_attribute_label.exp
+FILES+=		gcc_attribute_stmt.c
+FILES+=		gcc_attribute_stmt.exp
+FILES+=		gcc_attribute_type.c
+FILES+=		gcc_attribute_type.exp
+FILES+=		gcc_attribute_var.c
+FILES+=		gcc_attribute_var.exp
 FILES+=		gcc_bit_field_types.c
 FILES+=		gcc_bit_field_types.exp
 FILES+=		gcc_init_compound_literal.c
@@ -123,12 +141,15 @@ FILES+=		gcc_typeof_after_statement.c
 FILES+=		gcc_typeof_after_statement.exp
 FILES+=		lex_char.c
 FILES+=		lex_char.exp
+FILES+=		lex_char_uchar.c
 FILES+=		lex_comment.c
 FILES+=		lex_comment.exp
 FILES+=		lex_floating.c
 FILES+=		lex_floating.exp
 FILES+=		lex_integer.c
 FILES+=		lex_integer.exp
+FILES+=		lex_integer_ilp32.c
+FILES+=		lex_integer_ilp32.exp
 FILES+=		lex_string.c
 FILES+=		lex_string.exp
 FILES+=		lex_wide_char.c
@@ -136,24 +157,22 @@ FILES+=		lex_wide_char.exp
 FILES+=		lex_wide_string.c
 FILES+=		lex_wide_string.exp
 FILES+=		${:U0 ${:U:${:Urange=${MAX_MESSAGE}}}:C,^.$,0&,:C,^..$,0&,:@i@msg_${i}.c msg_${i}.exp@:Nmsg_176.exp}
+FILES+=		msg_001_c90.c
+FILES+=		msg_001_c90.exp
+FILES+=		msg_000_c90.c
+FILES+=		msg_000_c90.exp
+FILES+=		msg_230_uchar.c
+FILES+=		msg_230_uchar.exp
+FILES+=		msg_259_ilp32.c
+FILES+=		msg_259_ilp32.exp
+FILES+=		msg_272_c90.c
+FILES+=		msg_272_c90.exp
 FILES+=		op_colon.c
 FILES+=		op_colon.exp
+FILES+=		op_shl_lp64.c
+FILES+=		op_shl_lp64.exp
 FILES+=		stmt_for.c
 FILES+=		stmt_for.exp
-
-# ----- begin hack -----
-# Prevent that ${DESTDIR}/emit.ln gets ${DESTDIR}/emit.c as implicit source.
-# The suffix transformation rule '.c.ln' thinks that ${DESTDIR}/emit.ln should
-# depend in ${DESTDIR}/emit.c, but these files are not intended to depend on
-# each other, they have these suffixes just for convenience and convention.
-.if make(install)
-.  if ${MKUPDATE} == "no"	# see bsd.files.mk
-${DESTDIR}${FILESDIR}/emit.ln! .PHONY
-.  else
-${DESTDIR}${FILESDIR}/emit.ln: .PHONY
-.  endif
-.endif
-# ----- end hack -----
 
 # Note: only works for adding tests.
 # To remove a test, the $$mi file must be edited manually.
@@ -168,5 +187,8 @@ sync-mi: .PHONY
 	distrib/sets/fmt-list "$$mi.tmp";				\
 	mv "$$mi.tmp" "$$mi";						\
 	cvs diff "$$mi" || true
+
+accept: .PHONY
+	@sh ./accept.sh ''
 
 .include <bsd.test.mk>

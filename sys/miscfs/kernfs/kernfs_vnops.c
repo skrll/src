@@ -1,4 +1,4 @@
-/*	$NetBSD: kernfs_vnops.c,v 1.166 2020/06/27 17:29:19 christos Exp $	*/
+/*	$NetBSD: kernfs_vnops.c,v 1.170 2021/07/06 03:23:03 dholland Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kernfs_vnops.c,v 1.166 2020/06/27 17:29:19 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kernfs_vnops.c,v 1.170 2021/07/06 03:23:03 dholland Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -91,8 +91,8 @@ const struct kern_target kern_targets[] = {
 #if 0
      { DT_DIR, N("root"),      0,            KFSnull,        VDIR, DIR_MODE   },
 #endif
-     { DT_BLK, N("rootdev"),   &rootdev,     KFSdevice,      VBLK, READ_MODE  },
-     { DT_CHR, N("rrootdev"),  &rrootdev,    KFSdevice,      VCHR, READ_MODE  },
+     { DT_BLK, N("rootdev"),   &rootdev,     KFSdevice,      VBLK, UREAD_MODE  },
+     { DT_CHR, N("rrootdev"),  &rrootdev,    KFSdevice,      VCHR, UREAD_MODE  },
      { DT_REG, N("time"),      0,            KFStime,        VREG, READ_MODE  },
 			/* XXXUNCONST */
      { DT_REG, N("version"),   __UNCONST(version),
@@ -166,7 +166,7 @@ int	kernfs_reclaim(void *);
 #define	kernfs_lock	genfs_lock
 #define	kernfs_unlock	genfs_unlock
 #define	kernfs_bmap	genfs_badop
-#define	kernfs_strategy	genfs_badop
+#define	kernfs_strategy	genfs_eopnotsupp
 int	kernfs_print(void *);
 #define	kernfs_islocked	genfs_islocked
 int	kernfs_pathconf(void *);
@@ -182,6 +182,7 @@ static int	kernfs_xwrite(const struct kernfs_node *, char *, size_t);
 int (**kernfs_vnodeop_p)(void *);
 const struct vnodeopv_entry_desc kernfs_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, genfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, kernfs_lookup },		/* lookup */
 	{ &vop_create_desc, kernfs_create },		/* create */
 	{ &vop_mknod_desc, kernfs_mknod },		/* mknod */
@@ -198,6 +199,7 @@ const struct vnodeopv_entry_desc kernfs_vnodeop_entries[] = {
 	{ &vop_fcntl_desc, kernfs_fcntl },		/* fcntl */
 	{ &vop_ioctl_desc, kernfs_ioctl },		/* ioctl */
 	{ &vop_poll_desc, kernfs_poll },		/* poll */
+	{ &vop_kqfilter_desc, genfs_kqfilter },		/* kqfilter */
 	{ &vop_revoke_desc, kernfs_revoke },		/* revoke */
 	{ &vop_fsync_desc, kernfs_fsync },		/* fsync */
 	{ &vop_seek_desc, kernfs_seek },		/* seek */
@@ -231,6 +233,7 @@ const struct vnodeopv_desc kernfs_vnodeop_opv_desc =
 int (**kernfs_specop_p)(void *);
 const struct vnodeopv_entry_desc kernfs_specop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, genfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, spec_lookup },		/* lookup */
 	{ &vop_create_desc, spec_create },		/* create */
 	{ &vop_mknod_desc, spec_mknod },		/* mknod */
@@ -247,6 +250,7 @@ const struct vnodeopv_entry_desc kernfs_specop_entries[] = {
 	{ &vop_fcntl_desc, spec_fcntl },		/* fcntl */
 	{ &vop_ioctl_desc, spec_ioctl },		/* ioctl */
 	{ &vop_poll_desc, spec_poll },			/* poll */
+	{ &vop_kqfilter_desc, genfs_kqfilter },		/* kqfilter */
 	{ &vop_revoke_desc, spec_revoke },		/* revoke */
 	{ &vop_fsync_desc, spec_fsync },		/* fsync */
 	{ &vop_seek_desc, spec_seek },			/* seek */

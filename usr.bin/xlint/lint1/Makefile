@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.72 2021/06/23 07:11:41 rillig Exp $
+#	$NetBSD: Makefile,v 1.78 2021/07/05 10:34:26 hgutch Exp $
 
 .include <bsd.own.mk>
 
@@ -18,20 +18,13 @@ YHEADER=
 CWARNFLAGS.clang+=	-Wno-error=implicit-int-float-conversion
 LINTFLAGS+=		-T
 LOBJS.${PROG}+=		${SRCS:M*.y:.y=.ln}
-#LOBJS.${PROG}+=	${SRCS:M*.l:.l=.ln}
-LINTFLAGS.scan.c=	-X 107,330,331,333
+LOBJS.${PROG}+=		${SRCS:M*.l:.l=.ln}
 
 CPPFLAGS+=	-DIS_LINT1
 CPPFLAGS+=	-I${.CURDIR}
 CPPFLAGS+=	${DEBUG:D-DDEBUG}
 
 COPTS.err.c+=	${${ACTIVE_CC} == "clang":? -Wno-format-nonliteral :}
-
-# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=101177
-.if ${HAVE_GCC} == 9 &&	\
-	(${MACHINE_ARCH} == "sh3el" || ${MACHINE_ARCH} == "sh3eb")
-COPTS.lex.c+=	-O0
-.endif
 
 BINDIR=		/usr/libexec
 
@@ -94,8 +87,6 @@ add-test: .PHONY
 		"FILES+=		$$test.exp" \
 		'.' 'w' 'q' \
 	| ed Makefile; \
-	${MAKE} sync-mi; \
-	printf '%s\n' '/^test_case /i' "test_case $$test" '.' 'w' 'q' \
-	| ed t_integration.sh
+	${MAKE} sync-mi
 
 .include <bsd.prog.mk>

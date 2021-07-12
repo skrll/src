@@ -1,4 +1,4 @@
-/*	$NetBSD: main1.c,v 1.45 2021/04/18 22:51:24 rillig Exp $	*/
+/*	$NetBSD: main1.c,v 1.49 2021/07/04 05:49:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: main1.c,v 1.45 2021/04/18 22:51:24 rillig Exp $");
+__RCSID("$NetBSD: main1.c,v 1.49 2021/07/04 05:49:20 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -208,7 +208,7 @@ main(int argc, char *argv[])
 			if (strcmp(optarg, "c11") == 0) {
 				c11flag = true;
 				Sflag = true;
-				sflag = true;
+				sflag = false;
 			} else
 				usage();
 			break;
@@ -254,6 +254,11 @@ main(int argc, char *argv[])
 	/* initialize output */
 	outopen(argv[1]);
 
+#ifdef DEBUG
+	setvbuf(stdout, NULL, _IONBF, 0);
+#endif
+	if (dflag)
+		setvbuf(stdout, NULL, _IONBF, 0);
 #ifdef YYDEBUG
 	if (yflag)
 		yydebug = 1;
@@ -264,7 +269,7 @@ main(int argc, char *argv[])
 	initdecl();
 	initscan();
 
-	if (gflag) {
+	if (gflag && !tflag) {
 		if ((yyin = gcc_builtins()) == NULL)
 			err(1, "cannot open builtins");
 		yyparse();

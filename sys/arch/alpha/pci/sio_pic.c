@@ -1,4 +1,4 @@
-/* $NetBSD: sio_pic.c,v 1.48 2021/05/08 00:08:43 thorpej Exp $ */
+/* $NetBSD: sio_pic.c,v 1.52 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 2000, 2020 The NetBSD Foundation, Inc.
@@ -59,12 +59,11 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: sio_pic.c,v 1.48 2021/05/08 00:08:43 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sio_pic.c,v 1.52 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 #include <sys/cpu.h>
 #include <sys/syslog.h>
 
@@ -84,6 +83,7 @@ __KERNEL_RCSID(0, "$NetBSD: sio_pic.c,v 1.48 2021/05/08 00:08:43 thorpej Exp $")
 
 #include <dev/isa/isareg.h>
 #include <dev/isa/isavar.h>
+#include <alpha/pci/sioreg.h>
 #include <alpha/pci/siovar.h>
 
 #include "sio.h"
@@ -321,7 +321,8 @@ sio_setirqstat(int irq, int enabled, int type)
 void
 sio_intr_setup(pci_chipset_tag_t pc, bus_space_tag_t iot)
 {
-	char *cp;
+	struct evcnt *ev;
+	const char *cp;
 	int i;
 
 	sio_iot = iot;
@@ -348,8 +349,7 @@ sio_intr_setup(pci_chipset_tag_t pc, bus_space_tag_t iot)
 	shutdownhook_establish(sio_intr_shutdown, 0);
 #endif
 
-#define PCI_SIO_IRQ_STR	8
-	sio_intr = alpha_shared_intr_alloc(ICU_LEN, PCI_SIO_IRQ_STR);
+	sio_intr = alpha_shared_intr_alloc(ICU_LEN);
 
 	/*
 	 * set up initial values for interrupt enables.
@@ -357,10 +357,10 @@ sio_intr_setup(pci_chipset_tag_t pc, bus_space_tag_t iot)
 	for (i = 0; i < ICU_LEN; i++) {
 		alpha_shared_intr_set_maxstrays(sio_intr, i, STRAY_MAX);
 
+		ev = alpha_shared_intr_evcnt(sio_intr, i);
 		cp = alpha_shared_intr_string(sio_intr, i);
-		snprintf(cp, PCI_SIO_IRQ_STR, "irq %d", i);
-		evcnt_attach_dynamic(alpha_shared_intr_evcnt(sio_intr, i),
-		    EVCNT_TYPE_INTR, NULL, "isa", cp);
+
+		evcnt_attach_dynamic(ev, EVCNT_TYPE_INTR, NULL, "isa", cp);
 
 		switch (i) {
 		case 0:
@@ -445,14 +445,14 @@ sio_intr_establish(void *v, int irq, int type, int level, int flags,
 		panic("sio_intr_establish: bogus irq or type");
 
 	cookie = alpha_shared_intr_alloc_intrhand(sio_intr, irq, type, level,
-	    flags, fn, arg, "isa irq");
+	    flags, fn, arg, "isa");
 
 	if (cookie == NULL)
 		return NULL;
 
 	mutex_enter(&cpu_lock);
 
-	if (! alpha_shared_intr_link(sio_intr, cookie, "isa irq")) {
+	if (! alpha_shared_intr_link(sio_intr, cookie, "isa")) {
 		mutex_exit(&cpu_lock);
 		alpha_shared_intr_free_intrhand(cookie);
 		return NULL;
@@ -524,11 +524,41 @@ sio_intr_disestablish(void *v, void *cookie)
 	}
 
 	/* Remove it from the link. */
-	alpha_shared_intr_unlink(sio_intr, cookie, "isa irq");
+	alpha_shared_intr_unlink(sio_intr, cookie, "isa");
 
 	mutex_exit(&cpu_lock);
 
 	alpha_shared_intr_free_intrhand(cookie);
+}
+
+/* XXX All known Alpha systems with Intel i82378 have it at device 7. */
+#define	SIO_I82378_DEV		7
+
+int
+sio_pirq_intr_map(pci_chipset_tag_t pc, int pirq, pci_intr_handle_t *ihp)
+{
+	KASSERT(pirq >= 0 && pirq <= 3);
+	KASSERT(pc == sio_pc);
+
+	const pcireg_t rtctrl =
+	    pci_conf_read(sio_pc, pci_make_tag(sio_pc, 0, SIO_I82378_DEV, 0),
+			  SIO_PCIREG_PIRQ_RTCTRL);
+	const pcireg_t pirqreg = PIRQ_RTCTRL_PIRQx(rtctrl, pirq);
+
+	if (pirqreg & PIRQ_RTCTRL_NOT_ROUTED) {
+		/* not routed -> no mapping */
+		return 1;
+	}
+
+	const int irq = __SHIFTOUT(pirqreg, PIRQ_RTCTRL_IRQ);
+
+#if 0
+	printf("sio_pirq_intr_map: pirq %d -> ISA irq %d, rtctl = 0x%08x\n",
+	    pirq, irq, rtctrl);
+#endif
+
+	alpha_pci_intr_handle_init(ihp, irq, 0);
+	return 0;
 }
 
 const char *
@@ -617,7 +647,7 @@ sio_iointr(void *arg, unsigned long vec)
 #endif
 
 	if (!alpha_shared_intr_dispatch(sio_intr, irq))
-		alpha_shared_intr_stray(sio_intr, irq, "isa irq");
+		alpha_shared_intr_stray(sio_intr, irq, "isa");
 	else
 		alpha_shared_intr_reset_strays(sio_intr, irq);
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.290 2021/06/20 20:48:25 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.313 2021/07/06 04:44:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tree.c,v 1.290 2021/06/20 20:48:25 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.313 2021/07/06 04:44:20 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -232,6 +232,14 @@ fallback_symbol(sym_t *sym)
 	error(99, sym->s_name);
 }
 
+/* https://gcc.gnu.org/onlinedocs/gcc/C-Extensions.html */
+static bool
+is_gcc_builtin(const char *name)
+{
+	return strncmp(name, "__atomic_", 9) == 0 ||
+	       strncmp(name, "__builtin_", 10) == 0;
+}
+
 /*
  * Create a node for a name (symbol table entry).
  * follow_token is the token which follows the name.
@@ -245,9 +253,18 @@ new_name_node(sym_t *sym, int follow_token)
 		sym->s_scl = EXTERN;
 		sym->s_def = DECL;
 		if (follow_token == T_LPAREN) {
-			if (sflag) {
-				/* function implicitly declared to ... */
-				warning(215);
+			if (gflag && is_gcc_builtin(sym->s_name)) {
+				/*
+				 * Do not warn about these, just assume that
+				 * they are regular functions compatible with
+				 * non-prototype calling conventions.
+				 */
+			} else if (Sflag) {
+				/* function '%s' implicitly declared to ... */
+				warning(215, sym->s_name);
+			} else if (sflag) {
+				/* function '%s' implicitly declared to ... */
+				warning(215, sym->s_name);
 			}
 			/*
 			 * XXX if tflag is set the symbol should be
@@ -330,7 +347,7 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 	 */
 	if (msym->s_scl == NOSCL) {
 		/* type '%s' does not have member '%s' */
-		error(101, type_name(msym->s_type), msym->s_name);
+		error(101, type_name(tn->tn_type), msym->s_name);
 		rmsym(msym);
 		msym->s_kind = FMEMBER;
 		msym->s_scl = MOS;
@@ -440,11 +457,11 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 	if (eq) {
 		if (op == POINT) {
 			if (tflag) {
-				/* left operand of '.' must be struct/... */
-				warning(103);
+				/* left operand of '.' must be struct ... */
+				warning(103, type_name(tn->tn_type));
 			} else {
-				/* left operand of '.' must be struct/... */
-				error(103);
+				/* left operand of '.' must be struct ... */
+				error(103, type_name(tn->tn_type));
 			}
 		} else {
 			if (tflag && tn->tn_type->t_tspec == PTR) {
@@ -466,6 +483,21 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 	}
 
 	return msym;
+}
+
+tnode_t *
+build_generic_selection(const tnode_t *expr,
+			struct generic_association *sel)
+{
+	tnode_t *default_result = NULL;
+
+	for (; sel != NULL; sel = sel->ga_prev)
+		if (expr != NULL &&
+		    eqtype(sel->ga_arg, expr->tn_type, false, false, NULL))
+			return sel->ga_result;
+		else if (sel->ga_arg == NULL)
+			default_result = sel->ga_result;
+	return default_result;
 }
 
 /*
@@ -696,6 +728,7 @@ cconv(tnode_t *tn)
 	/* lvalue to rvalue */
 	if (tn->tn_lvalue) {
 		tp = expr_dup_type(tn->tn_type);
+		/* C99 6.3.2.1p2 sentence 2 says to remove the qualifiers. */
 		tp->t_const = tp->t_volatile = false;
 		tn = new_tnode(LOAD, tp, tn, NULL);
 	}
@@ -728,8 +761,6 @@ typeok_incdec(op_t op, const tnode_t *tn, const type_t *tp)
 	if (!tn->tn_lvalue) {
 		if (tn->tn_op == CVT && tn->tn_cast &&
 		    tn->tn_left->tn_op == LOAD) {
-			if (tn->tn_type->t_tspec == PTR)
-				return true;
 			/* a cast does not yield an lvalue */
 			error(163);
 		}
@@ -753,8 +784,6 @@ typeok_address(const mod_t *mp,
 	} else if (!tn->tn_lvalue) {
 		if (tn->tn_op == CVT && tn->tn_cast &&
 		    tn->tn_left->tn_op == LOAD) {
-			if (tn->tn_type->t_tspec == PTR)
-				return true;
 			/* a cast does not yield an lvalue */
 			error(163);
 		}
@@ -1043,8 +1072,6 @@ typeok_assign(const mod_t *mp, const tnode_t *ln, const type_t *ltp, tspec_t lt)
 	if (!ln->tn_lvalue) {
 		if (ln->tn_op == CVT && ln->tn_cast &&
 		    ln->tn_left->tn_op == LOAD) {
-			if (ln->tn_type->t_tspec == PTR)
-				return true;
 			/* a cast does not yield an lvalue */
 			error(163);
 		}
@@ -1475,8 +1502,8 @@ check_assign_types_compatible(op_t op, int arg,
 		error(211, type_name(ltp), type_name(rtp));
 		break;
 	case FARG:
-		/* argument is incompatible with prototype, arg #%d */
-		warning(155, arg);
+		/* passing '%s' to incompatible '%s', arg #%d */
+		warning(155, type_name(rtp), type_name(ltp), arg);
 		break;
 	default:
 		warn_incompatible_types(op, ltp, lt, rtp, rt);
@@ -1601,7 +1628,7 @@ new_tnode(op_t op, type_t *type, tnode_t *ln, tnode_t *rn)
 {
 	tnode_t	*ntn;
 	tspec_t	t;
-#ifdef notyet
+#if 0 /* not yet */
 	size_t l;
 	uint64_t rnum;
 #endif
@@ -1610,15 +1637,12 @@ new_tnode(op_t op, type_t *type, tnode_t *ln, tnode_t *rn)
 
 	ntn->tn_op = op;
 	ntn->tn_type = type;
-	if (ln->tn_from_system_header)
-		ntn->tn_from_system_header = true;
-	if (rn != NULL && rn->tn_from_system_header)
-		ntn->tn_from_system_header = true;
+	ntn->tn_relaxed = ln->tn_relaxed || (rn != NULL && rn->tn_relaxed);
 	ntn->tn_left = ln;
 	ntn->tn_right = rn;
 
 	switch (op) {
-#ifdef notyet
+#if 0 /* not yet */
 	case SHR:
 		if (rn->tn_op != CON)
 			break;
@@ -1730,7 +1754,8 @@ promote(op_t op, bool farg, tnode_t *tn)
 		ntp = expr_dup_type(tn->tn_type);
 		ntp->t_tspec = t;
 		/*
-		 * Keep t_is_enum so we are later able to check compatibility
+		 * Keep t_is_enum even though t_tspec gets converted from
+		 * ENUM to INT, so we are later able to check compatibility
 		 * of enum types.
 		 */
 		tn = convert(op, 0, ntp, tn);
@@ -1854,7 +1879,7 @@ convert(op_t op, int arg, type_t *tp, tnode_t *tn)
 	ntn->tn_op = CVT;
 	ntn->tn_type = tp;
 	ntn->tn_cast = op == CVT;
-	ntn->tn_from_system_header |= tn->tn_from_system_header;
+	ntn->tn_relaxed |= tn->tn_relaxed;
 	ntn->tn_right = NULL;
 	if (tn->tn_op != CON || nt == VOID) {
 		ntn->tn_left = tn;
@@ -2239,9 +2264,9 @@ convert_constant_check_range_signed(op_t op, int arg)
  * of unsigned types or all truncated bits plus the
  * msb of the target for signed types are considered
  * to be significant bits. Loss of significant bits
- * means that at least on of the bits was set in an
- * unsigned type or that at least one, but not all of
- * the bits was set in an signed type.
+ * means that at least one of the bits was set in an
+ * unsigned type or that at least one but not all of
+ * the bits was set in a signed type.
  * Loss of significant bits means that it is not
  * possible, also not with necessary casts, to convert
  * back to the original type. A example for a
@@ -2383,18 +2408,9 @@ convert_constant(op_t op, int arg, const type_t *tp, val_t *nv, val_t *v)
 		v->v_unsigned_since_c90 = false;
 	}
 
-	switch (nt) {
-	case FLOAT:
-	case FCOMPLEX:
-	case DOUBLE:
-	case DCOMPLEX:
-	case LDOUBLE:
-	case LCOMPLEX:
-		break;
-	default:
+	if (is_integer(nt)) {
 		sz = tp->t_bitfield ? tp->t_flen : size_in_bits(nt);
-		nv->v_quad = xsign(nv->v_quad, nt, sz);
-		break;
+		nv->v_quad = convert_integer(nv->v_quad, nt, sz);
 	}
 
 	if (range_check && op != CVT)
@@ -3013,7 +3029,7 @@ fold(tnode_t *tn)
 		 * shifts of signed values are implementation dependent.
 		 */
 		q = ul >> sr;
-		q = xsign(q, t, size_in_bits(t) - (int)sr);
+		q = convert_integer(q, t, size_in_bits(t) - (int)sr);
 		break;
 	case LT:
 		q = (utyp ? ul < ur : sl < sr) ? 1 : 0;
@@ -3054,7 +3070,7 @@ fold(tnode_t *tn)
 			warning(141, op_name(tn->tn_op));
 	}
 
-	v->v_quad = xsign(q, t, -1);
+	v->v_quad = convert_integer(q, t, -1);
 
 	cn = expr_new_constant(tn->tn_type, v);
 	if (tn->tn_left->tn_system_dependent)
@@ -3658,9 +3674,7 @@ void
 expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk, bool is_do_while)
 {
 
-	lint_assert(tn != NULL || nerr != 0);
-
-	if (tn == NULL) {
+	if (tn == NULL) {	/* in case of errors */
 		expr_free_all();
 		return;
 	}
@@ -3761,6 +3775,9 @@ display_expression(const tnode_t *tn, int offs)
 		(void)printf("0x %08lx %08lx ",
 		    (long)(uq >> 32) & 0xffffffffl,
 		    (long)uq & 0xffffffffl);
+	} else if (tn->tn_op == CON && tn->tn_type->t_tspec == BOOL) {
+		(void)printf("%s ",
+		    tn->tn_val->v_quad != 0 ? "true" : "false");
 	} else if (tn->tn_op == CON) {
 		lint_assert(tn->tn_type->t_tspec == PTR);
 		(void)printf("0x%0*lx ", (int)(sizeof(void *) * CHAR_BIT / 4),

@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.353 2021/05/17 04:07:41 yamaguchi Exp $
+# $NetBSD: mi,v 1.355 2021/07/09 05:54:11 yamaguchi Exp $
 ./etc/mtree/set.debug                           comp-sys-root
 ./usr/lib					comp-sys-usr		compatdir
 ./usr/lib/i18n/libBIG5_g.a			comp-c-debuglib		debuglib,compatfile
@@ -2088,6 +2088,9 @@
 ./usr/libdata/debug/usr/tests/lib/libc/ssp/h_strncpy.debug		tests-lib-debug		debug,atf,ssp,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/ssp/h_vsnprintf.debug		tests-lib-debug		debug,atf,ssp,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/ssp/h_vsprintf.debug		tests-lib-debug		debug,atf,ssp,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdio/h_intr.debug		tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdio/h_makenumbers.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdio/h_testnumbers.debug	tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_clearerr.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_fflush.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_fmemopen.debug		tests-lib-debug		debug,atf,compattestfile
@@ -2393,6 +2396,7 @@
 ./usr/libdata/debug/usr/tests/net/if/t_compat.debug		tests-net-debug		debug,atf,rump
 ./usr/libdata/debug/usr/tests/net/if_loop/t_pr.debug		tests-net-debug		debug,atf,rump
 ./usr/libdata/debug/usr/tests/net/if_tap/rump_open_tap.debug	tests-net-debug		debug,atf,rump
+./usr/libdata/debug/usr/tests/net/if_vlan/bpfopen.debug		tests-net-debug		debug,atf,rump
 ./usr/libdata/debug/usr/tests/net/if_vlan/siocXmulti.debug	tests-net-debug		debug,atf,rump
 ./usr/libdata/debug/usr/tests/net/in_cksum/in_cksum.debug	tests-net-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/net/ipsec/natt_terminator.debug	tests-net-debug		debug,atf,rump

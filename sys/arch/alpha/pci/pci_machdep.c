@@ -1,4 +1,4 @@
-/* $NetBSD: pci_machdep.c,v 1.30 2021/06/25 03:44:10 thorpej Exp $ */
+/* $NetBSD: pci_machdep.c,v 1.32 2021/07/04 22:36:43 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.30 2021/06/25 03:44:10 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.32 2021/07/04 22:36:43 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -176,6 +176,29 @@ alpha_pci_intr_init(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
 	panic("%s: unknown systype %d", __func__, cputype);
 }
 
+void
+alpha_pci_intr_alloc(pci_chipset_tag_t pc, unsigned int maxstrays)
+{
+	unsigned int i;
+	struct evcnt *ev;
+	const char *cp;
+
+	pc->pc_shared_intrs = alpha_shared_intr_alloc(pc->pc_nirq);
+
+	for (i = 0; i < pc->pc_nirq; i++) {
+		alpha_shared_intr_set_maxstrays(pc->pc_shared_intrs, i,
+		    maxstrays);
+		alpha_shared_intr_set_private(pc->pc_shared_intrs, i,
+		    pc->pc_intr_v);
+
+		ev = alpha_shared_intr_evcnt(pc->pc_shared_intrs, i);
+		cp = alpha_shared_intr_string(pc->pc_shared_intrs, i);
+
+		evcnt_attach_dynamic(ev, EVCNT_TYPE_INTR, NULL,
+		    pc->pc_intr_desc, cp);
+	}
+}
+
 int
 alpha_pci_generic_intr_map(const struct pci_attach_args * const pa,
     pci_intr_handle_t * const ihp)
@@ -225,7 +248,7 @@ alpha_pci_generic_intr_string(pci_chipset_tag_t const pc,
 
 	KASSERT(irq < pc->pc_nirq);
 
-	snprintf(buf, len, "%s %u", pc->pc_intr_desc, irq);
+	snprintf(buf, len, "%s irq %u", pc->pc_intr_desc, irq);
 	return buf;
 }
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.119 2021/05/16 11:11:36 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.126 2021/07/05 19:53:43 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.119 2021/05/16 11:11:36 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.126 2021/07/05 19:53:43 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -85,7 +85,7 @@ const char *const msgs[] = {
 	"redefinition of %s",					      /* 28 */
 	"previously declared extern, becomes static: %s",	      /* 29 */
 	"redeclaration of %s; ANSI C requires static",		      /* 30 */
-	"incomplete structure or union %s: %s",			      /* 31 */
+	"argument '%s' has type '%s'",				      /* 31 */
 	"argument type defaults to 'int': %s",			      /* 32 */
 	"duplicate member name: %s",				      /* 33 */
 	"nonportable bit-field type '%s'",			      /* 34 */
@@ -157,8 +157,8 @@ const char *const msgs[] = {
 	"unary + is illegal in traditional C",			      /* 100 */
 	"type '%s' does not have member '%s'",			      /* 101 */
 	"illegal member use: %s",				      /* 102 */
-	"left operand of '.' must be struct/union object",	      /* 103 */
-	"left operand of '->' must be pointer to struct/union not %s",/* 104 */
+	"left operand of '.' must be struct or union, not '%s'",      /* 103 */
+	"left operand of '->' must be pointer to struct or union, not '%s'", /* 104 */
 	"non-unique member requires struct/union %s",		      /* 105 */
 	"left operand of '->' must be pointer",			      /* 106 */
 	"operands of '%s' have incompatible types (%s != %s)",	      /* 107 */
@@ -209,7 +209,7 @@ const char *const msgs[] = {
 	"argument cannot have unknown size, arg #%d",		      /* 152 */
 	"converting '%s' to incompatible '%s' for argument %d",	      /* 153 */
 	"illegal combination of %s (%s) and %s (%s), arg #%d",	      /* 154 */
-	"argument is incompatible with prototype, arg #%d",	      /* 155 */
+	"passing '%s' to incompatible '%s', arg #%d",		      /* 155 */
 	"enum type mismatch, arg #%d (%s != %s)",		      /* 156 */
 	"ANSI C treats constant as unsigned",			      /* 157 */
 	"%s may be used before set",				      /* 158 */
@@ -269,7 +269,7 @@ const char *const msgs[] = {
 	"cannot return incomplete type",			      /* 212 */
 	"void function %s cannot return value",			      /* 213 */
 	"function %s expects to return value",			      /* 214 */
-	"function implicitly declared to return int",		      /* 215 */
+	"function '%s' implicitly declared to return int",	      /* 215 */
 	"function %s has return (e); and return;",		      /* 216 */
 	"function %s falls off bottom without returning value",	      /* 217 */
 	"ANSI C treats constant as unsigned, op %s",		      /* 218 */
@@ -394,11 +394,12 @@ const char *const msgs[] = {
 	"right operand of '%s' must not be bool",		      /* 337 */
 	"option '%c' should be handled in the switch",		      /* 338 */
 	"option '%c' should be listed in the options string",	      /* 339 */
-	"initialization with '[a...b]' is a GNU extension",	      /* 340 */
+	"initialization with '[a...b]' is a GCC extension",	      /* 340 */
 	"argument to '%s' must be 'unsigned char' or EOF, not '%s'",  /* 341 */
 	"argument to '%s' must be cast to 'unsigned char', not to '%s'", /* 342 */
 	"static array size is a C11 extension",			      /* 343 */
 	"bit-field of type plain 'int' has implementation-defined signedness", /* 344 */
+	"generic selection requires C11 or later",		      /* 345 */
 };
 
 static struct include_level {
@@ -429,8 +430,10 @@ update_location(const char *filename, int lineno, bool is_begin, bool is_end)
 			free(top);
 			top = includes;
 		}
-		top->filename = filename;
-		top->lineno = lineno;
+		if (top != NULL) {
+			top->filename = filename;
+			top->lineno = lineno;
+		}
 	}
 }
 

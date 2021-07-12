@@ -1,4 +1,4 @@
-/* $NetBSD: pci_2100_a500.c,v 1.15 2021/06/19 16:59:07 thorpej Exp $ */
+/* $NetBSD: pci_2100_a500.c,v 1.18 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -31,14 +31,14 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pci_2100_a500.c,v 1.15 2021/06/19 16:59:07 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_2100_a500.c,v 1.18 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/systm.h>
 #include <sys/errno.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
 #include <sys/syslog.h>
@@ -188,6 +188,7 @@ pci_2100_a500_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
     pci_chipset_tag_t pc)
 {
 	struct ttwoga_config *tcp = core;
+	struct evcnt *ev;
 	char *cp;
 	int i;
 
@@ -202,29 +203,30 @@ pci_2100_a500_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
 	/* Not supported on T2. */
 	pc->pc_pciide_compat_intr_establish = NULL;
 
-#define PCI_2100_IRQ_STR	8
-	pc->pc_shared_intrs = alpha_shared_intr_alloc(SABLE_MAX_IRQ,
-	    PCI_2100_IRQ_STR);
-
-	pc->pc_intr_desc = "T2 irq";
-
+	pc->pc_intr_desc = "T2";
 	/* 64 16-byte vectors per hose. */
 	pc->pc_vecbase = 0x800 + ((64 * 16) * tcp->tc_hose);
 	pc->pc_nirq = SABLE_MAX_IRQ;
 
-	for (i = 0; i < SABLE_MAX_IRQ; i++) {
-		alpha_shared_intr_set_dfltsharetype(pc->pc_shared_intrs,
-		    i, tcp->tc_hose == 0 ?
-		    dec_2100_a500_intr_deftype[i] : IST_LEVEL);
-		alpha_shared_intr_set_maxstrays(pc->pc_shared_intrs,
-		    i, PCI_STRAY_MAX);
+	pc->pc_shared_intrs = alpha_shared_intr_alloc(pc->pc_nirq);
 
-		cp = alpha_shared_intr_string(pc->pc_shared_intrs, i);
-		snprintf(cp, PCI_2100_IRQ_STR, "irq %d", T2_IRQ_IS_EISA(i) ?
-		    i - T2_IRQ_EISA_START : i);
-		evcnt_attach_dynamic(alpha_shared_intr_evcnt(
-		    pc->pc_shared_intrs, i), EVCNT_TYPE_INTR, NULL,
-		    T2_IRQ_IS_EISA(i) ? "eisa" : "T2", cp);
+	for (i = 0; i < pc->pc_nirq; i++) {
+		alpha_shared_intr_set_maxstrays(pc->pc_shared_intrs, i,
+		    PCI_STRAY_MAX);
+		alpha_shared_intr_set_private(pc->pc_shared_intrs, i,
+		    pc->pc_intr_v);
+		alpha_shared_intr_set_dfltsharetype(pc->pc_shared_intrs, i,
+		    tcp->tc_hose == 0 ? dec_2100_a500_intr_deftype[i]
+				      : IST_LEVEL);
+
+		ev = alpha_shared_intr_evcnt(pc->pc_shared_intrs, i);
+		cp = kmem_asprintf("irq %d",
+		    T2_IRQ_IS_EISA(i) ? i - T2_IRQ_EISA_START : i);
+
+		alpha_shared_intr_set_string(pc->pc_shared_intrs, i, cp);
+
+		evcnt_attach_dynamic(ev, EVCNT_TYPE_INTR, NULL,
+		    T2_IRQ_IS_EISA(i) ? "eisa" : pc->pc_intr_desc, cp);
 	}
 
 	/*
@@ -438,14 +440,14 @@ dec_2100_a500_intr_establish(pci_chipset_tag_t const pc,
 	KASSERT(irq < SABLE_MAX_IRQ);
 
 	cookie = alpha_shared_intr_alloc_intrhand(pc->pc_shared_intrs, irq,
-	    dec_2100_a500_intr_deftype[irq], level, flags, func, arg, "T2 irq");
+	    dec_2100_a500_intr_deftype[irq], level, flags, func, arg, "T2");
 
 	if (cookie == NULL)
 		return NULL;
 
 	mutex_enter(&cpu_lock);
 
-	if (! alpha_shared_intr_link(pc->pc_shared_intrs, cookie, "T2 irq")) {
+	if (! alpha_shared_intr_link(pc->pc_shared_intrs, cookie, "T2")) {
 		mutex_exit(&cpu_lock);
 		alpha_shared_intr_free_intrhand(cookie);
 		return NULL;
@@ -478,7 +480,7 @@ dec_2100_a500_intr_disestablish(pci_chipset_tag_t const pc, void * const cookie)
 		scb_free(pc->pc_vecbase + SCB_IDXTOVEC(irq));
 	}
 
-	alpha_shared_intr_unlink(pc->pc_shared_intrs, cookie, "T2 irq");
+	alpha_shared_intr_unlink(pc->pc_shared_intrs, cookie, "T2");
 
 	mutex_exit(&cpu_lock);
 
@@ -573,14 +575,14 @@ dec_2100_a500_eisa_intr_establish(void *v, int eirq, int type, int level,
 	}
 
 	cookie = alpha_shared_intr_alloc_intrhand(pc->pc_shared_intrs, irq,
-	    type, level, 0, fn, arg, "T2 irq");
+	    type, level, 0, fn, arg, "T2");
 
 	if (cookie == NULL)
 		return NULL;
 
 	mutex_enter(&cpu_lock);
 
-	if (! alpha_shared_intr_link(pc->pc_shared_intrs, cookie, "T2 irq")) {
+	if (! alpha_shared_intr_link(pc->pc_shared_intrs, cookie, "T2")) {
 		mutex_exit(&cpu_lock);
 		alpha_shared_intr_free_intrhand(cookie);
 		return NULL;
@@ -618,7 +620,7 @@ dec_2100_a500_eisa_intr_disestablish(void *v, void *cookie)
 	}
 
 	/* Remove it from the link. */
-	alpha_shared_intr_unlink(pc->pc_shared_intrs, cookie, "T2 irq");
+	alpha_shared_intr_unlink(pc->pc_shared_intrs, cookie, "T2");
 
 	mutex_exit(&cpu_lock);
 
@@ -669,7 +671,7 @@ dec_2100_a500_iointr(void *arg, u_long vec)
 	rv = alpha_shared_intr_dispatch(pc->pc_shared_intrs, irq);
 	(*tcp->tc_eoi)(tcp, irq);
 	if (rv == 0) {
-		alpha_shared_intr_stray(pc->pc_shared_intrs, irq, "T2 irq");
+		alpha_shared_intr_stray(pc->pc_shared_intrs, irq, "T2");
 		if (ALPHA_SHARED_INTR_DISABLE(pc->pc_shared_intrs, irq))
 			(*tcp->tc_enable_intr)(tcp, irq, 0);
 	} else

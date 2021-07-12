@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.105 2021/06/20 20:32:42 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.113 2021/07/08 02:59:22 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -165,7 +165,16 @@ struct lint1_type {
 	bool	t_vararg : 1;	/* prototype with '...' */
 	bool	t_typedef : 1;	/* type defined with typedef */
 	bool	t_bitfield : 1;
-	bool	t_is_enum : 1;	/* type is (or was) enum (t_enum valid) */
+	/*
+	 * Either the type is currently an enum (having t_tspec ENUM), or
+	 * it is an integer type (typically INT) that has been implicitly
+	 * converted from an enum type.  In both cases, t_enum is valid.
+	 *
+	 * The information about a former enum type is retained to allow
+	 * type checks in expressions such as ((var1 & 0x0001) == var2), to
+	 * detect when var1 and var2 are from incompatible enum types.
+	 */
+	bool	t_is_enum : 1;
 	bool	t_packed : 1;
 	union {
 		int	_t_dim;		/* dimension (if ARRAY) */
@@ -235,7 +244,7 @@ typedef	struct sym {
 	pos_t	s_set_pos;	/* position of first initialization */
 	pos_t	s_use_pos;	/* position of first use */
 	symt_t	s_kind;		/* type of symbol */
-	void   *s_keyword;
+	const struct kwtab *s_keyword;
 	bool	s_bitfield : 1;
 	bool	s_set : 1;	/* variable set, label defined */
 	bool	s_used : 1;	/* variable/label used */
@@ -297,7 +306,10 @@ typedef	struct tnode {
 	bool	tn_lvalue : 1;	/* node is lvalue */
 	bool	tn_cast : 1;	/* if tn_op == CVT, it's an explicit cast */
 	bool	tn_parenthesized : 1;
-	bool	tn_from_system_header : 1;
+	bool	tn_relaxed : 1;	/* in strict bool mode, allow mixture between
+				 * bool and scalar, for backwards
+				 * compatibility
+				 */
 	bool	tn_system_dependent : 1; /* depends on sizeof or offsetof */
 	union {
 		struct {
@@ -315,6 +327,12 @@ typedef	struct tnode {
 #define tn_sym		tn_u._tn_sym
 #define	tn_val		tn_u._tn_val
 #define	tn_string	tn_u._tn_string
+
+struct generic_association {
+	type_t *ga_arg;		/* NULL means default or error */
+	tnode_t *ga_result;	/* NULL means error */
+	struct generic_association *ga_prev;
+};
 
 /*
  * For nested declarations a stack exists, which holds all information
@@ -343,7 +361,8 @@ typedef	struct dinfo {
 				   for all declarators */
 	sym_t	*d_redeclared_symbol;
 	int	d_offset;	/* offset of next structure member */
-	int	d_stralign;	/* alignment required for current structure */
+	int	d_sou_align_in_bits; /* alignment required for current
+				 * structure */
 	scl_t	d_ctx;		/* context of declaration */
 	bool	d_const : 1;	/* const in declaration specifiers */
 	bool	d_volatile : 1;	/* volatile in declaration specifiers */
@@ -368,16 +387,13 @@ typedef	struct dinfo {
 	struct	dinfo *d_next;	/* next level */
 } dinfo_t;
 
-/*
- * Used to collect information about pointers and qualifiers in
- * declarators.
- */
-typedef	struct pqinf {
-	int	p_pcnt;			/* number of asterisks */
-	bool	p_const : 1;
-	bool	p_volatile : 1;
-	struct	pqinf *p_next;
-} pqinf_t;
+/* One level of pointer indirection in declarators, including qualifiers. */
+typedef	struct qual_ptr {
+	bool	p_const: 1;
+	bool	p_volatile: 1;
+	bool	p_pointer: 1;
+	struct	qual_ptr *p_next;
+} qual_ptr;
 
 /*
  * The values of the 'case' labels, linked via cl_next in reverse order of
