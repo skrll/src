@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.265 2021/07/06 21:41:36 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.275 2021/07/09 06:37:11 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.265 2021/07/06 21:41:36 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.275 2021/07/09 06:37:11 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -207,54 +207,54 @@ anonymize(sym_t *s)
 %token			T_SWITCH
 %token			T_SYMBOLRENAME
 %token			T_WHILE
-/* Type Attributes */
-%token <y_type>		T_ATTRIBUTE
-%token <y_type>		T_AT_ALIAS
-%token <y_type>		T_AT_ALIGNED
-%token <y_type>		T_AT_ALLOC_SIZE
-%token <y_type>		T_AT_ALWAYS_INLINE
-%token <y_type>		T_AT_BOUNDED
-%token <y_type>		T_AT_BUFFER
-%token <y_type>		T_AT_COLD
-%token <y_type>		T_AT_COMMON
-%token <y_type>		T_AT_CONSTRUCTOR
-%token <y_type>		T_AT_DEPRECATED
-%token <y_type>		T_AT_DESTRUCTOR
-%token <y_type>		T_AT_FALLTHROUGH
-%token <y_type>		T_AT_FORMAT
-%token <y_type>		T_AT_FORMAT_ARG
-%token <y_type>		T_AT_FORMAT_GNU_PRINTF
-%token <y_type>		T_AT_FORMAT_PRINTF
-%token <y_type>		T_AT_FORMAT_SCANF
-%token <y_type>		T_AT_FORMAT_STRFMON
-%token <y_type>		T_AT_FORMAT_STRFTIME
-%token <y_type>		T_AT_FORMAT_SYSLOG
-%token <y_type>		T_AT_GNU_INLINE
-%token <y_type>		T_AT_MALLOC
-%token <y_type>		T_AT_MAY_ALIAS
-%token <y_type>		T_AT_MINBYTES
-%token <y_type>		T_AT_MODE
-%token <y_type>		T_AT_NOINLINE
-%token <y_type>		T_AT_NONNULL
-%token <y_type>		T_AT_NONSTRING
-%token <y_type>		T_AT_NORETURN
-%token <y_type>		T_AT_NOTHROW
-%token <y_type>		T_AT_NO_INSTRUMENT_FUNCTION
-%token <y_type>		T_AT_OPTIMIZE
-%token <y_type>		T_AT_PACKED
-%token <y_type>		T_AT_PCS
-%token <y_type>		T_AT_PURE
-%token <y_type>		T_AT_RETURNS_TWICE
-%token <y_type>		T_AT_SECTION
-%token <y_type>		T_AT_SENTINEL
-%token <y_type>		T_AT_STRING
-%token <y_type>		T_AT_TLS_MODEL
-%token <y_type>		T_AT_TUNION
-%token <y_type>		T_AT_UNUSED
-%token <y_type>		T_AT_USED
-%token <y_type>		T_AT_VISIBILITY
-%token <y_type>		T_AT_WARN_UNUSED_RESULT
-%token <y_type>		T_AT_WEAK
+
+%token			T_ATTRIBUTE
+%token			T_AT_ALIAS
+%token			T_AT_ALIGNED
+%token			T_AT_ALLOC_SIZE
+%token			T_AT_ALWAYS_INLINE
+%token			T_AT_BOUNDED
+%token			T_AT_BUFFER
+%token			T_AT_COLD
+%token			T_AT_COMMON
+%token			T_AT_CONSTRUCTOR
+%token			T_AT_DEPRECATED
+%token			T_AT_DESTRUCTOR
+%token			T_AT_FALLTHROUGH
+%token			T_AT_FORMAT
+%token			T_AT_FORMAT_ARG
+%token			T_AT_FORMAT_GNU_PRINTF
+%token			T_AT_FORMAT_PRINTF
+%token			T_AT_FORMAT_SCANF
+%token			T_AT_FORMAT_STRFMON
+%token			T_AT_FORMAT_STRFTIME
+%token			T_AT_FORMAT_SYSLOG
+%token			T_AT_GNU_INLINE
+%token			T_AT_MALLOC
+%token			T_AT_MAY_ALIAS
+%token			T_AT_MINBYTES
+%token			T_AT_MODE
+%token			T_AT_NOINLINE
+%token			T_AT_NONNULL
+%token			T_AT_NONSTRING
+%token			T_AT_NORETURN
+%token			T_AT_NOTHROW
+%token			T_AT_NO_INSTRUMENT_FUNCTION
+%token			T_AT_OPTIMIZE
+%token			T_AT_PACKED
+%token			T_AT_PCS
+%token			T_AT_PURE
+%token			T_AT_RETURNS_TWICE
+%token			T_AT_SECTION
+%token			T_AT_SENTINEL
+%token			T_AT_STRING
+%token			T_AT_TLS_MODEL
+%token			T_AT_TUNION
+%token			T_AT_UNUSED
+%token			T_AT_USED
+%token			T_AT_VISIBILITY
+%token			T_AT_WARN_UNUSED_RESULT
+%token			T_AT_WEAK
 
 %left	T_COMMA
 %right	T_ASSIGN T_OPASSIGN
@@ -290,7 +290,7 @@ anonymize(sym_t *s)
 %type	<y_tspec>	struct
 %type	<y_sym>		struct_declaration
 %type	<y_sb>		identifier
-%type	<y_sym>		member_declaration_list_with_rbrace
+%type	<y_sym>		member_declaration_list_semi
 %type	<y_sym>		member_declaration_list
 %type	<y_sym>		member_declaration
 %type	<y_sym>		notype_member_decls
@@ -342,7 +342,6 @@ anonymize(sym_t *s)
 %type	<y_seen_statement> block_item
 %type	<y_generic>	generic_assoc_list
 %type	<y_generic>	generic_association
-
 
 %%
 
@@ -645,14 +644,12 @@ struct_spec:
 	;
 
 struct:
-	  struct type_attribute
-	| T_STRUCT_OR_UNION {
+	  T_STRUCT_OR_UNION {
 		symtyp = FTAG;
 		begin_declaration_level($1 == STRUCT ? MOS : MOU);
 		dcs->d_offset = 0;
 		dcs->d_sou_align_in_bits = CHAR_SIZE;
-		$$ = $1;
-	  }
+	  } type_attribute_list_opt
 	;
 
 struct_tag:
@@ -662,20 +659,19 @@ struct_tag:
 	;
 
 struct_declaration:
-	  struct_decl_lbrace member_declaration_list_with_rbrace {
-		$$ = $2;
-	  }
-	;
-
-struct_decl_lbrace:
 	  T_LBRACE {
 		symtyp = FVFT;
+	  } member_declaration_list_semi T_RBRACE {
+		$$ = $3;
 	  }
 	;
 
-member_declaration_list_with_rbrace:
-	  member_declaration_list T_SEMI T_RBRACE
-	| member_declaration_list T_RBRACE {
+member_declaration_list_semi:
+	  /* empty */ {
+		$$ = NULL;
+	  }
+	| member_declaration_list T_SEMI
+	| member_declaration_list {
 		if (sflag) {
 			/* syntax req. ';' after last struct/union member */
 			error(66);
@@ -685,14 +681,6 @@ member_declaration_list_with_rbrace:
 		}
 		$$ = $1;
 	  }
-	| T_RBRACE {
-		$$ = NULL;
-	  }
-	;
-
-type_attribute_opt:
-	  /* empty */
-	| type_attribute
 	;
 
 member_declaration_list:
@@ -860,15 +848,11 @@ enum_tag:
 	;
 
 enum_declaration:
-	  enum_decl_lbrace enumerator_list enumerator_list_comma_opt T_RBRACE {
-		$$ = $2;
-	  }
-	;
-
-enum_decl_lbrace:
 	  T_LBRACE {
 		symtyp = FVFT;
 		enumval = 0;
+	  } enumerator_list enumerator_list_comma_opt T_RBRACE {
+		$$ = $3;
 	  }
 	;
 
@@ -1048,10 +1032,7 @@ notype_param_decl:
 	;
 
 direct_param_decl:
-	  identifier type_attribute_list {
-		$$ = declarator_name(getsym($1));
-	  }
-	| identifier {
+	  identifier type_attribute_list_opt {
 		$$ = declarator_name(getsym($1));
 	  }
 	| T_LPAREN notype_param_decl T_RPAREN {
@@ -1071,8 +1052,7 @@ direct_param_decl:
 	;
 
 direct_notype_param_decl:
-	/* XXX: missing identifier type_attribute_list? */
-	  identifier {
+	  identifier /* XXX: missing type_attribute_list_opt? */ {
 		$$ = declarator_name(getsym($1));
 	  }
 	| T_LPAREN notype_param_decl T_RPAREN {
@@ -1422,7 +1402,7 @@ non_expr_statement:
 	;
 
 statement:			/* C99 6.8 */
-	  expr_statement
+	  expression_statement
 	| non_expr_statement
 	;
 
@@ -1451,8 +1431,8 @@ label:
 	;
 
 compound_statement:		/* C99 6.8.2 */
-	  compound_statement_lbrace compound_statement_rbrace
-	| compound_statement_lbrace block_item_list compound_statement_rbrace
+	  compound_statement_lbrace block_item_list_opt
+	    compound_statement_rbrace
 	;
 
 compound_statement_lbrace:
@@ -1471,6 +1451,11 @@ compound_statement_rbrace:
 		block_level--;
 		seen_fallthrough = false;
 	  }
+	;
+
+block_item_list_opt:		/* C99 6.8.2 */
+	  /* empty */
+	| block_item_list
 	;
 
 block_item_list:
@@ -1494,7 +1479,7 @@ block_item:
 	  }
 	;
 
-expr_statement:
+expression_statement:		/* C99 6.8.3 */
 	  expr T_SEMI {
 		expr($1, false, false, false, false);
 		seen_fallthrough = false;
@@ -1531,52 +1516,22 @@ selection_statement:		/* C99 6.8.4 */
 	  }
 	;
 
-if_without_else:
+if_without_else:		/* see C99 6.8.4 */
 	  if_expr statement
 	| if_expr error
 	;
 
-if_expr:
+if_expr:			/* see C99 6.8.4 */
 	  T_IF T_LPAREN expr T_RPAREN {
 		if1($3);
 		clear_warning_flags();
 	  }
 	;
 
-switch_expr:
+switch_expr:			/* see C99 6.8.4 */
 	  T_SWITCH T_LPAREN expr T_RPAREN {
 		switch1($3);
 		clear_warning_flags();
-	  }
-	;
-
-generic_selection:		/* C11 6.5.1.1 */
-	  T_GENERIC T_LPAREN assignment_expression T_COMMA
-	    generic_assoc_list T_RPAREN {
-	  	/* generic selection requires C11 or later */
-	  	c11ism(345);
-		$$ = build_generic_selection($3, $5);
-	  }
-	;
-
-generic_assoc_list:		/* C11 6.5.1.1 */
-	  generic_association
-	| generic_assoc_list T_COMMA generic_association {
-		$3->ga_prev = $1;
-		$$ = $3;
-	  }
-	;
-
-generic_association:		/* C11 6.5.1.1 */
-	  type_name T_COLON assignment_expression {
-		$$ = getblk(sizeof(*$$));
-		$$->ga_arg = $1;
-		$$->ga_result = $3;
-	  }
-	| T_DEFAULT T_COLON assignment_expression {
-		$$ = getblk(sizeof(*$$));
-		$$->ga_arg = NULL;
-		$$->ga_result = $3;
 	  }
 	;
 
@@ -1617,33 +1572,33 @@ iteration_statement:		/* C99 6.8.5 */
 	  }
 	;
 
-while_expr:
+while_expr:			/* see C99 6.8.5 */
 	  T_WHILE T_LPAREN expr T_RPAREN {
 		while1($3);
 		clear_warning_flags();
 	  }
 	;
 
-do:
+do:				/* see C99 6.8.5 */
 	  T_DO {
 		do1();
 	  }
 	;
 
-do_while_expr:
+do_while_expr:			/* see C99 6.8.5 */
 	  T_WHILE T_LPAREN expr T_RPAREN T_SEMI {
 		$$ = $3;
 	  }
 	;
 
-for_start:
+for_start:			/* see C99 6.8.5 */
 	  T_FOR T_LPAREN {
 		begin_declaration_level(AUTO);
 		block_level++;
 	  }
 	;
 
-for_exprs:
+for_exprs:			/* see C99 6.8.5 */
 	  for_start declaration_specifiers deftyp notype_init_decls T_SEMI
 	    expr_opt T_SEMI expr_opt T_RPAREN {
 		/* variable declaration in for loop */
@@ -1655,13 +1610,6 @@ for_exprs:
 		for1($2, $4, $6);
 		clear_warning_flags();
 	  }
-	;
-
-expr_opt:
-	  /* empty */ {
-		$$ = NULL;
-	  }
-	| expr
 	;
 
 jump_statement:			/* C99 6.8.6 */
@@ -1721,7 +1669,14 @@ constant_expr:			/* C99 6.6 */
 	  expr %prec T_ASSIGN
 	;
 
-expr:
+expr_opt:
+	  /* empty */ {
+		$$ = NULL;
+	  }
+	| expr
+	;
+
+expr:				/* C99 6.5 */
 	  expr T_ASTERISK expr {
 		$$ = build(MULT, $1, $3);
 	  }
@@ -1775,7 +1730,7 @@ assignment_expression:		/* C99 6.5.16 */
 	  expr %prec T_ASSIGN
 	;
 
-term:
+term:				/* see C99 6.5.1 */
 	  T_NAME {
 		/* XXX really necessary? */
 		if (yychar < 0)
@@ -1896,6 +1851,36 @@ term:
 	  }
 	;
 
+generic_selection:		/* C11 6.5.1.1 */
+	  T_GENERIC T_LPAREN assignment_expression T_COMMA
+	    generic_assoc_list T_RPAREN {
+	  	/* generic selection requires C11 or later */
+	  	c11ism(345);
+		$$ = build_generic_selection($3, $5);
+	  }
+	;
+
+generic_assoc_list:		/* C11 6.5.1.1 */
+	  generic_association
+	| generic_assoc_list T_COMMA generic_association {
+		$3->ga_prev = $1;
+		$$ = $3;
+	  }
+	;
+
+generic_association:		/* C11 6.5.1.1 */
+	  type_name T_COLON assignment_expression {
+		$$ = getblk(sizeof(*$$));
+		$$->ga_arg = $1;
+		$$->ga_result = $3;
+	  }
+	| T_DEFAULT T_COLON assignment_expression {
+		$$ = getblk(sizeof(*$$));
+		$$->ga_arg = NULL;
+		$$->ga_result = $3;
+	  }
+	;
+
 /*
  * The inner part of a GCC statement-expression of the form ({ ... }).
  *
@@ -1990,9 +1975,19 @@ comma_opt:
 
 /* GCC extensions */
 
+type_attribute_list_opt:
+	  /* empty */
+	| type_attribute_list
+	;
+
 type_attribute_list:
 	  type_attribute
 	| type_attribute_list type_attribute
+	;
+
+type_attribute_opt:
+	  /* empty */
+	| type_attribute
 	;
 
 type_attribute:
@@ -2017,9 +2012,9 @@ gcc_attribute_list:
 /* https://gcc.gnu.org/onlinedocs/gcc/Attribute-Syntax.html */
 gcc_attribute:
 	  T_ATTRIBUTE T_LPAREN T_LPAREN {
-	    attron = true;
+		attron = true;
 	  } gcc_attribute_spec_list {
-	    attron = false;
+		attron = false;
 	  } T_RPAREN T_RPAREN
 	;
 
