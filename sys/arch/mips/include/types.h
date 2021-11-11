@@ -167,7 +167,9 @@ typedef __uint32_t tlb_asid_t;
 #define	__HAVE_CPU_DATA_FIRST
 #define	__HAVE_CPU_LWP_SETPRIVATE
 #define	__HAVE_CPU_UAREA_ROUTINES
+#if 0
 #define	__HAVE_FAST_SOFTINTS
+#endif
 #define	__HAVE_MD_CPU_OFFLINE
 #define	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #define	__HAVE_MM_MD_KERNACC
