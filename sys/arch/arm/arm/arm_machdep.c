@@ -251,6 +251,7 @@ cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 	KASSERT((flags & RESCHED_UPREEMPT) != 0);
 	if (flags & RESCHED_REMOTE) {
 #ifdef MULTIPROCESSOR
+		// XXXNH IPI_AST vs IPI_NOP???
 		intr_ipi_send(ci->ci_kcpuset, IPI_AST);
 #endif /* MULTIPROCESSOR */
 	} else {
