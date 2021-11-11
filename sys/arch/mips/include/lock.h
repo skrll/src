@@ -78,6 +78,7 @@ __cpu_simple_lock_try(__cpu_simple_lock_t *lp)
 		"# -- BEGIN __cpu_simple_lock_try\n"
 		"	.set push		\n"
 		"	.set mips2		\n"
+		"	syncw; syncw		\n"
 		"1:	ll	%0, %4		\n"
 		"	bnez	%0, 2f		\n"
 		"	 nop			\n"
