@@ -145,6 +145,10 @@ pmap_md_cache_prefer_mask(void)
 static inline void
 pmap_md_asid_activate(tlb_asid_t asid, struct pmap *pm, struct lwp *l)
 {
+	const struct mips_cache_info * const mci = &mips_cache_info;
+
+	if (mci->mci_picache_vivt)
+		mips_icache_sync_all();
 
 	tlb_set_asid(asid, pm);
 }
