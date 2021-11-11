@@ -191,6 +191,8 @@ a9wdt_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_memt = mpcaa->mpcaa_memt;
 
+
+	// XXXNH TMR_WDOG_BASE! and register locations
 	bus_space_subregion(sc->sc_memt, mpcaa->mpcaa_memh,
 	    mpcaa->mpcaa_off1, TMR_WDOG_SIZE, &sc->sc_wdog_memh);
 

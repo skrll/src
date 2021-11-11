@@ -156,6 +156,8 @@ a9ptmr_attach(device_t parent, device_t self, void *aux)
 		}
 	}
 	sc->sc_freq /= sc->sc_prescaler;
+
+	aprint_debug_dev(sc->sc_dev, ": freq %d prescaler %d", sc->sc_freq,
 #endif
 
 	aprint_debug(": freq %d prescaler %d", sc->sc_freq,
