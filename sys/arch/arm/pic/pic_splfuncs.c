@@ -52,40 +52,53 @@ __KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.29 2026/04/03 06:29:01 skrll Exp 
 int
 _splraise(int newipl)
 {
+	kpreempt_disable();
 	struct cpu_info * const ci = curcpu();
 	const int oldipl = ci->ci_cpl;
 	KASSERT(newipl < NIPL);
 	if (newipl > ci->ci_cpl) {
 		pic_set_priority(ci, newipl);
 	}
+	kpreempt_enable();
 	return oldipl;
 }
 
 int
 _spllower(int newipl)
 {
+	kpreempt_disable();
 	struct cpu_info * const ci = curcpu();
 	const int oldipl = ci->ci_cpl;
 	KASSERT(panicstr || newipl <= ci->ci_cpl);
-	if (newipl < ci->ci_cpl) {
-		register_t psw = DISABLE_INTERRUPT_SAVE();
-		ci->ci_intr_depth++;
-		pic_do_pending_ints(psw, newipl, NULL);
-		ci->ci_intr_depth--;
-		if ((psw & I32_bit) == 0 || newipl == IPL_NONE)
-			ENABLE_INTERRUPT();
-		cpu_dosoftints();
+	if (newipl >= ci->ci_cpl) {
+		kpreempt_enable();
+		return oldipl;
 	}
+
+	register_t psw = DISABLE_INTERRUPT_SAVE();
+	__insn_barrier();
+	ci->ci_intr_depth++;
+	__insn_barrier();
+	pic_do_pending_ints(psw, newipl, NULL);
+	ci->ci_intr_depth--;
+	if ((psw & I32_bit) == 0 || newipl == IPL_NONE)
+		ENABLE_INTERRUPT();
+	kpreempt_enable();
+	cpu_dosoftints();
+
 	return oldipl;
 }
 
 void
 splx(int savedipl)
 {
+	kpreempt_disable();
+
 	struct cpu_info * const ci = curcpu();
 	KASSERT(savedipl < NIPL);
 
-	if (__predict_false(savedipl == ci->ci_cpl)) {
+	if (__predict_false(savedipl >= ci->ci_cpl)) {
+		kpreempt_enable();
 		return;
 	}
 
@@ -104,6 +117,7 @@ splx(int savedipl)
 	} else {
 		pic_set_priority(ci, savedipl);
 	}
+	kpreempt_enable();
 
 	cpu_dosoftints();
 	KASSERTMSG(ci->ci_cpl == savedipl, "cpl %d savedipl %d",
