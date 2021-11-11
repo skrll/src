@@ -1,0 +1,45 @@
+#
+#	$NetBSD$
+#
+#	GENERIC ARM (aarch64) kernel with sanitizers enabled
+#
+
+
+include	"arch/evbarm/conf/GENERIC64"
+
+
+# Kernel Undefined Behavior Sanitizer (kUBSan). Use UBSAN_ALWAYS_FATAL
+# if you want panics instead of warnings.
+#options 	KUBSAN			# mandatory
+#options 	UBSAN_ALWAYS_FATAL	# optional
+
+# Kernel Address Sanitizer (kASan). The quarantine is optional and can
+# help KASAN find more use-after-frees. Use KASAN_PANIC if you want panics
+# instead of warnings.
+#makeoptions 	KASAN=1		# mandatory
+#options 	KASAN		# mandatory
+#options 	POOL_QUARANTINE	# optional
+#options 	KASAN_PANIC	# optional
+
+
+# Kernel Concurrency Sanitizer (kCSan).
+makeoptions 	KCSAN=1		# mandatory
+options 	KCSAN		# mandatory
+options 	KCSAN_PANIC	# optional
+
+# Kernel Memory Sanitizer (kMSan). You need to disable SVS and kernel modules
+# to use it. POOL_NOCACHE is optional and can help KMSAN find uninitialized
+# memory in pool caches. Note that KMSAN requires at least 4GB of RAM.
+#makeoptions 	KMSAN=1		# mandatory
+#options 	KMSAN		# mandatory
+#no options	SVS		# mandatory
+#no options 	MODULAR		# mandatory
+#no options 	MODULAR_DEFAULT_AUTOLOAD	# mandatory
+#options 	POOL_NOCACHE	# optional
+#options 	KMSAN_PANIC	# optional
+
+
+# ???
+# Kernel Code Coverage Driver.
+#makeoptions	KCOV=1
+#options 	KCOV
