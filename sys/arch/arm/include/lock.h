@@ -41,6 +41,8 @@
 #ifndef _ARM_LOCK_H_
 #define	_ARM_LOCK_H_
 
+#include <sys/param.h>
+
 static __inline int
 __SIMPLELOCK_LOCKED_P(const __cpu_simple_lock_t *__ptr)
 {
@@ -65,7 +67,47 @@ __cpu_simple_lock_set(__cpu_simple_lock_t *__ptr)
 	*__ptr = __SIMPLELOCK_LOCKED;
 }
 
-#if defined(_ARM_ARCH_6)
+#if defined(_ARM_ARCH_8)
+static __inline unsigned int
+__arm_load_acquire_exclusive(__cpu_simple_lock_t *__alp)
+{
+	unsigned int __rv;
+	if (/*CONSTCOND*/sizeof(*__alp) == 1) {
+		__asm __volatile("ldaxrb\t%w0,[%1]" : "=r"(__rv) : "r"(__alp));
+	} else {
+		__asm __volatile("ldaxr\t%0,[%1]" : "=r"(__rv) : "r"(__alp));
+	}
+	return __rv;
+}
+
+static __inline unsigned int
+__arm_load_exclusive(__cpu_simple_lock_t *__alp)
+{
+	unsigned int __rv;
+	if (/*CONSTCOND*/sizeof(*__alp) == 1) {
+		__asm __volatile("ldxrb\t%w0,[%1]" : "=r"(__rv) : "r"(__alp));
+	} else {
+		__asm __volatile("ldxr\t%0,[%1]" : "=r"(__rv) : "r"(__alp));
+	}
+	return __rv;
+}
+
+/* returns 0 on success and 1 on failure */
+static __inline unsigned int
+__arm_store_exclusive(__cpu_simple_lock_t *__alp, unsigned int __val)
+{
+	unsigned int __rv;
+	if (/*CONSTCOND*/sizeof(*__alp) == 1) {
+		__asm __volatile("stxrb\t%w0,%w1,[%2]"
+		    : "=&r"(__rv) : "r"(__val), "r"(__alp) : "cc", "memory");
+	} else {
+		__asm __volatile("stxr\t%0,%1,[%2]"
+		    : "=&r"(__rv) : "r"(__val), "r"(__alp) : "cc", "memory");
+	}
+	return __rv;
+}
+
+#elif defined(_ARM_ARCH_6)
 static __inline unsigned int
 __arm_load_exclusive(__cpu_simple_lock_t *__alp)
 {
@@ -129,13 +171,16 @@ __swp(int __val, __cpu_simple_lock_t *__ptr)
 	    : [__val] "r" (__val), [__ptr] "r" (__ptr) : "cc", "memory");
 	return __rv;
 }
-#endif /* !_ARM_ARCH_6 */
+#endif
 
 /* load/dmb implies load-acquire */
 static __inline void
 __arm_load_dmb(void)
 {
-#if defined(_ARM_ARCH_7)
+	/* this is load-r/rw */
+#if defined(_ARM_ARCH_8)
+	__asm __volatile("dmb ishld" ::: "memory");
+#elif defined(_ARM_ARCH_7)
 	__asm __volatile("dmb ish" ::: "memory");
 #elif defined(_ARM_ARCH_6)
 	__asm __volatile("mcr\tp15,0,%0,c7,c10,5" :: "r"(0) : "memory");
@@ -146,6 +191,7 @@ __arm_load_dmb(void)
 static __inline void
 __arm_dmb_store(void)
 {
+	/* there is no rw/w (only rw/rw) in armv8 */
 #if defined(_ARM_ARCH_7)
 	__asm __volatile("dmb ish" ::: "memory");
 #elif defined(_ARM_ARCH_6)
@@ -153,6 +199,9 @@ __arm_dmb_store(void)
 #endif
 }
 
+/*
+ * ... and now for the __cpu_simple_lock functions.
+ */
 
 static __inline void __unused
 __cpu_simple_lock_init(__cpu_simple_lock_t *__alp)
@@ -161,30 +210,43 @@ __cpu_simple_lock_init(__cpu_simple_lock_t *__alp)
 	*__alp = __SIMPLELOCK_UNLOCKED;
 }
 
-#if !defined(__thumb__) || defined(_ARM_ARCH_T2)
+#if defined(_ARM_ARCH_8)
 static __inline void __unused
 __cpu_simple_lock(__cpu_simple_lock_t *__alp)
 {
+	do {
+		/* spin */
+	} while (__arm_load_acquire_exclusive(__alp) != __SIMPLELOCK_UNLOCKED
+		 || __arm_store_exclusive(__alp, __SIMPLELOCK_LOCKED));
+}
+#elif !defined(__thumb__) || defined(_ARM_ARCH_T2)
 #if defined(_ARM_ARCH_6)
+static __inline void __unused
+__cpu_simple_lock(__cpu_simple_lock_t *__alp)
+{
 	do {
 		/* spin */
 	} while (__arm_load_exclusive(__alp) != __SIMPLELOCK_UNLOCKED
 		 || __arm_store_exclusive(__alp, __SIMPLELOCK_LOCKED));
 	__arm_load_dmb();
+}
 #else
+static __inline void __unused
+__cpu_simple_lock(__cpu_simple_lock_t *__alp)
+{
 	while (__swp(__SIMPLELOCK_LOCKED, __alp) != __SIMPLELOCK_UNLOCKED)
 		continue;
-#endif
 }
+#endif /* !_ARM_ARCH_6 */
 #else
 void __cpu_simple_lock(__cpu_simple_lock_t *);
 #endif
 
 #if !defined(__thumb__) || defined(_ARM_ARCH_T2)
+#if defined(_ARM_ARCH_6)
 static __inline int __unused
 __cpu_simple_lock_try(__cpu_simple_lock_t *__alp)
 {
-#if defined(_ARM_ARCH_6)
 	do {
 		if (__arm_load_exclusive(__alp) != __SIMPLELOCK_UNLOCKED) {
 			return 0;
@@ -192,19 +254,24 @@ __cpu_simple_lock_try(__cpu_simple_lock_t *__alp)
 	} while (__arm_store_exclusive(__alp, __SIMPLELOCK_LOCKED));
 	__arm_load_dmb();
 	return 1;
-#else
-	return (__swp(__SIMPLELOCK_LOCKED, __alp) == __SIMPLELOCK_UNLOCKED);
-#endif
 }
+#else
+static __inline int __unused
+__cpu_simple_lock_try(__cpu_simple_lock_t *__alp)
+{
+	return (__swp(__SIMPLELOCK_LOCKED, __alp) == __SIMPLELOCK_UNLOCKED);
+}
+#endif /* !_ARM_ARCH_6 */
 #else
 int __cpu_simple_lock_try(__cpu_simple_lock_t *);
 #endif
 
+
+#if defined(_ARM_ARCH_8) && defined(__LP64__)
 static __inline void __unused
 __cpu_simple_unlock(__cpu_simple_lock_t *__alp)
 {
 
-#if defined(_ARM_ARCH_8) && defined(__LP64__)
 	if (sizeof(*__alp) == 1) {
 		__asm __volatile("stlrb\t%w0, [%1]"
 		    :: "r"(__SIMPLELOCK_UNLOCKED), "r"(__alp) : "memory");
@@ -212,10 +279,23 @@ __cpu_simple_unlock(__cpu_simple_lock_t *__alp)
 		__asm __volatile("stlr\t%0, [%1]"
 		    :: "r"(__SIMPLELOCK_UNLOCKED), "r"(__alp) : "memory");
 	}
+}
 #else
+static __inline void __unused
+__cpu_simple_unlock(__cpu_simple_lock_t *__alp)
+{
 	__arm_dmb_store();
 	*__alp = __SIMPLELOCK_UNLOCKED;
-#endif
 }
+#endif
+
+
+#ifdef __aarch64__
+# ifdef _HARDKERNEL
+#  undef SPINLOCK_BACKOFF_HOOK
+#  define SPINLOCK_BACKOFF_HOOK		asm volatile("yield" ::: "memory")
+# endif
+#endif
+
 
 #endif /* _ARM_LOCK_H_ */

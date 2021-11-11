@@ -83,6 +83,7 @@ STRONG_ALIAS(_atomic_swap_uint,_atomic_swap_32)
 STRONG_ALIAS(_atomic_swap_ulong,_atomic_swap_32)
 STRONG_ALIAS(_atomic_swap_ptr,_atomic_swap_32)
 
+// XXXNH ??? why this conditional?
 #if (!defined(_KERNEL) || !defined(_RUMPKERNEL)) && !defined(_STANDALONE)
 ENTRY_NP(__sync_lock_release_4)
 	mov	r1, #0
