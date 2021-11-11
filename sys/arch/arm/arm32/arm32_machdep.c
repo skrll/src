@@ -763,6 +763,9 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
  * -  kmutex(9) relies on curcpu which isn't setup yet.
  *
  */
+/*
+ * This is all happening before main...
+ */
 void __noasan
 cpu_init_secondary_processor(int cpuindex)
 {
@@ -776,16 +779,33 @@ cpu_init_secondary_processor(int cpuindex)
 
 	cpu_setup(boot_args);
 
+#if 0
+
+	// cpu_mpidr might not be populated
+
+	uint32_t mpidr = armreg_mpidr_read();
+	KASSERTMSG(mpidr == cpu_mpidr[cpuindex], "mpidr %x cpuindex %d ... %x",
+	    mpidr, cpuindex, cpu_mpidr[cpuindex]);
+
+	const u_int cpuno = __SHIFTOUT(mpidr, MPIDR_AFF0);
+	const u_int clusterno = __SHIFTOUT(mpidr, MPIDR_AFF1);
+
+	if (clusterno != cpu_bootcluster && cpuno == 0) {
+		// CCI stuff
+	}
+#endif
+
+
 #ifdef ARM_MMU_EXTENDED
 	/*
 	 * TTBCR should have been initialized by the MD start code.
 	 */
 	KASSERT((armreg_contextidr_read() & 0xff) == 0);
 	KASSERT(armreg_ttbcr_read() == __SHIFTIN(1, TTBCR_S_N));
+
 	/*
 	 * Disable lookups via TTBR0 until there is an activated pmap.
 	 */
-
 	armreg_ttbcr_write(armreg_ttbcr_read() | TTBCR_S_PD0);
 	cpu_setttb(pmap_kernel()->pm_l1_pa , KERNEL_PID);
 	isb();
