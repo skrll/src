@@ -24,7 +24,8 @@
  * Dcache.
  */
 #define	OCTEON_I_DCACHE_WAYS			64
-#define	OCTEON_I_DCACHE_SETS			2
+#define	OCTEON_I_DCACHE_SETS			1
+#define	OCTEON_I_PLUS_DCACHE_SETS		2
 
 #define	OCTEON_II_DCACHE_SETS			8
 #define	OCTEON_II_DCACHE_WAYS			32
