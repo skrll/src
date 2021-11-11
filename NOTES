@@ -1,0 +1,66 @@
+An LWP can't change l_cpu itself as it can't be done safely.  The scheduler is
+set up so that these two things are always true:
+
+- An LWP never gets to change its own l_cpu.  It's always changed by some
+  other actor, for example sched_unsleep() or sched_idle_migrate() or
+  whatnot.
+
+- l_cpu is never changed for an LWP that's running on a CPU anywhere in the
+  system.  The only point it's changed is when somebody else puts the LWP
+  onto a run queue somewhere, because of a wakeup or whatever.
+
+Given that those two things are true, if the system is running in the
+context of curlwp then curlwp can safely assume that l_cpu won't change out
+from under it, unless it context switches somehow (preemption, or blocking
+on a lock or sleeping).  If you have an interrupt running on top of curlwp
+on the CPU, this means curlwp can't context switch away, it's pinned there,
+so curlwp->l_cpu is never going to change and will always be curcpu.
+
+Further to that with preemption, you should hever have a preemption
+happening if the spl is raised; interrupts raise the spl so while you're in
+the context of an interrupt handler there's no need to worry about that
+either.
+
+
+For the LWP to deliberately migrate somewhere else of its own accord, it has to
+set l->l_target_cpu and then call preempt().  The idle LWP on the CPU it set up
+to move any LWP with l->l_target_cpu set.  That's the "always another actor
+changes l_cpu" thing in action.
+
+
+You can define curcpu as ..
+
+#define	curcpu()	(curlwp->l_cpu)
+
+.. and it's safe and meets all the requirements we have.  To define it the
+other way around is not safe ..
+
+#define	curlwp		curcpu()->ci_curlwp
+
+.. because you can be preempted in the middle.  UNLESS you have fancy MD
+stuff that makes the whole thing a single instruction like x86.
+
+-----
+$ rm *.o netbsd; /usr/bin/time -c sh -c "make -j8 > ~/build.log 2>&1"
+rm: netbsd: No such file or directory
+1256.7u 352.8s 7:27.24 359.8% 163+37k 638+24483io 1879pf+0w
+$ rm *.o netbsd; /usr/bin/time -c sh -c "make -j8 > ~/build.log 2>&1"
+1281.2u 352.1s 7:27.88 364.7% 161+36k 0+24466io 35pf+0w
+$ rm *.o netbsd; /usr/bin/time -c sh -c "make -j8 > ~/build.log 2>&1" 
+1284.7u 352.6s 7:30.00 363.8% 160+36k 0+24470io 68pf+0w
+$ [ 1559.5349892] panic: kernel diagnostic assertion "!cpu_intr_p()" failed: file "/home/nick/netbsd/nick-armprempt/src/sys/kern/kern_descrip.c", line 1833 
+[ 1559.5449919] cpu3: Begin traceback...
+[ 1559.5449919] 0xc3ec7d94: netbsd:db_panic+0x14
+[ 1559.5549916] 0xc3ec7dac: netbsd:vpanic+0xe4
+[ 1559.5549916] 0xc3ec7dc4: netbsd:__aeabi_uldivmod
+[ 1559.5649923] 0xc3ec7e74: netbsd:fownsignal+0xf8
+[ 1559.5649923] 0xc3ec7e9c: netbsd:sowakeup+0xc0
+[ 1559.5649923] 0xc3ec7eec: netbsd:raw_input+0x21c
+[ 1559.5749956] 0xc3ec7f24: netbsd:route_intr+0xac
+[ 1559.5749956] 0xc3ec7fac: netbsd:softint_dispatch+0x130
+[ 1559.5849942] 0xc58e4ac4: netbsd:softint_switch+0x60
+[ 1559.5849942] Bad frame pointer: 0x8067a014
+[ 1559.5949942] cpu3: End traceback...
+Stopped in pid 0.98 (system) at netbsd:cpu_Debugger+0x4:        bx      r14
+db{3}> 
+
