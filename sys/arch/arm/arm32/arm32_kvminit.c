@@ -301,7 +301,6 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 		    pv->pv_pa + pv->pv_size - 1, pv->pv_va);
 		pv++;
 	}
-
 	bmi->bmi_nfreeblocks = pv - bmi->bmi_freeblocks;
 
 	SLIST_INIT(&bmi->bmi_freechunks);
@@ -1058,17 +1057,16 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 
 	cpu_idcache_wbinv_all();
 
-#ifdef __HAVE_GENERIC_START
+	VPRINTF(" ttb");
 
+#ifdef ARM_MMU_EXTENDED
+#ifdef __HAVE_GENERIC_START
 	/*
 	 * Turn on caches and set SCTLR/ACTLR
 	 */
 	cpu_setup(boot_args);
 #endif
 
-	VPRINTF(" ttb");
-
-#ifdef ARM_MMU_EXTENDED
 	/*
 	 * TTBCR should have been initialized by the MD start code.
 	 */

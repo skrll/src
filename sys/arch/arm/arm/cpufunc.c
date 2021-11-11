@@ -98,6 +98,12 @@ __KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.185 2022/12/22 06:58:07 ryo Exp $");
 #endif
 #endif
 
+#if defined(ARM_MMU_EXTENDED)
+#if !defined(__HAVE_GENERIC_START)
+#error ARM_MMU_EXTENDED requires __HAVE_GENERIC_START
+#endif
+#endif
+
 #if defined(CPU_ARMV7) && (defined(CPU_ARMV6) || defined(CPU_PRE_ARMV6))
 bool cpu_armv7_p;
 #endif
@@ -2887,6 +2893,11 @@ pj4bv7_setup(char *args)
 		cpuctrl |= CPU_CONTROL_VECRELOC;
 #endif
 
+	//
+	// XXXNH
+	// per cpu ops
+	//
+
 #ifdef L2CACHE_ENABLE
 	/* Setup L2 cache */
 	arm_scache.cache_type = CPU_CT_CTYPE_WT;
@@ -2958,13 +2969,15 @@ armv7_setup(char *args)
 	cpuctrl |= CPU_CONTROL_AFLT_ENABLE;
 #endif
 #ifdef ARM_MMU_EXTENDED
-	cpuctrl |= CPU_CONTROL_XP_ENABLE;
+	cpuctrl |=
+	    CPU_CONTROL_XP_ENABLE |
+	    CPU_CONTROL_TR_ENABLE |
+	    0;
 #endif
 
 	int cpuctrlmask = cpuctrl |
 	    CPU_CONTROL_EX_BEND |
 	    CPU_CONTROL_AFLT_ENABLE |
-	    CPU_CONTROL_TR_ENABLE |
 	    CPU_CONTROL_VECRELOC |
 	    CPU_CONTROL_XP_ENABLE |
 	    0;
@@ -3041,6 +3054,24 @@ armv7_setup(char *args)
 
 	/* Set the control register - does dsb; isb */
 	cpu_control(cpuctrlmask, cpuctrl);
+/*
+ * The sequence to ensure the synchronization of changes to the TEX remap registers is:
+ * 1.  Perform a DSB. This ensures any memory accesses using the old mapping have completed.
+ * 2.  Write the TEX remap registers or SCTLR.TRE bit.
+ * 3.  Perform an ISB. This ensures synchronization of the register updates.
+ * 4.  Invalidate the entire TLB.
+ * 5.  Perform a DSB. This ensures completion of the entire TLB operation.
+ * 6.  Clean and invalidate all caches. This removes any cached information associated with the old
+mapping.
+ * 7.  Perform a DSB. This ensures completion of the cache maintenance.
+ * 8.  Perform an ISB. This ensures instruction synchronization.
+ */
+
+	/*
+	 * Really for ARM_MMU_EXTENDED, but we #error if it's not
+	 * defined earlier.
+	 */
+	pmap_setmrr();
 
 	/* does tlb and branch predictor flush, and dsb; isb */
 	cpu_tlb_flushID();
@@ -3074,6 +3105,7 @@ arm11x6_setup(char *args)
 		CPU_CONTROL_UNAL_ENABLE |
 #ifdef ARM_MMU_EXTENDED
 		CPU_CONTROL_XP_ENABLE   |
+//		CPU_CONTROL_TR_ENABLE	|
 #else
 		CPU_CONTROL_SYST_ENABLE |
 #endif
