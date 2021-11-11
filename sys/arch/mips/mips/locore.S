@@ -265,6 +265,8 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 #endif
 	REG_EPILOGUE
 
+	move	s0, t0				# s0 = COP0
+
 #if defined(PARANOID_SPL)
 	/*
 	 * Verify interrupt configuration matches IPL_SCHED
@@ -274,6 +276,14 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 #endif /* PARANOID_SPL */
 
 	move	s6, a0				# s6 = old lwp
+
+	/* Disable interrupt while switching context */
+	move	t1, s0
+	or	t1, MIPS_SR_INT_IE		#
+	xor	t1, MIPS_SR_INT_IE		# clear interrupt enable bit
+	mtc0	t1, MIPS_COP_0_STATUS		## disable interrupts
+	COP0_SYNC
+
 	move	MIPS_CURLWP, a1			# t8 = new lwp
 	PTR_SUBU sp, CALLFRAME_SIZ
 	REG_S	ra, CALLFRAME_RA(sp)
@@ -285,6 +295,8 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 	jal	_C_LABEL(mips_cpu_switch_resume)
 	 move	a0, MIPS_CURLWP
 
+	/* restore SP */
+	REG_L	sp, PCB_CONTEXT+SF_REG_SP(a0)
 	PTR_L	t2, L_CPU(MIPS_CURLWP)
 	nop					# patchable load delay slot
 
@@ -309,6 +321,10 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 	SYNC_PRODUCER		/* XXX fixup to nop for uniprocessor boot */
 	PTR_S	MIPS_CURLWP, CPU_INFO_CURLWP(t2)
 	SYNC_DEKKER		/* XXX fixup to nop for uniprocessor boot */
+
+	/* restore interrupts */
+	mtc0	s0, MIPS_COP_0_STATUS
+	COP0_SYNC
 
 	/* Check for restartable atomic sequences (RAS) */
 	PTR_L	a0, L_PROC(MIPS_CURLWP)		# argument to ras_lookup
@@ -351,7 +367,6 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 #if defined(__mips_n32) || defined(__mips_n64)
 	REG_L	gp, PCB_CONTEXT+SF_REG_GP(a0)
 #endif
-	REG_L	sp, PCB_CONTEXT+SF_REG_SP(a0)
 	REG_L	s8, PCB_CONTEXT+SF_REG_S8(a0)
 	REG_EPILOGUE
 	mtc0	t0, MIPS_COP_0_STATUS
