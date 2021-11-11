@@ -38,6 +38,7 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.83 2025/01/31 11:47:35 jmcneill Exp $");
 #include <sys/param.h>
 #include <sys/atomic.h>
 #include <sys/cpu.h>
+#include <sys/csan.h>
 #include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/reboot.h>
@@ -179,6 +180,8 @@ cpu_attach(device_t dv, cpuid_t id)
 #endif
 
 	cpu_init_counter(ci);
+
+	kcsan_cpu_init(ci);
 
 	/* These currently only check the BP. */
 	cpu_setup_aes(dv, ci);
@@ -780,6 +783,8 @@ cpu_hatch(struct cpu_info *ci)
 #ifdef FDT
 	arm_fdt_cpu_hatch(ci);
 #endif
+
+	kcsan_cpu_init(ci);
 
 	/*
 	 * clear my bit of arm_cpu_mbox to tell cpu_boot_secondary_processors().

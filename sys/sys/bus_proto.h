@@ -162,7 +162,7 @@ void kasan_bus_space_read_region_stream_##bytes(bus_space_tag_t,		\
 #define bus_space_read_region_stream_2 kasan_bus_space_read_region_stream_2
 #define bus_space_read_region_stream_4 kasan_bus_space_read_region_stream_4
 #define bus_space_read_region_stream_8 kasan_bus_space_read_region_stream_8
-#elif defined(KCSAN)
+#elif defined(KCSAN) && defined(__HAVE_KCSAN_INTR_BUS)
 #define BUS_SPACE_READ_MEM_PROTOS(bytes, bits)					\
 void kcsan_bus_space_read_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
     bus_size_t, uint##bits##_t *, bus_size_t);					\
@@ -188,7 +188,7 @@ void kcsan_bus_space_read_region_stream_##bytes(bus_space_tag_t,		\
 #define bus_space_read_region_stream_2 kcsan_bus_space_read_region_stream_2
 #define bus_space_read_region_stream_4 kcsan_bus_space_read_region_stream_4
 #define bus_space_read_region_stream_8 kcsan_bus_space_read_region_stream_8
-#elif defined(KMSAN)
+#elif defined(KMSAN)/* && defined(__HAVE_KMSAN_INTR_BUS)*/
 #define BUS_SPACE_READ_MEM_PROTOS(bytes, bits)					\
 void kmsan_bus_space_read_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
     bus_size_t, uint##bits##_t *, bus_size_t);					\
@@ -279,7 +279,7 @@ void kasan_bus_space_write_region_stream_##bytes(bus_space_tag_t,		\
 #define bus_space_write_region_stream_2 kasan_bus_space_write_region_stream_2
 #define bus_space_write_region_stream_4 kasan_bus_space_write_region_stream_4
 #define bus_space_write_region_stream_8 kasan_bus_space_write_region_stream_8
-#elif defined(KCSAN)
+#elif defined(KCSAN) && defined(__HAVE_KCSAN_INSTR_BUS)
 #define BUS_SPACE_WRITE_MEM_PROTOS(bytes, bits)					\
 void kcsan_bus_space_write_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
     bus_size_t, const uint##bits##_t *, bus_size_t);				\
@@ -305,7 +305,7 @@ void kcsan_bus_space_write_region_stream_##bytes(bus_space_tag_t,		\
 #define bus_space_write_region_stream_2 kcsan_bus_space_write_region_stream_2
 #define bus_space_write_region_stream_4 kcsan_bus_space_write_region_stream_4
 #define bus_space_write_region_stream_8 kcsan_bus_space_write_region_stream_8
-#elif defined(KMSAN)
+#elif defined(KMSAN)/* && defined(__HAVE_KMSAN_INSTR_BUS)*/
 #define BUS_SPACE_WRITE_MEM_PROTOS(bytes, bits)					\
 void kmsan_bus_space_write_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
     bus_size_t, const uint##bits##_t *, bus_size_t);				\

@@ -46,6 +46,7 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.70 2023/07/16 21:36:40 riastra
 #include <sys/bus.h>
 #include <sys/core.h>
 #include <sys/conf.h>
+#include <sys/csan.h>
 #include <sys/kauth.h>
 #include <sys/kcore.h>
 #include <sys/module.h>
@@ -434,6 +435,8 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	pmap_bootstrap(kernelvmstart, VM_MAX_KERNEL_ADDRESS);
 
 	kasan_init();
+
+	kcsan_init();
 
 	/*
 	 * setup lwp0
