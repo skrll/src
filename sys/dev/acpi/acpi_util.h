@@ -96,6 +96,7 @@ struct cpu_info *acpi_match_cpu_handle(ACPI_HANDLE);
 
 char		*acpi_pack_compat_list(struct acpi_devnode *ad, size_t *);
 
+ACPI_STATUS	 acpi_dsd_data(ACPI_HANDLE, const char *, uint8_t *, size_t);
 ACPI_STATUS	 acpi_dsd_integer(ACPI_HANDLE, const char *, ACPI_INTEGER *);
 ACPI_STATUS	 acpi_dsd_string(ACPI_HANDLE, const char *, char **);
 ACPI_STATUS	 acpi_dsd_bool(ACPI_HANDLE, const char *, bool *);

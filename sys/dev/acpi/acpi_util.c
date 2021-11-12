@@ -1246,6 +1246,38 @@ acpi_dsd_integer(ACPI_HANDLE handle, const char *prop, ACPI_INTEGER *val)
 }
 
 ACPI_STATUS
+acpi_dsd_data(ACPI_HANDLE handle, const char *prop, uint8_t *data,
+    size_t datalen)
+{
+	ACPI_OBJECT *propval;
+	ACPI_STATUS rv;
+	ACPI_BUFFER buf;
+
+	buf.Pointer = NULL;
+	buf.Length = ACPI_ALLOCATE_BUFFER;
+
+	rv = acpi_dsd_property(handle, prop, &buf, ACPI_TYPE_PACKAGE, &propval);
+	if (ACPI_SUCCESS(rv)) {
+		for (size_t i = 0; i < propval->Package.Count; i++) {
+			const size_t len = uimin(datalen, sizeof(ACPI_INTEGER));
+			if (len == 0)
+				break;
+
+			const ACPI_OBJECT * const elm =
+			    &propval->Package.Elements[i];
+			memcpy(data, &elm->Integer.Value, len);
+			data += len;
+			datalen -= len;
+		}
+	}
+
+	if (buf.Pointer != NULL)
+		ACPI_FREE(buf.Pointer);
+
+	return rv;
+}
+
+ACPI_STATUS
 acpi_dsd_string(ACPI_HANDLE handle, const char *prop, char **val)
 {
 	ACPI_OBJECT *propval;
