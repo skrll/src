@@ -607,13 +607,8 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 	cmd = pci_conf_read(pb->pc, tag, PCI_COMMAND_STATUS_REG);
 	bhlc = pci_conf_read(pb->pc, tag, PCI_BHLC_REG);
 
-	if (pci_get_capability(pb->pc, tag, PCI_CAP_EA, &pd->ea_cap_ptr,
-	    NULL)) {
-		/* XXX Skip devices with EA for now. */
-		print_tag(pb->pc, tag);
-		printf("skipping devices with Enhanced Allocations\n");
-		return 0;
-	}
+	const bool ea = pci_get_capability(pb->pc, tag, PCI_CAP_EA,
+	    &pd->ea_cap_ptr, NULL);
 
 	if (PCI_CLASS(classreg) != PCI_CLASS_BRIDGE
 	    && PCI_HDRTYPE_TYPE(bhlc) != PCI_HDRTYPE_PPB) {
@@ -633,6 +628,7 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 
 	switch (PCI_HDRTYPE_TYPE(bhlc)) {
 	case PCI_HDRTYPE_DEVICE:
+		/* Not used if EA */
 		reg_start = PCI_MAPREG_START;
 		reg_end = PCI_MAPREG_END;
 		break;
@@ -642,6 +638,7 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 			return -1;
 		return 0;
 	case PCI_HDRTYPE_PCB:
+		/* Not used if EA */
 		reg_start = PCI_MAPREG_START;
 		reg_end = PCI_MAPREG_PCB_END;
 
@@ -656,6 +653,13 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 		break;
 	default:
 		return -1;
+	}
+
+	if (ea) {
+		/* XXX Skip devices with EA for now. */
+		print_tag(pb->pc, tag);
+		aprint_debug("skipping devices with Enhanced Allocations\n");
+		return 0;
 	}
 
 	icr = pci_conf_read(pb->pc, tag, PCI_INTERRUPT_REG);
