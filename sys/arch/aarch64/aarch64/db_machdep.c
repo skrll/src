@@ -73,6 +73,7 @@ void db_md_frame_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_lwp_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_pte_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_reset_cmd(db_expr_t, bool, db_expr_t, const char *);
+void db_show_tlb_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_tlbi_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_ttbr_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_sysreg_cmd(db_expr_t, bool, db_expr_t, const char *);
@@ -160,6 +161,11 @@ const struct db_command db_machine_command_table[] = {
 		DDB_ADD_CMD(
 		    "sysreg", db_md_sysreg_cmd, 0,
 		    "Displays system registers",
+		    NULL, NULL)
+	},
+	{	DDB_ADD_CMD(
+		    "tlb", db_show_tlb_cmd, 0,
+		    "Displays the TLB",
 		    NULL, NULL)
 	},
 	{
@@ -523,6 +529,350 @@ db_md_reset_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 
 	cpu_reset_address();
 }
+
+AARCH64REG_READWRITE_INLINE2(a72_il1data0_el1, s3_0_c15_c0_0)
+AARCH64REG_READWRITE_INLINE2(a72_il1data1_el1, s3_0_c15_c0_1)
+AARCH64REG_READWRITE_INLINE2(a72_il1data2_el1, s3_0_c15_c0_2)
+AARCH64REG_READWRITE_INLINE2(a72_il1data3_el1, s3_0_c15_c0_3)
+
+AARCH64REG_READWRITE_INLINE2(a72_dl1data0_el1, s3_0_c15_c1_0)
+AARCH64REG_READWRITE_INLINE2(a72_dl1data1_el1, s3_0_c15_c1_1)
+AARCH64REG_READWRITE_INLINE2(a72_dl1data2_el1, s3_0_c15_c1_2)
+AARCH64REG_READWRITE_INLINE2(a72_dl1data3_el1, s3_0_c15_c1_3)
+AARCH64REG_READWRITE_INLINE2(a72_dl1data4_el1, s3_0_c15_c1_4)
+
+AARCH64REG_WRITE_INLINE2(a72_ramindexta4_el1, s3_0_c15_c1_4)
+
+
+/*
+ *
+For example, to read an entry in the instruction side TLB in AArch64 state:
+LDR  X0, =0x00000000.01000D80
+SYS  #0, c15, c4, #0, X0
+DSB  SY
+ISB
+MRS  X1, S3_0_c15_c0_0	; Move ILData0 register to X1
+MRS  X2, S3_0_c15_c0_1	; Move ILData1 register to X2
+MRS  X3, S3_0_c15_c0_2	; Move ILData2 register to X3
+MRS  X4, S3_0_c15_c0_3	; Move ILData3 register to X4
+
+To complete the RAMINDEX operation in AArch64 state, use the following instruction:
+
+SYS #0, c15, c4, #0, X0 ; Execute RAMINDEX operation
+
+For example, to read one entry in the instruction side L1 data array in AArch32 state:
+LDR R0, =0x01000D80;
+MCR p15, 0, R0, c15, c4, 0; Read I-L1 TLB data into IL1DATA0-2
+DSB
+ISB
+MRC p15, 0, R1, c15, c0, 0; Move IL1DATA0 Register to R1
+MRC p15, 0, R2, c15, c0, 1; Move IL1DATA1 Register to R2
+MRC p15, 0, R3, c15, c0, 2; Move IL1DATA2 Register to R3
+
+To complete the RAMINDEX operation in AArch32 state, use the following instruction:
+MCR p15, 0, <Rt>, c15, c4, 0; Execute RAMINDEX operation
+
+*/
+
+
+#define	A72_RAMINDEX_RAMID		__BITS(31,24)
+#define	 A72_RAMINDEX_RAMID_L1ITAG	0x00
+#define	 A72_RAMINDEX_RAMID_L1IDATA	0x01
+#define	 A72_RAMINDEX_RAMID_L1IBTB	0x02
+#define	 A72_RAMINDEX_RAMID_L1IGHB	0x03
+#define	 A72_RAMINDEX_RAMID_L1ITLB	0x04
+#define	 A72_RAMINDEX_RAMID_L1IIPRAM	0x05
+#define	 A72_RAMINDEX_RAMID_L1DTAG	0x08
+#define	 A72_RAMINDEX_RAMID_L1DDATA	0x09
+#define	 A72_RAMINDEX_RAMID_L1DTLB	0x0a
+#define	 A72_RAMINDEX_RAMID_L2TAG	0x10
+#define	 A72_RAMINDEX_RAMID_L2DATA	0x11
+#define	 A72_RAMINDEX_RAMID_L2SNOOP	0x12
+#define	 A72_RAMINDEX_RAMID_L2DATAECC	0x13
+#define	 A72_RAMINDEX_RAMID_L2DIRTYRAM	0x14
+#define	 A72_RAMINDEX_RAMID_L2TLB	0x18
+#define	A72_RAMINDEX_WAY		__BITS(21,18)
+#define	A72_RAMINDEX_INDEX		__BITS(17,0)
+#define A72_RAMINDEX_L1ITAG_WAY		__BITS(19,18)
+#define A72_RAMINDEX_L1ITAG_VA		__BITS(13,0)
+#define A72_RAMINDEX_L1ITLB_INDEX	__BITS(5,0)
+#define A72_RAMINDEX_L1DTLB_INDEX	__BITS(4,0)
+#define A72_RAMINDEX_L2TLB_INDEX	__BITS(7,0)
+#define A72_RAMINDEX_L2TLB_WAY		__BITS(19,18)
+
+
+static __inline void						\
+reg_a72_ramindex_write(uint32_t __val)				\
+{								\
+	__asm __volatile(					\
+	    "sys #0, c15, c4, #0, %0;"				\
+	    "dsb sy;"						\
+	    "isb"						\
+	    :	/* no outputs */				\
+	    : "r"(__val)					\
+	    : "memory"						\
+	);							\
+}
+
+
+struct db_tlbinfo {
+	uint32_t	dti_itlbentries;
+	uint32_t	dti_dtlbentries;
+#if 0
+	vaddr_t (*dti_decode_vpn)(size_t, uint32_t, uint32_t);
+	void (*dti_print_header)(void);
+	void (*dti_print_entry)(size_t, size_t, uint32_t, uint32_t);
+	u_int dti_index;
+#endif
+};
+
+
+static const struct db_tlbinfo tlb_cortex_a72_info = {
+	.dti_itlbentries = 48,
+	.dti_dtlbentries = 32,
+#if 0
+	.dti_decode_vpn = tlb_decode_cortex_a5_vpn,
+	.dti_print_header = tlb_print_cortex_a5_header,
+	.dti_print_entry = tlb_print_cortex_a5_entry,
+	.dti_index = ARM_A5_TLBDATAOP_INDEX,
+#endif
+};
+
+static inline const struct db_tlbinfo *
+tlb_lookup_tlbinfo(void)
+{
+	struct cpu_info * const ci = curcpu();
+
+	const bool cortex_a72_p = CPU_ID_CORTEX_A72_P(ci->ci_id.ac_midr);
+	if (cortex_a72_p) {
+		return &tlb_cortex_a72_info;
+	}
+	return NULL;
+}
+
+
+
+void
+db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
+    const char *modif)
+{
+	const struct db_tlbinfo * const dti = tlb_lookup_tlbinfo();
+
+	if (dti == NULL) {
+		db_printf("not supported on this CPU\n");
+		return;
+	}
+
+	if (have_addr) {
+#if 0
+	    const vaddr_t vpn = (vaddr_t)addr >> L2_S_SHIFT;
+		const u_int va_index = vpn & dti->dti_index;
+		for (size_t way = 0; way < 2; way++) {
+			armreg_tlbdataop_write(
+			    __SHIFTIN(va_index, dti->dti_index)
+			    | __SHIFTIN(way, ARM_TLBDATAOP_WAY));
+			isb();
+			const uint32_t d0 = armreg_tlbdata0_read();
+			const uint32_t d1 = armreg_tlbdata1_read();
+			if ((d0 & ARM_TLBDATA_VALID)
+			    && vpn == (*dti->dti_decode_vpn)(va_index, d0, d1)) {
+				(*dti->dti_print_header)();
+				(*dti->dti_print_entry)(way, va_index, d0, d1);
+				return;
+			}
+		}
+		db_printf("VA %#"DDB_EXPR_FMT"x not found in TLB\n", addr);
+		return;
+#endif
+	}
+
+//	bool first = true;
+	size_t n = 0;
+#if 0
+	for (size_t va_index = 0; va_index <= dti->dti_index; va_index++) {
+		for (size_t way = 0; way < 2; way++) {
+			armreg_tlbdataop_write(
+			    __SHIFTIN(way, ARM_TLBDATAOP_WAY)
+			    | __SHIFTIN(va_index, dti->dti_index));
+			isb();
+			const uint32_t d0 = armreg_tlbdata0_read();
+			const uint32_t d1 = armreg_tlbdata1_read();
+			if (d0 & ARM_TLBDATA_VALID) {
+				if (first) {
+					(*dti->dti_print_header)();
+					first = false;
+				}
+				(*dti->dti_print_entry)(way, va_index, d0, d1);
+				n++;
+			}
+		}
+	}
+#endif
+
+	for (size_t index = 0; index < dti->dti_itlbentries; index++) {
+		const uint32_t ramindex =
+		    __SHIFTIN(A72_RAMINDEX_RAMID_L1ITLB, A72_RAMINDEX_RAMID) |
+		    __SHIFTIN(index, A72_RAMINDEX_L1ITLB_INDEX);
+
+		reg_a72_ramindex_write(ramindex);
+
+		uint32_t il1data0 = reg_a72_il1data0_el1_read();
+		uint32_t il1data1 = reg_a72_il1data1_el1_read();
+		uint32_t il1data2 = reg_a72_il1data2_el1_read();
+		uint32_t il1data3 = reg_a72_il1data3_el1_read();
+
+#if 0
+		db_printf("[%2zu]"
+		    " 0x%08" PRIx32 " 0x%08" PRIx32
+		    " 0x%08" PRIx32 " 0x%08" PRIx32 "\n",
+		    index, il1data0, il1data1, il1data2, il1data3);
+#endif
+		bool valid = __SHIFTOUT(il1data3, __BIT(27));
+		uint8_t shareability = __SHIFTOUT(il1data3, __BITS(26, 25));
+		uint8_t memoryspace = __SHIFTOUT(il1data3, __BITS(15, 14));
+		uint8_t vmid = __SHIFTOUT(il1data3, __BITS(13, 6));
+		uint16_t asid =
+		    __SHIFTIN(__SHIFTOUT(il1data3, __BITS(5,0)), __BITS(16,10)) |
+		    __SHIFTIN(__SHIFTOUT(il1data2, __BITS(31, 22)), __BITS(9, 0));
+		uint8_t mair = __SHIFTOUT(il1data2, __BITS(21, 14));
+		uint8_t pgsz = __SHIFTOUT(il1data2, __BITS(11, 10));
+		uint8_t domain = __SHIFTOUT(il1data2, __BITS(9, 6));
+		uint8_t secure = __SHIFTOUT(il1data2, __BIT(5));
+		uint64_t pa =
+		    __SHIFTIN(__SHIFTOUT(il1data2, __BITS(4,0)), __BITS(43, 39)) |
+		    __SHIFTIN(__SHIFTOUT(il1data1, __BITS(31, 5)), __BITS(38, 12));
+		uint64_t va =
+		    ((il1data1 & __BIT(4)) ? __BITS(63, 49) : 0) |
+		    __SHIFTIN(__SHIFTOUT(il1data1, __BITS(4,0)), __BITS(48, 44)) |
+		    __SHIFTIN(__SHIFTOUT(il1data0, __BITS(31, 0)), __BITS(43, 12));
+
+		if (!valid) {
+		    db_printf("[%2zu] invalid\n", index);
+		    continue;
+
+		}
+		db_printf("[%2zu] %4x:%16" PRIx64 ":%16" PRIx64 " PGSZ:%2x\n",
+		    index, asid, va, pa, pgsz);
+		db_printf("[%2zu]     v:%2x s:%2x m:%2x M:%2x D:%2x Sec:%2x\n",
+		    index, vmid, shareability, memoryspace, mair, domain, secure);
+		n++;
+	}
+
+	db_printf("%zu L1 ITLB valid entries found\n", n);
+
+	for (size_t index = 0; index < dti->dti_dtlbentries; index++) {
+		const uint32_t ramindex =
+		    __SHIFTIN(A72_RAMINDEX_RAMID_L1DTLB, A72_RAMINDEX_RAMID) |
+		    __SHIFTIN(index, A72_RAMINDEX_L1DTLB_INDEX);
+
+		reg_a72_ramindex_write(ramindex);
+
+		uint64_t dl1data0 = reg_a72_dl1data0_el1_read();
+		uint64_t dl1data1 = reg_a72_dl1data1_el1_read();
+		uint64_t dl1data2 = reg_a72_dl1data2_el1_read();
+		uint64_t dl1data3 = reg_a72_dl1data3_el1_read();
+//		uint64_t dl1data4 = reg_a72_dl1data4_el1_read();
+
+
+		bool valid = __SHIFTOUT(dl1data3, __BIT(12));
+		uint8_t memoryspace = __SHIFTOUT(dl1data3, __BITS(11, 10));
+		uint8_t shareability = __SHIFTOUT(dl1data3, __BITS(1, 0));
+		uint8_t mair = __SHIFTOUT(dl1data2, __BITS(31, 24));
+		uint8_t pgsz = __SHIFTOUT(dl1data2, __BITS(23, 22));
+		uint8_t domain = __SHIFTOUT(dl1data2, __BITS(21, 18));
+		uint8_t secure = __SHIFTOUT(dl1data2, __BIT(5));
+#if 0
+		uint8_t vmid = __SHIFTOUT(dl1data3, __BITS(13, 6));
+		uint16_t asid =
+		    __SHIFTIN(__SHIFTOUT(dl1data3, __BITS(5,0)), __BITS(16,10)) |
+		    __SHIFTIN(__SHIFTOUT(dl1data2, __BITS(31, 22)), __BITS(9, 0));
+#endif
+		uint64_t pa =
+		    __SHIFTIN(__SHIFTOUT(dl1data2, __BITS(4,0)), __BITS(43, 39)) |
+		    __SHIFTIN(__SHIFTOUT(dl1data1, __BITS(31, 5)), __BITS(38, 12));
+		uint64_t va =
+		    ((dl1data1 & __BIT(4)) ? __BITS(63, 49) : 0) |
+		    __SHIFTIN(__SHIFTOUT(dl1data1, __BITS(4,0)), __BITS(48, 44)) |
+		    __SHIFTIN(__SHIFTOUT(dl1data0, __BITS(31, 0)), __BITS(43, 12));
+
+		if (!valid) {
+		    db_printf("[%2zu] invalid\n", index);
+		    continue;
+
+		}
+		db_printf("[%2zu] ----:%16" PRIx64 ":%16" PRIx64 " PGSZ:%2x\n",
+		    index, va, pa, pgsz);
+		db_printf("[%2zu]     v:-- s:%2x m:%2x M:%2x D:%2x Sec:%2x\n",
+		    index, shareability, memoryspace, mair, domain, secure);
+	}
+
+	db_printf("%zu L1 DTLB valid entries found\n", n);
+
+
+	for (size_t index = 0; index < 256; index++) {
+		for (size_t way = 0; way < 4; way++) {
+			const uint32_t ramindex =
+			    __SHIFTIN(A72_RAMINDEX_RAMID_L2TLB, A72_RAMINDEX_RAMID) |
+			    __SHIFTIN(way, A72_RAMINDEX_L2TLB_WAY) |
+			    __SHIFTIN(index, A72_RAMINDEX_L2TLB_INDEX);
+
+
+			    reg_a72_ramindex_write(ramindex);
+
+			uint64_t dl1data0 = reg_a72_dl1data0_el1_read();
+			uint64_t dl1data1 = reg_a72_dl1data1_el1_read();
+			uint64_t dl1data2 = reg_a72_dl1data2_el1_read();
+			uint64_t dl1data3 = reg_a72_dl1data3_el1_read();
+//		uint64_t dl1data4 = reg_a72_dl1data4_el1_read();
+
+
+// 			bool validel3 = __SHIFTOUT(dl1data3, __BIT(31));
+// 			bool validel2 = __SHIFTOUT(dl1data3, __BIT(30));
+// 			bool validel1s = __SHIFTOUT(dl1data3, __BIT(29));
+			bool validel1ns = __SHIFTOUT(dl1data3, __BIT(28));
+
+			uint8_t vmid = __SHIFTOUT(dl1data3, __BITS(27, 20));
+
+			uint16_t asid =__SHIFTOUT(dl1data3, __BITS(19,4));
+
+			uint64_t va =
+			    ((dl1data3 & __BIT(3)) ? __BITS(63, 49) : 0) |
+			    __SHIFTIN(__SHIFTOUT(dl1data3, __BITS(3,0)), __BITS(48, 45)) |
+			    __SHIFTIN(__SHIFTOUT(dl1data2, __BITS(31, 6)), __BITS(44, 19));
+
+			uint8_t secure = __SHIFTOUT(dl1data2, __BIT(5));
+			uint64_t pa =
+			    __SHIFTIN(__SHIFTOUT(dl1data2, __BITS(4,0)), __BITS(43, 39)) |
+			    __SHIFTIN(__SHIFTOUT(dl1data1, __BITS(31, 5)), __BITS(38, 12));
+
+			uint8_t pgsz =
+			    __SHIFTIN(__SHIFTOUT(dl1data1, __BITS(1, 0)), __BITS(2, 1)) |
+			    __SHIFTIN(__SHIFTOUT(dl1data0, __BIT(31)), __BIT(0));
+
+			uint8_t domain = __SHIFTOUT(dl1data0, __BITS(13, 10));
+			uint8_t shareability = __SHIFTOUT(dl1data0, __BITS(9, 8));
+			uint8_t mair = __SHIFTOUT(dl1data0, __BITS(7, 0));
+
+
+			if (!validel1ns) {
+			    db_printf("[%2zu] invalid\n", index);
+			    continue;
+
+			}
+			db_printf("[%2zu] %4x:%16" PRIx64 ":%16" PRIx64 " PGSZ:%2x\n",
+			    index, asid, va, pa, pgsz);
+			db_printf("[%2zu]     v:%2x s:%2x m:-- M:%2x D:%2x Sec:%2x\n",
+			    index, vmid, shareability, mair, domain, secure);
+		}
+
+	}
+
+	db_printf("%zu L2 TLB valid entries found\n", n);
+
+
+
+}
+
 
 void
 db_md_tlbi_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
@@ -1323,4 +1673,6 @@ db_md_meminfo_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 		    bootconfig.dram[blk].pages);
 	}
 }
+
+
 #endif
