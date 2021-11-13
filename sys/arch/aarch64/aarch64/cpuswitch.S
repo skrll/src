@@ -332,9 +332,19 @@ END(softint_cleanup)
  *	x28 = arg
  */
 ENTRY_NP(lwp_trampoline)
+	.cfi_startproc
 	stp	x0, x1, [sp, #-16]!	/* save x0, x1 */
+
+	.cfi_def_cfa_offset 16
+	.cfi_offset x0, -16
+	.cfi_offset x1, -8
+
 	bl	_C_LABEL(lwp_startup)
 	ldp	x0, x1, [sp], #16	/* restore x0, x1 */
+
+	.cfi_restore x1
+	.cfi_restore x0
+	.cfi_def_cfa_offset 0
 
 #ifdef ARMV83_PAC
 	/* Generate a new PAC key. */
@@ -360,6 +370,7 @@ ENTRY_NP(lwp_trampoline)
 	mov	x0, x28			/* mov arg into place */
 	mov	x16, x27		/* use x16 as jump register, for BTI */
 	br	x16			/* call function with arg */
+	.cfi_endproc
 END(lwp_trampoline)
 
 
