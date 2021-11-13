@@ -32,28 +32,78 @@ RCSID("$NetBSD: vectors.S,v 1.29 2022/06/26 11:14:36 jmcneill Exp $")
 	.align 7	/* cacheline-aligned */
 
 ENTRY_NBTI(\func)
-
+	.cfi_startproc
 	.if \el == 1
 	/* need to allocate stack on el1 */
 	sub	sp, sp, #TRAP_FRAMESIZE
+	.cfi_def_cfa_offset TRAP_FRAMESIZE
+	.else
+	.cfi_def_cfa_offset 0
 	.endif
 
 	stp	x0, x1, [sp, #TF_X0]
+	.cfi_rel_offset x0, TF_X0
+	.cfi_rel_offset x1, TF_X1
+
 	stp	x2, x3, [sp, #TF_X2]
+	.cfi_rel_offset x2, TF_X2
+	.cfi_rel_offset x3, TF_X3
+
 	stp	x4, x5, [sp, #TF_X4]
+	.cfi_rel_offset x4, TF_X4
+	.cfi_rel_offset x5, TF_X5
+
 	stp	x6, x7, [sp, #TF_X6]
+	.cfi_rel_offset x6, TF_X6
+	.cfi_rel_offset x7, TF_X7
+
 	stp	x8, x9, [sp, #TF_X8]
+	.cfi_rel_offset x8, TF_X8
+	.cfi_rel_offset x9, TF_X9
+
 	stp	x10, x11, [sp, #TF_X10]
+	.cfi_rel_offset x10, TF_X10
+	.cfi_rel_offset x11, TF_X11
+
 	stp	x12, x13, [sp, #TF_X12]
+	.cfi_rel_offset x12, TF_X12
+	.cfi_rel_offset x13, TF_X13
+
 	stp	x14, x15, [sp, #TF_X14]
+	.cfi_rel_offset x14, TF_X14
+	.cfi_rel_offset x15, TF_X15
+
 	stp	x16, x17, [sp, #TF_X16]
+	.cfi_rel_offset x16, TF_X16
+	.cfi_rel_offset x17, TF_X17
+
 	str	x18, [sp, #TF_X18]
+	.cfi_rel_offset x18, TF_X18
+
 	stp	x19, x20, [sp, #TF_X19]
+	.cfi_rel_offset x19, TF_X19
+	.cfi_rel_offset x20, TF_X20
+
 	stp	x21, x22, [sp, #TF_X21]
+	.cfi_rel_offset x21, TF_X21
+	.cfi_rel_offset x22, TF_X22
+
 	stp	x23, x24, [sp, #TF_X23]
+	.cfi_rel_offset x23, TF_X23
+	.cfi_rel_offset x24, TF_X24
+
 	stp	x25, x26, [sp, #TF_X25]
+	.cfi_rel_offset x25, TF_X25
+	.cfi_rel_offset x26, TF_X26
+
 	stp	x27, x28, [sp, #TF_X27]
-	stp	x29, x30, [sp, #TF_X29]
+	.cfi_rel_offset x27, TF_X27
+	.cfi_rel_offset x28, TF_X28
+
+	stp	x29, lr, [sp, #TF_X29]
+
+	.cfi_rel_offset x29, TF_X29
+	.cfi_rel_offset lr, TF_X30
 
 	/* get sp and elr */
 	.if \el == 0
@@ -71,6 +121,8 @@ ENTRY_NBTI(\func)
 	str	x20, [sp, #TF_SP]
 	str	x21, [sp, #TF_PC]
 	.endif
+	.cfi_rel_offset sp, TF_SP
+	.cfi_rel_offset lr, TF_PC
 
 	mrs	x22, spsr_el1
 	str	x22, [sp, #TF_SPSR]
@@ -109,12 +161,14 @@ ENTRY_NBTI(\func)
 #endif
 	.endif
 
-	adr	x30, el\el\()_trap_exit	/* el[01]_trap_exit */
+	adr	lr, el\el\()_trap_exit	/* el[01]_trap_exit */
 	mov	x0, sp
 #ifdef DDB
 	mov	x29, sp			/* for backtrace */
 #endif
 	b	\label
+	.cfi_def_cfa_offset 0
+	.cfi_endproc
 END(\func)
 .endm
 
@@ -123,8 +177,12 @@ END(\func)
  * into the proper function, so this constraint is always respected.
  */
 .macro	vector_entry, func
+	.global vec_\func
 	.align 7	/* aligned 0x80 */
+vec_\func:
+	.cfi_startproc
 	b	\func
+	.cfi_endproc
 .endm
 
 /*
@@ -198,22 +256,64 @@ END(el1_vectors)
 	.endm
 
 	.macro unwind_x3_x30
-	ldp	x3, x4, [sp, #TF_X3]
-	ldp	x5, x6, [sp, #TF_X5]
-	ldp	x7, x8, [sp, #TF_X7]
-	ldp	x9, x10, [sp, #TF_X9]
-	ldp	x11, x12, [sp, #TF_X11]
-	ldp	x13, x14, [sp, #TF_X13]
-	ldp	x15, x16, [sp, #TF_X15]
-	ldp	x17, x18, [sp, #TF_X17]
-	ldp	x19, x20, [sp, #TF_X19]
-	ldp	x21, x22, [sp, #TF_X21]
-	ldp	x23, x24, [sp, #TF_X23]
-	ldp	x25, x26, [sp, #TF_X25]
-	ldp	x27, x28, [sp, #TF_X27]
-	ldp	x29, x30, [sp, #TF_X29]
-	.endm
+	.cfi_def_cfa_offset 0
 
+	ldp	x3, x4, [sp, #TF_X3]
+	.cfi_restore x4
+	.cfi_restore x3
+
+	ldp	x5, x6, [sp, #TF_X5]
+	.cfi_restore x6
+	.cfi_restore x5
+
+	ldp	x7, x8, [sp, #TF_X7]
+	.cfi_restore x8
+	.cfi_restore x7
+
+	ldp	x9, x10, [sp, #TF_X9]
+	.cfi_restore x10
+	.cfi_restore x9
+
+	ldp	x11, x12, [sp, #TF_X11]
+	.cfi_restore x12
+	.cfi_restore x11
+
+	ldp	x13, x14, [sp, #TF_X13]
+	.cfi_restore x14
+	.cfi_restore x13
+
+	ldp	x15, x16, [sp, #TF_X15]
+	.cfi_restore x16
+	.cfi_restore x15
+
+	ldp	x17, x18, [sp, #TF_X17]
+	.cfi_restore x18
+	.cfi_restore x17
+
+	ldp	x19, x20, [sp, #TF_X19]
+	.cfi_restore x20
+	.cfi_restore x19
+
+	ldp	x21, x22, [sp, #TF_X21]
+	.cfi_restore x22
+	.cfi_restore x21
+
+	ldp	x23, x24, [sp, #TF_X23]
+	.cfi_restore x24
+	.cfi_restore x23
+
+	ldp	x25, x26, [sp, #TF_X25]
+	.cfi_restore x26
+	.cfi_restore x25
+
+	ldp	x27, x28, [sp, #TF_X27]
+	.cfi_restore x28
+	.cfi_restore x27
+
+	ldp	x29, lr, [sp, #TF_X29]
+	.cfi_restore lr
+	.cfi_restore x29
+	.endm
 /*
  * EL1 exception return for trap and interrupt.
  */
@@ -222,6 +322,7 @@ ENTRY_NP(el1_trap)
 	nop				/* dummy for DDB backtrace (for lr-4) */
 #endif
 ENTRY_NP(el1_trap_exit)
+	.cfi_startproc
 	DISABLE_INTERRUPT		/* make sure I|F marked */
 
 	unwind_x3_x30
@@ -232,6 +333,7 @@ ENTRY_NP(el1_trap_exit)
 	ldr	x0, [sp, #TF_PC]
 	ldr	x1, [sp, #TF_SPSR]
 #endif
+
 	msr	elr_el1, x0		/* exception pc */
 	msr	spsr_el1, x1		/* exception pstate */
 
@@ -241,12 +343,20 @@ ENTRY_NP(el1_trap_exit)
 	 * and unwind x0-x2 without sp.
 	 */
 	mov	x0, sp
+	.cfi_def_cfa_register   x0
+
 	ldr	x1, [x0, #TF_SP]
 	mov	sp, x1
+	.cfi_restore sp
 	ldp	x1, x2, [x0, #TF_X1]
+	.cfi_restore x1
+	.cfi_restore x2
 	ldr	x0, [x0, #TF_X0]
+	.cfi_restore x0
 
+	.cfi_def_cfa_offset 0
 	ERET
+	.cfi_endproc
 END(el1_trap_exit)
 #ifdef DDB
 END(el1_trap)
@@ -261,6 +371,7 @@ ENTRY_NP(el0_trap)
 	nop				/* dummy for DDB backtrace (for lr-4) */
 #endif
 ENTRY_NP(el0_trap_exit)
+	.cfi_startproc
 
 	adr	lr, 1f			/* return address from trap_doast */
 1:
@@ -329,6 +440,7 @@ ENTRY_NP(el0_trap_exit)
 
 	/* leave sp at l_md.md_utf, return back to EL0 user process */
 	ERET
+	.cfi_endproc
 END(el0_trap_exit)
 #ifdef DDB
 END(el0_trap)
