@@ -37,10 +37,13 @@ options 	MULTIPROCESSOR
 
 pseudo-device 	openfirm	# /dev/openfirm
 
-#options 	DIAGNOSTIC	# internal consistency checks
-#options 	DEBUG
+options 	DIAGNOSTIC	# internal consistency checks
+options 	DEBUG
 #options 	LOCKDEBUG
-#options 	UVMHIST		# kernhist for uvm/pmap subsystems
+#options 	PMAP_FAULTINFO
+
+options 	UVMHIST		# kernhist for uvm/pmap subsystems
+options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
 
 # Heartbeat checks
@@ -86,6 +89,7 @@ options 	MSGBUFSIZE=32768
 #options 	EARLYCONS=tegra, CONSADDR=0x70006300
 
 #options 	EARLYCONS=vexpress, CONSADDR=0x1c090000
+
 #options 	EARLYCONS=zynq, CONSADDR=0xe0001000
 #options 	EARLYCONS=rk3288, CONSADDR=0xff690000
 
