@@ -8,15 +8,19 @@ EXTRA_CLEAN+= cscope.out cscope.tmp
 .if !target(cscope.out)
 cscope.out: Makefile depend
 	${_MKTARGET_CREATE}
+	@echo > cscope.tmp
+.for _file in ${SRCS}
+	@echo ${_file} >> cscope.tmp
+.endfor
 	@${TOOL_SED} 's/[^:]*://;s/^ *//;s/ *\\ *$$//;' lib/kern/.depend \
 	    | tr -s ' ' '\n' \
 	    | ${TOOL_SED} ';s|^../../||;' \
-	    > cscope.tmp
+	    >> cscope.tmp
 	@${TOOL_SED} 's/[^:]*://;s/^ *//;s/ *\\ *$$//;' lib/compat/.depend \
 	    | tr -s ' ' '\n' \
 	    | ${TOOL_SED} 's|^../../||;' \
 	    >> cscope.tmp
-	@echo ${SRCS} | cat - cscope.tmp | tr -s ' ' '\n' | sort -u | \
+	@cat cscope.tmp | tr -s ' ' '\n' | sort -u | \
 	    ${CSCOPE} -k -i - -b `echo ${INCLUDES} | ${TOOL_SED} s/-nostdinc//`
 #	cscope doesn't write cscope.out if it's uptodate, so ensure
 #	make doesn't keep calling cscope when not needed.
