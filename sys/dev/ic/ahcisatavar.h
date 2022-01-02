@@ -59,6 +59,9 @@ struct ahci_softc {
 #define AHCI_PCI_QUIRK_BAD64	__BIT(1)  /* broken 64-bit DMA */
 #define AHCI_QUIRK_BADPMP	__BIT(2)  /* broken PMP support, ignore */
 #define AHCI_QUIRK_BADNCQ	__BIT(3)  /* possibly broken NCQ support, ignore */
+#define AHCI_QUIRK_EXTRA_DELAY	__BIT(4)  /* needs extra delay */
+#define AHCI_QUIRK_SKIP_RESET	__BIT(5)  /* skip drive reset sequence */
+#define AHCI_PCI_QUIRK_ONEMSI	__BIT(6)  /* limit to a single MSI/MSIX */
 
 	uint32_t sc_ahci_cap;	/* copy of AHCI_CAP */
 	int sc_ncmds; /* number of command slots */
