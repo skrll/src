@@ -85,7 +85,10 @@ tlb_invalidate_addr(vaddr_t va, tlb_asid_t asid)
 {
 	KASSERT((va & PAGE_MASK) == 0);
 
-	aarch64_tlbi_by_asid_va(asid, va);
+	if (asid == KERNEL_PID)
+		aarch64_tlbi_by_va(va);
+	else
+		aarch64_tlbi_by_asid_va(asid, va);
 }
 
 bool
