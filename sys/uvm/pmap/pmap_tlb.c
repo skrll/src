@@ -158,6 +158,9 @@ static kmutex_t pmap_tlb0_lock __cacheline_aligned;
 		for (tlb_asid_t asid = 0; asid <= KERNEL_PID; asid++) 	\
 			TLBINFO_ASID_MARK_USED(ti, asid);	 	\
 	} while (0)
+
+
+// XXXNH this is probably ok.
 #define	TLBINFO_ASID_INITIAL_FREE(asid_max) \
 	(asid_max + 1 /* 0 */ - (1 + KERNEL_PID))
 
@@ -337,6 +340,21 @@ pmap_tlb_info_evcnt_attach(struct pmap_tlb_info *ti)
 	evcnt_attach_dynamic_nozero(&ti->ti_evcnt_asid_reinits,
 	    EVCNT_TYPE_MISC, NULL,
 	    ti->ti_name, "asid pool reinit");
+	evcnt_attach_dynamic_nozero(&ti->ti_evcnt_asid_reinits_all,
+	    EVCNT_TYPE_MISC, NULL,
+	    ti->ti_name, "asid pool reinit (all)");
+	evcnt_attach_dynamic_nozero(&ti->ti_evcnt_asid_reinits_alluser,
+	    EVCNT_TYPE_MISC, NULL,
+	    ti->ti_name, "asid pool reinit (alluser)");
+	evcnt_attach_dynamic_nozero(&ti->ti_evcnt_asid_allocs,
+	    EVCNT_TYPE_MISC, NULL,
+	    ti->ti_name, "asid pool allocs");
+	evcnt_attach_dynamic_nozero(&ti->ti_evcnt_asid_acquires,
+	    EVCNT_TYPE_MISC, NULL,
+	    ti->ti_name, "asid pool acquires");
+	evcnt_attach_dynamic_nozero(&ti->ti_evcnt_asid_release_alls,
+	    EVCNT_TYPE_MISC, NULL,
+	    ti->ti_name, "asid pool releases");
 }
 
 void
@@ -451,13 +469,16 @@ pmap_tlb_asid_reinitialize(struct pmap_tlb_info *ti, enum tlb_invalidate_op op)
 	switch (op) {
 #if defined(MULTIPROCESSOR) && defined(PMAP_TLB_NEED_SHOOTDOWN)
 	case TLBINV_ALL:
+		ti->ti_evcnt_asid_reinits_all.ev_count++;
 		tlb_invalidate_all();
 		break;
 	case TLBINV_ALLUSER:
+		ti->ti_evcnt_asid_reinits_alluser.ev_count++;
 		tlb_invalidate_asids(KERNEL_PID + 1, ti->ti_asid_max);
 		break;
 #endif /* MULTIPROCESSOR && PMAP_TLB_NEED_SHOOTDOWN */
 	case TLBINV_NOBODY: {
+		ti->ti_evcnt_asid_reinits_nobody.ev_count++;
 		/*
 		 * If we are just reclaiming ASIDs in the TLB, let's go find
 		 * what ASIDs are in use in the TLB.  Since this is a
@@ -766,6 +787,8 @@ pmap_tlb_update_addr(pmap_t pm, vaddr_t va, pt_entry_t pte, u_int flags)
 	TLBINFO_LOCK(ti);
 	if (pm == pmap_kernel() || PMAP_PAI_ASIDVALID_P(pai, ti)) {
 		pmap_tlb_asid_check();
+
+//XXXNH global?
 		rv = tlb_update_addr(va, pai->pai_asid, pte,
 		    (flags & PMAP_TLB_INSERT) != 0);
 		pmap_tlb_asid_check();
@@ -831,6 +854,8 @@ pmap_tlb_asid_alloc(struct pmap_tlb_info *ti, pmap_t pm,
 #endif
 	KASSERT(ti->ti_asids_free > 0);
 	KASSERT(ti->ti_asid_hint > KERNEL_PID);
+
+	ti->ti_evcnt_asid_allocs.ev_count++;
 
 	/*
 	 * If the last ASID allocated was the maximum ASID, then the
@@ -932,6 +957,7 @@ pmap_tlb_asid_acquire(pmap_t pm, struct lwp *l)
 	}
 
 	TLBINFO_LOCK(ti);
+	ti->ti_evcnt_asid_acquires.ev_count++;
 	KASSERT(pai->pai_asid <= KERNEL_PID || pai->pai_link.le_prev != NULL);
 	KASSERT(pai->pai_asid > KERNEL_PID || pai->pai_link.le_prev == NULL);
 	pmap_tlb_pai_check(ti, true);
@@ -1052,6 +1078,8 @@ pmap_tlb_asid_release_all(struct pmap *pm)
 #endif
 		struct pmap_asid_info * const pai = PMAP_PAI(pm, ti);
 		TLBINFO_LOCK(ti);
+
+		ti->ti_evcnt_asid_release_alls.ev_count++;
 		if (PMAP_PAI_ASIDVALID_P(pai, ti)) {
 			/*
 			 * This pmap should not be in use by any other cpu so
@@ -1082,6 +1110,7 @@ pmap_tlb_asid_release_all(struct pmap *pm)
 	struct pmap_tlb_info * const ti = &pmap_tlb0_info;
 	struct pmap_asid_info * const pai = PMAP_PAI(pm, ti);
 	TLBINFO_LOCK(ti);
+	ti->ti_evcnt_asid_release_alls.ev_count++;
 	if (pai->pai_asid > KERNEL_PID) {
 		if (curcpu()->ci_pmap_asid_cur == pai->pai_asid) {
 			tlb_invalidate_asids(pai->pai_asid, pai->pai_asid);

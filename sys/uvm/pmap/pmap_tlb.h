@@ -147,6 +147,14 @@ struct pmap_tlb_info {
 #define tlbinfo_index(ti)	((void)(ti), 0)
 #endif
 	struct evcnt ti_evcnt_asid_reinits;
+	struct evcnt ti_evcnt_asid_reinits_all;
+	struct evcnt ti_evcnt_asid_reinits_alluser;
+	struct evcnt ti_evcnt_asid_reinits_nobody;
+
+	struct evcnt ti_evcnt_asid_allocs;
+	struct evcnt ti_evcnt_asid_acquires;
+	struct evcnt ti_evcnt_asid_release_alls;
+
 #ifndef PMAP_TLB_BITMAP_LENGTH
 #define	PMAP_TLB_BITMAP_LENGTH 256
 #endif
