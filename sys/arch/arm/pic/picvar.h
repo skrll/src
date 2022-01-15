@@ -166,7 +166,7 @@ struct pic_ops {
 	void (*pic_source_name)(struct pic_softc *, int, char *, size_t);
 
 #ifdef __HAVE_PIC_SET_PRIORITY
-	void (*pic_set_priority)(struct pic_softc *, int);
+	void (*pic_set_priority)(struct pic_softc *, int, void *);
 #endif
 #ifdef MULTIPROCESSOR
 	void (*pic_cpu_init)(struct pic_softc *, struct cpu_info *);
@@ -184,6 +184,9 @@ struct pic_ops {
 struct cpu_info;
 void	pic_set_priority(struct cpu_info *, int);
 #else
+
+//XNH
+
 /* Using an inline causes catch-22 problems with cpu.h */
 #define	pic_set_priority(ci, newipl)	((void)((ci)->ci_cpl = (newipl)))
 #endif

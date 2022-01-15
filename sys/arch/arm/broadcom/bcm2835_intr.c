@@ -153,7 +153,7 @@ static int bcm2836mp_int_base[_BCM2836_NCPUS];
 #define BCM2835_INT_ILLEGALTYPE1	(BCM2835_INT_BASICBASE + 7)
 
 static void
-bcm2835_set_priority(struct pic_softc *pic, int ipl)
+bcm2835_set_priority(struct pic_softc *pic, int ipl, void *caller)
 {
 	curcpu()->ci_cpl = ipl;
 }
