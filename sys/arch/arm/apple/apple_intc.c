@@ -148,7 +148,7 @@ apple_intc_establish_irq(struct pic_softc *pic, struct intrsource *is)
 }
 
 static void
-apple_intc_set_priority(struct pic_softc *pic, int ipl)
+apple_intc_set_priority(struct pic_softc *pic, int ipl, void *caller)
 {
 	curcpu()->ci_cpl = ipl;
 }

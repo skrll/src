@@ -27,6 +27,7 @@
  */
 
 #include "opt_multiprocessor.h"
+#include "opt_kernhist.h"
 
 #define	_INTR_PRIVATE
 
@@ -34,15 +35,17 @@
 __KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.58 2026/04/03 06:29:28 skrll Exp $");
 
 #include <sys/param.h>
-#include <sys/kernel.h>
-#include <sys/bus.h>
-#include <sys/device.h>
-#include <sys/intr.h>
-#include <sys/systm.h>
-#include <sys/cpu.h>
-#include <sys/vmem.h>
-#include <sys/kmem.h>
 #include <sys/atomic.h>
+#include <sys/bus.h>
+#include <sys/cpu.h>
+#include <sys/device.h>
+#include <sys/kernel.h>
+#include <sys/kernhist.h>
+#include <sys/kmem.h>
+#include <sys/intr.h>
+#include <sys/once.h>
+#include <sys/systm.h>
+#include <sys/vmem.h>
 
 #include <machine/cpufunc.h>
 
@@ -51,6 +54,38 @@ __KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.58 2026/04/03 06:29:28 skrll Exp $");
 
 #include <arm/cortex/gicv3.h>
 #include <arm/cortex/gic_reg.h>
+
+#ifdef KERNHIST
+static int armgichist_init(void);
+
+#ifndef ARMGICV3HIST_SIZE
+#define ARMGICV3HIST_SIZE 2000
+#endif
+
+KERNHIST_DEFINE(armgicv3hist);
+
+int armgicv3debug = 1;
+
+#define ARMGICHIST_LOG(FMT,A,B,C,D)	do {			\
+	if ((armgicv3debug) >= 1) {				\
+		KERNHIST_LOG(armgicv3hist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define ARMGICHIST_CALLED()		do {		\
+	if ((armgicv3debug) != 0) {				\
+		KERNHIST_CALLED(armgicv3hist);			\
+	}							\
+} while (0)
+#define ARMGICHIST_CALLARGS(FMT,A,B,C,D) do {			\
+	if ((armgicv3debug) != 0) {				\
+		KERNHIST_CALLARGS(armgicv3hist,FMT,A,B,C,D);	\
+	}							\
+} while (0)
+#else
+#define ARMGICHIST_LOG(FMT,A,B,C,D)
+#define ARMGICHIST_CALLED()
+#define ARMGICHIST_CALLARGS(FMT,A,B,C,D)
+#endif
 
 #define	PICTOSOFTC(pic)	\
 	container_of(pic, struct gicv3_softc, sc_pic)
@@ -74,6 +109,17 @@ __KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.58 2026/04/03 06:29:28 skrll Exp $");
 bool gicv3_use_1ofn = false;
 
 static struct gicv3_softc *gicv3_softc;
+
+#ifdef KERNHIST
+int
+armgichist_init(void)
+{
+
+	KERNHIST_INIT(armgicv3hist, ARMGICV3HIST_SIZE);
+
+	return 0;
+}
+#endif
 
 static inline uint32_t
 gicd_read_4(struct gicv3_softc *sc, bus_size_t reg)
@@ -228,11 +274,15 @@ gicv3_establish_irq(struct pic_softc *pic, struct intrsource *is)
 }
 
 static void
-gicv3_set_priority(struct pic_softc *pic, int ipl)
+gicv3_set_priority(struct pic_softc *pic, int ipl, void *caller)
 {
 	struct gicv3_softc * const sc = PICTOSOFTC(pic);
 	struct cpu_info * const ci = curcpu();
 	const int hwpl = IPL_TO_HWPL(ipl);
+
+	KERNHIST_FUNC(__func__);
+	ARMGICHIST_CALLARGS("ipl %jd ci_hwpl %jd newpri %#jx caller %#jx", ipl,
+	    ci->ci_hwpl, IPL_TO_PMR(sc, ipl), (uintptr_t)caller);
 
 	while (hwpl < ci->ci_hwpl) {
 		/* Lowering priority mask */
@@ -242,6 +292,7 @@ gicv3_set_priority(struct pic_softc *pic, int ipl)
 	}
 	__insn_barrier();
 	ci->ci_cpl = ipl;
+	ARMGICHIST_LOG("... done", 0, 0, 0 ,0);
 }
 
 static void
@@ -726,6 +777,8 @@ gicv3_lpi_init(struct gicv3_softc *sc)
 void
 gicv3_irq_handler(void *frame)
 {
+	KERNHIST_FUNC(__func__); ARMGICHIST_CALLED();
+
 	struct cpu_info * const ci = curcpu();
 	struct gicv3_softc * const sc = gicv3_softc;
 	struct pic_softc *pic;
@@ -742,10 +795,17 @@ gicv3_irq_handler(void *frame)
 		}
 	}
 
+	KASSERTMSG(oldipl != IPL_HIGH, "old_ipl %d pmr %" PRIx64,
+	    oldipl, icc_pmr_read());
+
+	ARMGICHIST_LOG("oldipl %d pmr %x hppir %u", oldipl,
+	    icc_pmr_read(), 0, 0);
+
 	for (;;) {
 		const uint32_t iar = icc_iar1_read();
 		dsb(sy);
 		const uint32_t irq = __SHIFTOUT(iar, ICC_IAR_INTID);
+		ARMGICHIST_LOG("irq %u", irq, 0, 0, 0);
 		if (irq == ICC_IAR_INTID_SPURIOUS)
 			break;
 
@@ -759,6 +819,7 @@ gicv3_irq_handler(void *frame)
 		const bool early_eoi = irq < GIC_LPI_BASE && is->is_type == IST_EDGE;
 
 		const int ipl = is->is_ipl;
+		ARMGICHIST_LOG("irq %u ipl %u ci_cpl %u", irq, ipl, ci->ci_cpl, 0);
 		if (__predict_false(ipl < ci->ci_cpl)) {
 			pic_do_pending_ints(I32_bit, ipl, frame);
 		} else if (ci->ci_cpl != ipl) {
@@ -788,6 +849,7 @@ gicv3_irq_handler(void *frame)
 	}
 
 	pic_do_pending_ints(I32_bit, oldipl, frame);
+	ARMGICHIST_LOG("... done", 0, 0, 0, 0);
 }
 
 static bool
@@ -854,6 +916,11 @@ gicv3_init(struct gicv3_softc *sc)
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
 
+#ifdef KERNHIST
+	static ONCE_DECL(armgic_once);
+
+	RUN_ONCE(&armgic_once, armgichist_init);
+#endif
 	KASSERT(CPU_IS_PRIMARY(curcpu()));
 
 	LIST_INIT(&sc->sc_lpi_callbacks);
