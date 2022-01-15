@@ -75,7 +75,7 @@ static void omap2icu_attach(device_t, device_t, void *);
 static void omap2icu_unblock_irqs(struct pic_softc *, size_t, uint32_t);
 static void omap2icu_block_irqs(struct pic_softc *, size_t, uint32_t);
 static void omap2icu_establish_irq(struct pic_softc *, struct intrsource *);
-static void omap2icu_set_priority(struct pic_softc *, int);
+static void omap2icu_set_priority(struct pic_softc *, int, void *);
 #if 0
 static void omap2icu_source_name(struct pic_softc *, int, char *, size_t);
 #endif
@@ -177,7 +177,7 @@ omap2icu_establish_irq(struct pic_softc *pic, struct intrsource *is)
 }
 
 static void
-omap2icu_set_priority(struct pic_softc *pic, int ipl)
+omap2icu_set_priority(struct pic_softc *pic, int ipl, void *caller)
 {
 	curcpu()->ci_cpl = ipl;
 }

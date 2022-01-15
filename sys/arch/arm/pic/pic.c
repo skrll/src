@@ -114,7 +114,7 @@ pic_set_priority(struct cpu_info *ci, int newipl)
 		return;
 	}
 
-	pic_list[0]->pic_ops->pic_set_priority(pic_list[0], newipl);
+	pic_list[0]->pic_ops->pic_set_priority(pic_list[0], newipl, __builtin_return_address(0));
 }
 #endif
 

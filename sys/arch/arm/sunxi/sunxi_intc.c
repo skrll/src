@@ -119,7 +119,7 @@ sunxi_intc_establish_irq(struct pic_softc *pic, struct intrsource *is)
 }
 
 static void
-sunxi_intc_set_priority(struct pic_softc *pic, int ipl)
+sunxi_intc_set_priority(struct pic_softc *pic, int ipl, void *caller)
 {
 	curcpu()->ci_cpl = ipl;
 }
