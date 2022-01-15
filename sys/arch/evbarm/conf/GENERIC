@@ -37,11 +37,12 @@ options 	MULTIPROCESSOR
 
 pseudo-device 	openfirm	# /dev/openfirm
 
-#options 	DIAGNOSTIC	# internal consistency checks
-#options 	DEBUG
+options 	DIAGNOSTIC	# internal consistency checks
+options 	DEBUG
 #options 	LOCKDEBUG
 #options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
+options 	KERNHIST
 
 # Heartbeat checks
 options 	HEARTBEAT

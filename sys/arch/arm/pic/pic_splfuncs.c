@@ -39,6 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.29 2026/04/03 06:29:01 skrll Exp 
 #include <sys/evcnt.h>
 #include <sys/lwp.h>
 #include <sys/kernel.h>
+#include <sys/kernhist.h>
 
 #include <dev/cons.h>
 
@@ -49,11 +50,16 @@ __KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.29 2026/04/03 06:29:01 skrll Exp 
 
 #include <arm/pic/picvar.h>
 
+KERNHIST_DECL(armgichist);
 int
 _splraise(int newipl)
 {
 	struct cpu_info * const ci = curcpu();
 	const int oldipl = ci->ci_cpl;
+
+	KERNHIST_FUNC(__func__);
+	KERNHIST_CALLARGS(armgichist, "ipl %jd", newipl, 0, 0, 0);
+
 	KASSERT(newipl < NIPL);
 	if (newipl > ci->ci_cpl) {
 		pic_set_priority(ci, newipl);
@@ -66,6 +72,10 @@ _spllower(int newipl)
 {
 	struct cpu_info * const ci = curcpu();
 	const int oldipl = ci->ci_cpl;
+
+	KERNHIST_FUNC(__func__);
+	KERNHIST_CALLARGS(armgichist, "ipl %jd", newipl, 0, 0, 0);
+
 	KASSERT(panicstr || newipl <= ci->ci_cpl);
 	if (newipl < ci->ci_cpl) {
 		register_t psw = DISABLE_INTERRUPT_SAVE();
@@ -76,6 +86,7 @@ _spllower(int newipl)
 			ENABLE_INTERRUPT();
 		cpu_dosoftints();
 	}
+	KERNHIST_LOG(armgichist, "... done old %jd (%jd/%jd)", oldipl, newipl, ci->ci_cpl, 0);
 	return oldipl;
 }
 
@@ -85,7 +96,11 @@ splx(int savedipl)
 	struct cpu_info * const ci = curcpu();
 	KASSERT(savedipl < NIPL);
 
+	KERNHIST_FUNC(__func__);
+	KERNHIST_CALLARGS(armgichist, "ipl %jd", savedipl, 0, 0, 0);
+
 	if (__predict_false(savedipl == ci->ci_cpl)) {
+		KERNHIST_LOG(armgichist, "... done (nop)", 0, 0, 0, 0);
 		return;
 	}
 
@@ -108,4 +123,5 @@ splx(int savedipl)
 	cpu_dosoftints();
 	KASSERTMSG(ci->ci_cpl == savedipl, "cpl %d savedipl %d",
 	    ci->ci_cpl, savedipl);
+	KERNHIST_LOG(armgichist, "... done (%jd/%jd)", savedipl, ci->ci_cpl, 0, 0);
 }

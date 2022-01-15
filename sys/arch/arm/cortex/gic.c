@@ -29,6 +29,7 @@
  */
 
 #include "opt_ddb.h"
+#include "opt_kernhist.h"
 #include "opt_multiprocessor.h"
 
 #define _INTR_PRIVATE
@@ -42,6 +43,8 @@ __KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.57 2023/10/05 12:30:59 riastradh Exp $");
 #include <sys/device.h>
 #include <sys/evcnt.h>
 #include <sys/intr.h>
+#include <sys/kernhist.h>
+#include <sys/once.h>
 #include <sys/proc.h>
 #include <sys/atomic.h>
 
@@ -51,6 +54,38 @@ __KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.57 2023/10/05 12:30:59 riastradh Exp $");
 
 #include <arm/cortex/gic_reg.h>
 #include <arm/cortex/mpcore_var.h>
+
+#ifdef KERNHIST
+static int armgichist_init(void);
+
+#ifndef ARMGICHIST_SIZE
+#define ARMGICHIST_SIZE 2000
+#endif
+
+KERNHIST_DEFINE(armgichist);
+
+int armgicdebug = 1;
+
+#define ARMGICHIST_CALLED()		do {			\
+	if ((armgicdebug) != 0) {				\
+		KERNHIST_CALLED(armgichist);			\
+	}							\
+} while (0)
+#define ARMGICHIST_LOG(FMT,A,B,C,D)	do {			\
+	if ((armgicdebug) != 0) {				\
+		KERNHIST_LOG(armgichist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define ARMGICHIST_CALLARGS(FMT,A,B,C,D) do {			\
+	if ((armgicdebug) != 0) {				\
+		KERNHIST_CALLARGS(armgichist,FMT,A,B,C,D);	\
+	}							\
+} while (0)
+#else
+#define ARMGICHIST_LOG(FMT,A,B,C,D)
+#define ARMGICHIST_CALLED()
+#define ARMGICHIST_CALLARGS(FMT,A,B,C,D)
+#endif
 
 void armgic_irq_handler(void *);
 
@@ -64,7 +99,7 @@ __CTASSERT(ARMGIC_SGI_IPIBASE + NIPI <= 8);
 static int armgic_match(device_t, cfdata_t, void *);
 static void armgic_attach(device_t, device_t, void *);
 
-static void armgic_set_priority(struct pic_softc *, int);
+static void armgic_set_priority(struct pic_softc *, int, void *);
 static void armgic_unblock_irqs(struct pic_softc *, size_t, uint32_t);
 static void armgic_block_irqs(struct pic_softc *, size_t, uint32_t);
 static void armgic_establish_irq(struct pic_softc *, struct intrsource *);
@@ -122,6 +157,18 @@ static struct armgic_softc {
 static struct intrsource armgic_dummy_source;
 
 __CTASSERT(NIPL == 8);
+
+#ifdef KERNHIST
+int
+armgichist_init(void)
+{
+
+	KERNHIST_INIT(armgichist, ARMGICHIST_SIZE);
+
+	return 0;
+}
+#endif
+
 
 /*
  * GIC register are always in little-endian.  It is assumed the bus_space
@@ -219,10 +266,13 @@ armgic_block_irqs(struct pic_softc *pic, size_t irq_base, uint32_t irq_mask)
 }
 
 static void
-armgic_set_priority(struct pic_softc *pic, int ipl)
+armgic_set_priority(struct pic_softc *pic, int ipl, void *caller)
 {
 	struct armgic_softc * const sc = PICTOSOFTC(pic);
 	struct cpu_info * const ci = curcpu();
+
+	KERNHIST_FUNC(__func__);
+	ARMGICHIST_CALLARGS("ipl %jd vs %jd caller %#jx", ipl, ci->ci_cpl, (uintptr_t)caller, 0);
 
 	while (ipl < ci->ci_hwpl) {
 		/* Lowering priority mask */
@@ -316,6 +366,7 @@ softint_trigger(uintptr_t machdep)
 void
 armgic_irq_handler(void *tf)
 {
+	KERNHIST_FUNC(__func__); ARMGICHIST_CALLED();
 	struct cpu_info * const ci = curcpu();
 	struct armgic_softc * const sc = &armgic_softc;
 	const int old_ipl = ci->ci_cpl;
@@ -343,10 +394,17 @@ armgic_irq_handler(void *tf)
 		}
 	}
 
+	KASSERTMSG(old_ipl != IPL_HIGH, "old_ipl %d pmr %#x hppir %#x",
+	    old_ipl, gicc_read(sc, GICC_PMR), gicc_read(sc, GICC_HPPIR));
+
+	ARMGICHIST_LOG("old_ipl %ju pmr %jx hppir %ju", old_ipl,
+	    gicc_read(sc, GICC_PMR), gicc_read(sc, GICC_HPPIR), 0);
+
 	for (;;) {
 		uint32_t iar = gicc_read(sc, GICC_IAR);
 		uint32_t irq = __SHIFTOUT(iar, GICC_IAR_IRQ);
 
+		ARMGICHIST_LOG("iar %#jx (irq %jd)", iar, irq, 0, 0);
 		if (irq == GICC_IAR_IRQ_SPURIOUS ||
 		    irq == GICC_IAR_IRQ_SSPURIOUS) {
 			iar = gicc_read(sc, GICC_IAR);
@@ -380,13 +438,21 @@ armgic_irq_handler(void *tf)
 
 		/* Surely we can KASSERT(ipl < ci->ci_cpl); */
 		const int ipl = is->is_ipl;
+
+
+
+
 		if (__predict_false(ipl < ci->ci_cpl)) {
+			ARMGICHIST_LOG("WTF   ipl %jd vs ci_cpl %jd pmr %#jx", ipl,
+			    ci->ci_cpl, gicc_read(sc, GICC_PMR), 0);
 			pic_do_pending_ints(I32_bit, ipl, tf);
 			KASSERT(ci->ci_cpl == ipl);
 		} else if (ci->ci_cpl != ipl) {
 			KASSERTMSG(ipl > ci->ci_cpl, "ipl %d cpl %d hw-ipl %#x",
 			    ipl, ci->ci_cpl,
 			    gicc_read(sc, GICC_PMR));
+			ARMGICHIST_LOG("raise ipl %jd vs ci_cpl %jd pmr %#jx", ipl,
+			    ci->ci_cpl, gicc_read(sc, GICC_PMR), 0);
 			gicc_write(sc, GICC_PMR, armgic_ipl_to_priority(ipl));
 			ci->ci_hwpl = ci->ci_cpl = ipl;
 		}
@@ -418,6 +484,8 @@ armgic_establish_irq(struct pic_softc *pic, struct intrsource *is)
 	const u_int irq = is->is_irq & 31;
 	const u_int byte_shift = 8 * (irq & 3);
 	const u_int twopair_shift = 2 * (irq & 15);
+
+	KERNHIST_FUNC(__func__); ARMGICHIST_CALLED();
 
 	KASSERTMSG(sc->sc_gic_valid_lines[group] & __BIT(irq),
 	    "irq %u: not valid (group[%zu]=0x%08x [0x%08x])",
@@ -460,6 +528,8 @@ armgic_establish_irq(struct pic_softc *pic, struct intrsource *is)
 		}
 		if (new_cfg != cfg) {
 			gicd_write(sc, cfg_reg, new_cfg);
+			ARMGICHIST_LOG("irq %ju: cfg changed from %#jx "
+			    "to %#jx", is->is_irq, cfg, new_cfg, 0);
 		}
 #ifdef MULTIPROCESSOR
 	} else {
@@ -564,6 +634,7 @@ armgic_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 void
 armgic_ipi_send(struct pic_softc *pic, const kcpuset_t *kcp, u_long ipi)
 {
+	KERNHIST_FUNC(__func__); ARMGICHIST_CALLED();
 	struct armgic_softc * const sc = PICTOSOFTC(pic);
 
 #if 0
@@ -589,6 +660,7 @@ armgic_ipi_send(struct pic_softc *pic, const kcpuset_t *kcp, u_long ipi)
 	}
 
 	gicd_write(sc, GICD_SGIR, sgir);
+	ARMGICHIST_LOG("... done (%#jx)", sgir, 0, 0, 0);
 }
 #endif
 
@@ -608,6 +680,14 @@ armgic_attach(device_t parent, device_t self, void *aux)
 {
 	struct armgic_softc * const sc = &armgic_softc;
 	struct mpcore_attach_args * const mpcaa = aux;
+
+#ifdef KERNHIST
+	static ONCE_DECL(armgic_once);
+
+	RUN_ONCE(&armgic_once, armgichist_init);
+#endif
+
+	KERNHIST_FUNC(__func__); ARMGICHIST_CALLED();
 
 	sc->sc_dev = self;
 	device_set_private(self, sc);
@@ -682,7 +762,7 @@ armgic_attach(device_t parent, device_t self, void *aux)
 	 */
 	struct cpu_info * const ci = curcpu();
 	KASSERTMSG(ci->ci_cpl == IPL_HIGH, "ipl %d not IPL_HIGH", ci->ci_cpl);
-	armgic_set_priority(&sc->sc_pic, ci->ci_cpl);	// set PMR
+	armgic_set_priority(&sc->sc_pic, ci->ci_cpl, armgic_attach);	// set PMR
 	gicd_write(sc, GICD_CTRL, GICD_CTRL_Enable);	// enable Distributer
 	gicc_write(sc, GICC_CTRL, GICC_CTRL_V1_Enable);	// enable CPU interrupts
 	ENABLE_INTERRUPT();				// allow interrupt exceptions
