@@ -116,9 +116,6 @@
 #define UHCI_FRAMELIST_COUNT	1024
 #define UHCI_FRAMELIST_ALIGN	4096
 
-#define UHCI_TD_ALIGN		16
-#define UHCI_QH_ALIGN		16
-
 typedef uint32_t uhci_physaddr_t;
 #define UHCI_PTR_T		__BIT(0)
 #define UHCI_PTR_TD		0x00000000
@@ -188,6 +185,10 @@ typedef struct {
     (__SHIFTOUT((s), UHCI_TD_MAXLEN_MASK) + 1)
 	volatile uint32_t td_buffer;
 } uhci_td_t;
+#define UHCI_TD_ALIGN		16
+#define UHCI_TD_ALLOC_ALIGN	MAX(UHCI_TD_ALIGN, CACHE_LINE_SIZE)
+#define UHCI_TD_SIZE		(roundup(sizeof(uhci_td_t), UHCI_TD_ALLOC_ALIGN))
+#define UHCI_TD_CHUNK		(PAGE_SIZE / UHCI_TD_SIZE)
 
 #define UHCI_TD_ERROR \
     (UHCI_TD_BITSTUFF|UHCI_TD_CRCTO|UHCI_TD_BABBLE|UHCI_TD_DBUFFER|UHCI_TD_STALLED)
@@ -206,5 +207,9 @@ typedef struct {
 	volatile uhci_physaddr_t qh_hlink;
 	volatile uhci_physaddr_t qh_elink;
 } uhci_qh_t;
+#define UHCI_QH_ALIGN		16
+#define UHCI_QH_ALLOC_ALIGN	MAX(UHCI_QH_ALIGN, CACHE_LINE_SIZE)
+#define UHCI_QH_SIZE		(roundup(sizeof(uhci_qh_t), UHCI_TD_ALLOC_ALIGN))
+#define UHCI_QH_CHUNK		(PAGE_SIZE / UHCI_QH_SIZE)
 
 #endif /* _DEV_USB_UHCIREG_H_ */
