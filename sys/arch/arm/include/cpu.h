@@ -229,7 +229,16 @@ struct cpu_info {
 
 	lwp_t *		ci_lastlwp;	/* last lwp */
 
+	/* event counters */
+	struct evcnt	ci_intr_preempt;
+	struct evcnt	ci_intr_spurious;
+	struct evcnt	ci_intr_noraisehwpl;
+	struct evcnt	ci_intr_raisehwpl;
+	struct evcnt	ci_intr_raisehwpl_high;
+	struct evcnt	ci_intr_exceptiondelivered;
+
 	struct evcnt	ci_arm700bugcount;
+
 	int32_t		ci_mtx_count;
 	int		ci_mtx_oldspl;
 	register_t	ci_undefsave[3];
