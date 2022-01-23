@@ -372,9 +372,7 @@ armgic_irq_handler(void *tf)
 	const int old_ipl = ci->ci_cpl;
 	const int old_mtx_count = ci->ci_mtx_count;
 	const int old_l_blcnt = ci->ci_curlwp->l_blcnt;
-#ifdef DEBUG
 	size_t n = 0;
-#endif
 
 	ci->ci_data.cpu_nintr++;
 
@@ -383,6 +381,7 @@ armgic_irq_handler(void *tf)
 	 * interrupt that got us here can have its handler run or not.
 	 */
 	if (ci->ci_hwpl <= old_ipl) {
+		ci->ci_intr_raisehwpl.ev_count++;
 		ci->ci_hwpl = old_ipl;
 		gicc_write(sc, GICC_PMR, armgic_ipl_to_priority(old_ipl));
 		/*
@@ -390,8 +389,11 @@ armgic_irq_handler(void *tf)
 		 * early.
 		 */
 		if (old_ipl == IPL_HIGH) {
+			ci->ci_intr_raisehwpl_high.ev_count++;
 			return;
 		}
+	} else {
+		ci->ci_intr_noraisehwpl.ev_count++;
 	}
 
 	KASSERTMSG(old_ipl != IPL_HIGH, "old_ipl %d pmr %#x hppir %#x",
@@ -409,9 +411,14 @@ armgic_irq_handler(void *tf)
 		    irq == GICC_IAR_IRQ_SSPURIOUS) {
 			iar = gicc_read(sc, GICC_IAR);
 			irq = __SHIFTOUT(iar, GICC_IAR_IRQ);
-			if (irq == GICC_IAR_IRQ_SPURIOUS)
+			if (irq == GICC_IAR_IRQ_SPURIOUS) {
+				if (n == 0)
+					ci->ci_intr_spurious.ev_count++;
 				break;
+			}
 			if (irq == GICC_IAR_IRQ_SSPURIOUS) {
+				if (n == 0)
+					ci->ci_intr_spurious.ev_count++;
 				break;
 			}
 		}
@@ -456,15 +463,20 @@ armgic_irq_handler(void *tf)
 			gicc_write(sc, GICC_PMR, armgic_ipl_to_priority(ipl));
 			ci->ci_hwpl = ci->ci_cpl = ipl;
 		}
+		const int64_t nintr = ci->ci_data.cpu_nintr;
+		ci->ci_intr_exceptiondelivered.ev_count++;
+
 		ENABLE_INTERRUPT();
 		pic_dispatch(is, tf);
 		DISABLE_INTERRUPT();
+
+		if (nintr != ci->ci_data.cpu_nintr)
+			ci->ci_intr_preempt.ev_count++;
+
 		gicc_write(sc, GICC_EOIR, iar);
-#ifdef DEBUG
 		n++;
 		KDASSERTMSG(n < 5, "%s: processed too many (%zu)",
 		    ci->ci_data.cpu_name, n);
-#endif
 	}
 
 	/*
@@ -611,6 +623,20 @@ void
 armgic_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 {
 	struct armgic_softc * const sc = PICTOSOFTC(pic);
+
+	evcnt_attach_dynamic(&ci->ci_intr_exceptiondelivered, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr exception delivered");
+	evcnt_attach_dynamic(&ci->ci_intr_preempt, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr preempt");
+	evcnt_attach_dynamic(&ci->ci_intr_spurious, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr spurious");
+	evcnt_attach_dynamic(&ci->ci_intr_noraisehwpl, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr no hwpl raise");
+	evcnt_attach_dynamic(&ci->ci_intr_raisehwpl, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr raise hwpl");
+	evcnt_attach_dynamic(&ci->ci_intr_raisehwpl_high, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr raise hwpl high");
+
 	sc->sc_target[cpu_index(ci)] = gicd_find_targets(sc);
 	atomic_or_32(&sc->sc_mptargets, sc->sc_target[cpu_index(ci)]);
 	KASSERTMSG(ci->ci_cpl == IPL_HIGH, "ipl %d not IPL_HIGH", ci->ci_cpl);
