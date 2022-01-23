@@ -448,8 +448,18 @@ gicv3_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 	struct gicv3_softc * const sc = PICTOSOFTC(pic);
 	uint32_t icc_sre, icc_ctlr, gicr_waker;
 
+	evcnt_attach_dynamic(&ci->ci_intr_exceptiondelivered, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr exception delivered");
 	evcnt_attach_dynamic(&ci->ci_intr_preempt, EVCNT_TYPE_MISC, NULL,
 	    ci->ci_cpuname, "intr preempt");
+	evcnt_attach_dynamic(&ci->ci_intr_spurious, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr spurious");
+	evcnt_attach_dynamic(&ci->ci_intr_noraisehwpl, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr no hwpl raise");
+	evcnt_attach_dynamic(&ci->ci_intr_raisehwpl, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr raise hwpl");
+	evcnt_attach_dynamic(&ci->ci_intr_raisehwpl_high, EVCNT_TYPE_MISC, NULL,
+	    ci->ci_cpuname, "intr raise hwpl high");
 
 	ci->ci_gic_redist = gicv3_find_redist(sc);
 	ci->ci_gic_sgir = gicv3_sgir(sc);
@@ -781,18 +791,31 @@ gicv3_irq_handler(void *frame)
 
 	struct cpu_info * const ci = curcpu();
 	struct gicv3_softc * const sc = gicv3_softc;
-	struct pic_softc *pic;
 	const int oldipl = ci->ci_cpl;
 	const int oldhwpl = IPL_TO_HWPL(oldipl);
 
+	size_t n = 0;
 	ci->ci_data.cpu_nintr++;
 
+	/*
+	 * Raise ci_hwpl (and PMR) to ci_cpl and IAR will tell us if the
+	 * interrupt that got us here can have its handler run or not.
+	 */
 	if (ci->ci_hwpl != oldhwpl) {
+		ci->ci_intr_raisehwpl.ev_count++;
+
 		ci->ci_hwpl = oldhwpl;
 		icc_pmr_write(IPL_TO_PMR(sc, oldhwpl));
+		/*
+		 * we'll get no interrupts when PMR is IPL_HIGH, so bail
+		 * early.
+		 */
 		if (oldhwpl == IPL_HIGH) {
+			ci->ci_intr_raisehwpl_high.ev_count++;
 			return;
 		}
+	} else {
+		ci->ci_intr_noraisehwpl.ev_count++;
 	}
 
 	KASSERTMSG(oldipl != IPL_HIGH, "old_ipl %d pmr %" PRIx64,
@@ -806,10 +829,14 @@ gicv3_irq_handler(void *frame)
 		dsb(sy);
 		const uint32_t irq = __SHIFTOUT(iar, ICC_IAR_INTID);
 		ARMGICHIST_LOG("irq %u", irq, 0, 0, 0);
-		if (irq == ICC_IAR_INTID_SPURIOUS)
-			break;
+		if (irq == ICC_IAR_INTID_SPURIOUS) {
+			if (n == 0)
+				ci->ci_intr_spurious.ev_count++;
+		    break;
+		}
 
-		pic = irq >= GIC_LPI_BASE ? &sc->sc_lpi : &sc->sc_pic;
+		struct pic_softc *pic = irq >= GIC_LPI_BASE ?
+		    &sc->sc_lpi : &sc->sc_pic;
 		if (irq - pic->pic_irqbase >= pic->pic_maxsources)
 			continue;
 
@@ -820,8 +847,11 @@ gicv3_irq_handler(void *frame)
 
 		const int ipl = is->is_ipl;
 		ARMGICHIST_LOG("irq %u ipl %u ci_cpl %u", irq, ipl, ci->ci_cpl, 0);
+
+		/* Surely we can KASSERT(ipl < ci->ci_cpl); */
 		if (__predict_false(ipl < ci->ci_cpl)) {
 			pic_do_pending_ints(I32_bit, ipl, frame);
+			KASSERT(ci->ci_cpl == ipl);
 		} else if (ci->ci_cpl != ipl) {
 			KASSERT(ipl >= IPL_VM);
 			icc_pmr_write(IPL_TO_PMR(sc, ipl));
@@ -834,6 +864,7 @@ gicv3_irq_handler(void *frame)
 		}
 
 		const int64_t nintr = ci->ci_data.cpu_nintr;
+		ci->ci_intr_exceptiondelivered.ev_count++;
 
 		ENABLE_INTERRUPT();
 		pic_dispatch(is, frame);
@@ -846,6 +877,7 @@ gicv3_irq_handler(void *frame)
 			icc_eoi1r_write(iar);
 			isb();
 		}
+		n++;
 	}
 
 	pic_do_pending_ints(I32_bit, oldipl, frame);

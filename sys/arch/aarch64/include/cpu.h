@@ -164,6 +164,11 @@ struct cpu_info {
 	struct evcnt ci_uct_trap;
 	struct evcnt ci_intr_preempt;
 	struct evcnt ci_rndrrs_fail;
+	struct evcnt ci_intr_spurious;
+	struct evcnt ci_intr_noraisehwpl;
+	struct evcnt ci_intr_raisehwpl;
+	struct evcnt ci_intr_raisehwpl_high;
+	struct evcnt ci_intr_exceptiondelivered;
 
 	/* FDT or similar supplied "cpu capacity" */
 	uint32_t ci_capacity_dmips_mhz;
