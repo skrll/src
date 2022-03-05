@@ -88,6 +88,34 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.36 2023/04/07 08:55:29 skrll Exp
 #define	SPCR_BAUD_57600				6
 #define	SPCR_BAUD_115200			7
 
+#define ACPI_CORE_VBASE         KERNEL_IO_VBASE
+#define ACPI_CORE_PBASE         0x08000000
+#define ACPI_CORE_SIZE          0x08000000
+
+#define ACPI_UART_BASE		0x09000000
+
+#define ACPI_CORE_PTOV(p)       (((p) - ACPI_CORE_PBASE) + ACPI_CORE_VBASE)
+
+
+void acpi_platform_early_putchar(char);
+
+void __noasan
+acpi_platform_early_putchar(char c)
+{
+	volatile uint32_t *uartaddr = cpu_earlydevice_va_p() ?
+		(volatile uint32_t *)ACPI_CORE_PTOV(ACPI_UART_BASE) :
+		(volatile uint32_t *)ACPI_UART_BASE;
+
+	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFF) != 0)
+		continue;
+
+	uartaddr[PL01XCOM_DR / 4] = htole32(c);
+	dsb(sy);
+
+	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFE) == 0)
+		continue;
+}
+
 static const struct acpi_spcr_baud_rate {
 	uint8_t		id;
 	int		baud_rate;
@@ -132,6 +160,9 @@ static const struct pmap_devmap *
 acpi_platform_devmap(void)
 {
 	static const struct pmap_devmap devmap[] = {
+		DEVMAP_ENTRY(ACPI_CORE_VBASE,
+			     ACPI_CORE_PBASE,
+			     ACPI_CORE_SIZE),
 		DEVMAP_ENTRY_END
 	};
 

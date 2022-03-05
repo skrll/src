@@ -31,7 +31,7 @@ pseudo-device 	openfirm	# /dev/openfirm
 #options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
 #options 	LOCKDEBUG
-#options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
+options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	INCLUDE_CONFIG_FILE
 #options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	UVMHIST_PRINT,KERNHIST_DELAY=0
@@ -54,6 +54,8 @@ options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
 
 # The QEMU virt machine
 #options 	EARLYCONS=plcom, CONSADDR=0x09000000
+#options 	EARLYCONS=virt, CONSADDR=0x09000000
+options 	EARLYCONS=acpi, CONSADDR=0x09000000
 
 # Hardware management of the Access flag and dirty state (HAFDBS).
 options 	ARMV81_HAFDBS
