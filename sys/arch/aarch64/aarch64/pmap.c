@@ -342,6 +342,8 @@ pmap_kenter_range(vaddr_t va, paddr_t pa, vsize_t size,
 	pt_entry_t attr;
 	vsize_t resid = round_page(size);
 
+	//XXXNH Should be VM_PROT_READ|VM_PROT_WRITE
+	//XXXNH as long as the DEV / PROT_EXECUTE combo exists
 	attr = _pmap_pte_adjust_prot(0, prot, VM_PROT_ALL, false);
 	attr = _pmap_pte_adjust_cacheflags(attr, flags);
 	pmapboot_enter_range(va, pa, resid, attr, printf);
