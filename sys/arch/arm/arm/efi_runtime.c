@@ -103,6 +103,19 @@ arm_efirt_init(paddr_t efi_system_table)
 	memcpy(&efi_rtcopy, rt, sizeof(efi_rtcopy));
 	RT = &efi_rtcopy;
 
+#define DPRINTF(v)	aprint_normal("EFI: rt_%s %p\n", #v, RT->rt_##v);
+
+	DPRINTF(gettime);
+	DPRINTF(settime);
+	DPRINTF(getwaketime);
+	DPRINTF(setwaketime);
+	DPRINTF(setvirtual);
+	DPRINTF(cvtptr);
+	DPRINTF(getvar);
+	DPRINTF(scanvar);
+	DPRINTF(setvar);
+	DPRINTF(gethicnt);
+
 	pmap_deactivate_efirt();
 
 #if NEFI > 0
