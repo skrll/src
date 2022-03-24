@@ -445,8 +445,15 @@ consinit(void)
 }
 
 void
+fdt_print(const void *addr, bool full,
+    void (*pr)(const char *, ...) __printflike(1, 2));
+
+void
 cpu_startup_hook(void)
 {
+
+	fdt_print(fdtbus_get_data(), true, printf);
+
 #ifdef EFI_RUNTIME
 	fdt_map_efi_runtime("netbsd,uefi-runtime-code", ARM_EFIRT_MEM_CODE);
 	fdt_map_efi_runtime("netbsd,uefi-runtime-data", ARM_EFIRT_MEM_DATA);
