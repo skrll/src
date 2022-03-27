@@ -153,6 +153,7 @@ HAVE_ACPI=	no
 #
 # Does the platform support UEFI?
 #
+# XXXNH
 .if ${MACHINE} == "i386" || \
     ${MACHINE} == "amd64" || \
     ${MACHINE} == "ia64" || \
@@ -1320,6 +1321,14 @@ MKDTB.earmv7hfeb=		yes
 MKDTB.riscv32=			yes
 MKDTB.riscv64=			yes
 
+# Only build efi tools on armv7, and aarch64.
+MKEFI.aarch64=			yes
+MKEFI.aarch64eb=		yes
+#MKEFI.earmv7=			yes
+#MKEFI.earmv7hf=			yes
+#MKEFI.earmv7eb=			yes
+#MKEFI.earmv7hfeb=		yes
+
 # During transition from xorg-server 1.10 to 1.20
 .if \
     ${MACHINE} == "alpha"	|| \
@@ -1389,6 +1398,7 @@ _MKVARS.no= \
 	MKDEPINCLUDES \
 	MKDTB \
 	MKDTRACE \
+	MKEFI \
 	MKFIRMWARE \
 	MKGROFFHTMLDOC \
 	MKHOSTOBJ \

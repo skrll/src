@@ -24,14 +24,18 @@
 #
 # $FreeBSD$
 
-.include <src.opts.mk>
+EFIBOOT=${NETBSDSRCDIR}/sys/stand/efiboot
+EDK2INC=${NETBSDSRCDIR}/sys/contrib/edk2/Include
 
-EFIBOOT=${SRCTOP}/stand/efi
-EDK2INC=${SRCTOP}/sys/contrib/edk2/Include
+.PATH:	${EFIBOOT}
 
-.PATH:	${EFIBOOT}/libefi
+USE_SHLIBDIR=	yes
 
-PACKAGE=	efi-tools
+
+.include "bsd.own.mk"
+
+
+#PACKAGE=	efi-tools
 LIB=		efivar
 SRCS=		efivar.c efichar.c efivar-dp-format.c \
 		efivar-dp-parse.c \
@@ -44,6 +48,15 @@ MAN=		efivar.3
 CFLAGS+=	-I${EFIBOOT}/include
 CFLAGS+=	-I${.CURDIR} -I${EDK2INC}
 CFLAGS+=	-fno-strict-aliasing
+
+COPTS+=		-Wno-cast-align
+COPTS+=		-Wno-unused-parameter
+
+COPTS+=		${${ACTIVE_CC} == "clang":? Wno-unused-but-set-variable :}
+
+#.if ${COMPILER_TYPE} == "clang" && ${COMPILER_VERSION} >= 130000
+#CWARNFLAGS+=	-Wno-unused-but-set-variable
+#.endif
 
 MLINKS+=efivar.3 efi_variables_supported.3 \
 	efivar.3 efi_del_variable.3 \
@@ -63,10 +76,5 @@ MLINKS+=efivar.3 efi_variables_supported.3 \
 WARNS?=		9
 
 .include <bsd.lib.mk>
+.include <bsd.klinks.mk>
 
-CWARNFLAGS+=	-Wno-cast-align
-CWARNFLAGS+=	-Wno-unused-parameter
-
-.if ${COMPILER_TYPE} == "clang" && ${COMPILER_VERSION} >= 130000
-CWARNFLAGS+=	-Wno-unused-but-set-variable
-.endif

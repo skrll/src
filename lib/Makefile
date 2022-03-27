@@ -53,6 +53,12 @@ SUBDIR+=	librumpclient
 SUBDIR+=	libskey
 .endif
 
+#XXXNH this can't be a good place.
+.if (${MKEFI} != "no")
+SUBDIR+=	libefivar
+.endif
+
+
 .if ${HAVE_NVMM:Uno} == "yes" && !defined(MLIBDIR)
 SUBDIR+=	libnvmm
 .endif

@@ -50,7 +50,7 @@ SUBDIR+= mdsetimage
 SUBDIR+=faithd ifmcstat ip6addrctl ndp rip6query rtsold
 .endif
 .if (${USE_INET6} != "no")
-SUBDIR+=mld6query route6d rtadvd traceroute6 
+SUBDIR+=mld6query route6d rtadvd traceroute6
 .endif
 
 SUBDIR+= plainrsa-gen racoon racoonctl
@@ -65,6 +65,11 @@ SUBDIR+=npf
 # PF
 .if (${MKPF} != "no")
 SUBDIR+=pf
+.endif
+
+# EFI tools
+.if ($(MKEFI) != "no")
+SUBDIR+=efibootmgr
 .endif
 
 .include <bsd.subdir.mk>
