@@ -73,6 +73,7 @@ apple_pmgr_enable(device_t dev, const uint32_t *data, bool enable)
 	const uint32_t pstate = enable ? PMGR_PS_ACTIVE : PMGR_PS_PWRGATE;
 	const int phandle = fdtbus_get_phandle_from_native(be32dec(data));
 
+//printf("%s: powering parent %d\n", __func__, phandle);
 	fdtbus_powerdomain_enable(phandle);
 
 	bus_size_t off;
@@ -83,11 +84,17 @@ apple_pmgr_enable(device_t dev, const uint32_t *data, bool enable)
 	}
 
 	uint32_t val = PMGR_READ(sc, off);
+//	uint32_t old = val;
 
 	val &= ~PMGR_PS_TARGET_MASK;
 	val |= __SHIFTIN(pstate, PMGR_PS_TARGET_MASK);
 	PMGR_WRITE(sc, off, val);
 
+#if 0
+printf("%s: sc %p %s changing %" PRIx32 " to %" PRIx32 " at %"
+    PRIxBUSSIZE "\n", __func__, sc, enable ? "enable" : "disable", old,
+    val, off);
+#endif
 	for (int timo = 0; timo < 100; timo++) {
 		val = PMGR_READ(sc, off);
 		if (__SHIFTOUT(val, PMGR_PS_ACTUAL_MASK) == pstate)
@@ -122,6 +129,7 @@ apple_pmgr_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
+//printf("%s: sc %p attaching busaddr %"PRIxBUSADDR"\n", __func__, sc, pmgr_addr);
 	sc->sc_dev = self;
 	sc->sc_bst = faa->faa_bst;
 
