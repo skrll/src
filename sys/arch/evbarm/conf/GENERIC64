@@ -40,7 +40,7 @@ options 	DEBUG
 options 	LOCKDEBUG
 options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 #options 	UVMHIST		# kernhist for uvm/pmap subsystems
-#options 	UVMHIST_PRINT,KERNHIST_DELAY=0
+options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
 #options 	PMAP_DEBUG
 
