@@ -76,8 +76,15 @@ __KERNEL_RCSID(0, "$NetBSD: apple_dart.c,v 1.5 2023/02/24 11:19:15 jmcneill Exp 
 #define	DART_NUM_STREAMS	16
 #define	DART_ALL_STREAMS	((1 << DART_NUM_STREAMS) - 1)
 
+#if 1
 #define	DART_APERTURE_START	0x00100000
 #define	DART_APERTURE_SIZE	0x3fe00000
+#else
+/* skip first page to help catch bugs */
+#define	DART_APERTURE_START	DART_PAGE_SIZE
+/* skip last page because it's for MSI */
+#define	DART_APERTURE_SIZE	__MASK(32) - DART_PAGE_SIZE
+#endif
 #define	DART_PAGE_SIZE		16384
 #define	DART_PAGE_MASK		(DART_PAGE_SIZE - 1)
 
@@ -571,6 +578,29 @@ apple_dart_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
+#if 0
+// XXXNH 4, 5, and 6 are all translating...
+	/*
+	 * Resetting the DART used for the display controller will
+	 * kill the framebuffer.  This should be the only DART that
+	 * has translation enabled and a valid translation table
+	 * installed.  Skip this DART for now.
+	 */
+	for (sid = 0; sid < DART_NUM_STREAMS; sid++) {
+		uint32_t tcr = DART_READ(sc, DART_TCR(sid));
+		if ((tcr & DART_TCR_TRANSLATE_ENABLE) == 0)
+			continue;
+
+		for (idx = 0; idx < 4; idx++) {
+			uint32_t ttbr = DART_READ(sc, DART_TTBR(sid, idx));
+			if (ttbr & DART_TTBR_VALID) {
+				printf(": translating\n");
+				return;
+			}
+		}
+	}
+#endif
+
 	/*
 	 * Use bypass mode if supported.  This avoids an issue with
 	 * the USB3 controllers which need mappings entered into two
@@ -642,6 +672,9 @@ apple_dart_attach(device_t parent, device_t self, void *aux)
 	sc->sc_l2 = kmem_zalloc(nl2 * sizeof(*sc->sc_l2), KM_SLEEP);
 	sc->sc_nl2 = nl2;
 
+	aprint_normal_dev(sc->sc_dev, ": Apple DART L1 Tables @ %p/%"
+	    PRIxBUSADDR"\n", DART_DMA_KVA(sc->sc_l1), DART_DMA_DVA(sc->sc_l1));
+
 	l1 = DART_DMA_KVA(sc->sc_l1);
 	for (idx = 0; idx < nl2; idx++) {
 		sc->sc_l2[idx] = apple_dart_dma_alloc(sc->sc_dmat,
@@ -651,6 +684,10 @@ apple_dart_attach(device_t parent, device_t self, void *aux)
 			    "couldn't allocate L2 tables\n");
 			return;
 		}
+		aprint_normal_dev(sc->sc_dev, ": Apple DART L2 Tables @ %p/%"
+		    PRIxBUSADDR"\n", DART_DMA_KVA(sc->sc_l2[idx]),
+		    DART_DMA_DVA(sc->sc_l2[idx]));
+
 
 		l1[idx] = DART_DMA_DVA(sc->sc_l2[idx]) | DART_L1_TABLE;
 #ifdef APPLE_DART_DEBUG
@@ -662,6 +699,8 @@ apple_dart_attach(device_t parent, device_t self, void *aux)
 	for (sid = 0; sid < sc->sc_nsid; sid++) {
 		pa = DART_DMA_DVA(sc->sc_l1);
 		for (idx = 0; idx < nl1; idx++) {
+			KASSERTMSG(__SHIFTOUT(pa, __BITS(63, 32 + DART_TTBR_SHIFT - 1 )) == 0,
+			    "TTBR pa is not addressable %" PRIxPADDR, pa);
 			KASSERTMSG(__SHIFTOUT(pa, __BITS(DART_TTBR_SHIFT - 1, 0)) == 0,
 			    "TTBR pa is not correctly aligned %" PRIxPADDR, pa);
 
@@ -690,6 +729,8 @@ apple_dart_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
+
+	aprint_normal_dev(self, "dma tag %p\n", &sc->sc_bus_dmat);
 
 	/* Setup bus DMA tag */
 	sc->sc_bus_dmat = *sc->sc_dmat;
