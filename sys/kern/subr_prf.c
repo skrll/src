@@ -40,6 +40,7 @@
 __KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.205 2025/10/17 08:08:56 skrll Exp $");
 
 #ifdef _KERNEL_OPT
+#include "opt_aprint.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_dump.h"
@@ -90,6 +91,9 @@ static bool kprintf_inited = false;
  */
 #define KLOG_PRI	0x80000000
 
+#ifndef APRINT_DELAY
+#define APRINT_DELAY	0
+#endif
 
 /*
  * local prototypes
@@ -1617,6 +1621,11 @@ done:
 	if ((oflags == TOBUFONLY) && (vp != NULL))
 		*(char **)vp = sbuf;
 	(*v_flush)();
+
+#ifdef _KERNEL
+	if (APRINT_DELAY != 0)
+		DELAY(APRINT_DELAY);
+#endif
 
 #ifdef RND_PRINTF
 	if (__predict_true(kprintf_inited))
