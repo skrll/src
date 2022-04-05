@@ -347,6 +347,9 @@ initarm(void *arg)
 	parse_mi_bootargs(mi_bootargs);
 #endif
 
+	boothowto |= AB_VERBOSE;
+	boothowto |= AB_DEBUG;
+
 	fdt_memory_get(&memory_start, &memory_end);
 
 	fdt_memory_foreach(fdt_print_memory, NULL);
@@ -452,14 +455,27 @@ consinit(void)
 	initialized = true;
 }
 
+
+void
+fdt_print(const void *addr, bool full,
+    void (*pr)(const char *, ...) __printflike(1, 2));
+
+
+
 void
 cpu_startup_hook(void)
 {
+	fdt_print(fdtbus_get_data(), true, printf);
+
+
 #ifdef EFI_RUNTIME
 	fdt_map_efi_runtime("netbsd,uefi-runtime-code", ARM_EFIRT_MEM_CODE);
 	fdt_map_efi_runtime("netbsd,uefi-runtime-data", ARM_EFIRT_MEM_DATA);
 	fdt_map_efi_runtime("netbsd,uefi-runtime-mmio", ARM_EFIRT_MEM_MMIO);
 #endif
+
+//extern int kernhist_print_enabled;
+//	kernhist_print_enabled = 0;
 
 	fdtbus_intr_init();
 
