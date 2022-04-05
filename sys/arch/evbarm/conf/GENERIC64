@@ -39,8 +39,9 @@ options 	DIAGNOSTIC	# internal consistency checks
 options 	DEBUG
 options 	LOCKDEBUG
 options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
-#options 	UVMHIST		# kernhist for uvm/pmap subsystems
-options 	UVMHIST_PRINT,KERNHIST_DELAY=0
+options 	CNMAGIC="\"+++++\""
+options 	UVMHIST		# kernhist for uvm/pmap subsystems
+#options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
 #options 	PMAP_DEBUG
 
@@ -65,10 +66,10 @@ options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
 #options 	EARLYCONS=plcom, CONSADDR=0x100002600000
 
 # Hardware management of the Access flag and dirty state (HAFDBS).
-options 	ARMV81_HAFDBS
+#options 	ARMV81_HAFDBS
 
 # Privileged Access Never (PAN).
-options 	ARMV81_PAN
+#options 	ARMV81_PAN
 
 # Pointer Authentication (PAC).
 #makeoptions 	ARMV83_PAC=1
@@ -95,7 +96,7 @@ options 	ARMV81_PAN
 # Warning, these may compile large string tables into the kernel!
 #options 	ACPIVERBOSE	# verbose ACPI configuration messages
 #options 	MIIVERBOSE	# verbose PHY autoconfig messages
-#options 	PCIVERBOSE	# verbose PCI device autoconfig messages
+options 	PCIVERBOSE	# verbose PCI device autoconfig messages
 #options 	PCMCIAVERBOSE	# verbose PCMCIA configuration messages
 #options 	SCSIVERBOSE	# human readable SCSI error messages
 #options 	USBVERBOSE	# verbose USB device autoconfig messages
@@ -559,6 +560,7 @@ tegrasoctherm*	at fdt?			# NVIDIA Tegra SOC_THERM
 rktsadc*	at fdt?			# RockChip TSASC
 
 # USB
+options 	XHCI_DEBUG
 imx8mqusbphy*	at fdt? pass 9		# IMX USB PHY
 mesonusbctrl*	at fdt?			# Amlogic Meson USB-Glue (dwc2 and dwc3)
 mesonusbphy*	at fdt? pass 9		# Amlogic Meson USB2 PHY

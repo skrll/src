@@ -233,6 +233,8 @@ include "crypto/blake2/files.blake2s"
 # Various cryptography functions
 include "crypto/sodium/files.sodium"
 
+defparam opt_aprint.h			APRINT_DELAY
+
 #
 # Kernel history/tracing. Old UVMHIST depends upon this.
 #
