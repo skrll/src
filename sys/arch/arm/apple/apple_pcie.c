@@ -745,6 +745,12 @@ apple_pcie_msi_init(struct apple_pcie_softc *sc)
 		sc->sc_msi_start = be32toh(data[2]);
 		sc->sc_nmsi = be32toh(data[4]);
 		break;
+	case 24:
+		// XXXNH guess for AIC2 support
+		/* 6 cells: xref, specifier (4 cells), and count */
+		sc->sc_msi_start = be32toh(data[2]);
+		sc->sc_nmsi = be32toh(data[5]);
+		break;
 	default:
 		aprint_error_dev(sc->sc_pcihost.sc_dev,
 		    "WARNING: bad msi-ranges property, MSI not enabled!\n");
