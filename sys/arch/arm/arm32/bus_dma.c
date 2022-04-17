@@ -145,6 +145,8 @@ EVCNT_ATTACH_STATIC(bus_dma_sync_coherent_postwrite);
 #define	STAT_INCR(x)	__nothing
 #endif
 
+//#define DEBUG_DMA
+
 int	_bus_dmamap_load_buffer(bus_dma_tag_t, bus_dmamap_t, void *,
 	    bus_size_t, struct vmspace *, int);
 
@@ -1086,6 +1088,10 @@ _bus_dmamap_sync_uio(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 	}
 }
 
+
+int nhdebug = 0;
+int nhcount = 20000;
+
 /*
  * Common function for DMA map synchronization.  May be called
  * by bus-specific DMA map synchronization functions.
@@ -1103,6 +1109,14 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 	printf("dmamap_sync: t=%p map=%p offset=%#" PRIxBUSADDR
 	    " len=%#" PRIxBUSSIZE " ops=%#x\n", t, map, offset, len, ops);
 #endif	/* DEBUG_DMA */
+
+	if (nhdebug != 0) {
+		if (nhcount == 0) {
+		    cpu_Debugger();
+		} else {
+		    nhcount--;
+		}
+	}
 
 	/*
 	 * Mixing of PRE and POST operations is not allowed.
