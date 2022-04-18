@@ -133,12 +133,13 @@ apple_mbox_intr(void *arg)
 
 	if (sc->sc_rx_callback) {
 		sc->sc_rx_callback(sc->sc_rx_arg);
-	} else {
+	}
+//	else {
 		printf("%s: 0x%016" PRIx64 "0x%016" PRIx64 "\n",
 		    device_xname(sc->sc_dev),
 		    MBOX_READ8(sc, MBOX_I2A_RECV0),
 		    MBOX_READ8(sc, MBOX_I2A_RECV1));
-	}
+//	}
 
 	return 1;
 }
@@ -149,6 +150,7 @@ apple_mbox_acquire(device_t dev, const void *cells, size_t len,
 {
 	struct apple_mbox_softc * const sc = device_private(dev);
 
+//printf("%s: cb %p arg %p\n", __func__, cb, arg);
 	if (sc->sc_rx_callback == NULL && sc->sc_rx_arg == NULL) {
 		sc->sc_rx_callback = cb;
 		sc->sc_rx_arg = arg;
@@ -163,6 +165,7 @@ static void
 apple_mbox_release(device_t dev, void *priv)
 {
 	struct apple_mbox_softc * const sc = device_private(dev);
+//printf("%s\n", __func__);
 
 	KASSERT(sc == priv);
 
@@ -177,12 +180,14 @@ apple_mbox_send(device_t dev, void *priv, const void *data, size_t len)
 	const struct apple_mbox_msg *msg = data;
 
 	KASSERT(sc == priv);
+//printf("%s: len %zu vs %zu\n", __func__, len, sizeof(struct apple_mbox_msg));
 
 	if (len != sizeof(struct apple_mbox_msg))
 		return EINVAL;
 
 
 	uint32_t ctrl = MBOX_READ4(sc, MBOX_A2I_CTRL);
+//printf("%s: CTRL %#x - %s\n", __func__, ctrl, (ctrl & MBOX_A2I_CTRL_FULL) ? "full" : "empty");
 	if (ctrl & MBOX_A2I_CTRL_FULL)
 		return EBUSY;
 
@@ -199,10 +204,12 @@ apple_mbox_recv(device_t dev, void *priv, void *data, size_t len)
 	struct apple_mbox_msg *msg = data;
 
 	KASSERT(sc == priv);
+//printf("%s: len %zu vs %zu\n", __func__, len, sizeof(struct apple_mbox_msg));
 	if (len != sizeof(struct apple_mbox_msg))
 		return EINVAL;
 
 	uint32_t ctrl = MBOX_READ4(sc, MBOX_I2A_CTRL);
+//printf("%s: CTRL %#x - %s\n", __func__, ctrl, (ctrl & MBOX_I2A_CTRL_EMPTY) ? "full" : "empty");
 	if (ctrl & MBOX_I2A_CTRL_EMPTY)
 		return EAGAIN;
 
