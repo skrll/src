@@ -382,8 +382,13 @@ fdt_update_stdout_path(void *fdt, const char *boot_args)
 	if (chosen_off == -1)
 		return;
 
+#if 0
+        // Doesn't work on Asahi uboot... probably because of power'
+        stdout_path = "serial0";
+#else
 	if (optstr_get_string(boot_args, "stdout-path", &stdout_path) == false)
 		return;
+#endif
 
 	const char *ep = strchr(stdout_path, ' ');
 	size_t stdout_path_len = ep ? (ep - stdout_path) : strlen(stdout_path);
