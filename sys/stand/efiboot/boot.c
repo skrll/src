@@ -573,10 +573,10 @@ boot(void)
 		twiddle_toggle = 1;
 		parsebootconf(pathbuf);
 	}
-
+#if 0
 	if (bootcfg_info.clear)
 		uefi_call_wrapper(ST->ConOut->ClearScreen, 1, ST->ConOut);
-
+#endif
 	print_bootcfg_banner(bootprog_name, bootprog_rev);
 
 	/* Display menu if configured */
