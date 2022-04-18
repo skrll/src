@@ -418,7 +418,7 @@ efi_block_find_partitions_gpt(struct efi_block_dev *bdev)
 	void *buf;
 	UINTN sz;
 
-	status = efi_block_read(bdev, (EFI_LBA)GPT_HDR_BLKNO * bdev->bio->Media->BlockSize, &hdr,
+	status = efi_block_read(bdev, GPT_HDR_BLKNO * bdev->bio->Media->BlockSize, &hdr,
 	    sizeof(hdr));
 	if (EFI_ERROR(status)) {
 		return EIO;
@@ -691,14 +691,19 @@ efi_block_strategy(void *devdata, int rw, daddr_t dblk, size_t size, void *buf, 
 	efi_set_watchdog(EFI_BLOCK_TIMEOUT, EFI_BLOCK_TIMEOUT_CODE);
 
 	switch (bpart->type) {
-	case EFI_BLOCK_PART_DISKLABEL:
-		off = ((EFI_LBA)dblk + bpart->disklabel.part.p_offset) * bdev->bio->Media->BlockSize;
+	case EFI_BLOCK_PART_DISKLABEL: {
+		const UINT64 bsize = bpart->bdev->bio->Media->BlockSize;
+		off = (dblk + bpart->disklabel.part.p_offset) * bsize;
 		break;
-	case EFI_BLOCK_PART_GPT:
-		off = ((EFI_LBA)dblk + le64toh(bpart->gpt.ent.ent_lba_start)) * bdev->bio->Media->BlockSize;
+	    }
+	case EFI_BLOCK_PART_GPT: {
+		const UINT64 bsize = bpart->bdev->bio->Media->BlockSize;
+		const EFI_LBA lba = le64toh(bpart->gpt.ent.ent_lba_start);
+		off = dblk * DEV_BSIZE + lba * bsize;
 		break;
+	   }
 	case EFI_BLOCK_PART_CD9660:
-		off = (EFI_LBA)dblk * ISO_DEFAULT_BLOCK_SIZE;
+		off = dblk * ISO_DEFAULT_BLOCK_SIZE;
 		break;
 	default:
 		return EINVAL;
