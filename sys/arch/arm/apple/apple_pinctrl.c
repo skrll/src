@@ -200,6 +200,8 @@ apple_gpio_pin_ctl(void *cookie, int pin, int flags)
 	reg &= ~GPIO_PIN_FUNC_MASK;
 	reg &= ~GPIO_PIN_MODE_MASK;
 
+printf("%s: pin %d flags %#x reg %#x ", __func__, pin, flags, reg);
+
 	if (flags & (GPIO_PIN_OUTPUT | GPIO_PIN_INPUT)) {
 		if (flags & GPIO_PIN_INPUT) {
 			/* for safety INPUT will override output */
@@ -209,6 +211,7 @@ apple_gpio_pin_ctl(void *cookie, int pin, int flags)
 		}
 	}
 	PINCTRL_WRITE(sc, GPIO_PIN(pin), reg);
+printf("reg %#x\n",reg);
 }
 
 #if 0
@@ -406,11 +409,14 @@ apple_pinctrl_gpio_acquire(device_t dev, const void *data, size_t len, int flags
 	struct apple_gpio_pin *pin;
 	const u_int *gpio = data;
 
+printf("%s: gpio %p len %zu\n", __func__, gpio, len);
 	if (len != 12)
 		return NULL;
 
 	const u_int pinno = be32toh(gpio[1]);
 	const bool actlo = be32toh(gpio[2]) & 1;	// Why hasn't NetBSD got GPIO_ACTIVE_LOW here?
+
+printf("%s: pinno %d actlo %d npins %u\n", __func__, pinno, actlo, sc->sc_npins);;
 
 	if (pinno >= sc->sc_npins)
 		return NULL;
@@ -447,8 +453,11 @@ apple_pinctrl_gpio_read(device_t dev, void *priv, bool raw)
 
 	uint32_t reg = PINCTRL_READ(sc, GPIO_PIN(pin->pin_no));
 	int val = __SHIFTOUT(reg, GPIO_PIN_DATA);
+printf("%s: pinno %d actlo %d val %d ", __func__, pin->pin_no, pin->pin_actlo, val);
 	if (!raw && pin->pin_actlo)
 		val = !val;
+
+printf("ret %d\n", val);
 
 	return val;
 }
@@ -461,8 +470,11 @@ apple_pinctrl_gpio_write(device_t dev, void *priv, int val, bool raw)
 
 	KASSERT(pin->pin_no < sc->sc_npins);
 
+printf("%s: pinno %d actlo %d val %d ", __func__, pin->pin_no, pin->pin_actlo, val);
+
 	if (!raw && pin->pin_actlo)
 		val = !val;
+printf("set %d\n", val);
 
 	if (val)
 		PINCTRL_SET(sc, GPIO_PIN(pin->pin_no), GPIO_PIN_DATA);
@@ -476,6 +488,7 @@ apple_pinctrl_set_config(device_t dev, const void *data, size_t len)
 {
 	struct apple_pinctrl_softc * const sc = device_private(dev);
 
+printf("%s: data %p len %zu native %d\n", __func__, data, len, be32dec(data));
 	if (len != 4)
 		return -1;
 
@@ -488,11 +501,13 @@ apple_pinctrl_set_config(device_t dev, const void *data, size_t len)
 
 	const u_int npins = pins_len / sizeof(uint32_t);
 
+printf("%s: phandle %d pins %u\n", __func__, phandle, npins);
 	for (u_int i = 0; i < npins; i++) {
 		uint32_t pinmux = be32dec(&pins[i]);
 		u_int pinno = APPLE_PIN(pinmux);
 		u_int func = APPLE_FUNC(pinmux);
 
+printf("%s: phandle %d pin[%u] func %#x number %d\n", __func__, phandle, i, func, pinno);
 		uint32_t reg = PINCTRL_READ(sc, GPIO_PIN(pinno));
 		reg &= ~GPIO_PIN_FUNC_MASK;
 		reg |= __SHIFTIN(func, GPIO_PIN_FUNC_MASK);
