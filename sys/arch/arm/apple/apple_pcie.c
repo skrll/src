@@ -157,6 +157,7 @@ apple_pcie_setup_port(struct apple_pcie_softc *sc, int phandle)
 
 	// XXXNH check __BITS
 	u_int portno = __SHIFTOUT(be32toh(reg[0]), __BITS(13, 11));
+printf("%s: portno %d\n", __func__, portno);
 	snprintf(regname, sizeof(regname), "port%u", portno);
 
 	if (fdtbus_get_reg_byname(parent, regname, &addr, &size) != 0) {
@@ -185,6 +186,7 @@ apple_pcie_setup_port(struct apple_pcie_softc *sc, int phandle)
 
 	pwren_gpiolen = OF_getproplen(phandle, "pwren-gpios");
 	reset_gpiolen = OF_getproplen(phandle, "reset-gpios");
+printf("%s: reset-gpios %d pwren-gpios %d\n", __func__, reset_gpiolen, pwren_gpiolen);
 	if (reset_gpiolen <= 0)
 		return;
 
@@ -288,6 +290,11 @@ apple_pcie_setup_port(struct apple_pcie_softc *sc, int phandle)
 			break;
 		delay(100);
 	}
+	if (stat & PCIE_PORT_LINK_STAT_UP) {
+		printf("%s: link is up\n", __func__);
+	} else {
+		printf("%s: link is not up\n", __func__);
+	}
 
 #undef PREAD4
 #undef PWRITE4
@@ -349,6 +356,8 @@ apple_pcie_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	sc->sc_type = PCIHOST_ECAM;
+
+	//pinctrl_byname(sc->sc_node, "default");
 
 	if (apple_pcie_msi_init(asc) == 0) {
 		sc->sc_pci_flags |= PCI_FLAGS_MSI_OKAY;
@@ -428,7 +437,7 @@ apple_pcie_msi_alloc_msi(struct apple_pcie_softc *sc, int count,
 			memcpy(new_pa, pa, sizeof(*new_pa));
 			sc->sc_msi_pa[msi + n] = new_pa;
 		}
-
+printf("%s: msi %d count %d\n", __func__, msi, count);
 		return msi;
 	}
 
@@ -602,6 +611,7 @@ apple_pcie_msi_msi_alloc(struct arm_pci_msi *msi, int *count,
 	if (msi_base == -1)
 		return NULL;
 
+// XXXNH SHIFTIN n or MSINO? ok, maybe that's ok, but why shiftin 'n' (it's in msino already)?
 	vectors = kmem_alloc(sizeof(*vectors) * *count, KM_SLEEP);
 	for (n = 0; n < *count; n++) {
 		const int msino = msi_base + n;
@@ -724,6 +734,7 @@ apple_pcie_msi_init(struct apple_pcie_softc *sc)
 
 	const u_int *data = fdtbus_get_prop(phandle, "msi-ranges", &len);
 	switch (len) {
+	// XXXNH remove this as it was for backward compat?
 	case 8:
 		/* two cells: start and count */
 		sc->sc_msi_start = be32toh(data[0]);
@@ -744,6 +755,8 @@ apple_pcie_msi_init(struct apple_pcie_softc *sc)
 	sc->sc_msi_ih = kmem_zalloc(sizeof(*sc->sc_msi_ih) * sc->sc_nmsi,
 	    KM_SLEEP);
 
+
+	// XXXNH no msi-doorbell any more
 	if (of_getprop_uint64(phandle, "msi-doorbell", &sc->sc_msi_addr)) {
 		sc->sc_msi_addr = 0xffff000ULL;
 	}
