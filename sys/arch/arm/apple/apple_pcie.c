@@ -155,7 +155,8 @@ apple_pcie_setup_port(struct apple_pcie_softc *sc, int phandle)
 		aprint_error(": couldn't get port number\n");
 	}
 
-	u_int portno = __SHIFTOUT(be32toh(reg[0]), __BITS(13,11));
+	// XXXNH check __BITS
+	u_int portno = __SHIFTOUT(be32toh(reg[0]), __BITS(13, 11));
 	snprintf(regname, sizeof(regname), "port%u", portno);
 
 	if (fdtbus_get_reg_byname(parent, regname, &addr, &size) != 0) {
