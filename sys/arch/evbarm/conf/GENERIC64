@@ -37,7 +37,7 @@ options 	MSGBUFSIZE=262144
 
 options 	DIAGNOSTIC	# internal consistency checks
 options 	DEBUG
-options 	LOCKDEBUG
+#options 	LOCKDEBUG
 options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	CNMAGIC="\"+++++\""
 options 	UVMHIST		# kernhist for uvm/pmap subsystems
