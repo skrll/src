@@ -465,6 +465,7 @@ nvme*		at pci? dev ? function ?
 ld*		at nvme? nsid ?
 
 # SPI controllers
+applespi* 	at fdt?			# Apple SPI
 bcmspi* 	at fdt?			# Broadcom BCM283x SPI
 rkspi*		at fdt?			# Rockchip SPI
 sun6ispi*	at fdt?			# Allwinner SPI
