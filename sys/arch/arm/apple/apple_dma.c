@@ -1,4 +1,35 @@
+/*	$NetBSD$	*/
 /*	$OpenBSD: apldma.c,v 1.1 2022/02/02 22:55:57 kettenis Exp $	*/
+
+/*-
+ * Copyright (c) 2022 The NetBSD Foundation, Inc.
+ * All rights reserved.
+ *
+ * This code is derived from software contributed to The NetBSD Foundation
+ * by Nick Hudson
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
 /*
  * Copyright (c) 2022 Mark Kettenis <kettenis@openbsd.org>
  *
@@ -16,7 +47,7 @@
  */
 
 #include <sys/param.h>
-#include <sys/systm.h>
+
 #include <sys/device.h>
 #include <sys/malloc.h>
 
@@ -43,39 +74,39 @@
 #define DMA_TX_INTR			0x0034
 
 #define DMA_TX_CTL(chan)		(0x8000 + (chan) * 0x400)
-#define  DMA_TX_CTL_RESET_RINGS		(1 << 0)
+#define  DMA_TX_CTL_RESET_RINGS		__BIT(0)
 #define DMA_TX_INTRSTAT(chan)		(0x8014 + (chan) * 0x400)
-#define  DMA_TX_INTRSTAT_DESC_DONE	(1 << 0)
-#define  DMA_TX_INTRSTAT_ERR		(1 << 6)
+#define  DMA_TX_INTRSTAT_DESC_DONE	__BIT(0)
+#define  DMA_TX_INTRSTAT_ERR		__BIT(6)
 #define DMA_TX_INTRMASK(chan)		(0x8024 + (chan) * 0x400)
-#define  DMA_TX_INTRMASK_DESC_DONE	(1 << 0)
-#define  DMA_TX_INTRMASK_ERR		(1 << 6)
+#define  DMA_TX_INTRMASK_DESC_DONE	__BIT(0)
+#define  DMA_TX_INTRMASK_ERR		__BIT(6)
 #define DMA_TX_BUS_WIDTH(chan)		(0x8040 + (chan) * 0x400)
 #define  DMA_TX_BUS_WIDTH_8BIT		(0 << 0)
-#define  DMA_TX_BUS_WIDTH_16BIT		(1 << 0)
+#define  DMA_TX_BUS_WIDTH_16BIT		__BIT(0)
 #define  DMA_TX_BUS_WIDTH_32BIT		(2 << 0)
-#define  DMA_TX_BUS_WIDTH_FRAME_2_WORDS	(1 << 4)
+#define  DMA_TX_BUS_WIDTH_FRAME_2_WORDS	__BIT(4)
 #define  DMA_TX_BUS_WIDTH_FRAME_4_WORDS	(2 << 4)
 #define DMA_TX_BURST_SIZE(chan)		(0x8054 + (chan) * 0x400)
 #define DMA_TX_RESIDUE(chan)		(0x8064 + (chan) * 0x400)
 #define DMA_TX_DESC_RING(chan)		(0x8070 + (chan) * 0x400)
-#define  DMA_TX_DESC_RING_FULL		(1 << 9)
+#define  DMA_TX_DESC_RING_FULL		__BIT(9)
 #define DMA_TX_REPORT_RING(chan)	(0x8074 + (chan) * 0x400)
-#define  DMA_TX_REPORT_RING_EMPTY	(1 << 8)
+#define  DMA_TX_REPORT_RING_EMPTY	__BIT(8)
 #define DMA_TX_DESC_WRITE(chan)		(0x10000 + (chan) * 4)
 #define DMA_TX_REPORT_READ(chan)	(0x10100 + (chan) * 4)
 
-#define DMA_DESC_NOTIFY			(1 << 16)
+#define DMA_DESC_NOTIFY			__BIT(16)
 #define DMA_NUM_DESCRIPTORS		4
 #define DMA_NUM_CHANNELS		4
 
 #define HREAD4(sc, reg)							\
-	(bus_space_read_4((sc)->sc_iot, (sc)->sc_ioh, (reg)))
+	(bus_space_read_4((sc)->sc_bst, (sc)->sc_bsh, (reg)))
 #define HWRITE4(sc, reg, val)						\
-	bus_space_write_4((sc)->sc_iot, (sc)->sc_ioh, (reg), (val))
+	bus_space_write_4((sc)->sc_bst, (sc)->sc_bsh, (reg), (val))
 
-struct apldma_channel {
-	struct apldma_softc	*ac_sc;
+struct apple_dma_channel {
+	struct apple_dma_softc	*ac_sc;
 	unsigned int		ac_chan;
 
 	bus_dmamap_t		ac_map;
@@ -92,66 +123,70 @@ struct apldma_channel {
 	void			*ac_intrarg;
 };
 
-struct apldma_softc {
-	struct device		sc_dev;
-	bus_space_tag_t		sc_iot;
-	bus_space_handle_t	sc_ioh;
+struct apple_dma_softc {
+	device_t		sc_dev;
+	bus_space_tag_t		sc_bst;
+	bus_space_handle_t	sc_bsh;
 
 	bus_dma_tag_t		sc_dmat;
 	int			sc_node;
 	void			*sc_ih;
 
-	struct apldma_channel	*sc_ac[DMA_NUM_CHANNELS];
+	struct apple_dma_channel	*sc_ac[DMA_NUM_CHANNELS];
 };
 
-struct apldma_softc *apldma_sc;
+struct apple_dma_softc *apple_dma_sc;
 
-int	apldma_match(struct device *, void *, void *);
-void	apldma_attach(struct device *, struct device *, void *);
+int	apple_dma_intr(void *);
 
-const struct cfattach apldma_ca = {
-	sizeof (struct apldma_softc), apldma_match, apldma_attach
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "apple,admac" },
+	DEVICE_COMPAT_EOL
 };
 
-struct cfdriver apldma_cd = {
-	NULL, "apldma", DV_DULL
-};
-
-int	apldma_intr(void *);
-
-int
-apldma_match(struct device *parent, void *match, void *aux)
+static int
+apple_dma_match(device_t parent, cfdata_t cf, void *aux)
 {
-	struct fdt_attach_args *faa = aux;
+	struct fdt_attach_args * const faa = aux;
 
-	return OF_is_compatible(faa->fa_node, "apple,admac");
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
-void
-apldma_attach(struct device *parent, struct device *self, void *aux)
+static void
+apple_dma_attach(device_t parent, device_t self, void *aux)
 {
-	struct apldma_softc *sc = (struct apldma_softc *)self;
-	struct fdt_attach_args *faa = aux;
+	struct apple_wdog_softc * const sc = device_private(self);
+	struct fdt_attach_args * const faa = aux;
+	const int phandle = faa->faa_phandle;
+	bus_addr_t addr;
+	bus_size_t size;
 
-	if (faa->fa_nreg < 1) {
-		printf(": no registers\n");
+	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
+		aprint_error(": couldn't get registers\n");
 		return;
 	}
 
-	sc->sc_iot = faa->fa_iot;
-	if (bus_space_map(sc->sc_iot, faa->fa_reg[0].addr,
-	    faa->fa_reg[0].size, 0, &sc->sc_ioh)) {
-		printf(": can't map registers\n");
+	sc->sc_dev = self;
+	sc->sc_bst = faa->faa_bst;
+	sc->sc_dmat = faa->faa_dmat;
+	if (bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh) != 0) {
+		aprint_error(": couldn't map registers\n");
 		return;
 	}
 
-	sc->sc_dmat = faa->fa_dmat;
+	aprint_naive("\n");
+	aprint_normal(": Apple DMA\n");		// XXXNH
+
+
+
+
+//	sc->sc_dmat = faa->fa_dmat;
 	sc->sc_node = faa->fa_node;
 
-	power_domain_enable(sc->sc_node);
+//	power_domain_enable(sc->sc_node);
 
 	sc->sc_ih = fdt_intr_establish(faa->fa_node, IPL_AUDIO | IPL_MPSAFE,
-	    apldma_intr, sc, sc->sc_dev.dv_xname);
+	    apple_dma_intr, sc, sc->sc_dev.dv_xname);
 	if (sc->sc_ih == NULL) {
 		printf(": can't establish interrupt\n");
 		goto unmap;
@@ -159,17 +194,17 @@ apldma_attach(struct device *parent, struct device *self, void *aux)
 
 	printf("\n");
 
-	apldma_sc = sc;
+	apple_dma_sc = sc;
 	return;
 
 unmap:
-	bus_space_unmap(sc->sc_iot, sc->sc_ioh, faa->fa_reg[0].size);
+	bus_space_unmap(sc->sc_bst, sc->sc_bsh, size);
 }
 
 void
-apldma_fill_descriptors(struct apldma_channel *ac)
+apple_dma_fill_descriptors(struct apple_dma_channel *ac)
 {
-	struct apldma_softc *sc = ac->ac_sc;
+	struct apple_dma_softc *sc = ac->ac_sc;
 	unsigned int i;
 
 	for (i = 0; i < DMA_NUM_DESCRIPTORS; i++) {
@@ -192,9 +227,9 @@ apldma_fill_descriptors(struct apldma_channel *ac)
 }
 
 int
-apldma_intr(void *arg)
+apple_dma_intr(void *arg)
 {
-	struct apldma_softc *sc = arg;
+	struct apple_dma_softc *sc = arg;
 	uint32_t intr, intrstat;
 	unsigned int chan, i;
 
@@ -208,7 +243,7 @@ apldma_intr(void *arg)
 
 		if ((intrstat & DMA_TX_INTRSTAT_DESC_DONE) == 0)
 			continue;
-		
+
 		for (i = 0; i < DMA_NUM_DESCRIPTORS; i++) {
 			uint32_t status;
 
@@ -224,21 +259,21 @@ apldma_intr(void *arg)
 		}
 
 		mtx_enter(&audio_lock);
-		struct apldma_channel *ac = sc->sc_ac[chan];
+		struct apple_dma_channel *ac = sc->sc_ac[chan];
 		ac->ac_intr(ac->ac_intrarg);
 		mtx_leave(&audio_lock);
 
-		apldma_fill_descriptors(sc->sc_ac[chan]);
+		apple_dma_fill_descriptors(sc->sc_ac[chan]);
 	}
 
 	return 1;
 }
 
-struct apldma_channel *
-apldma_alloc_channel(unsigned int chan)
+struct apple_dma_channel *
+apple_dma_alloc_channel(unsigned int chan)
 {
-	struct apldma_softc *sc = apldma_sc;
-	struct apldma_channel *ac;
+	struct apple_dma_softc *sc = apple_dma_sc;
+	struct apple_dma_channel *ac;
 
 	if (chan >= DMA_NUM_CHANNELS)
 		return NULL;
@@ -251,18 +286,18 @@ apldma_alloc_channel(unsigned int chan)
 }
 
 void
-apldma_free_channel(struct apldma_channel *ac)
+apple_dma_free_channel(struct apple_dma_channel *ac)
 {
-	struct apldma_softc *sc = ac->ac_sc;
+	struct apple_dma_softc *sc = ac->ac_sc;
 
 	sc->sc_ac[ac->ac_chan] = NULL;
 	free(ac, M_DEVBUF, sizeof(*ac));
 }
 
 void *
-apldma_allocm(struct apldma_channel *ac, size_t size, int flags)
+apple_dma_allocm(struct apple_dma_channel *ac, size_t size, int flags)
 {
-	struct apldma_softc *sc = ac->ac_sc;
+	struct apple_dma_softc *sc = ac->ac_sc;
 	int nsegs;
 	int err;
 
@@ -287,7 +322,7 @@ apldma_allocm(struct apldma_channel *ac, size_t size, int flags)
 
 	ac->ac_size = size;
 	return ac->ac_kva;
-	
+
 destroy:
 	bus_dmamap_destroy(sc->sc_dmat, ac->ac_map);
 unmap:
@@ -298,9 +333,9 @@ free:
 }
 
 void
-apldma_freem(struct apldma_channel *ac)
+apple_dma_freem(struct apple_dma_channel *ac)
 {
-	struct apldma_softc *sc = ac->ac_sc;
+	struct apple_dma_softc *sc = ac->ac_sc;
 
 	bus_dmamap_unload(sc->sc_dmat, ac->ac_map);
 	bus_dmamap_destroy(sc->sc_dmat, ac->ac_map);
@@ -309,11 +344,11 @@ apldma_freem(struct apldma_channel *ac)
 }
 
 int
-apldma_trigger_output(struct apldma_channel *ac, void *start, void *end,
+apple_dma_trigger_output(struct apple_dma_channel *ac, void *start, void *end,
     int blksize, void (*intr)(void *), void *intrarg,
     struct audio_params *params)
 {
-	struct apldma_softc *sc = ac->ac_sc;
+	struct apple_dma_softc *sc = ac->ac_sc;
 
 	KASSERT(start == ac->ac_kva);
 
@@ -348,7 +383,7 @@ apldma_trigger_output(struct apldma_channel *ac, void *start, void *end,
 	HWRITE4(sc, DMA_TX_INTRMASK(ac->ac_chan),
 	   DMA_TX_INTRMASK_DESC_DONE | DMA_TX_INTRMASK_ERR);
 
-	apldma_fill_descriptors(ac);
+	apple_dma_fill_descriptors(ac);
 
 	/* Start DMA transfer. */
 	HWRITE4(sc, DMA_TX_EN, 1 << ac->ac_chan);
@@ -357,9 +392,9 @@ apldma_trigger_output(struct apldma_channel *ac, void *start, void *end,
 }
 
 int
-apldma_halt_output(struct apldma_channel *ac)
+apple_dma_halt_output(struct apple_dma_channel *ac)
 {
-	struct apldma_softc *sc = ac->ac_sc;
+	struct apple_dma_softc *sc = ac->ac_sc;
 
 	/* Stop DMA transfer. */
 	HWRITE4(sc, DMA_TX_EN_CLR, 1 << ac->ac_chan);
@@ -369,3 +404,7 @@ apldma_halt_output(struct apldma_channel *ac)
 
 	return 0;
 }
+
+
+CFATTACH_DECL_NEW(apple_dma, sizeof(struct apple_dma_softc),
+    apple_dma_match, apple_dma_attach, NULL, NULL);
