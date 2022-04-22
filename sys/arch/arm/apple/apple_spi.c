@@ -1,4 +1,35 @@
+/*	$NetBSD$	*/
 /*	$OpenBSD: aplspi.c,v 1.4 2022/04/06 18:59:26 naddy Exp $	*/
+
+/*-
+ * Copyright (c) 2022 The NetBSD Foundation, Inc.
+ * All rights reserved.
+ *
+ * This code is derived from software contributed to The NetBSD Foundation
+ * by Nick Hudson
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
 /*
  * Copyright (c) 2021 Mark Kettenis <kettenis@openbsd.org>
  *
@@ -16,7 +47,12 @@
  */
 
 #include <sys/param.h>
-#include <sys/systm.h>
+
+#include <sys/bus.h>
+#include <sys/device.h>
+#include <sys/kernel.h>
+
+#if 0
 #include <sys/kernel.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
@@ -31,15 +67,26 @@
 #include <dev/ofw/ofw_gpio.h>
 #include <dev/ofw/ofw_pinctrl.h>
 #include <dev/ofw/fdt.h>
+#endif
 
-#define SPI_CLKCFG		0x00
-#define  SPI_CLKCFG_EN		0xd
+#include <dev/spi/spivar.h>
+
+#include <dev/fdt/fdtvar.h>
+
+#define SPL_CTRL		0x00
+#define  SPL_CTRL_RUN		__BIT(0)
+#define  SPL_CTRL_TX_RESET	__BIT(2)
+#define  SPL_CTRL_RX_RESET	__BIT(3)
+#define  SPL_CTRL_EN		(SPL_CTRL_RUN | SPL_CTRL_TX_RESET | SPL_CTRL_RX_RESET)
 #define SPI_CONFIG		0x04
-#define  SPI_CONFIG_EN		(1 << 18)
-#define  SPI_CONFIG_PIOEN	(1 << 5)
+#define  SPI_CONFIG_EN		__BIT(18)
+#define  SPI_CONFIG_PIOEN	__BIT(5)
 #define SPI_STATUS		0x08
+#define  SPI_STATUS_RXDONE	__BITS(0)
+#define  SPI_STATUS_RXTX	__BITS(1)
+#define  SPI_STATUS_TXDONE	__BITS(2)
 #define SPI_PIN			0x0c
-#define  SPI_PIN_CS		(1 << 1)
+#define  SPI_PIN_CS		__BIT(1)
 #define SPI_TXDATA		0x10
 #define SPI_RXDATA		0x20
 #define SPI_CLKDIV		0x30
@@ -49,149 +96,72 @@
 #define SPI_CLKIDLE		0x38
 #define SPI_TXCNT		0x4c
 #define SPI_AVAIL		0x10c
-#define  SPI_AVAIL_TX(avail)	((avail >> 8) & 0xff)
-#define  SPI_AVAIL_RX(avail)	((avail >> 24) & 0xff)
+#define  SPI_AVAIL_RX_MASK	__BITS(31, 24)
+#define  SPI_AVAIL_RX(avail)	__SHIFTOUT(avail, SPI_AVAIL_RX_MASK)
+#define  SPI_AVAIL_TX_MASK	__BITS(15, 8)
+#define  SPI_AVAIL_TX(avail)	__SHIFTOUT(avail, SPI_AVAIL_TX_MASK)
+#define SPI_IE_XFER		0x130
+#define SPI_IF_XFER		0x134
+#define  SPI_XFER_RXDONE	__BIT(0)
+#define  SPI_XFER_TXDONE	__BIT(1)
+#define SPI_IE_FIFO		0x138
+#define SPI_IF_FIFO		0x13c
+#define  SPI_FIFO_RXTHRESH	__BIT(4)
+#define  SPI_FIFO_TXTHRESH	__BIT(5)
+#define  SPI_FIFO_RXFULL	__BIT(8)
+#define  SPI_FIFO_TXEMPTY	__BIT(9)
+#define  SPI_FIFO_RXUNDERRUN	__BIT(16)
+#define  SPI_FIFO_TXOVERFLOW	__BIT(17)
 #define SPI_SHIFTCFG		0x150
-#define  SPI_SHIFTCFG_OVERRIDE_CS	(1 << 24)
+#define  SPI_SHIFTCFG_OVERRIDE_CS	__BIT(24)
 #define SPI_PINCFG		0x154
-#define  SPI_PINCFG_KEEP_CS	(1 << 1)
-#define  SPI_PINCFG_CS_IDLE_VAL	(1 << 9)
+#define  SPI_PINCFG_KEEP_CS	__BIT(1)
+#define  SPI_PINCFG_CS_IDLE_VAL	__BIT(9)
 
 #define SPI_FIFO_SIZE		16
 
-#define DEVNAME(sc)	((sc)->sc_dev.dv_xname)
-
-struct aplspi_softc {
-	struct device		sc_dev;
-	bus_space_tag_t		sc_iot;
-	bus_space_handle_t	sc_ioh;
+struct apple_spi_softc {
+	device_t		sc_dev;
+	bus_space_tag_t		sc_bst;
+	bus_space_handle_t	sc_bsh;
 	int			sc_node;
 
+	struct clk *		sc_clk;
 	uint32_t		sc_pfreq;
 
-	struct spi_controller	sc_tag;
-	struct mutex		sc_mtx;
+	void *			sc_ih;
 
-	int			sc_cs;
-	uint32_t		*sc_csgpio;
-	int			sc_csgpiolen;
-	u_int			sc_cs_delay;
+	struct spi_controller	sc_spi;
+	kmutex_t                sc_mutex;
+
+	SIMPLEQ_HEAD(,spi_transfer)
+				sc_q;
+
+	struct spi_transfer	*sc_transfer;
+	struct spi_chunk	*sc_wchunk;
+	struct spi_chunk	*sc_rchunk;
+	bool		sc_running;
 };
 
-int	 aplspi_match(struct device *, void *, void *);
-void	 aplspi_attach(struct device *, struct device *, void *);
+int	 apple_spi_acquire_bus(void *, int);
+void	 apple_spi_release_bus(void *, int);
 
-void	 aplspi_config(void *, struct spi_config *);
-uint32_t aplspi_clkdiv(struct aplspi_softc *, uint32_t);
-int	 aplspi_transfer(void *, char *, char *, int, int);
-int	 aplspi_acquire_bus(void *, int);
-void	 aplspi_release_bus(void *, int);
+void	 apple_spi_set_cs(struct apple_spi_softc *, int, int);
+int	 apple_spi_wait_state(struct apple_spi_softc *, uint32_t, uint32_t);
 
-void	 aplspi_set_cs(struct aplspi_softc *, int, int);
-int	 aplspi_wait_state(struct aplspi_softc *, uint32_t, uint32_t);
+void	 apple_spi_scan(struct apple_spi_softc *);
 
-void	 aplspi_scan(struct aplspi_softc *);
+#define SPI_READ(sc, reg)						\
+	bus_space_read_4((sc)->sc_bst, (sc)->sc_bsh, (reg))
+#define SPI_WRITE(sc, reg, val)						\
+	bus_space_write_4((sc)->sc_bst, (sc)->sc_bsh, (reg), (val))
+#define SPI_SET(sc, reg, bits)						\
+	SPI_WRITE((sc), (reg), SPI_READ((sc), (reg)) | (bits))
+#define SPI_CLR(sc, reg, bits)						\
+	SPI_WRITE((sc), (reg), SPI_READ((sc), (reg)) & ~(bits))
 
-#define HREAD4(sc, reg)							\
-	(bus_space_read_4((sc)->sc_iot, (sc)->sc_ioh, (reg)))
-#define HWRITE4(sc, reg, val)						\
-	bus_space_write_4((sc)->sc_iot, (sc)->sc_ioh, (reg), (val))
-#define HSET4(sc, reg, bits)						\
-	HWRITE4((sc), (reg), HREAD4((sc), (reg)) | (bits))
-#define HCLR4(sc, reg, bits)						\
-	HWRITE4((sc), (reg), HREAD4((sc), (reg)) & ~(bits))
-
-const struct cfattach aplspi_ca = {
-	sizeof(struct aplspi_softc), aplspi_match, aplspi_attach
-};
-
-struct cfdriver aplspi_cd = {
-	NULL, "aplspi", DV_DULL
-};
-
-int
-aplspi_match(struct device *parent, void *match, void *aux)
-{
-	struct fdt_attach_args *faa = aux;
-
-	return OF_is_compatible(faa->fa_node, "apple,spi");
-}
-
-void
-aplspi_attach(struct device *parent, struct device *self, void *aux)
-{
-	struct aplspi_softc *sc = (struct aplspi_softc *)self;
-	struct fdt_attach_args *faa = aux;
-
-	if (faa->fa_nreg < 1)
-		return;
-
-	sc->sc_iot = faa->fa_iot;
-	sc->sc_node = faa->fa_node;
-	if (bus_space_map(sc->sc_iot, faa->fa_reg[0].addr,
-	    faa->fa_reg[0].size, 0, &sc->sc_ioh)) {
-		printf(": can't map registers\n");
-		return;
-	}
-
-	sc->sc_csgpiolen = OF_getproplen(faa->fa_node, "cs-gpios");
-	if (sc->sc_csgpiolen > 0) {
-		sc->sc_csgpio = malloc(sc->sc_csgpiolen, M_DEVBUF, M_WAITOK);
-		OF_getpropintarray(faa->fa_node, "cs-gpios",
-		    sc->sc_csgpio, sc->sc_csgpiolen);
-		gpio_controller_config_pin(sc->sc_csgpio, GPIO_CONFIG_OUTPUT);
-		gpio_controller_set_pin(sc->sc_csgpio, 0);
-	}
-
-	printf("\n");
-
-	sc->sc_pfreq = clock_get_frequency(sc->sc_node, NULL);
-
-	pinctrl_byname(sc->sc_node, "default");
-
-	/* Configure CS# pin for manual control. */
-	HWRITE4(sc, SPI_PIN, SPI_PIN_CS);
-	HCLR4(sc, SPI_SHIFTCFG, SPI_SHIFTCFG_OVERRIDE_CS);
-	HCLR4(sc, SPI_PINCFG, SPI_PINCFG_CS_IDLE_VAL);
-	HSET4(sc, SPI_PINCFG, SPI_PINCFG_KEEP_CS);
-
-	sc->sc_tag.sc_cookie = sc;
-	sc->sc_tag.sc_config = aplspi_config;
-	sc->sc_tag.sc_transfer = aplspi_transfer;
-	sc->sc_tag.sc_acquire_bus = aplspi_acquire_bus;
-	sc->sc_tag.sc_release_bus = aplspi_release_bus;
-
-	mtx_init(&sc->sc_mtx, IPL_TTY);
-
-	aplspi_scan(sc);
-}
-
-void
-aplspi_config(void *cookie, struct spi_config *conf)
-{
-	struct aplspi_softc *sc = cookie;
-	int cs;
-
-	cs = conf->sc_cs;
-	if (cs > 4) {
-		printf("%s: invalid chip-select (%d)\n", DEVNAME(sc), cs);
-		return;
-	}
-	sc->sc_cs = cs;
-	sc->sc_cs_delay = conf->sc_cs_delay;
-
-	HWRITE4(sc, SPI_CLKCFG, 0);
-
-	HWRITE4(sc, SPI_CLKDIV, aplspi_clkdiv(sc, conf->sc_freq));
-	HWRITE4(sc, SPI_CLKIDLE, 0);
-
-	HWRITE4(sc, SPI_CONFIG, SPI_CONFIG_EN);
-	HWRITE4(sc, SPI_CLKCFG, SPI_CLKCFG_EN);
-	HREAD4(sc, SPI_CONFIG);
-}
-
-uint32_t
-aplspi_clkdiv(struct aplspi_softc *sc, uint32_t freq)
+static uint32_t
+apple_spi_clkdiv(struct apple_spi_softc *sc, uint32_t freq)
 {
 	uint32_t div = 0;
 
@@ -205,107 +175,309 @@ aplspi_clkdiv(struct aplspi_softc *sc, uint32_t freq)
 	return div << 1;
 }
 
-void
-aplspi_set_cs(struct aplspi_softc *sc, int cs, int on)
+static int
+apple_spi_configure(void *cookie, int slave, int mode, int speed)
 {
-	if (cs == 0) {
-		if (sc->sc_csgpio)
-			gpio_controller_set_pin(sc->sc_csgpio, on);
-		else
-			HWRITE4(sc, SPI_PIN, on ? 0 : SPI_PIN_CS);
+	struct apple_spi_softc * const sc = cookie;
+
+	if (slave >= sc->sc_spi.sct_nslaves)
+		return EINVAL;
+
+	if (speed <= 0)
+		return EINVAL;
+
+	SPI_WRITE(sc, SPL_CTRL, 0);
+
+	SPI_WRITE(sc, SPI_CLKDIV, apple_spi_clkdiv(sc, speed));
+	SPI_WRITE(sc, SPI_CLKIDLE, 0);
+
+	SPI_WRITE(sc, SPI_CONFIG, SPI_CONFIG_EN);
+	SPI_WRITE(sc, SPL_CTRL, SPL_CTRL_EN);
+	SPI_READ(sc, SPI_CONFIG);
+
+	return 0;
+}
+
+void
+apple_spi_set_cs(struct apple_spi_softc *sc, int cs, int on)
+{
+	KASSERT(cs == 0);
+	SPI_WRITE(sc, SPI_PIN, on ? 0 : SPI_PIN_CS);
+}
+
+
+static void
+apple_spi_send(struct apple_spi_softc * const sc)
+{
+	const uint32_t avail = SPI_READ(sc, SPI_AVAIL);
+	int count = SPI_FIFO_SIZE - SPI_AVAIL_TX(avail);
+	struct spi_chunk *chunk;
+
+	while ((chunk = sc->sc_wchunk) != NULL) {
+		while (chunk->chunk_wresid) {
+			if (count == 0)
+				return;
+
+			uint32_t data = chunk->chunk_wptr ?
+			    *chunk->chunk_wptr++ : '\0';
+			SPI_WRITE(sc, SPI_TXDATA, data);
+			chunk->chunk_wresid--;
+			count--;
+		}
+		sc->sc_wchunk = sc->sc_wchunk->chunk_next;
 	}
 }
 
-int
-aplspi_transfer(void *cookie, char *out, char *in, int len, int flags)
+static void
+apple_spi_recv(struct apple_spi_softc * const sc)
 {
-	struct aplspi_softc *sc = cookie;
+	const uint32_t avail = SPI_READ(sc, SPI_AVAIL);
+	int count = SPI_AVAIL_RX(avail);
+	struct spi_chunk *chunk;
+
+	while ((chunk = sc->sc_rchunk) != NULL) {
+		while (chunk->chunk_rresid) {
+			if (count == 0)
+				return;
+
+			uint32_t data = SPI_READ(sc, SPI_RXDATA);
+			if (chunk->chunk_rptr) {
+				*chunk->chunk_rptr++ = data & 0xff;
+			}
+			chunk->chunk_rresid--;
+			count--;
+		}
+		sc->sc_rchunk = sc->sc_rchunk->chunk_next;
+	}
+}
+
+
+static int
+apple_spi_intr_locked(struct apple_spi_softc * const sc)
+{
+
+	uint32_t xfer_status = SPI_READ(sc, SPI_IF_XFER);
+	uint32_t fifo_status = SPI_READ(sc, SPI_IF_FIFO);
+	const uint32_t xfer_done = SPI_XFER_RXDONE | SPI_XFER_TXDONE;
+
+	if (ISSET(xfer_status, xfer_done)) {
+		if (sc->sc_wchunk != NULL) {
+			apple_spi_send(sc);
+		} else {
+//			SPI_WRITE(sc, SPI_CS, sc->sc_CS);
+			apple_spi_recv(sc);
+			sc->sc_rchunk = sc->sc_wchunk = NULL;
+			struct spi_transfer *st = sc->sc_transfer;
+			sc->sc_transfer = NULL;
+			KASSERT(st != NULL);
+			spi_done(st, 0);
+			sc->sc_running = false;
+		}
+	// RX Fifo needs reading.
+	} else if (ISSET(fifo_status, SPI_FIFO_RXFULL)) {
+		apple_spi_recv(sc);
+		apple_spi_send(sc);
+	}
+
+	return ISSET(xfer_status, xfer_done);
+}
+
+
+static int
+apple_spi_intr(void *cookie)
+{
+	struct apple_spi_softc * const sc = cookie;
+
+	mutex_enter(&sc->sc_mutex);
+	int done = apple_spi_intr_locked(sc);
+	mutex_exit(&sc->sc_mutex);
+
+	return done;
+}
+
+
+static void
+apple_spi_start(struct apple_spi_softc * const sc)
+{
+	struct spi_transfer *st;
+//	uint32_t cs;
+
+	while ((st = spi_transq_first(&sc->sc_q)) != NULL) {
+
+		spi_transq_dequeue(&sc->sc_q);
+
+		KASSERT(sc->sc_transfer == NULL);
+		sc->sc_transfer = st;
+		sc->sc_rchunk = sc->sc_wchunk = st->st_chunks;
+
+		// XXXNH wchunk vs rchunk ?!?
+		SPI_WRITE(sc, SPI_TXCNT, sc->sc_wchunk->chunk_wresid);
+		SPI_WRITE(sc, SPI_RXCNT, sc->sc_rchunk->chunk_rresid);
+		SPI_WRITE(sc, SPI_CONFIG, SPI_CONFIG_EN | SPI_CONFIG_PIOEN);
+
+		if (!cold)
+			return;
+
+		for (;;) {
+			apple_spi_intr_locked(sc);
+
+			if (ISSET(st->st_flags, SPI_F_DONE))
+				break;
+		}
+	}
+
+	sc->sc_running = false;
+}
+
+#if 0
+
 	uint32_t avail, data, status;
 	int rsplen;
 	int count;
 
-	aplspi_set_cs(sc, sc->sc_cs, 1);
+	apple_spi_set_cs(sc, sc->sc_cs, 1);
 	delay(sc->sc_cs_delay);
 
-	HWRITE4(sc, SPI_TXCNT, len);
-	HWRITE4(sc, SPI_RXCNT, len);
-	HWRITE4(sc, SPI_CONFIG, SPI_CONFIG_EN | SPI_CONFIG_PIOEN);
+	SPI_WRITE(sc, SPI_TXCNT, len);
+	SPI_WRITE(sc, SPI_RXCNT, len);
+	SPI_WRITE(sc, SPI_CONFIG, SPI_CONFIG_EN | SPI_CONFIG_PIOEN);
 
 	rsplen = len;
+#if 0
 	while (len > 0 || rsplen > 0) {
-		avail = HREAD4(sc, SPI_AVAIL);
+		avail = SPI_READ(sc, SPI_AVAIL);
 		count = SPI_AVAIL_RX(avail);
 		while (rsplen > 0 && count > 0) {
-			data = HREAD4(sc, SPI_RXDATA);
+			data = SPI_READ(sc, SPI_RXDATA);
 			if (in)
 				*in++ = data;
 			rsplen--;
 
-			avail = HREAD4(sc, SPI_AVAIL);
+			avail = SPI_READ(sc, SPI_AVAIL);
 			count = SPI_AVAIL_RX(avail);
 		}
 
 		count = SPI_FIFO_SIZE - SPI_AVAIL_TX(avail);
 		while (len > 0 && count > 0) {
 			data = out ? *out++ : 0;
-			HWRITE4(sc, SPI_TXDATA, data);
+			SPI_WRITE(sc, SPI_TXDATA, data);
 			len--;
 			count--;
 		}
 	}
-
-	HWRITE4(sc, SPI_CONFIG, SPI_CONFIG_EN);
-	status = HREAD4(sc, SPI_STATUS);
-	HWRITE4(sc, SPI_STATUS, status);
+#endif
+	SPI_WRITE(sc, SPI_CONFIG, SPI_CONFIG_EN);
+	status = SPI_READ(sc, SPI_STATUS);
+	SPI_WRITE(sc, SPI_STATUS, status);
 
 	if (!ISSET(flags, SPI_KEEP_CS))
-		aplspi_set_cs(sc, sc->sc_cs, 0);
+		apple_spi_set_cs(sc, sc->sc_cs, 0);
 
 	return 0;
 }
+#endif
 
-int
-aplspi_acquire_bus(void *cookie, int flags)
+static int
+apple_spi_transfer(void *cookie, struct spi_transfer *st)
 {
-	struct aplspi_softc *sc = cookie;
+	struct apple_spi_softc * const sc = cookie;
 
-	mtx_enter(&sc->sc_mtx);
-	return 0;
-}
-
-void
-aplspi_release_bus(void *cookie, int flags)
-{
-	struct aplspi_softc *sc = cookie;
-
-	mtx_leave(&sc->sc_mtx);
-}
-
-void
-aplspi_scan(struct aplspi_softc *sc)
-{
-	struct spi_attach_args sa;
-	uint32_t reg[1];
-	char name[32];
-	int node;
-
-	for (node = OF_child(sc->sc_node); node; node = OF_peer(node)) {
-		memset(name, 0, sizeof(name));
-		memset(reg, 0, sizeof(reg));
-
-		if (OF_getprop(node, "compatible", name, sizeof(name)) == -1)
-			continue;
-		if (name[0] == '\0')
-			continue;
-
-		if (OF_getprop(node, "reg", &reg, sizeof(reg)) != sizeof(reg))
-			continue;
-
-		memset(&sa, 0, sizeof(sa));
-		sa.sa_tag = &sc->sc_tag;
-		sa.sa_name = name;
-		sa.sa_cookie = &node;
-
-		config_found(&sc->sc_dev, &sa, NULL);
+	mutex_enter(&sc->sc_mutex);
+	spi_transq_enqueue(&sc->sc_q, st);
+	if (sc->sc_running == false) {
+		apple_spi_start(sc);
 	}
+	mutex_exit(&sc->sc_mutex);
+
+	return 0;
 }
+
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "apple,spi" },
+	DEVICE_COMPAT_EOL
+};
+
+static int
+apple_spi_match(device_t parent, cfdata_t cf, void *aux)
+{
+	struct fdt_attach_args * const faa = aux;
+
+	return of_compatible_match(faa->faa_phandle, compat_data);
+}
+
+
+static void
+apple_spi_attach(device_t parent, device_t self, void *aux)
+{
+	struct apple_spi_softc * const sc = device_private(self);
+	struct fdt_attach_args * const faa = aux;
+	const int phandle = faa->faa_phandle;
+
+	bus_addr_t addr;
+	bus_size_t size;
+
+	sc->sc_dev = self;
+	sc->sc_bst = faa->faa_bst;
+
+	int error = fdtbus_get_reg(phandle, 0, &addr, &size);
+	if (error) {
+		aprint_error(": unable to get device registers\n");
+		return;
+	}
+
+	if (bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh)) {
+		aprint_error(": unable to map device\n");
+		return;
+	}
+
+	sc->sc_clk = fdtbus_clock_get_index(phandle, 0);
+	if (sc->sc_clk == NULL) {
+		aprint_error(": couldn't get clock\n");
+		return;
+	}
+
+	sc->sc_pfreq = clk_get_rate(sc->sc_clk);
+
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_VM, 0,
+	    apple_spi_intr, sc, device_xname(self));
+	if (sc->sc_ih == NULL) {
+		aprint_error(": unable to establish interrupt\n");
+		return;
+	}
+
+
+	aprint_naive("\n");
+	aprint_normal(": Apple SPI\n");
+
+//	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
+
+	/* Configure CS# pin for manual control. */
+	SPI_WRITE(sc, SPI_PIN, SPI_PIN_CS);
+	SPI_CLR(sc, SPI_SHIFTCFG, SPI_SHIFTCFG_OVERRIDE_CS);
+	SPI_CLR(sc, SPI_PINCFG, SPI_PINCFG_CS_IDLE_VAL);
+	SPI_SET(sc, SPI_PINCFG, SPI_PINCFG_KEEP_CS);
+
+	sc->sc_spi.sct_cookie = sc;
+	sc->sc_spi.sct_configure = apple_spi_configure;
+	sc->sc_spi.sct_transfer = apple_spi_transfer;
+	sc->sc_spi.sct_nslaves = 1;
+
+	spibus_attach(self, &sc->sc_spi);
+
+#if 0
+	sc->sc_tag.sc_cookie = sc;
+	sc->sc_tag.sc_config = apple_spi_config;
+	sc->sc_tag.sc_transfer = apple_spi_transfer;
+	sc->sc_tag.sc_acquire_bus = apple_spi_acquire_bus;
+	sc->sc_tag.sc_release_bus = apple_spi_release_bus;
+
+	mtx_init(&sc->sc_mtx, IPL_TTY);
+
+	apple_spi_scan(sc);
+
+#endif
+}
+
+CFATTACH_DECL_NEW(apple_spi, sizeof(struct apple_spi_softc),
+    apple_spi_match, apple_spi_attach, NULL, NULL);
