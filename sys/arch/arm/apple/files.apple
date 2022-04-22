@@ -49,6 +49,11 @@ file	arch/arm/apple/apple_pmgr.c		apple_pmgr
 attach	applesmc at fdt with apple_rtkitsmc: fdt_gpio
 file	arch/arm/apple/apple_smc.c		apple_rtkitsmc
 
+# SPI controller
+device	applespi: spibus
+attach	applespi at fdt with apple_spi
+file	arch/arm/apple/apple_spi.c		apple_spi
+
 # Watchdog timer
 device	applewdog: fdt_power, sysmon_wdog
 attach	applewdog at fdt with apple_wdog
