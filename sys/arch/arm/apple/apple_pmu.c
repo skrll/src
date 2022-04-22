@@ -1,4 +1,35 @@
+/*	$NetBSD$	*/
 /*	$OpenBSD: aplpmu.c,v 1.5 2022/04/06 18:59:26 naddy Exp $	*/
+
+/*-
+ * Copyright (c) 2022 The NetBSD Foundation, Inc.
+ * All rights reserved.
+ *
+ * This code is derived from software contributed to The NetBSD Foundation
+ * by Nick Hudson
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
 /*
  * Copyright (c) 2021 Mark Kettenis <kettenis@openbsd.org>
  *
@@ -53,15 +84,15 @@ extern void (*powerdownfn)(void);
 #define SERA_POWERDOWN		0x9f0f
 #define SERA_POWERDOWN_MAGIC	0x08
 
-struct aplpmu_nvmem {
-	struct aplpmu_softc	*an_sc;
+struct apple_pmu_nvmem {
+	struct apple_pmu_softc	*an_sc;
 	struct nvmem_device	an_nd;
 	bus_addr_t		an_base;
 	bus_size_t		an_size;
 };
 
-struct aplpmu_softc {
-	struct device		sc_dev;
+struct apple_pmu_softc {
+	device_t		sc_dev;
 	spmi_tag_t		sc_tag;
 	int8_t			sc_sid;
 
@@ -69,38 +100,115 @@ struct aplpmu_softc {
 	uint64_t		sc_offset;
 };
 
-struct aplpmu_softc *aplpmu_sc;
+struct apple_pmu_softc *apple_pmu_sc;
 
-int	aplpmu_match(struct device *, void *, void *);
-void	aplpmu_attach(struct device *, struct device *, void *);
 
-const struct cfattach	aplpmu_ca = {
-	sizeof (struct aplpmu_softc), aplpmu_match, aplpmu_attach
-};
+	apple_pmu_gettime(struct todr_chip_handle *, struct timeval *);
+int	apple_pmu_settime(struct todr_chip_handle *, struct timeval *);
+void	apple_pmu_powerdown(void);
+int	apple_pmu_nvmem_read(void *, bus_addr_t, void *, bus_size_t);
+int	apple_pmu_nvmem_write(void *, bus_addr_t, const void *, bus_size_t);
 
-struct cfdriver aplpmu_cd = {
-	NULL, "aplpmu", DV_DULL
-};
-
-int	aplpmu_gettime(struct todr_chip_handle *, struct timeval *);
-int	aplpmu_settime(struct todr_chip_handle *, struct timeval *);
-void	aplpmu_powerdown(void);
-int	aplpmu_nvmem_read(void *, bus_addr_t, void *, bus_size_t);
-int	aplpmu_nvmem_write(void *, bus_addr_t, const void *, bus_size_t);
 
 int
-aplpmu_match(struct device *parent, void *match, void *aux)
+apple_pmu_gettime(struct todr_chip_handle *handle, struct timeval *tv)
 {
-	struct spmi_attach_args *sa = aux;
+	struct apple_pmu_softc *sc = handle->cookie;
+	uint8_t data[8] = {};
+	uint64_t time;
+	int error;
 
-	return OF_is_compatible(sa->sa_node, "apple,sera-pmu") ||
-	    OF_is_compatible(sa->sa_node, "apple,spmi-pmu");
+	error = spmi_cmd_read(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_READL,
+	    SERA_TIME, &data, SERA_TIME_LEN);
+	if (error)
+		return error;
+	time = le64dec(data) + (sc->sc_offset << 1);
+
+	tv->tv_sec = (time >> 16);
+	tv->tv_usec = (((time & 0xffff) * 1000000) >> 16);
+	return 0;
+}
+
+int
+apple_pmu_settime(struct todr_chip_handle *handle, struct timeval *tv)
+{
+	struct apple_pmu_softc *sc = handle->cookie;
+	uint8_t data[8] = {};
+	uint64_t time;
+	int error;
+
+	error = spmi_cmd_read(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_READL,
+	    SERA_TIME, &data, SERA_TIME_LEN);
+	if (error)
+		return error;
+
+	time = ((uint64_t)tv->tv_sec << 16);
+	time |= ((uint64_t)tv->tv_usec << 16) / 1000000;
+	sc->sc_offset = ((time - le64dec(data)) >> 1);
+
+	htolem64(data, sc->sc_offset);
+	return spmi_cmd_write(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_WRITEL,
+	    SERA_TIME_OFFSET, &data, SERA_TIME_LEN);
 }
 
 void
-aplpmu_attach(struct device *parent, struct device *self, void *aux)
+apple_pmu_powerdown(void)
 {
-	struct aplpmu_softc *sc = (struct aplpmu_softc *)self;
+	struct apple_pmu_softc * const sc = an->an_sc;
+	uint8_t data = SERA_POWERDOWN_MAGIC;
+
+	spmi_cmd_write(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_WRITEL,
+	    SERA_POWERDOWN, &data, sizeof(data));
+
+	cpuresetfn();
+}
+
+int
+apple_pmu_nvmem_read(void *cookie, bus_addr_t addr, void *data, bus_size_t size)
+{
+	struct apple_pmu_nvmem * const an = cookie;
+	struct apple_pmu_softc * const sc = an->an_sc;
+
+	if (addr >= an->an_size || addr + size > an->an_size)
+		return EINVAL;
+
+	return spmi_cmd_read(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_READL,
+	    an->an_base + addr, data, size);
+}
+
+int
+apple_pmu_nvmem_write(void *cookie, bus_addr_t addr, const void *data,
+    bus_size_t size)
+{
+	struct apple_pmu_nvmem * const an = cookie;
+	struct apple_pmu_softc * const sc = an->an_sc;
+
+	if (addr >= an->an_size || addr + size > an->an_size)
+		return EINVAL;
+
+	return spmi_cmd_write(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_WRITEL,
+	    an->an_base + addr, data, size);
+}
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "apple,sera-pmu" },
+	{ .compat = "apple,spmi-pmu" },
+	DEVICE_COMPAT_EOL
+};
+
+
+static int
+apple_pmu_match(device_t parent, cfdata_t cf, void *aux)
+{
+	struct fdt_attach_args * const faa = aux;
+
+	return of_compatible_match(faa->faa_phandle, compat_data);
+}
+
+static void
+apple_pmu_attach(device_t parent, device_t self, void *aux)
+{
+	struct apple_pmu_softc * const sc = device_private(self);
 	struct spmi_attach_args *sa = aux;
 	uint8_t data[8] = {};
 	int error, node;
@@ -116,21 +224,21 @@ aplpmu_attach(struct device *parent, struct device *self, void *aux)
 			printf(": can't read offset\n");
 			return;
 		}
-		sc->sc_offset = lemtoh64(data);
+		sc->sc_offset = le64dec(data);
 
 		sc->sc_todr.cookie = sc;
-		sc->sc_todr.todr_gettime = aplpmu_gettime;
-		sc->sc_todr.todr_settime = aplpmu_settime;
+		sc->sc_todr.todr_gettime = apple_pmu_gettime;
+		sc->sc_todr.todr_settime = apple_pmu_settime;
 		todr_attach(&sc->sc_todr);
 
-		aplpmu_sc = sc;
-		powerdownfn = aplpmu_powerdown;
+		apple_pmu_sc = sc;
+		powerdownfn = apple_pmu_powerdown;
 	}
 
 	printf("\n");
 
 	for (node = OF_child(sa->sa_node); node; node = OF_peer(node)) {
-		struct aplpmu_nvmem *an;
+		struct apple_pmu_nvmem *an;
 		uint32_t reg[2];
 
 		if (!OF_is_compatible(node, "apple,spmi-pmu-nvmem"))
@@ -146,88 +254,11 @@ aplpmu_attach(struct device *parent, struct device *self, void *aux)
 		an->an_size = reg[1];
 		an->an_nd.nd_node = node;
 		an->an_nd.nd_cookie = an;
-		an->an_nd.nd_read = aplpmu_nvmem_read;
-		an->an_nd.nd_write = aplpmu_nvmem_write;
+		an->an_nd.nd_read = apple_pmu_nvmem_read;
+		an->an_nd.nd_write = apple_pmu_nvmem_write;
 		nvmem_register(&an->an_nd);
 	}
 }
 
-int
-aplpmu_gettime(struct todr_chip_handle *handle, struct timeval *tv)
-{
-	struct aplpmu_softc *sc = handle->cookie;
-	uint8_t data[8] = {};
-	uint64_t time;
-	int error;
-
-	error = spmi_cmd_read(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_READL,
-	    SERA_TIME, &data, SERA_TIME_LEN);
-	if (error)
-		return error;
-	time = lemtoh64(data) + (sc->sc_offset << 1);
-
-	tv->tv_sec = (time >> 16);
-	tv->tv_usec = (((time & 0xffff) * 1000000) >> 16);
-	return 0;
-}
-
-int
-aplpmu_settime(struct todr_chip_handle *handle, struct timeval *tv)
-{
-	struct aplpmu_softc *sc = handle->cookie;
-	uint8_t data[8] = {};
-	uint64_t time;
-	int error;
-
-	error = spmi_cmd_read(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_READL,
-	    SERA_TIME, &data, SERA_TIME_LEN);
-	if (error)
-		return error;
-
-	time = ((uint64_t)tv->tv_sec << 16);
-	time |= ((uint64_t)tv->tv_usec << 16) / 1000000;
-	sc->sc_offset = ((time - lemtoh64(data)) >> 1);
-
-	htolem64(data, sc->sc_offset);
-	return spmi_cmd_write(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_WRITEL,
-	    SERA_TIME_OFFSET, &data, SERA_TIME_LEN);
-}
-
-void
-aplpmu_powerdown(void)
-{
-	struct aplpmu_softc *sc = aplpmu_sc;
-	uint8_t data = SERA_POWERDOWN_MAGIC;
-
-	spmi_cmd_write(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_WRITEL,
-	    SERA_POWERDOWN, &data, sizeof(data));
-
-	cpuresetfn();
-}
-
-int
-aplpmu_nvmem_read(void *cookie, bus_addr_t addr, void *data, bus_size_t size)
-{
-	struct aplpmu_nvmem *an = cookie;
-	struct aplpmu_softc *sc = an->an_sc;
-
-	if (addr >= an->an_size || addr + size > an->an_size)
-		return EINVAL;
-
-	return spmi_cmd_read(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_READL,
-	    an->an_base + addr, data, size);
-}
-
-int
-aplpmu_nvmem_write(void *cookie, bus_addr_t addr, const void *data,
-    bus_size_t size)
-{
-	struct aplpmu_nvmem *an = cookie;
-	struct aplpmu_softc *sc = an->an_sc;
-
-	if (addr >= an->an_size || addr + size > an->an_size)
-		return EINVAL;
-
-	return spmi_cmd_write(sc->sc_tag, sc->sc_sid, SPMI_CMD_EXT_WRITEL,
-	    an->an_base + addr, data, size);
-}
+CFATTACH_DECL_NEW(apple_pmu, sizeof(struct apple_pmu_softc),
+    apple_pmu_match, apple_pmu_attach, NULL, NULL);
