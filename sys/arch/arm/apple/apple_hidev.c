@@ -1,4 +1,35 @@
+/*	$NetBSD$	*/
 /*	$OpenBSD: aplhidev.c,v 1.6 2022/04/06 18:59:26 naddy Exp $	*/
+
+/*-
+ * Copyright (c) 2022 The NetBSD Foundation, Inc.
+ * All rights reserved.
+ *
+ * This code is derived from software contributed to The NetBSD Foundation
+ * by Nick Hudson
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
 /*
  * Copyright (c) 2021 Mark Kettenis <kettenis@openbsd.org>
  * Copyright (c) 2013-2014 joshua stein <jcs@openbsd.org>
@@ -108,7 +139,7 @@ struct aplhidev_set_mode {
 };
 
 struct aplhidev_softc {
-	struct device		sc_dev;
+	device_t		sc_dev;
 	int			sc_node;
 
 	spi_tag_t		sc_spi_tag;
@@ -119,24 +150,13 @@ struct aplhidev_softc {
 	uint32_t		*sc_gpio;
 	int			sc_gpiolen;
 
-	struct device 		*sc_kbd;
+	device_t 		*sc_kbd;
 	uint8_t			sc_kbddesc[APLHIDEV_DESC_MAX];
 	size_t			sc_kbddesclen;
 
-	struct device		*sc_ms;
+	device_t		*sc_ms;
 	uint8_t			sc_tpdesc[APLHIDEV_DESC_MAX];
 	size_t			sc_tpdesclen;
-};
-
-int	 aplhidev_match(struct device *, void *, void *);
-void	 aplhidev_attach(struct device *, struct device *, void *);
-
-const struct cfattach aplhidev_ca = {
-	sizeof(struct aplhidev_softc), aplhidev_match, aplhidev_attach
-};
-
-struct cfdriver aplhidev_cd = {
-	NULL, "aplhidev", DV_DULL
 };
 
 void	aplhidev_get_descriptor(struct aplhidev_softc *, uint8_t);
@@ -144,27 +164,36 @@ void	aplhidev_set_leds(struct aplhidev_softc *, uint8_t);
 void	aplhidev_set_mode(struct aplhidev_softc *, uint8_t);
 
 int	aplhidev_intr(void *);
-void	aplkbd_intr(struct device *, uint8_t *, size_t);
-void	aplms_intr(struct device *, uint8_t *, size_t);
+void	aplkbd_intr(device_t *, uint8_t *, size_t);
+void	aplms_intr(device_t *, uint8_t *, size_t);
 
-int
-aplhidev_match(struct device *parent, void *match, void *aux)
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "apple,spi-hid-transport" },
+	DEVICE_COMPAT_EOL
+};
+
+static int
+apple_hidev_match(device_t parent, cfdata_t cf, void *aux)
 {
-	struct spi_attach_args *sa = aux;
+	struct fdt_attach_args * const faa = aux;
 
-	if (strcmp(sa->sa_name, "apple,spi-hid-transport") == 0)
-		return 1;
-
-	return 0;
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
-void
-aplhidev_attach(struct device *parent, struct device *self, void *aux)
+static void
+apple_hidev_attach(device_t parent, device_t self, void *aux)
 {
-	struct aplhidev_softc *sc = (struct aplhidev_softc *)self;
-	struct spi_attach_args *sa = aux;
-	struct aplhidev_attach_args aa;
-	int retry;
+	struct apple_hidev_softc * const sc = device_private(self);
+	struct fdt_attach_args * const faa = aux;
+	const int phandle = faa->faa_phandle;
+
+
+
+
+
+
+
 
 	sc->sc_spi_tag = sa->sa_tag;
 	sc->sc_node = *(int *)sa->sa_cookie;
@@ -400,7 +429,7 @@ aplhidev_intr(void *arg)
 /* Keyboard */
 
 struct aplkbd_softc {
-	struct device		sc_dev;
+	device_t		sc_dev;
 	struct aplhidev_softc	*sc_hidev;
 	struct hidkbd		sc_kbd;
 	int			sc_spl;
@@ -426,8 +455,8 @@ const struct wskbd_accessops aplkbd_accessops = {
 	.set_leds = aplkbd_set_leds,
 };
 
-int	 aplkbd_match(struct device *, void *, void *);
-void	 aplkbd_attach(struct device *, struct device *, void *);
+int	 aplkbd_match(device_t *, void *, void *);
+void	 aplkbd_attach(device_t *, device_t *, void *);
 
 const struct cfattach aplkbd_ca = {
 	sizeof(struct aplkbd_softc), aplkbd_match, aplkbd_attach
@@ -438,7 +467,7 @@ struct cfdriver aplkbd_cd = {
 };
 
 int
-aplkbd_match(struct device *parent, void *match, void *aux)
+aplkbd_match(device_t *parent, void *match, void *aux)
 {
 	struct aplhidev_attach_args *aa = (struct aplhidev_attach_args *)aux;
 
@@ -446,7 +475,7 @@ aplkbd_match(struct device *parent, void *match, void *aux)
 }
 
 void
-aplkbd_attach(struct device *parent, struct device *self, void *aux)
+aplkbd_attach(device_t *parent, device_t *self, void *aux)
 {
 	struct aplkbd_softc *sc = (struct aplkbd_softc *)self;
 	struct aplhidev_attach_args *aa = (struct aplhidev_attach_args *)aux;
@@ -471,7 +500,7 @@ aplkbd_attach(struct device *parent, struct device *self, void *aux)
 }
 
 void
-aplkbd_intr(struct device *self, uint8_t *packet, size_t packetlen)
+aplkbd_intr(device_t *self, uint8_t *packet, size_t packetlen)
 {
 	struct aplkbd_softc *sc = (struct aplkbd_softc *)self;
 	struct hidkbd *kbd = &sc->sc_kbd;
@@ -585,8 +614,8 @@ struct ubcmtp_finger {
 #define DEFAULT_PRESSURE	40
 
 struct aplms_softc {
-	struct device	sc_dev;
-	struct device	*sc_wsmousedev;
+	device_t	sc_dev;
+	device_t	*sc_wsmousedev;
 
 	int		sc_enabled;
 
@@ -608,8 +637,8 @@ const struct wsmouse_accessops aplms_accessops = {
 	.ioctl = aplms_ioctl,
 };
 
-int	 aplms_match(struct device *, void *, void *);
-void	 aplms_attach(struct device *, struct device *, void *);
+int	 aplms_match(device_t *, void *, void *);
+void	 aplms_attach(device_t *, device_t *, void *);
 
 const struct cfattach aplms_ca = {
 	sizeof(struct aplms_softc), aplms_match, aplms_attach
@@ -622,7 +651,7 @@ struct cfdriver aplms_cd = {
 int	aplms_configure(struct aplms_softc *);
 
 int
-aplms_match(struct device *parent, void *match, void *aux)
+aplms_match(device_t *parent, void *match, void *aux)
 {
 	struct aplhidev_attach_args *aa = (struct aplhidev_attach_args *)aux;
 
@@ -630,7 +659,7 @@ aplms_match(struct device *parent, void *match, void *aux)
 }
 
 void
-aplms_attach(struct device *parent, struct device *self, void *aux)
+aplms_attach(device_t *parent, device_t *self, void *aux)
 {
 	struct aplms_softc *sc = (struct aplms_softc *)self;
 	struct wsmousedev_attach_args aa;
@@ -667,7 +696,7 @@ aplms_configure(struct aplms_softc *sc)
 }
 
 void
-aplms_intr(struct device *self, uint8_t *packet, size_t packetlen)
+aplms_intr(device_t *self, uint8_t *packet, size_t packetlen)
 {
 	struct aplms_softc *sc = (struct aplms_softc *)self;
 	struct ubcmtp_finger *finger;
@@ -766,7 +795,7 @@ aplms_ioctl(void *v, u_long cmd, caddr_t data, int flag, struct proc *p)
 #else
 
 void
-aplms_intr(struct device *self, uint8_t *packet, size_t packetlen)
+aplms_intr(device_t *self, uint8_t *packet, size_t packetlen)
 {
 }
 
