@@ -192,6 +192,8 @@ struct bwfm_usb_softc {
 	struct usbd_interface	*sc_iface;
 	uint8_t			 sc_ifaceno;
 
+	bool			 sc_initialized;
+
 	uint16_t		 sc_vendor;
 	uint16_t		 sc_product;
 
@@ -213,7 +215,6 @@ struct bwfm_usb_softc {
 };
 
 int		 bwfm_usb_match(device_t, cfdata_t, void *);
-void		 bwfm_usb_attachhook(device_t);
 void		 bwfm_usb_attach(device_t, device_t, void *);
 int		 bwfm_usb_detach(device_t, int);
 
@@ -226,6 +227,7 @@ void		 bwfm_usb_free_rx_list(struct bwfm_usb_softc *);
 int		 bwfm_usb_alloc_tx_list(struct bwfm_usb_softc *);
 void		 bwfm_usb_free_tx_list(struct bwfm_usb_softc *);
 
+int		 bwfm_usb_preinit(struct bwfm_softc *);
 int		 bwfm_usb_txcheck(struct bwfm_softc *);
 int		 bwfm_usb_txdata(struct bwfm_softc *, struct mbuf **);
 int		 bwfm_usb_txctl(struct bwfm_softc *, char *, size_t);
@@ -236,7 +238,7 @@ void		 bwfm_usb_rxeof(struct usbd_xfer *, void *, usbd_status);
 void		 bwfm_usb_txeof(struct usbd_xfer *, void *, usbd_status);
 
 static const struct bwfm_bus_ops bwfm_usb_bus_ops = {
-	.bs_init = NULL,
+	.bs_preinit = bwfm_usb_preinit,
 	.bs_stop = NULL,
 	.bs_txcheck = bwfm_usb_txcheck,
 	.bs_txdata = bwfm_usb_txdata,
@@ -327,14 +329,17 @@ bwfm_usb_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	config_mountroot(self, bwfm_usb_attachhook);
+	bwfm_attach(&sc->sc_sc);
+	config_mountroot(self, bwfm_attachhook);
 }
 
-void
-bwfm_usb_attachhook(device_t self)
+int
+bwfm_usb_preinit(struct bwfm_softc *bwfm)
 {
-	struct bwfm_usb_softc *sc = device_private(self);
-	struct bwfm_softc *bwfm = &sc->sc_sc;
+//	struct bwfm_usb_softc *sc = device_private(self);
+//	struct bwfm_softc *bwfm = &sc->sc_sc;
+	struct bwfm_usb_softc * const sc =
+	    container_of(bwfm, struct bwfm_usb_softc, sc_sc);
 	struct bwfm_usb_rx_data *data;
 	struct bootrom_id brom;
 	struct bwfm_firmware_context fwctx;
@@ -342,6 +347,10 @@ bwfm_usb_attachhook(device_t self)
 	u_char *ucode;
 	size_t ucsize;
 	int i;
+
+	if (sc->sc_initialized)
+		return 0;
+
 
 	/* Read chip id and chip rev to check the firmware. */
 	memset(&brom, 0, sizeof(brom));
@@ -355,14 +364,14 @@ bwfm_usb_attachhook(device_t self)
 	if (error != 0) {
 		aprint_error_dev(bwfm->sc_dev, "could not open rx pipe: %s\n",
 		    usbd_errstr(error));
-		return;
+		return 1;
 	}
 	error = usbd_open_pipe(sc->sc_iface, sc->sc_tx_no, USBD_EXCLUSIVE_USE,
 	    &sc->sc_tx_pipeh);
 	if (error != 0) {
 		aprint_error_dev(bwfm->sc_dev, "could not open tx pipe: %s\n",
 		    usbd_errstr(error));
-		return;
+		return 1;
 	}
 
 	/* Firmware not yet loaded? */
@@ -373,7 +382,7 @@ bwfm_usb_attachhook(device_t self)
 
 		if (!bwfm_firmware_open(bwfm, bwfm_usb_fwtab, &fwctx)) {
 			/* Error message already displayed. */
-			return;
+			return 1;
 		}
 
 		ucode = bwfm_firmware_data(&fwctx, BWFM_FILETYPE_UCODE,
@@ -384,7 +393,7 @@ bwfm_usb_attachhook(device_t self)
 			aprint_error_dev(bwfm->sc_dev,
 			    "could not load microcode\n");
 			bwfm_firmware_close(&fwctx);
-			return;
+			return 1;
 		}
 
 		bwfm_firmware_close(&fwctx);
@@ -400,7 +409,7 @@ bwfm_usb_attachhook(device_t self)
 		if (le32toh(brom.chip) != BRCMF_POSTBOOT_ID) {
 			aprint_error_dev(bwfm->sc_dev,
 			    "firmware did not start up\n");
-			return;
+			return 1;
 		}
 
 		sc->sc_chip = le32toh(brom.chip);
@@ -411,10 +420,8 @@ bwfm_usb_attachhook(device_t self)
 
 	if (bwfm_usb_alloc_rx_list(sc) || bwfm_usb_alloc_tx_list(sc)) {
 		printf("%s: cannot allocate rx/tx lists\n", DEVNAME(sc));
-		return;
+		return 1;
 	}
-
-	bwfm_attach(&sc->sc_sc);
 
 	for (i = 0; i < BWFM_RX_LIST_COUNT; i++) {
 		data = &sc->sc_rx_data[i];
@@ -428,6 +435,10 @@ bwfm_usb_attachhook(device_t self)
 			    "could not set up new transfer: %s\n",
 			    usbd_errstr(error));
 	}
+	sc->sc_initialized = true;
+	return 0;
+//cleanup:
+//	return 1;
 }
 
 struct mbuf *

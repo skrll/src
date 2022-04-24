@@ -1,5 +1,6 @@
 /* $NetBSD: bwfmreg.h,v 1.8 2022/03/14 06:40:12 mlelstv Exp $ */
-/* $OpenBSD: bwfmreg.h,v 1.16 2018/02/07 21:44:09 patrick Exp $ */
+
+/* $OpenBSD: bwfmreg.h,v 1.26 2022/03/04 22:34:41 kettenis Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
  * Copyright (c) 2016,2017 Patrick Wildt <patrick@blueri.se>
@@ -65,8 +66,12 @@
 #define  BWFM_CHIP_REG_CAPABILITIES_EXT_AOB_PRESENT	0x00000040
 #define BWFM_CHIP_REG_WATCHDOG			0x00000080
 #define BWFM_CHIP_REG_EROMPTR			0x000000FC
+#define BWFM_CHIP_REG_SROMCONTROL		0x00000190
+#define  BWFM_CHIP_REG_SROMCONTROL_OTPSEL		(1 << 4)
+#define  BWFM_CHIP_REG_SROMCONTROL_OTP_PRESENT		(1 << 5)
 #define BWFM_CHIP_REG_SR_CAPABILITY		0x00000500
 #define BWFM_CHIP_REG_SR_CONTROL0		0x00000504
+#define  BWFM_CHIP_REG_SR_CONTROL0_ENABLE		(1 << 0)
 #define BWFM_CHIP_REG_SR_CONTROL1		0x00000508
 #define BWFM_CHIP_REG_PMUCONTROL		0x00000600
 #define  BWFM_CHIP_REG_PMUCONTROL_RES_MASK		0x00006000
@@ -102,6 +107,7 @@
 #define BWFM_AGENT_CORE_ARM_CM3			0x82A
 #define BWFM_AGENT_CORE_PCIE2			0x83C
 #define BWFM_AGENT_CORE_ARM_CR4			0x83E
+#define BWFM_AGENT_CORE_GCI			0x840
 #define BWFM_AGENT_CORE_ARM_CA7			0x847
 #define BWFM_AGENT_SYS_MEM			0x849
 
@@ -118,8 +124,8 @@
 #define  BWFM_ARMCR4_CAP_TCBBNB_SHIFT			4
 #define BWFM_ARMCR4_BANKIDX			0x0040
 #define BWFM_ARMCR4_BANKINFO			0x0044
-#define  BWFM_ARMCR4_BANKINFO_BSZ_MASK			0x3f
-#define  BWFM_ARMCR4_BANKINFO_BSZ_MULT			8192
+#define  BWFM_ARMCR4_BANKINFO_BSZ_MASK			0x7f
+#define  BWFM_ARMCR4_BANKINFO_BLK_1K_MASK		0x200
 #define BWFM_ARMCR4_BANKPDA			0x004C
 
 /* SOCRAM registers */
@@ -339,7 +345,7 @@
 #define BWFM_C_SET_VAR				263
 #define BWFM_C_SET_WSEC_PMK			268
 
-/* Small, medium, and maximum buffer size for dcmd */
+/* Small, medium, and maximum buffer size for dcmd */ // XXXNH remove these 3?
 #define	BWFM_DCMD_SMLEN				256
 #define	BWFM_DCMD_MEDLEN			1536
 #define	BWFM_DCMD_MAXLEN			8192
@@ -531,7 +537,7 @@ struct bwfm_sta_info {
 			uint16_t pad_1;
 			struct bwfm_sta_rateset_v7 rateset_adv;
 			uint16_t wpauth;	/* authentication type */
-			uint8_t algo;		/* crypto alogorithm */
+			uint8_t algo;		/* crypto algorithm */
 			uint8_t pad_2;
 			uint32_t tx_rspec;/* Rate of last successful tx frame */
 			uint32_t rx_rspec;/* Rate of last successful rx frame */
@@ -545,7 +551,7 @@ struct bwfm_ssid {
 	uint8_t ssid[BWFM_MAX_SSID_LEN];
 };
 
-struct bwfm_scan_params {
+struct bwfm_scan_params_v0 {
 	struct bwfm_ssid ssid;
 	uint8_t bssid[ETHER_ADDR_LEN];
 	uint8_t bss_type;
@@ -554,6 +560,26 @@ struct bwfm_scan_params {
 #define BWFM_SCANTYPE_ACTIVE		0
 #define BWFM_SCANTYPE_PASSIVE		1
 #define BWFM_SCANTYPE_DEFAULT		0xff
+	uint32_t nprobes;
+	uint32_t active_time;
+	uint32_t passive_time;
+	uint32_t home_time;
+	uint32_t channel_num;
+#define BWFM_CHANNUM_NSSID_SHIFT	16
+#define BWFM_CHANNUM_NSSID_MASK		0xffff
+#define BWFM_CHANNUM_NCHAN_SHIFT	0
+#define BWFM_CHANNUM_NCHAN_MASK		0xffff
+	uint16_t channel_list[];
+};
+
+struct bwfm_scan_params_v2 {
+	uint16_t version;
+	uint16_t length;
+	struct bwfm_ssid ssid;
+	uint8_t bssid[ETHER_ADDR_LEN];
+	uint8_t bss_type;
+	uint8_t pad;
+	uint32_t scan_type;
 	uint32_t nprobes;
 	uint32_t active_time;
 	uint32_t passive_time;
@@ -569,7 +595,7 @@ struct bwfm_scan_results {
 	struct bwfm_bss_info bss_info[];
 };
 
-struct bwfm_escan_params {
+struct bwfm_escan_params_v0 {
 	uint32_t version;
 #define BWFM_ESCAN_REQ_VERSION		1
 	uint16_t action;
@@ -577,7 +603,15 @@ struct bwfm_escan_params {
 #define WL_ESCAN_ACTION_CONTINUE	2
 #define WL_ESCAN_ACTION_ABORT		3
 	uint16_t sync_id;
-	struct bwfm_scan_params scan_params;
+	struct bwfm_scan_params_v0 scan_params;
+};
+
+struct bwfm_escan_params_v2 {
+	uint32_t version;
+#define BWFM_ESCAN_REQ_VERSION_V2	2
+	uint16_t action;
+	uint16_t sync_id;
+	struct bwfm_scan_params_v2 scan_params;
 };
 
 struct bwfm_escan_results {
@@ -631,14 +665,6 @@ struct bwfm_ext_join_params {
 	struct bwfm_assoc_params assoc;
 };
 
-struct bwfm_wsec_pmk {
-	uint16_t key_len;
-#define BWFM_WSEC_MAX_PSK_LEN		32
-	uint16_t flags;
-#define BWFM_WSEC_PASSPHRASE		(1 << 0)
-	uint8_t key[2 * BWFM_WSEC_MAX_PSK_LEN + 1];
-};
-
 struct bwfm_wsec_key {
 	uint32_t index;
 	uint32_t len;
@@ -670,6 +696,14 @@ struct bwfm_wsec_key {
 
 #define	BWFM_BAND_5G			1
 #define	BWFM_BAND_2G			2
+
+struct bwfm_wsec_pmk {
+	uint16_t key_len;
+#define BWFM_WSEC_MAX_PSK_LEN		32
+	uint16_t flags;
+#define BWFM_WSEC_PASSPHRASE		(1 << 0)
+	uint8_t key[2 * BWFM_WSEC_MAX_PSK_LEN + 1];
+};
 
 /* Event handling */
 enum bwfm_fweh_event_code {
