@@ -350,6 +350,7 @@ ukphy*		at mii? phy ?		# generic unknown PHYs
 #options 	ATHHAL_AR5212,ATHHAL_RF2425	# AR5BHB63
 #ath*		at pci? dev ? function ?	# Atheros IEEE 802.11
 #athn*		at pci? dev ? function ?	# Atheros IEEE 802.11
+bwfm*		at pci? dev ? function ?	# Broadcom Wifi
 
 # UART
 com*		at fdt?	pass 4			# UART

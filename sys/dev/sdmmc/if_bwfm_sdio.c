@@ -77,6 +77,7 @@ struct bwfm_sdio_softc {
 	struct bwfm_softc	sc_sc;
 	kmutex_t		sc_lock;
 
+	bool			sc_initialized;
 	bool			sc_bwfm_attached;
 
 	struct sdmmc_function	**sc_sf;
@@ -122,7 +123,7 @@ struct bwfm_sdio_softc {
 static int	bwfm_sdio_match(device_t, cfdata_t, void *);
 static void	bwfm_sdio_attach(device_t, device_t, void *);
 static int	bwfm_sdio_detach(device_t, int);
-static void	bwfm_sdio_attachhook(device_t);
+static int	bwfm_sdio_preinit(struct bwfm_softc *);
 #ifdef FDT
 static int	bwfm_fdt_find_phandle(device_t, device_t);
 #endif
@@ -262,7 +263,7 @@ static const struct bwfm_firmware_selector bwfm_sdio_fwtab[] = {
 };
 
 static const struct bwfm_bus_ops bwfm_sdio_bus_ops = {
-	.bs_init = NULL,
+	.bs_preinit = bwfm_sdio_preinit,
 	.bs_stop = bwfm_sdio_stop,
 	.bs_txcheck = bwfm_sdio_txcheck,
 	.bs_txdata = bwfm_sdio_txdata,
@@ -457,18 +458,35 @@ bwfm_sdio_attach(device_t parent, device_t self, void *aux)
 	bwfm_sdio_write_1(sc, BWFM_SDIO_FUNC1_CHIPCLKCSR, 0);
 	sc->sc_clkstate = CLK_SDONLY;
 
-	config_mountroot(self, bwfm_sdio_attachhook);
-	return;
+//	config_mountroot(self, bwfm_sdio_attachhook);
+	sc->sc_sc.sc_bus_ops = &bwfm_sdio_bus_ops;
+	sc->sc_sc.sc_proto_ops = &bwfm_proto_bcdc_ops;
 
+	bwfm_attach(&sc->sc_sc);
+
+	return;
 err:
 	kmem_free(sc->sc_sf, sc->sc_sf_size);
 }
 
-static void
-bwfm_sdio_attachhook(device_t self)
+void *foo(struct bwfm_softc *sc);
+void *foo(struct bwfm_softc *bwfm)
 {
-	struct bwfm_sdio_softc *sc = device_private(self);
-	struct bwfm_softc *bwfm = &sc->sc_sc;
+
+	struct bwfm_sdio_softc * const sdio_sc =
+	    container_of(bwfm, struct bwfm_sdio_softc, sc_sc);
+
+	return sdio_sc;
+}
+
+int
+bwfm_sdio_preinit(struct bwfm_softc *bwfm)
+{
+//	struct bwfm_sdio_softc *sc = device_private(self);
+//	struct bwfm_softc *bwfm = &sc->sc_sc;
+	struct bwfm_sdio_softc * const sc =
+	    container_of(bwfm, struct bwfm_sdio_softc, sc_sc);
+	device_t self = bwfm->sc_dev;
 	struct bwfm_firmware_context fwctx;
 	size_t ucsize = 0, nvlen = 0, nvsize = 0, clmsize = 0;
 	uint8_t *ucode, *nvram, *clm;
@@ -572,24 +590,24 @@ bwfm_sdio_attachhook(device_t self)
 	if (sc->sc_ih == NULL && sc->sc_fdtih == NULL) {
 		aprint_error_dev(self, "could not establish interrupt\n");
 		bwfm_sdio_clkctl(sc, CLK_NONE, false);
-		return;
+		return 1;
 	}
 	sdmmc_intr_enable(sc->sc_sf[1]);
 
 	sdmmc_pause(100000, NULL);
 
-	sc->sc_sc.sc_bus_ops = &bwfm_sdio_bus_ops;
-	sc->sc_sc.sc_proto_ops = &bwfm_proto_bcdc_ops;
-
-	/* used and cleared by bwfm_attach */
+	/* used and cleared by bwfm_preinit */
 	sc->sc_sc.sc_clm = clm;
 	sc->sc_sc.sc_clmsize = clmsize;
 
-	bwfm_attach(&sc->sc_sc);
-	sc->sc_bwfm_attached = true;
+	sc->sc_initialized = true;
+
+	return 0;
 
  err:
 	bwfm_firmware_close(&fwctx);
+
+	return 1;
 }
 
 #ifdef FDT
