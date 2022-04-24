@@ -1,4 +1,5 @@
 /* $NetBSD: bwfmvar.h,v 1.14 2022/12/03 16:06:20 mlelstv Exp $ */
+
 /* $OpenBSD: bwfmvar.h,v 1.1 2017/10/11 17:19:50 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -59,6 +60,7 @@ struct pool_cache;
 #define BRCM_CC_4350_CHIP_ID		0x4350
 #define BRCM_CC_43525_CHIP_ID		43525
 #define BRCM_CC_4354_CHIP_ID		0x4354
+#define BRCM_CC_4355_CHIP_ID		0x4355
 #define BRCM_CC_4356_CHIP_ID		0x4356
 #define BRCM_CC_43566_CHIP_ID		43566
 #define BRCM_CC_43567_CHIP_ID		43567
@@ -67,12 +69,18 @@ struct pool_cache;
 #define BRCM_CC_4358_CHIP_ID		0x4358
 #define BRCM_CC_4359_CHIP_ID		0x4359
 #define BRCM_CC_43602_CHIP_ID		43602
+#define BRCM_CC_4364_CHIP_ID		0x4364
 #define BRCM_CC_4365_CHIP_ID		0x4365
 #define BRCM_CC_4366_CHIP_ID		0x4366
 #define BRCM_CC_43664_CHIP_ID		43664
+#define BRCM_CC_43666_CHIP_ID		43666
 #define BRCM_CC_4371_CHIP_ID		0x4371
+#define BRCM_CC_4377_CHIP_ID		0x4377
+#define BRCM_CC_4378_CHIP_ID		0x4378
+#define BRCM_CC_4387_CHIP_ID		0x4387
 #define CY_CC_4373_CHIP_ID		0x4373
 #define CY_CC_43012_CHIP_ID		43012
+#define CY_CC_43752_CHIP_ID		43752
 
 /* Defaults */
 #define BWFM_DEFAULT_SCAN_CHANNEL_TIME	40
@@ -153,7 +161,7 @@ struct bwfm_chip {
 };
 
 struct bwfm_bus_ops {
-	void (*bs_init)(struct bwfm_softc *);
+	int (*bs_preinit)(struct bwfm_softc *);
 	void (*bs_stop)(struct bwfm_softc *);
 	int (*bs_txcheck)(struct bwfm_softc *);
 	int (*bs_txdata)(struct bwfm_softc *, struct mbuf **);
@@ -175,6 +183,9 @@ struct bwfm_proto_ops {
 	    char *, size_t *);
 	int (*proto_set_dcmd)(struct bwfm_softc *, int, int,
 	    char *, size_t);
+//	void (*proto_rx)(struct bwfm_softc *, struct mbuf *,
+//	    struct mbuf_list *);
+//	void (*proto_rxctl)(struct bwfm_softc *, char *, size_t);
 };
 extern const struct bwfm_proto_ops bwfm_proto_bcdc_ops;
 
@@ -190,10 +201,46 @@ struct bwfm_cmd_newstate {
 	int			 arg;
 };
 
+struct bwfm_host_cmd {
+	void	 (*cb)(struct bwfm_softc *, void *);
+	uint8_t	 data[256];
+};
+
 struct bwfm_cmd_key {
 	const struct ieee80211_key *key;
 	uint8_t			 mac[IEEE80211_ADDR_LEN];
 };
+
+struct bwfm_cmd_flowring_create {
+       struct work              wq_cookie;
+       struct bwfm_pci_softc   *sc;
+       struct mbuf             *m;
+       int                      flowid;
+       int                      prio;
+};
+
+
+#if 1
+struct bwfm_cmd_flowring_delete {
+	int			 flowid;
+};
+
+struct bwfm_host_cmd_ring {
+#define BWFM_HOST_CMD_RING_COUNT	32
+	struct bwfm_host_cmd	 cmd[BWFM_HOST_CMD_RING_COUNT];
+	int			 cur;
+	int			 next;
+	int			 queued;
+};
+
+struct bwfm_proto_bcdc_ctl {
+	int				 reqid;
+	char				*buf;
+	size_t				 len;
+	int				 done;
+	TAILQ_ENTRY(bwfm_proto_bcdc_ctl) next;
+};
+#endif
 
 struct bwfm_task {
 	struct work		 t_work;
@@ -223,7 +270,9 @@ struct bwfm_softc {
 #define		BWFM_IO_TYPE_D11N		1
 #define		BWFM_IO_TYPE_D11AC		2
 
+	bool			 sc_initialized;
 	int			 sc_tx_timer;
+	int			 sc_scan_ver;
 
 	bool			 sc_if_attached;
 	struct pool_cache	*sc_freetask;
@@ -233,6 +282,7 @@ struct bwfm_softc {
 				    enum ieee80211_state, int);
 
 	int			 sc_bcdc_reqid;
+	TAILQ_HEAD(, bwfm_proto_bcdc_ctl) sc_bcdc_rxctlq;	// XXXNH
 
 	union {
 		struct bwfm_bss_info bss_info;
@@ -245,12 +295,20 @@ struct bwfm_softc {
 	size_t			sc_txcapsize;
 	uint8_t			*sc_cal;
 	size_t			sc_calsize;
-
 	int			sc_pm;
 	bool			sc_setpm;
+
+	int			 sc_key_tasks;
+
+	char			 sc_board_type[128];
+	char			 sc_module[8];
+	char			 sc_vendor[8];
+	char			 sc_modrev[8];
 };
 
 void bwfm_attach(struct bwfm_softc *);
+void bwfm_attachhook(struct device *);
+int bwfm_preinit(struct bwfm_softc *);
 void bwfm_chip_socram_ramsize(struct bwfm_softc *, struct bwfm_core *);
 void bwfm_chip_sysmem_ramsize(struct bwfm_softc *, struct bwfm_core *);
 void bwfm_chip_tcm_ramsize(struct bwfm_softc *, struct bwfm_core *);
@@ -274,5 +332,6 @@ void	bwfm_firmware_close(struct bwfm_firmware_context *);
 void *	bwfm_firmware_data(struct bwfm_firmware_context *,
 	    unsigned int, size_t *);
 const char *bwfm_firmware_description(unsigned int);
+
 
 #endif	/* _DEV_IC_BWFMVAR_H */
