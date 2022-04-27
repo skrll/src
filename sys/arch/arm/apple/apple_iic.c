@@ -49,11 +49,29 @@
 #include <sys/param.h>
 
 #include <sys/bus.h>
+//#include <sys/systm.h>
 #include <sys/device.h>
+//#include <sys/malloc.h>
+
+#if 0
+#include <machine/intr.h>
+#include <machine/bus.h>
+#include <machine/fdt.h>
+
+#define _I2C_PRIVATE
+#include <dev/i2c/i2cvar.h>
+
+#include <dev/ofw/openfirm.h>
+#include <dev/ofw/ofw_clock.h>
+#include <dev/ofw/ofw_pinctrl.h>
+#include <dev/ofw/ofw_power.h>
+#include <dev/ofw/fdt.h>
+#endif
 
 #include <dev/i2c/i2cvar.h>
 
 #include <dev/fdt/fdtvar.h>
+
 
 /* Registers. */
 #define I2C_MTXFIFO		0x00
@@ -75,7 +93,7 @@
 #define  I2C_CTL_EN			__BIT(11)
 #define I2C_REV			0x28
 
-#define IIC_READ(sc, reg)						\
+#define IIC_READ(sc, reg)							\
 	(bus_space_read_4((sc)->sc_bst, (sc)->sc_bsh, (reg)))
 #define IIC_WRITE(sc, reg, val)						\
 	bus_space_write_4((sc)->sc_bst, (sc)->sc_bsh, (reg), (val))
@@ -89,6 +107,7 @@ struct apple_iic_softc {
 	bus_space_tag_t		sc_bst;
 	bus_space_handle_t	sc_bsh;
 
+//	int			sc_node;
 	struct clk *		sc_clk;
 	int			sc_hwrev;
 	uint32_t		sc_clkdiv;
@@ -186,7 +205,10 @@ apple_iic_attach(device_t parent, device_t self, void *aux)
 	struct apple_iic_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
+
+//	struct i2cbus_attach_args iba;
 	uint32_t clock_speed, bus_speed;
+
 	bus_addr_t addr;
 	bus_size_t size;
 
@@ -215,9 +237,10 @@ apple_iic_attach(device_t parent, device_t self, void *aux)
 
 	if (of_getprop_uint32(phandle, "clock-frequency",
 	    &bus_speed) != 0) {
-		bus_speed = 100000;
+		bus_speed = 100000;	// XXXNH check
 	}
-	bus_speed *= 16;
+	bus_speed *= 16;	//XXXNH WTF is this?
+
 
 	if (bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh)) {
 		aprint_error(": unable to map device\n");
