@@ -227,7 +227,6 @@ rtkit_handle_crashlog(struct rtkit_state *state, struct apple_mbox_msg *msg)
 	case RTKIT_BUFFER_REQUEST:
 		addr = RTKIT_BUFFER_ADDR(msg->data0);
 		size = RTKIT_BUFFER_SIZE(msg->data0);
-		// XXXNH WTF is this conditional
 		if (addr)
 			break;
 
@@ -267,7 +266,6 @@ rtkit_handle_ioreport(struct rtkit_state *state, struct apple_mbox_msg *msg)
 	case RTKIT_BUFFER_REQUEST:
 		addr = RTKIT_BUFFER_ADDR(msg->data0);
 		size = RTKIT_BUFFER_SIZE(msg->data0);
-		// XXXNH WTF is this conditional
 		if (addr)
 			break;
 		error = rtkit_send(mc, RTKIT_EP_IOREPORT, RTKIT_BUFFER_REQUEST,
