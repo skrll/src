@@ -65,6 +65,7 @@ __KERNEL_RCSID(0, "$NetBSD: apple_nvme.c,v 1.1 2022/05/07 08:20:03 skrll Exp $")
 
 int apple_nvme_mpsafe = 1;
 
+//XXXNH remove somehow
 #define NVME_IO_Q 1
 
 #define ANS_CPU_CTRL		0x0044
@@ -82,6 +83,7 @@ int apple_nvme_mpsafe = 1;
 #define  ANS_LINEAR_SQ_CTRL_EN		__BIT(0)
 #define ANS_LINEAR_ASQ_DB	0x2490c
 #define ANS_LINEAR_IOSQ_DB	0x24910
+// are there more IOSQ_DB?
 
 #define ANS_NVMMU_NUM		0x28100
 #define ANS_NVMMU_BASE_ASQ	0x28108
