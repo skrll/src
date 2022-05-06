@@ -529,7 +529,7 @@ options 	WSDISPLAY_SCROLLSUPPORT
 pseudo-device	wsmux
 pseudo-device	wsfont
 options 	FONT_BOLD8x16
-options 	FONT_BOLD16x32
+#options 	FONT_BOLD16x32
 
 # GPU
 #nouveau*	at fdt?			# NVIDIA GPU
