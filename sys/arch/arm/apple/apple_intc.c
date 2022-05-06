@@ -62,6 +62,7 @@ __KERNEL_RCSID(0, "$NetBSD: apple_intc.c,v 1.9 2022/06/28 10:42:22 jmcneill Exp 
  */
 #define	AIC_INFO		0x0004
 #define	 AIC_INFO_NIRQ		__BITS(15,0)
+#define	AIC_CONFIG		0x0010
 #define	AIC_WHOAMI		0x2000
 #define	AIC_EVENT		0x2004
 #define	 AIC_EVENT_TYPE		__BITS(31,16)
@@ -69,17 +70,38 @@ __KERNEL_RCSID(0, "$NetBSD: apple_intc.c,v 1.9 2022/06/28 10:42:22 jmcneill Exp 
 #define	  AIC_EVENT_TYPE_IRQ	1
 #define	  AIC_EVENT_TYPE_IPI	4
 #define	 AIC_EVENT_DATA		__BITS(15,0)
-#define	 AIC_EVENT_IPI_OTHER	1
+#define	  AIC_EVENT_IPI_OTHER	1
+#define	  AIC_EVENT_IPI_SELF	2
 #define	AIC_IPI_SEND		0x2008
 #define	AIC_IPI_ACK		0x200c
+#define	AIC_IPI_MASK_SET	0x2024
 #define	AIC_IPI_MASK_CLR	0x2028
 #define	AIC_IPI_OTHER		__BIT(0)
+#define	AIC_IPI_SELF		__BIT(31)
 #define	AIC_AFFINITY(irqno)	(0x3000 + (irqno) * 4)
 #define	AIC_SW_SET(irqno)	(0x4000 + (irqno) / 32 * 4)
 #define	AIC_SW_CLR(irqno)	(0x4080 + (irqno) / 32 * 4)
 #define	AIC_MASK_SET(irqno)	(0x4100 + (irqno) / 32 * 4)
 #define	AIC_MASK_CLR(irqno)	(0x4180 + (irqno) / 32 * 4)
 #define	 AIC_MASK_BIT(irqno)	__BIT((irqno) & 0x1f)
+
+
+AARCH64REG_READ_INLINE2(ipi_local_rr_el1, s3_5_c15_c0_0)
+AARCH64REG_WRITE_INLINE2(ipi_local_rr_el1, s3_5_c15_c0_0)
+AARCH64REG_READ_INLINE2(ipi_global_rr_el1, s3_5_c15_c0_1)
+AARCH64REG_WRITE_INLINE2(ipi_global_rr_el1, s3_5_c15_c0_1)
+#define AIC_IPI_RR_CPU		__BITS(7, 0)
+#define AIC_IPI_RR_CLUSTER	__BITS(23, 16)	// global only
+#define AIC_IPI_RR_TYPE		__BITS(29, 28)
+#define  AIC_IPI_RR_IMMEDIATE	0
+#define  AIC_IPI_RR_RETRACT	1
+#define  AIC_IPI_RR_DEFERRED	2
+#define  AIC_IPI_RR_NOWAKE	3
+
+AARCH64REG_READ_INLINE2(ipi_sr_el1, s3_5_c15_c1_1)
+AARCH64REG_WRITE_INLINE2(ipi_sr_el1, s3_5_c15_c1_1)
+
+#define AIC_IPI_SR_PENDING	__BIT(0)
 
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "apple,aic" },
@@ -90,10 +112,13 @@ struct apple_intc_softc;
 
 struct apple_intc_percpu {
 	struct apple_intc_softc *pc_sc;
+	struct cpu_info *pc_ci;
 	u_int pc_cpuid;
 	u_int pc_ipimask;
 
 	struct pic_softc pc_pic;
+
+	// evcnts?
 };
 
 #define	LOCALPIC_SOURCE_TIMER	0
@@ -201,13 +226,21 @@ apple_intc_local_establish_irq(struct pic_softc *pic, struct intrsource *is)
 {
 }
 
+
+
 #ifdef MULTIPROCESSOR
 static void
 apple_intc_local_ipi_send(struct pic_softc *pic, const kcpuset_t *kcp, u_long ipi)
 {
 	struct apple_intc_percpu * const pc = PICTOPERCPU(pic);
 	struct apple_intc_softc * const sc = pc->pc_sc;
+	struct cpu_info * const ci = pc->pc_ci;
 	const u_int target = sc->sc_cpuid[pc->pc_cpuid];
+
+	// XXXNH Assert that there is only one cpu in kcp.
+	// kcpuset_intersecting_p(kcp, pic->pic_cpus)
+	KASSERT(kcp == NULL || kcpuset_countset(kcp) == 1);
+	KASSERT(kcp == NULL || kcpuset_isset(kcp, target));
 
 	atomic_or_32(&pc->pc_ipimask, __BIT(ipi));
 
@@ -216,8 +249,24 @@ apple_intc_local_ipi_send(struct pic_softc *pic, const kcpuset_t *kcp, u_long ip
 	 * to trigger the IPI.
 	 */
 	dsb(st);
-	AIC_WRITE(sc, AIC_IPI_SEND, __BIT(target));
+	isb();		// ensure system register write is performed in program
+			// order
+
+	// ci here is target cpu
+	const uint64_t cpu = __SHIFTOUT(ci->ci_id.ac_midr, MPIDR_AFF0);
+	const uint64_t cluster = __SHIFTOUT(ci->ci_id.ac_midr, MPIDR_AFF1);
+	uint64_t sendmask = __SHIFTIN(cpu, AIC_IPI_RR_CPU);
+	if (__SHIFTOUT(curcpu()->ci_id.ac_midr, MPIDR_AFF1) == cluster) {
+		/* Same cluster, so request local delivery. */
+		reg_ipi_local_rr_el1_write(sendmask);
+	} else {
+		/* Different cluster, so request global delivery. */
+		sendmask |= __SHIFTIN(cluster, AIC_IPI_RR_CLUSTER);
+		reg_ipi_global_rr_el1_write(sendmask);
+	}
+	isb();
 }
+
 #endif /* MULTIPROCESSOR */
 
 static const struct pic_ops apple_intc_localpicops = {
@@ -235,7 +284,7 @@ apple_intc_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 {
 	struct apple_intc_softc * const sc = device_private(dev);
 
-	/* 1st cell is the interrupt type (0=IRQ, 1=FIQ) */
+	/* 1st cell is the interrupt type (0 = IRQ, 1 = FIQ) */
 	const u_int type = be32toh(specifier[0]);
 	/* 2nd cell is the interrupt number */
 	const u_int intno = be32toh(specifier[1]);
@@ -334,6 +383,7 @@ apple_intc_irq_handler(void *frame)
 
 			clr_reg = AIC_MASK_CLR(evdata);
 			clr_val = AIC_MASK_BIT(evdata);
+#if 0
 		} else if (evtype == AIC_EVENT_TYPE_IPI) {
 			KASSERT(evdata == AIC_EVENT_IPI_OTHER);
 			pic = &sc->sc_pc[cpu_index(ci)].pc_pic;
@@ -344,6 +394,7 @@ apple_intc_irq_handler(void *frame)
 
 			clr_reg = 0;
 			clr_val = 0;
+#endif
 		} else {
 			break;
 		}
@@ -367,6 +418,21 @@ apple_intc_irq_handler(void *frame)
 	}
 }
 
+static inline void
+apple_intc_interrupt_fired(struct pic_softc * const pic,
+    struct cpu_info * const ci, int irq, int oldipl, void *frame)
+{
+	struct intrsource * const is = pic->pic_sources[irq];
+
+	if (oldipl >= is->is_ipl) {
+		apple_intc_mark_pending(pic, irq);
+	} else {
+		pic_set_priority(ci, is->is_ipl);
+		pic_dispatch(is, frame);
+	}
+
+}
+
 static void
 apple_intc_fiq_handler(void *frame)
 {
@@ -377,20 +443,29 @@ apple_intc_fiq_handler(void *frame)
 
 	ci->ci_data.cpu_nintr++;
 
-	struct intrsource * const is = pic->pic_sources[LOCALPIC_SOURCE_TIMER];
-
+	// XXXNH eh?
 	dsb(sy);
 	isb();
 
-	if (oldipl >= is->is_ipl) {
-		apple_intc_mark_pending(pic, LOCALPIC_SOURCE_TIMER);
-	} else {
-		pic_set_priority(ci, is->is_ipl);
-		pic_dispatch(is, frame);
+	/* Handle IPIs. */
+	uint64_t ipisr = reg_ipi_sr_el1_read();
+	if (ipisr & AIC_IPI_SR_PENDING) {
+		reg_ipi_sr_el1_write(AIC_IPI_SR_PENDING);
+		isb();
+		apple_intc_interrupt_fired(pic, ci, LOCALPIC_SOURCE_IPI,
+		    oldipl, frame);;
+	}
+
+	/* Handle timer interrupts */
+	uint64_t cntvctl = reg_cntv_ctl_el0_read();
+	if ((cntvctl & (CNTCTL_ENABLE | CNTCTL_IMASK | CNTCTL_ISTATUS)) ==
+	    (CNTCTL_ENABLE | CNTCTL_ISTATUS)) {
+		apple_intc_interrupt_fired(pic, ci, LOCALPIC_SOURCE_TIMER,
+		    oldipl, frame);;
 	}
 
 	if (oldipl != IPL_HIGH) {
-		pic_do_pending_ints(DAIF_I|DAIF_F, oldipl, frame);
+		pic_do_pending_ints(DAIF_I | DAIF_F, oldipl, frame);
 	}
 }
 
@@ -399,7 +474,7 @@ static int
 apple_intc_ipi_handler(void *priv)
 {
 	struct apple_intc_percpu * const pc = priv;
-	struct apple_intc_softc * const sc = pc->pc_sc;
+//	struct apple_intc_softc * const sc = pc->pc_sc;
 	uint32_t ipimask, bit;
 
 	ipimask = atomic_swap_32(&pc->pc_ipimask, 0);
@@ -408,7 +483,8 @@ apple_intc_ipi_handler(void *priv)
 	 * matches the dsb(st) in
 	 */
 	dsb(ld);
-	AIC_WRITE(sc, AIC_IPI_MASK_CLR, AIC_IPI_OTHER);
+	// ack via sysreg
+//	AIC_WRITE(sc, AIC_IPI_MASK_CLR, AIC_IPI_OTHER);
 
 	while ((bit = ffs(ipimask)) > 0) {
 		const u_int ipi = bit - 1;
@@ -514,17 +590,19 @@ apple_intc_attach(device_t parent, device_t self, void *aux)
 
 		pc->pc_sc = sc;
 		pc->pc_cpuid = cpuno;
+		pc->pc_ci = ci;
 
 #ifdef MULTIPROCESSOR
 		pic->pic_cpus = ci->ci_kcpuset;
 #endif
 		pic->pic_ops = &apple_intc_localpicops;
 		pic->pic_maxsources = 2;
-		snprintf(pic->pic_name, sizeof(pic->pic_name), "AIC/%lu", cpuno);
+		snprintf(pic->pic_name, sizeof(pic->pic_name), "AIC fiq/%lu", cpuno);
 
 		pic_add(pic, PIC_IRQBASE_ALLOC);
 
 #ifdef MULTIPROCESSOR
+		// XXXNH pc or something else?
 		intr_establish_xname(pic->pic_irqbase + LOCALPIC_SOURCE_IPI,
 		    IPL_HIGH, IST_LEVEL | IST_MPSAFE, apple_intc_ipi_handler,
 		    pc, "ipi");
