@@ -69,6 +69,7 @@ static int bcmspi_configure(void *, int, int, int);
 static int bcmspi_transfer(void *, struct spi_transfer *);
 
 static void bcmspi_start(struct bcmspi_softc * const);
+static int bcmspi_intr_locked(struct bcmspi_softc * const);
 static int bcmspi_intr(void *);
 
 static void bcmspi_send(struct bcmspi_softc * const);
@@ -227,9 +228,7 @@ bcmspi_start(struct bcmspi_softc * const sc)
 			return;
 
 		for (;;) {
-		        mutex_exit(&sc->sc_mutex);
-			bcmspi_intr(sc);
-			mutex_enter(&sc->sc_mutex);
+			bcmspi_intr_locked(sc);
 			if (ISSET(st->st_flags, SPI_F_DONE))
 				break;
 		}
@@ -285,14 +284,11 @@ bcmspi_recv(struct bcmspi_softc * const sc)
 }
 
 static int
-bcmspi_intr(void *cookie)
+bcmspi_intr_locked(struct bcmspi_softc * const sc)
 {
-	struct bcmspi_softc * const sc = cookie;
 	struct spi_transfer *st;
-	uint32_t cs;
+	uint32_t cs = bus_space_read_4(sc->sc_iot, sc->sc_ioh, SPI_CS);
 
-	mutex_enter(&sc->sc_mutex);
-	cs = bus_space_read_4(sc->sc_iot, sc->sc_ioh, SPI_CS);
 	if (ISSET(cs, SPI_CS_DONE)) {
 		if (sc->sc_wchunk != NULL) {
 			bcmspi_send(sc);
@@ -312,6 +308,18 @@ bcmspi_intr(void *cookie)
 		bcmspi_send(sc);
 	}
 
-	mutex_exit(&sc->sc_mutex);
 	return ISSET(cs, SPI_CS_DONE|SPI_CS_RXR);
+}
+
+
+static int
+bcmspi_intr(void *cookie)
+{
+	struct bcmspi_softc * const sc = cookie;
+
+	mutex_enter(&sc->sc_mutex);
+	int done = bcmspi_intr_locked(sc);
+	mutex_exit(&sc->sc_mutex);
+
+	return done;
 }
