@@ -210,6 +210,12 @@ apple_intc_local_ipi_send(struct pic_softc *pic, const kcpuset_t *kcp, u_long ip
 	const u_int target = sc->sc_cpuid[pc->pc_cpuid];
 
 	atomic_or_32(&pc->pc_ipimask, __BIT(ipi));
+
+	/*
+	 * store-release. ensure the r/m/w completes before poking MMIO
+	 * to trigger the IPI.
+	 */
+	dsb(st);
 	AIC_WRITE(sc, AIC_IPI_SEND, __BIT(target));
 }
 #endif /* MULTIPROCESSOR */
@@ -396,8 +402,13 @@ apple_intc_ipi_handler(void *priv)
 	struct apple_intc_softc * const sc = pc->pc_sc;
 	uint32_t ipimask, bit;
 
-	AIC_WRITE(sc, AIC_IPI_MASK_CLR, AIC_IPI_OTHER);
 	ipimask = atomic_swap_32(&pc->pc_ipimask, 0);
+	/*
+	 * load-acquire (with completion as we're poking MMIO).
+	 * matches the dsb(st) in
+	 */
+	dsb(ld);
+	AIC_WRITE(sc, AIC_IPI_MASK_CLR, AIC_IPI_OTHER);
 
 	while ((bit = ffs(ipimask)) > 0) {
 		const u_int ipi = bit - 1;
