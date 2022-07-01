@@ -72,7 +72,7 @@ do {								\
 } while (0)
 
 #ifdef LOCKDEBUG
-#define	SPINLOCK_SPINOUT(spins)		((spins)++ > 0x0fffffff)
+#define	SPINLOCK_SPINOUT(spins)		((spins)++ > 0x4fffffff)
 #else
 #define	SPINLOCK_SPINOUT(spins)		((void)(spins), 0)
 #endif
