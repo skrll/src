@@ -90,7 +90,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "q_struct.h"
 #include "nicvf_queues.h"
 
-#define	DEBUG
 #undef DEBUG
 
 #ifdef DEBUG
