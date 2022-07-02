@@ -41,14 +41,27 @@ __KERNEL_RCSID(0, "$NetBSD: gic_splfuncs.c,v 1.5 2021/10/30 18:44:24 jmcneill Ex
 
 #include <arm/cortex/gic_splfuncs.h>
 
+#if 0
+static int __noasan
+gic_splraise(int newipl)
+{
+	struct cpu_info * const ci = curcpu();
+	const int oldipl = ci->ci_cpl;
+	if (__predict_true(newipl > oldipl)) {
+		ci->ci_cpl = newipl;
+	}
+	return oldipl;
+}
+#endif
+
 /* Prototypes for functions in gic_splfuncs_<arch>.S */
 int	gic_splraise(int);
 void	gic_splx(int);
 
 /* Local functions */
-void	Xgic_splx(int);	
+void	Xgic_splx(int);
 
-static int
+static int __noasan
 gic_spllower(int newipl)
 {
 	struct cpu_info * const ci = curcpu();
@@ -68,7 +81,7 @@ gic_spllower(int newipl)
 	return oldipl;
 }
 
-void
+void __noasan
 Xgic_splx(int newipl)
 {
 	struct cpu_info *ci = curcpu();
@@ -78,6 +91,35 @@ Xgic_splx(int newipl)
 		return;
 	}
 
+#if 0
+	/*
+	 * Try to avoid touching any hardware registers (DAIF, PMR) as an
+	 * optimization for the common case of splraise followed by splx
+	 * with no interrupts in between.
+	 *
+	 * If an interrupt fires in this critical section, the vector
+	 * handler is responsible for returning to the address pointed
+	 * to by ci_splx_restart to restart the sequence.
+	 */
+	if (__predict_true(ci->ci_intr_depth == 0)) {
+		ci->ci_splx_restart = &&restart;
+		__insn_barrier();
+restart:
+		if (ci->ci_hwpl <= newipl) {
+			ci->ci_cpl = newipl;
+			__insn_barrier();
+			ci->ci_splx_restart = NULL;
+			goto dosoft;
+		}
+		__insn_barrier();
+		/*
+		 * An interrupt fired and raised ci->ci_hwpl above newipl
+		 * which means we can (and should) call the handler.
+		 */
+		ci->ci_splx_restart = NULL;
+	}
+
+#endif
 	psw = DISABLE_INTERRUPT_SAVE();
 	ci->ci_intr_depth++;
 	pic_do_pending_ints(psw, newipl, NULL);
