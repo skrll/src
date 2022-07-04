@@ -243,10 +243,9 @@ mb_drain(void *arg, int flags)
 	struct domain *dp;
 	const struct protosw *pr;
 	struct ifnet *ifp;
-	int s;
 
 	KERNEL_LOCK(1, NULL);
-	s = splvm();
+	const int s = splvm();
 	DOMAIN_FOREACH(dp) {
 		for (pr = dp->dom_protosw;
 		     pr < dp->dom_protoswNPROTOSW; pr++)
