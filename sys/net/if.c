@@ -2425,8 +2425,8 @@ if_domain_link_state_change(struct ifnet *ifp, int link_state)
 {
 	struct domain *dp;
 
-	const int s = splnet();
 	KERNEL_LOCK_UNLESS_NET_MPSAFE();
+	const int s = splnet();
 
 	DOMAIN_FOREACH(dp) {
 		if (dp->dom_if_link_state_change != NULL)
