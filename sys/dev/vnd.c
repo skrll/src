@@ -483,7 +483,7 @@ vndstrategy(struct buf *bp)
 	    device_lookup_private(&vnd_cd, unit);
 	struct disklabel *lp;
 	daddr_t blkno;
-	int s = splbio();
+	const int s = splbio();
 
 	if (vnd == NULL) {
 		bp->b_error = ENXIO;
@@ -639,7 +639,6 @@ static void
 vndthread(void *arg)
 {
 	struct vnd_softc *vnd = arg;
-	int s;
 
 	/* Determine whether we can *use* VOP_BMAP and VOP_STRATEGY to
 	 * directly access the backing vnode.  If we can, use these two
@@ -665,7 +664,7 @@ vndthread(void *arg)
 		    "using read/write operations");
 #endif
 
-	s = splbio();
+	int s = splbio();
 	vnd->sc_flags |= VNF_KTHREAD;
 	wakeup(&vnd->sc_kthread);
 
@@ -716,9 +715,7 @@ vndthread(void *arg)
 		 * Allocate a header for this transfer and link it to the
 		 * buffer
 		 */
-		s = splbio();
 		vnx = VND_GETXFER(vnd);
-		splx(s);
 		vnx->vx_vnd = vnd;
 
 		s = splbio();
@@ -980,9 +977,10 @@ vndiodone(struct buf *bp)
 	struct vndxfer *vnx = VND_BUFTOXFER(bp);
 	struct vnd_softc *vnd = vnx->vx_vnd;
 	struct buf *obp = bp->b_private;
-	int s = splbio();
 
 	KERNEL_LOCK(1, NULL);		/* XXXSMP */
+	const int s = splbio();
+
 	KASSERT(&vnx->vx_buf == bp);
 	KASSERT(vnd->sc_active > 0);
 #ifdef DEBUG
@@ -997,8 +995,8 @@ vndiodone(struct buf *bp)
 	if (vnd->sc_active == 0) {
 		wakeup(&vnd->sc_tab);
 	}
-	KERNEL_UNLOCK_ONE(NULL);	/* XXXSMP */
 	splx(s);
+	KERNEL_UNLOCK_ONE(NULL);	/* XXXSMP */
 	obp->b_error = bp->b_error;
 	obp->b_resid = bp->b_resid;
 	buf_destroy(bp);
