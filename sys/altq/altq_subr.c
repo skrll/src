@@ -190,14 +190,13 @@ altq_detach(struct ifaltq *ifq)
 int
 altq_enable(struct ifaltq *ifq)
 {
-	int s;
 
 	if (!ALTQ_IS_READY(ifq))
 		return ENXIO;
 	if (ALTQ_IS_ENABLED(ifq))
 		return 0;
 
-	s = splnet();
+	const int s = splnet();
 	IFQ_PURGE(ifq);
 	ASSERT(ifq->ifq_len == 0);
 	ifq->altq_flags |= ALTQF_ENABLED;
@@ -211,12 +210,11 @@ altq_enable(struct ifaltq *ifq)
 int
 altq_disable(struct ifaltq *ifq)
 {
-	int s;
 
 	if (!ALTQ_IS_ENABLED(ifq))
 		return 0;
 
-	s = splnet();
+	const int s = splnet();
 	IFQ_PURGE(ifq);
 	ASSERT(ifq->ifq_len == 0);
 	ifq->altq_flags &= ~(ALTQF_ENABLED|ALTQF_CLASSIFY);
@@ -365,7 +363,7 @@ tbr_timeout(void *arg)
 
 		active++;
 		if (!IFQ_IS_EMPTY(&ifp->if_snd) && ifp->if_start != NULL) {
-			int _s = splnet();
+			const int _s = splnet();
 			if_start_lock(ifp);
 			splx(_s);
 		}
@@ -444,7 +442,7 @@ int
 altq_pfdetach(struct pf_altq *a)
 {
 	struct ifnet *ifp;
-	int s, error = 0;
+	int error = 0;
 
 	if ((ifp = ifunit(a->ifname)) == NULL)
 		return EINVAL;
@@ -453,7 +451,7 @@ altq_pfdetach(struct pf_altq *a)
 	if (a->altq_disc == NULL || a->altq_disc != ifp->if_snd.altq_disc)
 		return 0;
 
-	s = splnet();
+	const int s = splnet();
 	if (ALTQ_IS_ENABLED(&ifp->if_snd))
 		error = altq_disable(&ifp->if_snd);
 	if (error == 0)
@@ -1084,7 +1082,7 @@ acc_add_filter(struct acc_classifier *classifier, struct flow_filter *filter,
     void *class, u_long *phandle)
 {
 	struct acc_filter *afp, *prev, *tmp;
-	int	i, s;
+	int	i;
 
 #ifdef INET6
 	if (filter->ff_flow.fi_family != AF_INET &&
@@ -1179,7 +1177,7 @@ acc_add_filter(struct acc_classifier *classifier, struct flow_filter *filter,
 	 * add this filter to the filter list.
 	 * filters are ordered from the highest rule number.
 	 */
-	s = splnet();
+	const int s = splnet();
 	prev = NULL;
 	LIST_FOREACH(tmp, &classifier->acc_filters[i], f_chain) {
 		if (tmp->f_filter.ff_ruleno > afp->f_filter.ff_ruleno)
@@ -1201,12 +1199,11 @@ int
 acc_delete_filter(struct acc_classifier *classifier, u_long handle)
 {
 	struct acc_filter *afp;
-	int	s;
 
 	if ((afp = filth_to_filtp(classifier, handle)) == NULL)
 		return EINVAL;
 
-	s = splnet();
+	const int s = splnet();
 	LIST_REMOVE(afp, f_chain);
 	splx(s);
 
@@ -1225,9 +1222,9 @@ int
 acc_discard_filters(struct acc_classifier *classifier, void *class, int all)
 {
 	struct acc_filter *afp;
-	int	i, s;
+	int	i;
 
-	s = splnet();
+	const int s = splnet();
 	for (i = 0; i < ACC_FILTER_TABLESIZE; i++) {
 		do {
 			LIST_FOREACH(afp, &classifier->acc_filters[i], f_chain)
