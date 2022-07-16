@@ -114,9 +114,9 @@ dkwedge_discover_gpt(struct disk *pdk, struct vnode *vp)
 {
 	static const struct uuid ent_type_unused = GPT_ENT_TYPE_UNUSED;
 	static const char gpt_hdr_sig[] = GPT_HDR_SIG;
+	uint32_t secsize = DEV_BSIZE << pdk->dk_blkshift;
+	struct buf *bp = geteblk(secsize);
 	struct dkwedge_info dkw;
-	struct buf *bp;
-	uint32_t secsize;
 	struct gpt_hdr *hdr;
 	struct gpt_ent *ent;
 	uint32_t entries, entsz;
@@ -126,9 +126,6 @@ dkwedge_discover_gpt(struct disk *pdk, struct vnode *vp)
 	u_int i;
 	size_t r, n, sz;
 	uint8_t *c;
-
-	secsize = DEV_BSIZE << pdk->dk_blkshift;
-	bp = geteblk(secsize);
 
 	/*
 	 * Note: We don't bother with a Legacy or Protective MBR
@@ -167,13 +164,11 @@ dkwedge_discover_gpt(struct disk *pdk, struct vnode *vp)
 
 	/* XXX Now that we found it, should we validate the backup? */
 
-	{
-		struct uuid disk_guid;
-		char guid_str[UUID_STR_LEN];
-		uuid_dec_le(hdr->hdr_guid, &disk_guid);
-		uuid_snprintf(guid_str, sizeof(guid_str), &disk_guid);
-		aprint_verbose("%s: GPT GUID: %s\n", pdk->dk_name, guid_str);
-	}
+	struct uuid disk_guid;
+	char guid_str[UUID_STR_LEN];
+	uuid_dec_le(hdr->hdr_guid, &disk_guid);
+	uuid_snprintf(guid_str, sizeof(guid_str), &disk_guid);
+	aprint_verbose("%s: GPT GUID: %s\n", pdk->dk_name, guid_str);
 
 	entries = le32toh(hdr->hdr_entries);
 	entsz = roundup(le32toh(hdr->hdr_entsz), 8);
