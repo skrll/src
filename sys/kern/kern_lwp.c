@@ -1093,6 +1093,7 @@ lwp_exit(struct lwp *l)
 
 	/* Verify that we hold no locks; for DIAGNOSTIC check kernel_lock. */
 	LOCKDEBUG_BARRIER(NULL, 0);
+	KASSERTMSG(l->l_blcnt == 0, "kernel_lock leaked");
 	KASSERTMSG(curcpu()->ci_biglock_count == 0, "kernel_lock leaked");
 
 	/*
