@@ -590,8 +590,10 @@ cbqrestart(struct ifaltq *ifq)
 
 	ifp = ifq->altq_ifp;
 	if (ifp->if_start &&
-	    cbqp->cbq_qlen > 0 && (ifp->if_flags & IFF_OACTIVE) == 0)
+	    cbqp->cbq_qlen > 0 && (ifp->if_flags & IFF_OACTIVE) == 0) {
+		/* Already called at splnet */
 		if_start_lock(ifp);
+	}
 }
 
 static void
