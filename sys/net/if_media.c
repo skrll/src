@@ -422,6 +422,8 @@ ifmedia_ioctl(struct ifnet *ifp, struct ifreq *ifr, struct ifmedia *ifm,
 	if (ifp == NULL || ifr == NULL || ifm == NULL)
 		return EINVAL;
 
+	KASSERTMSG(IFNET_LOCKED(ifp), "%s", ifp->if_xname);
+
 	KERNEL_LOCK_UNLESS_IFP_MPSAFE(ifp);
 
 	switch (cmd) {
