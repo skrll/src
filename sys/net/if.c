@@ -231,7 +231,6 @@ static int if_transmit(struct ifnet *, struct mbuf *);
 static int if_clone_create(const char *);
 static int if_clone_destroy(const char *);
 static void if_link_state_change_work(struct work *, void *);
-static void if_up_locked(struct ifnet *);
 static void _if_down(struct ifnet *);
 static void if_down_deactivated(struct ifnet *);
 
@@ -1059,9 +1058,7 @@ if_deferred_start_softint(void *arg)
 static void
 if_deferred_start_common(struct ifnet *ifp)
 {
-	const int s = splnet();
 	if_start_lock(ifp);
-	splx(s);
 }
 
 static inline bool
@@ -2547,7 +2544,6 @@ if_down_locked(struct ifnet *ifp)
 /*
  * Mark an interface down and notify protocols of
  * the transition.
- * NOTE: must be called at splsoftnet or equivalent.
  */
 void
 if_down(struct ifnet *ifp)
@@ -2561,7 +2557,7 @@ if_down(struct ifnet *ifp)
 /*
  * Must be called with holding if_ioctl_lock.
  */
-static void
+void
 if_up_locked(struct ifnet *ifp)
 {
 #ifdef notyet
@@ -2718,7 +2714,6 @@ bad:
 /*
  * Mark an interface up and notify protocols of
  * the transition.
- * NOTE: must be called at splsoftnet or equivalent.
  */
 void
 if_up(struct ifnet *ifp)
@@ -3147,6 +3142,8 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 	char *descr;
 	int error;
 
+	KASSERTMSG(IFNET_LOCKED(ifp), "%s", ifp->if_xname);
+
 	switch (cmd) {
 	case SIOCSIFCAP:
 		ifcr = data;
@@ -3204,17 +3201,15 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 		/*
 		 * If if_is_mpsafe(ifp), KERNEL_LOCK isn't held here, but if_up
 		 * and if_down aren't MP-safe yet, so we must hold the lock.
+		 *
+		 * IFNET_LOCK is already held.
 		 */
 		KERNEL_LOCK_IF_IFP_MPSAFE(ifp);
 		if (ifp->if_flags & IFF_UP && (ifr->ifr_flags & IFF_UP) == 0) {
-			const int s = splsoftnet();
 			if_down_locked(ifp);
-			splx(s);
 		}
 		if (ifr->ifr_flags & IFF_UP && (ifp->if_flags & IFF_UP) == 0) {
-			const int s = splsoftnet();
 			if_up_locked(ifp);
-			splx(s);
 		}
 		KERNEL_UNLOCK_IF_IFP_MPSAFE(ifp);
 		flags = (ifp->if_flags & IFF_CANTCHANGE) |
