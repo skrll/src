@@ -1552,7 +1552,7 @@ ether_ioctl_reinit(struct ethercom *ec)
 
 /*
  * Common ioctls for Ethernet interfaces.  Note, we must be
- * called at splnet().
+ * called at splnet(). XXXNH why?
  */
 int
 ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
@@ -1564,6 +1564,15 @@ ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	const struct sockaddr_dl *sdl;
 	static const uint8_t zero[ETHER_ADDR_LEN];
 	int error;
+
+	/* see the comment against if_ioctl about locking */
+	switch (cmd) {
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		break;
+	default:
+		KASSERTMSG(IFNET_LOCKED(ifp), "%s", ifp->if_xname);
+	}
 
 	switch (cmd) {
 	case SIOCINITIFADDR:

@@ -892,13 +892,12 @@ static bool
 pmf_class_network_suspend(device_t dev, const pmf_qual_t *qual)
 {
 	struct ifnet *ifp = device_pmf_class_private(dev);
-	int s;
 
-	s = splnet();
 	IFNET_LOCK(ifp);
+	const int s = splnet();
 	(*ifp->if_stop)(ifp, 0);
-	IFNET_UNLOCK(ifp);
 	splx(s);
+	IFNET_UNLOCK(ifp);
 
 	return true;
 }
@@ -907,23 +906,22 @@ static bool
 pmf_class_network_resume(device_t dev, const pmf_qual_t *qual)
 {
 	struct ifnet *ifp = device_pmf_class_private(dev);
-	int s;
 	bool restart = false;
 
-	s = splnet();
 	IFNET_LOCK(ifp);
+	const int s = splnet();
 	if (ifp->if_flags & IFF_UP) {
 		ifp->if_flags &= ~IFF_RUNNING;
 		if ((*ifp->if_init)(ifp) != 0)
 			aprint_normal_ifnet(ifp, "resume failed\n");
 		restart = true;
 	}
+	splx(s);
 	IFNET_UNLOCK(ifp);
 
+	/* XXXNH */
 	if (restart)
 		if_start_lock(ifp);
-
-	splx(s);
 
 	return true;
 }
