@@ -3276,6 +3276,7 @@ sppp_lcp_tlu(struct sppp *sp)
 	}
 
 	IFNET_LOCK(ifp);
+
 	SPPP_LOCK(sp, RW_WRITER);
 	if (ifp->if_mtu > sp->lcp.their_mru) {
 		sp->pp_saved_mtu = ifp->if_mtu;

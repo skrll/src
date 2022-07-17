@@ -555,7 +555,9 @@ if_start_lock(struct ifnet *ifp)
 		(*ifp->if_start)(ifp);
 	} else {
 		KERNEL_LOCK(1, NULL);
+		const int s = splnet();
 		(*ifp->if_start)(ifp);
+		splx(s);
 		KERNEL_UNLOCK_ONE(NULL);
 	}
 }
@@ -1138,6 +1140,7 @@ void	if_down_locked(struct ifnet *);
 void	if_link_state_change(struct ifnet *, int);
 void	if_domain_link_state_change(struct ifnet *, int);
 void	if_up(struct ifnet *);
+void	if_up_locked(struct ifnet *);
 void	ifinit(void);
 void	ifinit1(void);
 void	ifinit_post(void);

@@ -668,6 +668,7 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 #endif
 
+	// XXXNH earlier? before ether_ifdetachhook_disestablish; otherwise racey.
 	if_down_locked(ifp);
 	ifp->if_capabilities = 0;
 	mutex_enter(&ifv->ifv_lock);
