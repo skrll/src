@@ -1565,7 +1565,6 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *sa,
 	struct ifnet *dst_if;
 	struct bridge_softc *sc;
 	struct mbuf *n;
-	int s, bound;
 
 	/*
 	 * bridge_output() is called from ether_output(), furthermore
@@ -1679,13 +1678,14 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *sa,
 	 * When we use pppoe over bridge, bridge_output() can be called
 	 * in a lwp context by pppoe_timeout_wk().
 	 */
-	bound = curlwp_bind();
+	const int bound = curlwp_bind();
 	do {
 		/* XXX Should call bridge_broadcast, but there are locking
 		 * issues which need resolving first. */
 		struct bridge_iflist *bif;
 		struct mbuf *mc;
 		bool used = false;
+		int s;
 
 		n = m->m_nextpkt;
 

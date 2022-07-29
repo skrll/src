@@ -232,7 +232,7 @@ pktq_collect_counts(void *mem, void *arg, struct cpu_info *ci)
 	const pktq_counters_t *c = mem;
 	pktq_counters_t *sum = arg;
 
-	int s = splnet();
+	const int s = splnet();
 
 	for (u_int i = 0; i < PQCNT_NCOUNTERS; i++) {
 		sum->count[i] += c->count[i];
@@ -591,9 +591,8 @@ pktq_set_maxlen_cpu(void *vpq, void *vqs)
 	struct pktqueue *pq = vpq;
 	struct pcq **qp, *q, **qs = vqs;
 	unsigned i = cpu_index(curcpu());
-	int s;
 
-	s = splnet();
+	const int s = splnet();
 	qp = percpu_getref(pq->pq_pcq);
 	q = *qp;
 	*qp = qs[i];

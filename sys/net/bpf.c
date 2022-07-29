@@ -884,7 +884,7 @@ bpf_write(struct file *fp, off_t *offp, struct uio *uio,
 
 	if (mc != NULL) {
 		if (error == 0) {
-			int s = splsoftnet();
+			const int s = splsoftnet();
 			KERNEL_LOCK_UNLESS_IFP_MPSAFE(ifp);
 			ifp->_if_input(ifp, mc);
 			KERNEL_UNLOCK_UNLESS_IFP_MPSAFE(ifp);
@@ -1898,10 +1898,9 @@ static struct mbuf *
 bpf_mbuf_dequeue(struct bpf_if *bp)
 {
 	struct mbuf *m;
-	int s;
 
 	/* XXX NOMPSAFE: assumed running on one CPU */
-	s = splnet();
+	const int s = splnet();
 	m = bp->bif_mbuf_head;
 	if (m != NULL) {
 		bp->bif_mbuf_head = m->m_nextpkt;
@@ -2215,7 +2214,6 @@ _bpfdetach(struct ifnet *ifp)
 {
 	struct bpf_if *bp;
 	struct bpf_d *d;
-	int s;
 
 	mutex_enter(&bpf_mtx);
 	/* Nuke the vnodes for any open instances */
@@ -2253,7 +2251,7 @@ again:
 			BPF_IFLIST_ENTRY_DESTROY(bp);
 			if (bp->bif_si != NULL) {
 				/* XXX NOMPSAFE: assumed running on one CPU */
-				s = splnet();
+				const int s = splnet();
 				while (bp->bif_mbuf_head != NULL) {
 					struct mbuf *m = bp->bif_mbuf_head;
 					bp->bif_mbuf_head = m->m_nextpkt;
@@ -2504,7 +2502,7 @@ bpf_stats(void *p, void *arg, struct cpu_info *ci __unused)
 	struct bpf_stat *const stats = p;
 	struct bpf_stat *sum = arg;
 
-	int s = splnet();
+	const int s = splnet();
 
 	sum->bs_recv += stats->bs_recv;
 	sum->bs_drop += stats->bs_drop;
