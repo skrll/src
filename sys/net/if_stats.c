@@ -83,7 +83,7 @@ if_stats_to_if_data_cb(void *v1, void *v2, struct cpu_info *ci)
 	const uint64_t * const local_counters = v1;
 	struct if_stats_to_if_data_ctx *ctx = v2;
 
-	int s = splnet();
+	const int s = splnet();
 
 	if (ctx->ifi) {
 		ctx->ifi->ifi_ipackets   += local_counters[if_ipackets];

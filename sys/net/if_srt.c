@@ -176,11 +176,10 @@ static int
 srt_if_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct ifaddr *ifa;
-	int s;
 	int err;
 
 	err = 0;
-	s = splnet();
+	const int s = splnet();
 	switch (cmd) {
 	case SIOCINITIFADDR:
 		ifa = (void *) data;

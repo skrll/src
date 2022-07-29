@@ -290,9 +290,10 @@ mpls_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 static int
 mpls_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
-	int error = 0, s = splnet();
+	int error = 0;
 	struct ifreq *ifr = data;
 
+	const int  s = splnet();
 	switch(cmd) {
 	case SIOCINITIFADDR:
 		ifp->if_flags |= IFF_UP | IFF_RUNNING;
