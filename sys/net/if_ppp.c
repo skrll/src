@@ -492,7 +492,7 @@ int
 pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
     struct lwp *l)
 {
-	int s, error, flags, mru, npx;
+	int error, flags, mru, npx;
 	u_int nb;
 	struct ppp_option_data *odp;
 	struct compressor *cp;
@@ -542,8 +542,7 @@ pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
 		*(u_int *)data = sc->sc_flags;
 		break;
 
-	case PPPIOCGRAWIN:
-	{
+	case PPPIOCGRAWIN: {
 		struct ppp_rawin *rwin = (struct ppp_rawin *)data;
 		u_char c, q = 0;
 
@@ -554,12 +553,12 @@ pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
 			rwin->buf[q++] = sc->sc_rawin.buf[c++];
 
 		rwin->count = sc->sc_rawin.count;
-	}
-	break;
+		break;
+	    }
 
-	case PPPIOCSFLAGS:
+	case PPPIOCSFLAGS: {
 		flags = *(int *)data & SC_MASK;
-		s = splsoftnet();
+		const int s = splsoftnet();
 #ifdef PPP_COMPRESS
 		if (sc->sc_flags & SC_CCP_OPEN && !(flags & SC_CCP_OPEN))
 			ppp_ccp_closed(sc);
@@ -568,6 +567,7 @@ pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
 		sc->sc_flags = (sc->sc_flags & ~SC_MASK) | flags;
 		splx(s);
 		break;
+	    }
 
 	case PPPIOCSMRU:
 		mru = *(int *)data;
@@ -582,7 +582,7 @@ pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
 #ifdef VJC
 	case PPPIOCSMAXCID:
 		if (sc->sc_comp) {
-			s = splsoftnet();
+			const int s = splsoftnet();
 			sl_compress_setup(sc->sc_comp, *(int *)data);
 			splx(s);
 		}
@@ -620,7 +620,7 @@ pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
 		 */
 		error = 0;
 		if (odp->transmit) {
-			s = splsoftnet();
+			const int s = splsoftnet();
 			if (sc->sc_xc_state != NULL) {
 				(*sc->sc_xcomp->comp_free)(sc->sc_xc_state);
 				ppp_compressor_rele(sc->sc_xcomp);
@@ -637,7 +637,7 @@ pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
 			sc->sc_flags &= ~SC_COMP_RUN;
 			splx(s);
 		} else {
-			s = splsoftnet();
+			const int s = splsoftnet();
 			if (sc->sc_rc_state != NULL) {
 				(*sc->sc_rcomp->decomp_free)(sc->sc_rc_state);
 				ppp_compressor_rele(sc->sc_rcomp);
@@ -674,7 +674,7 @@ pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
 			npi->mode = sc->sc_npmode[npx];
 		} else {
 			if (npi->mode != sc->sc_npmode[npx]) {
-				s = splnet();
+				const int s = splnet();
 				sc->sc_npmode[npx] = npi->mode;
 				if (npi->mode != NPMODE_QUEUE) {
 					ppp_requeue(sc);
@@ -685,13 +685,14 @@ pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
 		}
 		break;
 
-	case PPPIOCGIDLE:
-		s = splsoftnet();
+	case PPPIOCGIDLE: {
+		const int s = splsoftnet();
 		t = time_second;
 		((struct ppp_idle *)data)->xmit_idle = t - sc->sc_last_sent;
 		((struct ppp_idle *)data)->recv_idle = t - sc->sc_last_recv;
 		splx(s);
 		break;
+	    }
 
 #ifdef PPP_FILTER
 	case PPPIOCSPASS:
@@ -742,7 +743,7 @@ pppioctl(struct ppp_softc *sc, u_long cmd, void *data, int flag,
 			return EPASSTHROUGH;
 		}
 		oldcode = bp->bf_insns;
-		s = splnet();
+		const int s = splnet();
 		bp->bf_len = nbp->bf_len;
 		bp->bf_insns = newcode;
 		splx(s);
@@ -770,7 +771,8 @@ pppsioctl(struct ifnet *ifp, u_long cmd, void *data)
 #ifdef	PPP_COMPRESS
 	struct ppp_comp_stats *pcp;
 #endif
-	int s = splnet(), error = 0;
+	int error = 0;
+	const int s = splnet();
 
 	switch (cmd) {
 	case SIOCSIFFLAGS:
@@ -869,7 +871,7 @@ pppoutput(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 	struct ppp_softc *sc = ifp->if_softc;
 	int protocol, address, control;
 	u_char *cp;
-	int s, error;
+	int error;
 #ifdef INET
 	struct ip *ip;
 #endif
@@ -1009,7 +1011,7 @@ pppoutput(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 	/*
 	 * Put the packet on the appropriate queue.
 	 */
-	s = splnet();
+	const int s = splnet();		// XXXNH needed?
 	if (mode == NPMODE_QUEUE) {
 		/* XXX we should limit the number of packets on this queue */
 		*sc->sc_npqtail = m0;
@@ -1096,7 +1098,7 @@ ppp_requeue(struct ppp_softc *sc)
 void
 ppp_restart(struct ppp_softc *sc)
 {
-	int s = splhigh();	/* XXX IMP ME HARDER */
+	const int s = splhigh();	/* XXX IMP ME HARDER */
 
 	sc->sc_flags &= ~SC_TBUSY;
 	softint_schedule(sc->sc_si);
@@ -1115,13 +1117,12 @@ ppp_dequeue(struct ppp_softc *sc)
 	struct mbuf *m, *mp;
 	u_char *cp;
 	int address, control, protocol;
-	int s;
 
 	/*
 	 * Grab a packet to send: first try the fast queue, then the
 	 * normal queue.
 	 */
-	s = splnet();
+	const int s = splnet();
 	if (sc->sc_nfastq < sc->sc_maxfastq) {
 		IF_DEQUEUE(&sc->sc_fastq, m);
 		if (m != NULL)
@@ -1267,20 +1268,19 @@ pppintr(void *arg)
 {
 	struct ppp_softc *sc = arg;
 	struct mbuf *m;
-	int s;
 
 	mutex_enter(softnet_lock);
 	if (!(sc->sc_flags & SC_TBUSY) &&
 	    (IFQ_IS_EMPTY(&sc->sc_if.if_snd) == 0 ||
 		sc->sc_fastq.ifq_head ||
 		sc->sc_outm)) {
-		s = splhigh();	/* XXX IMP ME HARDER */
+		const int s = splhigh();	/* XXX IMP ME HARDER */
 		sc->sc_flags |= SC_TBUSY;
 		splx(s);
 		(*sc->sc_start)(sc);
 	}
 	for (;;) {
-		s = splnet();
+		const int s = splnet();
 		IF_DEQUEUE(&sc->sc_rawq, m);
 		splx(s);
 		if (m == NULL)
@@ -1300,7 +1300,7 @@ ppp_ccp(struct ppp_softc *sc, struct mbuf *m, int rcvd)
 {
 	u_char *dp, *ep;
 	struct mbuf *mp;
-	int slen, s;
+	int slen;
 
 	/*
 	 * Get a pointer to the data after the PPP header.
@@ -1332,7 +1332,7 @@ ppp_ccp(struct ppp_softc *sc, struct mbuf *m, int rcvd)
 	case CCP_TERMACK:
 		/* CCP must be going down - disable compression */
 		if (sc->sc_flags & SC_CCP_UP) {
-			s = splhigh();	/* XXX IMP ME HARDER */
+			const int s = splhigh();	/* XXX IMP ME HARDER */
 			sc->sc_flags &= ~(SC_CCP_UP | SC_COMP_RUN | SC_DECOMP_RUN);
 			splx(s);
 		}
@@ -1350,7 +1350,7 @@ ppp_ccp(struct ppp_softc *sc, struct mbuf *m, int rcvd)
 					dp + CCP_HDRLEN, slen - CCP_HDRLEN,
 					sc->sc_unit, 0,
 					sc->sc_flags & SC_DEBUG)) {
-					s = splhigh();	/* XXX IMP ME HARDER */
+					const int s = splhigh();	/* XXX IMP ME HARDER */
 					sc->sc_flags |= SC_COMP_RUN;
 					splx(s);
 				}
@@ -1365,7 +1365,7 @@ ppp_ccp(struct ppp_softc *sc, struct mbuf *m, int rcvd)
 					dp + CCP_HDRLEN, slen - CCP_HDRLEN,
 					sc->sc_unit, 0, sc->sc_mru,
 					sc->sc_flags & SC_DEBUG)) {
-					s = splhigh();	/* XXX IMP ME HARDER */
+					const int s = splhigh();	/* XXX IMP ME HARDER */
 					sc->sc_flags |= SC_DECOMP_RUN;
 					sc->sc_flags &=
 					    ~(SC_DC_ERROR | SC_DC_FERROR);
@@ -1383,7 +1383,7 @@ ppp_ccp(struct ppp_softc *sc, struct mbuf *m, int rcvd)
 			} else {
 				if (sc->sc_rc_state && (sc->sc_flags & SC_DECOMP_RUN)) {
 					(*sc->sc_rcomp->decomp_reset)(sc->sc_rc_state);
-					s = splhigh();	/* XXX IMP ME HARDER */
+					const int s = splhigh();	/* XXX IMP ME HARDER */
 					sc->sc_flags &= ~SC_DC_ERROR;
 					splx(s);
 				}
@@ -1421,7 +1421,7 @@ ppp_ccp_closed(struct ppp_softc *sc)
 void
 ppppktin(struct ppp_softc *sc, struct mbuf *m, int lost)
 {
-	int s = splhigh();	/* XXX IMP ME HARDER */
+	const int s = splhigh();	/* XXX IMP ME HARDER */
 
 	if (lost)
 		m->m_flags |= M_ERRMARK;
@@ -1444,7 +1444,7 @@ ppp_inproc(struct ppp_softc *sc, struct mbuf *m)
 	struct ifnet *ifp = &sc->sc_if;
 	pktqueue_t *pktq = NULL;
 	struct ifqueue *inq = NULL;
-	int s, ilen, proto, rv;
+	int ilen, proto, rv;
 	u_char *cp, adrs, ctrl;
 	struct mbuf *mp, *dmp = NULL;
 #ifdef VJC
@@ -1470,7 +1470,7 @@ ppp_inproc(struct ppp_softc *sc, struct mbuf *m)
 
 	if (m->m_flags & M_ERRMARK) {
 		m->m_flags &= ~M_ERRMARK;
-		s = splhigh();	/* XXX IMP ME HARDER */
+		const int s = splhigh();	/* XXX IMP ME HARDER */
 		sc->sc_flags |= SC_VJ_RESET;
 		splx(s);
 	}
@@ -1509,7 +1509,7 @@ ppp_inproc(struct ppp_softc *sc, struct mbuf *m)
 			if (sc->sc_flags & SC_DEBUG)
 				printf("%s: decompress failed %d\n",
 				    ifp->if_xname, rv);
-			s = splhigh();	/* XXX IMP ME HARDER */
+			const int s = splhigh();	/* XXX IMP ME HARDER */
 			sc->sc_flags |= SC_VJ_RESET;
 			if (rv == DECOMP_ERROR)
 				sc->sc_flags |= SC_DC_ERROR;
@@ -1538,7 +1538,7 @@ ppp_inproc(struct ppp_softc *sc, struct mbuf *m)
 		 */
 		if (sc->sc_comp)
 			sl_uncompress_tcp(NULL, 0, TYPE_ERROR, sc->sc_comp);
-		s = splhigh();	/* XXX IMP ME HARDER */
+		const int s = splhigh();	/* XXX IMP ME HARDER */
 		sc->sc_flags &= ~SC_VJ_RESET;
 		splx(s);
 	}
@@ -1724,7 +1724,7 @@ ppp_inproc(struct ppp_softc *sc, struct mbuf *m)
 	/*
 	 * Put the packet on the appropriate input queue.
 	 */
-	s = splnet();
+	const int s = splnet();
 
 	/* pktq: inet or inet6 cases */
 	if (__predict_true(pktq)) {

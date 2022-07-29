@@ -242,7 +242,6 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
     const struct rtentry *rt)
 {
 	pktqueue_t *pktq = NULL;
-	int s;
 	int csum_flags;
 	int error = 0;
 	size_t pktlen;
@@ -361,7 +360,7 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	KASSERT(pktq != NULL);
 
 	error = 0;
-	s = splnet();
+	const int s = splnet();
 	if (__predict_true(pktq_enqueue(pktq, m, 0))) {
 		if_statadd2(ifp, if_ipackets, 1, if_ibytes, pktlen);
 	} else {
@@ -385,7 +384,6 @@ lostart(struct ifnet *ifp)
 		struct sockaddr sa;
 		size_t pktlen;
 		uint32_t af;
-		int s;
 
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 		if (m == NULL)
@@ -422,7 +420,7 @@ lostart(struct ifnet *ifp)
 
 		KASSERT(pktq != NULL);
 
-		s = splnet();
+		const int s = splnet();
 		if (__predict_false(pktq_enqueue(pktq, m, 0))) {
 			m_freem(m);
 			splx(s);

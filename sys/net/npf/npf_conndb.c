@@ -214,7 +214,7 @@ npf_conndb_insert(npf_conndb_t *cd, const npf_connkey_t *ck,
 	KASSERT(!CONNDB_ISFORW_P(con));
 	val = (void *)((uintptr_t)(void *)con | tag);
 
-	int s = splsoftnet();
+	const int s = splsoftnet();
 	ok = thmap_put(cd->cd_map, ck->ck_key, keylen, val) == val;
 	splx(s);
 
@@ -231,7 +231,7 @@ npf_conndb_remove(npf_conndb_t *cd, npf_connkey_t *ck)
 	const unsigned keylen = NPF_CONNKEY_LEN(ck);
 	void *val;
 
-	int s = splsoftnet();
+	const int s = splsoftnet();
 	val = thmap_del(cd->cd_map, ck->ck_key, keylen);
 	splx(s);
 

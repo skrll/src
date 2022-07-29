@@ -216,7 +216,7 @@ faithoutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	KASSERT(pktq != NULL);
 	m_set_rcvif(m, ifp);
 
-	s = splnet();
+	const int s = splnet();
 	if (__predict_true(pktq_enqueue(pktq, m, 0))) {
 		if_statadd2(ifp, if_ipackets, 1, if_ibytes, pktlen);
 		error = 0;

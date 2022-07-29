@@ -581,7 +581,6 @@ stf_checkaddr6(struct stf_softc *sc, const struct in6_addr *in6,
 void
 in_stf_input(struct mbuf *m, int off, int proto, void *eparg)
 {
-	int s;
 	struct stf_softc *sc = eparg;
 	struct ip *ip;
 	struct ip6_hdr *ip6;
@@ -655,7 +654,7 @@ in_stf_input(struct mbuf *m, int off, int proto, void *eparg)
 	 * reorder due to extra queueing.
 	 */
 
-	s = splnet();
+	const int s = splnet();
 	if (__predict_true(pktq_enqueue(ip6_pktq, m, 0))) {
 		if_statadd2(ifp, if_ipackets, 1, if_ibytes, pktlen);
 	} else {
