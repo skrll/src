@@ -126,9 +126,8 @@ pserialize_perform(pserialize_t psz)
 int
 pserialize_read_enter(void)
 {
-	int s;
+	const int s = splsoftserial();
 
-	s = splsoftserial();
 	curcpu()->ci_psz_read_depth++;
 	__insn_barrier();
 	return s;
