@@ -288,7 +288,7 @@ COMPATNAME(route_attach)(struct socket *so, int proto)
 {
 	struct rawcb *rp;
 	struct routecb *rop;
-	int s, error;
+	int error;
 
 	KASSERT(sotorawcb(so) == NULL);
 	rop = kmem_zalloc(sizeof(*rop), KM_SLEEP);
@@ -296,7 +296,7 @@ COMPATNAME(route_attach)(struct socket *so, int proto)
 	rp->rcb_len = sizeof(*rop);
 	so->so_pcb = rp;
 
-	s = splsoftnet();
+	const int s = splsoftnet();
 
 #ifdef NET_MPSAFE
 	KASSERT(so->so_lock == NULL);
@@ -331,12 +331,11 @@ COMPATNAME(route_detach)(struct socket *so)
 {
 	struct rawcb *rp = sotorawcb(so);
 	struct routecb *rop = (struct routecb *)rp;
-	int s;
 
 	KASSERT(rp != NULL);
 	KASSERT(solocked(so));
 
-	s = splsoftnet();
+	const int s = splsoftnet();
 	if (rop->rocb_missfilterlen != 0)
 		kmem_free(rop->rocb_missfilter, rop->rocb_missfilterlen);
 	rt_adjustcount(rp->rcb_proto.sp_protocol, -1);
@@ -390,12 +389,11 @@ static int
 COMPATNAME(route_disconnect)(struct socket *so)
 {
 	struct rawcb *rp = sotorawcb(so);
-	int s;
 
 	KASSERT(solocked(so));
 	KASSERT(rp != NULL);
 
-	s = splsoftnet();
+	const int s = splsoftnet();
 	soisdisconnected(so);
 	raw_disconnect(rp);
 	splx(s);
@@ -406,14 +404,13 @@ COMPATNAME(route_disconnect)(struct socket *so)
 static int
 COMPATNAME(route_shutdown)(struct socket *so)
 {
-	int s;
 
 	KASSERT(solocked(so));
 
 	/*
 	 * Mark the connection as being incapable of further input.
 	 */
-	s = splsoftnet();
+	const int s = splsoftnet();
 	socantsendmore(so);
 	splx(s);
 	return 0;
@@ -497,12 +494,11 @@ COMPATNAME(route_send)(struct socket *so, struct mbuf *m,
     struct sockaddr *nam, struct mbuf *control, struct lwp *l)
 {
 	int error = 0;
-	int s;
 
 	KASSERT(solocked(so));
 	KASSERT(so->so_proto == &COMPATNAME(route_protosw)[0]);
 
-	s = splsoftnet();
+	const int s = splsoftnet();
 	error = raw_send(so, m, nam, control, l, &COMPATNAME(route_output));
 	splx(s);
 
