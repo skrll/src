@@ -453,7 +453,7 @@ npf_portmap_autoget(npf_portmap_t *pm, unsigned alen, const npf_addr_t *addr)
 		memcpy(&bm->addr, addr, alen);
 		bm->addr_len = alen;
 
-		int s = splsoftnet();
+		const int s = splsoftnet();
 		ret = thmap_put(pm->addr_map, &bm->addr, alen, bm);
 		splx(s);
 

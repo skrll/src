@@ -394,19 +394,18 @@ static int
 slclose(struct tty *tp, int flag)
 {
 	struct sl_softc *sc;
-	int s;
 
 	ttywflush(tp);
 	sc = tp->t_sc;
 
 	if (sc != NULL) {
 		softint_disestablish(sc->sc_si);
-		s = splnet();
+		const int s1 = splnet();
 		if_down(&sc->sc_if);
 		IF_PURGE(&sc->sc_fastq);
-		splx(s);
+		splx(s1);
 
-		s = spltty();
+		const int s2 = spltty();
 		ttyldisc_release(tp->t_linesw);
 		tp->t_linesw = ttyldisc_default();
 		tp->t_state = 0;
@@ -428,7 +427,7 @@ slclose(struct tty *tp, int flag)
 			clalloc(&tp->t_outq, sc->sc_oldbufsize,
 			    sc->sc_oldbufquot);
 		}
-		splx(s);
+		splx(s2);
 	}
 
 	return 0;
@@ -475,7 +474,7 @@ sloutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	struct sl_softc *sc = ifp->if_softc;
 	struct ip *ip;
 	struct ifqueue *ifq = NULL;
-	int s, error;
+	int error;
 
 	IFQ_CLASSIFY(&ifp->if_snd, m, dst->sa_family);
 
@@ -509,7 +508,7 @@ sloutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	}
 #endif
 
-	s = spltty();
+	const int s1 = spltty();
 	if (sc->sc_oqlen && sc->sc_ttyp->t_outq.c_cc == sc->sc_oqlen) {
 		struct bintime bt;
 
@@ -521,9 +520,9 @@ sloutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 			slstart(sc->sc_ttyp);
 		}
 	}
-	splx(s);
+	splx(s1);
 
-	s = splnet();
+	const int s2 = splnet();
 #ifdef INET
 	if ((ip->ip_tos & IPTOS_LOWDELAY) != 0)
 		ifq = &sc->sc_fastq;
@@ -533,12 +532,12 @@ sloutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		return error;
 	}
 	getbinuptime(&sc->sc_lastpacket);
-	splx(s);
+	splx(s2);
 
-	s = spltty();
+	const int s3 = spltty();
 	if ((sc->sc_oqlen = sc->sc_ttyp->t_outq.c_cc) == 0)
 		slstart(sc->sc_ttyp);
-	splx(s);
+	splx(s3);
 
 	return 0;
 }
@@ -745,7 +744,7 @@ slintr(void *arg)
 		/*
 		 * Get a packet and send it to the interface.
 		 */
-		s = splnet();
+		const int s = splnet();
 		IF_DEQUEUE(&sc->sc_fastq, m);
 		if (m)
 			if_statinc(&sc->sc_if, if_omcasts);	/* XXX */
@@ -965,7 +964,7 @@ slintr(void *arg)
 		getbinuptime(&sc->sc_lastpacket);
 
 #ifdef INET
-		s = splnet();
+		const int s = splnet();
 		if (__predict_false(!pktq_enqueue(ip_pktq, m, 0))) {
 			if_statadd2(&sc->sc_if, if_ierrors, 1, if_iqdrops, 1);
 			m_freem(m);
@@ -984,11 +983,12 @@ slioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct ifaddr *ifa = (struct ifaddr *)data;
 	struct ifreq *ifr = (struct ifreq *)data;
-	int s = splnet(), error = 0;
+	int error = 0;
 	struct sl_softc *sc = ifp->if_softc;
 	struct ppp_stats *psp;
 	struct ppp_comp_stats *pcp;
 
+	const int s = splnet();
 	switch (cmd) {
 
 	case SIOCINITIFADDR:
