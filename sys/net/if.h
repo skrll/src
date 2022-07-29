@@ -538,10 +538,8 @@ if_output_lock(struct ifnet *cifp, struct ifnet *ifp, struct mbuf *m,
 	if (if_is_mpsafe(cifp)) {
 		return (*cifp->if_output)(ifp, m, dst, rt);
 	} else {
-		int ret;
-
 		KERNEL_LOCK(1, NULL);
-		ret = (*cifp->if_output)(ifp, m, dst, rt);
+		int ret = (*cifp->if_output)(ifp, m, dst, rt);
 		KERNEL_UNLOCK_ONE(NULL);
 		return ret;
 	}
