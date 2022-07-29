@@ -377,14 +377,13 @@ l2tp_tx_enqueue(struct l2tp_variant *var, struct mbuf *m)
 	struct l2tp_softc *sc;
 	struct ifnet *ifp;
 	struct ifqueue *ifq;
-	int s;
 
 	KASSERT(psref_held(&var->lv_psref, lv_psref_class));
 
 	sc = var->lv_softc;
 	ifp = &sc->l2tp_ec.ec_if;
 
-	s = splsoftnet();
+	const int s = splsoftnet();
 	ifq = l2tp_ifq_percpu_getref(sc->l2tp_ifq_percpu);
 	if (IF_QFULL(ifq)) {
 		if_statinc(ifp, if_oerrors);

@@ -337,13 +337,12 @@ fail0:
 static int
 gre_clone_destroy(struct ifnet *ifp)
 {
-	int s;
 	struct gre_softc *sc = ifp->if_softc;
 
 	GRE_DPRINTF(sc, "\n");
 
 	bpf_detach(ifp);
-	s = splnet();
+	const int s = splnet();		// XXXNH needed?
 	if_detach(ifp);
 
 	GRE_DPRINTF(sc, "\n");
@@ -1161,7 +1160,7 @@ gre_ioctl(struct ifnet *ifp, const u_long cmd, void *data)
 	struct if_laddrreq *lifr = (struct if_laddrreq *)data;
 	struct gre_softc *sc = ifp->if_softc;
 	struct gre_soparm *sp;
-	int fd, error = 0, oproto, otype, s;
+	int fd, error = 0, oproto, otype;
 	struct gre_soparm sp0;
 
 	ifr = data;
@@ -1184,7 +1183,7 @@ gre_ioctl(struct ifnet *ifp, const u_long cmd, void *data)
 		break;
 	}
 
-	s = splnet();
+	const int s = splnet();
 
 	sp0 = sc->sc_soparm;
 	sp0.sp_so = NULL;

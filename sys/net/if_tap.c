@@ -501,9 +501,9 @@ tap_softintr(void *cookie)
 static int
 tap_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
-	int s, error;
+	int error;
 
-	s = splnet();
+	const int s = splnet();
 
 	switch (cmd) {
 	case SIOCSIFPHYADDR:
@@ -790,9 +790,8 @@ static void
 tap_dev_close(struct tap_softc *sc)
 {
 	struct ifnet *ifp;
-	int s;
 
-	s = splnet();
+	const int s = splnet();
 	/* Let tap_start handle packets again */
 	ifp = &sc->sc_ec.ec_if;
 	ifp->if_flags &= ~IFF_OACTIVE;
@@ -1041,9 +1040,8 @@ tap_dev_ioctl(int unit, u_long cmd, void *data, struct lwp *l)
 		{
 			struct ifnet *ifp = &sc->sc_ec.ec_if;
 			struct mbuf *m;
-			int s;
 
-			s = splnet();
+			const int s = splnet();
 			IFQ_POLL(&ifp->if_snd, m);
 
 			if (m == NULL)
@@ -1121,9 +1119,8 @@ tap_dev_poll(int unit, int events, struct lwp *l)
 	if (events & (POLLIN | POLLRDNORM)) {
 		struct ifnet *ifp = &sc->sc_ec.ec_if;
 		struct mbuf *m;
-		int s;
 
-		s = splnet();
+		const int s = splnet();
 		IFQ_POLL(&ifp->if_snd, m);
 
 		if (m != NULL)
@@ -1209,10 +1206,10 @@ tap_kqread(struct knote *kn, long hint)
 	struct tap_softc *sc = (struct tap_softc *)kn->kn_hook;
 	struct ifnet *ifp = &sc->sc_ec.ec_if;
 	struct mbuf *m;
-	int s, rv;
+	int rv;
 
 	KERNEL_LOCK(1, NULL);
-	s = splnet();
+	const int s = splnet();
 	IFQ_POLL(&ifp->if_snd, m);
 
 	if (m == NULL)

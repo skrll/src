@@ -550,12 +550,11 @@ rtalloc1_locked(const struct sockaddr *dst, int report, bool wait_ok,
 {
 	rtbl_t *rtbl;
 	struct rtentry *rt;
-	int s;
 
 #ifdef NET_MPSAFE
 retry:
 #endif
-	s = splsoftnet();
+	const int s = splsoftnet();
 	rtbl = rt_gettable(dst->sa_family);
 	if (rtbl == NULL)
 		goto miss;
@@ -1140,7 +1139,8 @@ got:
 int
 rtrequest1(int req, struct rt_addrinfo *info, struct rtentry **ret_nrt)
 {
-	int s = splsoftnet(), ss;
+	const int s = splsoftnet();	// XXXNH protecting info->rti_info?
+	int ss;
 	int error = 0, rc;
 	struct rtentry *rt;
 	rtbl_t *rtbl;
@@ -2311,12 +2311,11 @@ rt_delete_matched_entries(sa_family_t family, int (*f)(struct rtentry *, void *)
 {
 
 	for (;;) {
-		int s;
 		int error;
 		struct rtentry *rt, *retrt = NULL;
 
 		RT_RLOCK();
-		s = splsoftnet();
+		const int s = splsoftnet();
 		rt = rtbl_search_matched_entry(family, f, v);
 		if (rt == NULL) {
 			splx(s);
