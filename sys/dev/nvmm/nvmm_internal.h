@@ -137,7 +137,9 @@ struct nvmm_impl {
 	void (*vcpu_resume)(struct nvmm_machine *, struct nvmm_cpu *);
 };
 
-#if defined(__x86_64__)
+#if defined(__aarch64__)
+extern const struct nvmm_impl nvmm_aarch64;
+#elif defined(__x86_64__)
 extern const struct nvmm_impl nvmm_x86_svm;
 extern const struct nvmm_impl nvmm_x86_vmx;
 #endif

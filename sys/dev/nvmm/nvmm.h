@@ -43,7 +43,9 @@ typedef uint64_t	gvaddr_t;
 typedef uint32_t	nvmm_machid_t;
 typedef uint32_t	nvmm_cpuid_t;
 
-#if defined(__x86_64__)
+#if defined(__aarch64__)
+#include <dev/nvmm/aarch64/nvmm_aarch64.h>
+#elif defined(__x86_64__)
 #include <dev/nvmm/x86/nvmm_x86.h>
 #endif
 
