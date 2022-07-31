@@ -229,7 +229,8 @@ HAVE_EFI_RT=	no
 #
 # Does the platform support NVMM?
 #
-.if ${MACHINE_ARCH} == "x86_64"
+.if ${MACHINE_CPU} == "aarch64" ||\
+    ${MACHINE_ARCH} == "x86_64"
 HAVE_NVMM=	yes
 .else
 HAVE_NVMM=	no
