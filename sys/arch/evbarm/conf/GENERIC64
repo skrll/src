@@ -57,6 +57,8 @@ options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
 # Ampere Altra/Altra Max
 #options 	EARLYCONS=plcom, CONSADDR=0x100002600000
 
+pseudo-device	nvmm		# NetBSD Virtual Machine Monitor
+
 # Hardware management of the Access flag and dirty state (HAFDBS).
 options 	ARMV81_HAFDBS
 
