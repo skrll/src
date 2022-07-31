@@ -1,10 +1,12 @@
 #	$NetBSD: Makefile,v 1.1 2018/11/07 07:43:08 maxv Exp $
 
-.if ${MACHINE_ARCH} == "x86_64"
+.include <bsd.own.mk>
+
+.if ${MACHINE_CPU} == "aarch64"
+SUBDIR= aarch64
+.elif ${MACHINE_ARCH} == "x86_64"
 SUBDIR= x86
 .endif
-
-.include <bsd.own.mk>
 
 INCSDIR= /usr/include/dev/nvmm
 
