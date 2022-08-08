@@ -268,6 +268,7 @@ static void bge_ape_unlock(struct bge_softc *, int);
 static void bge_ape_send_event(struct bge_softc *, uint32_t);
 static void bge_ape_driver_state_change(struct bge_softc *, int);
 
+#define BGE_DEBUG
 #ifdef BGE_DEBUG
 #define DPRINTF(x)	if (bgedebug) printf x
 #define DPRINTFN(n, x)	if (bgedebug >= (n)) printf x
