@@ -2731,25 +2731,24 @@ vmxnet3_rxstop(struct vmxnet3_softc *sc, struct vmxnet3_rxqueue *rxq)
 static void
 vmxnet3_stop_rendezvous(struct vmxnet3_softc *sc)
 {
-	struct vmxnet3_rxqueue *rxq;
-	struct vmxnet3_txqueue *txq;
-	struct vmxnet3_queue *vmxq;
 	int i;
 
 	for (i = 0; i < sc->vmx_nrxqueues; i++) {
-		rxq = &sc->vmx_queue[i].vxq_rxqueue;
+		struct vmxnet3_rxqueue * const rxq =
+		    &sc->vmx_queue[i].vxq_rxqueue;
 		VMXNET3_RXQ_LOCK(rxq);
 		rxq->vxrxq_stopping = true;
 		VMXNET3_RXQ_UNLOCK(rxq);
 	}
 	for (i = 0; i < sc->vmx_ntxqueues; i++) {
-		txq = &sc->vmx_queue[i].vxq_txqueue;
+		struct vmxnet3_txqueue * const txq =
+		    &sc->vmx_queue[i].vxq_txqueue;
 		VMXNET3_TXQ_LOCK(txq);
 		txq->vxtxq_stopping = true;
 		VMXNET3_TXQ_UNLOCK(txq);
 	}
 	for (i = 0; i < sc->vmx_nrxqueues; i++) {
-		vmxq = &sc->vmx_queue[i];
+		struct vmxnet3_queue * const vmxq = &sc->vmx_queue[i];
 		workqueue_wait(sc->vmx_queue_wq, &vmxq->vxq_wq_cookie);
 	}
 }
