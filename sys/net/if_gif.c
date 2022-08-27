@@ -35,7 +35,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.159 2024/09/15 09:46:45 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
-#include "opt_net_mpsafe.h"
 #endif
 
 #include <sys/param.h>
@@ -89,10 +88,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.159 2024/09/15 09:46:45 skrll Exp $");
 #include <net/if_gif.h>
 
 #include "ioconf.h"
-
-#ifdef NET_MPSAFE
-#define GIF_MPSAFE	1
-#endif
 
 /*
  * gif global variable definitions
@@ -402,9 +397,7 @@ gifattach0(struct gif_softc *sc)
 	sc->gif_if.if_addrlen = 0;
 	sc->gif_if.if_mtu    = GIF_MTU;
 	sc->gif_if.if_flags  = IFF_POINTOPOINT | IFF_MULTICAST;
-#ifdef GIF_MPSAFE
 	sc->gif_if.if_extflags  |= IFEF_MPSAFE;
-#endif
 	sc->gif_if.if_ioctl  = gif_ioctl;
 	sc->gif_if.if_output = gif_output;
 	sc->gif_if.if_start = gif_start;
@@ -1075,16 +1068,8 @@ gif_set_tunnel(struct ifnet *ifp, struct sockaddr *src, struct sockaddr *dst)
 	struct sockaddr *osrc, *odst;
 	struct sockaddr *nsrc, *ndst;
 	int error;
-#ifndef GIF_MPSAFE
-	int s;
-
-	s = splsoftnet();
-#endif
 	error = encap_lock_enter();
 	if (error) {
-#ifndef GIF_MPSAFE
-		splx(s);
-#endif
 		return error;
 	}
 
@@ -1154,9 +1139,6 @@ gif_set_tunnel(struct ifnet *ifp, struct sockaddr *src, struct sockaddr *dst)
 		sockaddr_free(odst);
 	kmem_free(ovar, sizeof(*ovar));
 
-#ifndef GIF_MPSAFE
-	splx(s);
-#endif
 	return 0;
 
  out:
@@ -1167,9 +1149,9 @@ gif_set_tunnel(struct ifnet *ifp, struct sockaddr *src, struct sockaddr *dst)
 	sockaddr_free(ndst);
 	kmem_free(nvar, sizeof(*nvar));
 
-#ifndef GIF_MPSAFE
-	splx(s);
-#endif
+	mutex_exit(&sc->gif_lock);
+	encap_lock_exit();
+
 	return error;
 }
 
@@ -1180,16 +1162,8 @@ gif_delete_tunnel(struct ifnet *ifp)
 	struct gif_variant *ovar, *nvar;
 	struct sockaddr *osrc, *odst;
 	int error;
-#ifndef GIF_MPSAFE
-	int s;
-
-	s = splsoftnet();
-#endif
 	error = encap_lock_enter();
 	if (error) {
-#ifndef GIF_MPSAFE
-		splx(s);
-#endif
 		return;
 	}
 
@@ -1205,9 +1179,6 @@ gif_delete_tunnel(struct ifnet *ifp)
 		mutex_exit(&sc->gif_lock);
 		encap_lock_exit();
 		kmem_free(nvar, sizeof(*nvar));
-#ifndef GIF_MPSAFE
-		splx(s);
-#endif
 		return;
 	}
 
@@ -1228,10 +1199,6 @@ gif_delete_tunnel(struct ifnet *ifp)
 	sockaddr_free(osrc);
 	sockaddr_free(odst);
 	kmem_free(ovar, sizeof(*ovar));
-
-#ifndef GIF_MPSAFE
-	splx(s);
-#endif
 }
 
 /*
