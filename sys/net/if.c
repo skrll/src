@@ -790,6 +790,9 @@ if_register(ifnet_t *ifp)
 	/* Announce the interface. */
 	rt_ifannouncemsg(ifp, IFAN_ARRIVAL);
 
+	/* MP safe drivers should provide their own watchdog mechanism */
+	KASSERT(!if_is_mpsafe(ifp) || ifp->if_slowtimo == NULL);
+
 	if (ifp->if_slowtimo != NULL) {
 		struct if_slowtimo_data *isd;
 
