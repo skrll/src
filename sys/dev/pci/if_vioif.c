@@ -65,6 +65,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.115 2025/07/15 05:09:28 ozaki-r Exp $
 
 #include "ioconf.h"
 
+#define XXXNH
 #ifdef NET_MPSAFE
 #define VIOIF_MPSAFE	1
 #define VIOIF_MULTIQ	1
