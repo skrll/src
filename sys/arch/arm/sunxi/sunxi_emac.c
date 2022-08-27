@@ -30,8 +30,6 @@
  * Allwinner Gigabit Ethernet MAC (EMAC) controller
  */
 
-#include "opt_net_mpsafe.h"
-
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.37 2022/09/18 15:44:29 thorpej Exp $");
 
@@ -58,15 +56,6 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.37 2022/09/18 15:44:29 thorpej Exp 
 #include <dev/fdt/syscon.h>
 
 #include <arm/sunxi/sunxi_emac.h>
-
-#ifdef NET_MPSAFE
-#define	EMAC_MPSAFE		1
-#define	CALLOUT_FLAGS		CALLOUT_MPSAFE
-#define	FDT_INTR_FLAGS		FDT_INTR_MPSAFE
-#else
-#define	CALLOUT_FLAGS		0
-#define	FDT_INTR_FLAGS		0
-#endif
 
 #define	EMAC_IFNAME		"emac%d"
 
@@ -504,18 +493,11 @@ sunxi_emac_tick(void *softc)
 {
 	struct sunxi_emac_softc *sc = softc;
 	struct mii_data *mii = &sc->mii;
-#ifndef EMAC_MPSAFE
-	int s = splnet();
-#endif
 
 	EMAC_LOCK(sc);
 	mii_tick(mii);
 	callout_schedule(&sc->stat_ch, hz);
 	EMAC_UNLOCK(sc);
-
-#ifndef EMAC_MPSAFE
-	splx(s);
-#endif
 }
 
 /* Bit Reversal - http://aggregate.org/MAGIC/#Bit%20Reversal */
@@ -917,41 +899,25 @@ static int
 sunxi_emac_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct sunxi_emac_softc *sc = ifp->if_softc;
-	int error, s;
+	int error;
 
-#ifndef EMAC_MPSAFE
-	s = splnet();
-#endif
-
-	switch (cmd) {
-	default:
-#ifdef EMAC_MPSAFE
-		s = splnet();
-#endif
-		error = ether_ioctl(ifp, cmd, data);
-#ifdef EMAC_MPSAFE
-		splx(s);
-#endif
-		if (error != ENETRESET)
-			break;
-
-		error = 0;
-
-		if (cmd == SIOCSIFCAP)
-			error = if_init(ifp);
-		else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
-			;
-		else if ((ifp->if_flags & IFF_RUNNING) != 0) {
-			EMAC_LOCK(sc);
-			sunxi_emac_setup_rxfilter(sc);
-			EMAC_UNLOCK(sc);
-		}
-		break;
-	}
-
-#ifndef EMAC_MPSAFE
+	const int s = splnet();
+	error = ether_ioctl(ifp, cmd, data);
 	splx(s);
-#endif
+	if (error != ENETRESET)
+		return error;
+
+	error = 0;
+
+	if (cmd == SIOCSIFCAP)
+		error = if_init(ifp);
+	else if (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI) {
+		EMAC_LOCK(sc);
+		if ((ifp->if_flags & IFF_RUNNING) != 0) {
+			sunxi_emac_setup_rxfilter(sc);
+		}
+		EMAC_UNLOCK(sc);
+	}
 
 	return error;
 }
@@ -1396,7 +1362,7 @@ sunxi_emac_attach(device_t parent, device_t self, void *aux)
 	}
 
 	mutex_init(&sc->mtx, MUTEX_DEFAULT, IPL_NET);
-	callout_init(&sc->stat_ch, CALLOUT_FLAGS);
+	callout_init(&sc->stat_ch, CALLOUT_MPSAFE);
 	callout_setfunc(&sc->stat_ch, sunxi_emac_tick, sc);
 
 	/* Setup clocks and regulators */
@@ -1421,7 +1387,7 @@ sunxi_emac_attach(device_t parent, device_t self, void *aux)
 
 	/* Install interrupt handler */
 	sc->ih = fdtbus_intr_establish_xname(phandle, 0, IPL_NET,
-	    FDT_INTR_FLAGS, sunxi_emac_intr, sc, device_xname(self));
+	    FDT_INTR_MPSAFE, sunxi_emac_intr, sc, device_xname(self));
 	if (sc->ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt on %s\n",
 		    intrstr);
@@ -1433,9 +1399,7 @@ sunxi_emac_attach(device_t parent, device_t self, void *aux)
 	ifp->if_softc = sc;
 	snprintf(ifp->if_xname, IFNAMSIZ, EMAC_IFNAME, device_unit(self));
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-#ifdef EMAC_MPSAFE
 	ifp->if_extflags = IFEF_MPSAFE;
-#endif
 	ifp->if_start = sunxi_emac_start;
 	ifp->if_ioctl = sunxi_emac_ioctl;
 	ifp->if_init = sunxi_emac_init;
