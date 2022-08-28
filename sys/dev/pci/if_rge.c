@@ -71,6 +71,11 @@ __KERNEL_RCSID(0, "$NetBSD: if_rge.c,v 1.54 2026/08/02 15:52:54 pgoyette Exp $")
 #define RGE_UNLOCK(sc)		mutex_exit(&(sc)->sc_lock)
 #define RGE_ASSERT_LOCKED(sc)	KASSERT(mutex_owned(&(sc)->sc_lock))
 
+#ifndef RGE_WATCHDOG_TIMEOUT
+#define RGE_WATCHDOG_TIMEOUT 5
+#endif
+static int rge_watchdog_timeout = RGE_WATCHDOG_TIMEOUT;
+
 #ifdef RGE_DEBUG
 #define DPRINTF(x)	do { if (rge_debug > 0) printf x; } while (0)
 int rge_debug = 0;
@@ -86,7 +91,6 @@ static int	rge_encap(struct rge_softc *, struct rge_queues *,
     struct mbuf *, int);
 static int	rge_ioctl(struct ifnet *, u_long, void *);
 static void	rge_start(struct ifnet *);
-static void	rge_watchdog(struct ifnet *);
 static int	rge_init(struct ifnet *);
 static int	rge_init_locked(struct rge_softc *);
 static void	rge_stop(struct ifnet *, int);
@@ -99,6 +103,7 @@ static int	rge_newbuf(struct rge_queues *, int);
 static int	rge_rx_list_init(struct rge_queues *);
 static void	rge_rx_list_fini(struct rge_queues *);
 static void	rge_tx_list_init(struct rge_queues *);
+//static void	rge_tx_list_fini(struct rge_queues *);
 static int	rge_rxeof(struct rge_softc *);
 static int	rge_txeof(struct rge_softc *);
 static int	rge_reset(struct rge_softc *);
@@ -155,9 +160,11 @@ static uint16_t	rge_read_phy(struct rge_softc *, uint16_t, uint16_t);
 static void	rge_write_phy_ocp(struct rge_softc *, uint16_t, uint16_t);
 static uint16_t	rge_read_phy_ocp(struct rge_softc *, uint16_t);
 static int	rge_get_link_status(struct rge_softc *);
-static void	rge_txstart(void *);
+static void	rge_txstart(struct rge_softc *);
 static void	rge_tick(void *);
 static void	rge_link_state(struct rge_softc *);
+static bool	rge_watchdog_tick(struct ifnet *);
+static void	rge_handle_reset_work(struct work *, void *);
 
 static const struct {
 	uint16_t reg;
@@ -355,6 +362,17 @@ rge_attach(device_t parent, device_t self, void *aux)
 	if (rge_allocmem(sc))
 		return;
 
+	char wqname[MAXCOMLEN];
+	snprintf(wqname, sizeof(wqname), "%sReset", device_xname(sc->sc_dev));
+	int error = workqueue_create(&sc->sc_reset_wq, wqname,
+	    rge_handle_reset_work, sc, PRI_NONE, IPL_SOFTCLOCK,
+	    WQ_MPSAFE);
+	if (error) {
+		aprint_error_dev(sc->sc_dev,
+		    "unable to create reset workqueue\n");
+		return;
+	}
+
 	ifp = &sc->sc_ec.ec_if;
 	ifp->if_softc = sc;
 	strlcpy(ifp->if_xname, device_xname(sc->sc_dev), IFNAMSIZ);
@@ -364,7 +382,7 @@ rge_attach(device_t parent, device_t self, void *aux)
 	ifp->if_stop = rge_stop;
 	ifp->if_start = rge_start;
 	ifp->if_init = rge_init;
-	ifp->if_watchdog = rge_watchdog;
+	ifp->if_watchdog = NULL;
 	IFQ_SET_MAXLEN(&ifp->if_snd, RGE_TX_LIST_CNT - 1);
 
 	ifp->if_capabilities = IFCAP_CSUM_IPv4_Rx |
@@ -746,18 +764,65 @@ rge_start(struct ifnet *ifp)
 	rge_txstart(sc);
 }
 
-static void
-rge_watchdog(struct ifnet *ifp)
+static bool
+rge_watchdog_check(struct rge_softc * const sc)
 {
-	struct rge_softc *sc = ifp->if_softc;
+	RGE_ASSERT_LOCKED(sc);
 
-	RGE_LOCK(sc);
+	if (!sc->sc_tx_sending)
+		return true;
 
-	device_printf(sc->sc_dev, "watchdog timeout\n");
+	if (time_uptime - sc->sc_tx_lastsent <= rge_watchdog_timeout)
+		return true;
+
+	return false;
+}
+
+static bool
+rge_watchdog_tick(struct ifnet *ifp)
+{
+	struct rge_softc * const sc = ifp->if_softc;
+
+	RGE_ASSERT_LOCKED(sc);
+
+	if (!sc->sc_trigger_reset && rge_watchdog_check(sc))
+		return true;
+
 	if_statinc(ifp, if_oerrors);
 
-	rge_init_locked(sc);
-	RGE_UNLOCK(sc);
+	if (atomic_swap_uint(&sc->sc_reset_pending, 1) == 0)
+		workqueue_enqueue(sc->sc_reset_wq, &sc->sc_reset_work, NULL);
+
+	return false;
+}
+
+
+/*
+ * Perform an interface watchdog reset.
+ */
+static void
+rge_handle_reset_work(struct work *work, void *arg)
+{
+	struct rge_softc * const sc = arg;
+	struct ifnet * const ifp = &sc->sc_ec.ec_if;
+
+	printf("%s: watchdog timeout -- resetting\n", ifp->if_xname);
+
+	/* Don't want ioctl operations to happen */
+	IFNET_LOCK(ifp);
+
+	/* reset the interface. */
+	rge_init(ifp);
+
+	IFNET_UNLOCK(ifp);
+	/*
+	 * There are still some upper layer processing which call
+	 * ifp->if_start(). e.g. ALTQ or one CPU system
+	 */
+	/* Try to get more packets going. */
+	ifp->if_start(ifp);
+
+	atomic_store_relaxed(&sc->sc_reset_pending, 0);
 }
 
 static int
@@ -3968,10 +4033,9 @@ rge_get_link_status(struct rge_softc *sc)
 	return ((RGE_READ_2(sc, RGE_PHYSTAT) & RGE_PHYSTAT_LINK) ? 1 : 0);
 }
 
-static void
-rge_txstart(void *arg)
+void
+rge_txstart(struct rge_softc *sc)
 {
-	struct rge_softc *sc = arg;
 
 	RGE_WRITE_2(sc, RGE_TXSTART, RGE_TXSTART_START);
 }
@@ -3982,10 +4046,19 @@ rge_tick(void *arg)
 	struct rge_softc *sc = arg;
 
 	RGE_LOCK(sc);
-	rge_link_state(sc);
-	RGE_UNLOCK(sc);
+	if (sc->sc_stopping) {
+		RGE_UNLOCK(sc);
+		return;
+	}
 
-	callout_schedule(&sc->sc_timeout, hz);
+	rge_link_state(sc);
+
+	struct ifnet * const ifp = &sc->sc_ec.ec_if;
+	const bool ok = rge_watchdog_tick(ifp);
+	if (ok)
+		callout_schedule(&sc->sc_timeout, hz);
+
+	RGE_UNLOCK(sc);
 }
 
 static void
