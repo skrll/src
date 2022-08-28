@@ -433,6 +433,16 @@ struct rge_softc {
 
 	kmutex_t		sc_lock;
 	u_short			sc_if_flags;
+
+	time_t			sc_tx_lastsent;	/* l: time of last tx */
+	bool			sc_tx_sending;	/* l: expecting tx complete irq */
+	bool			sc_stopping;	/* l: ignore intr because down */
+
+	struct workqueue 	*sc_reset_wq;	/* l: reset work queue */
+	struct work		sc_reset_work;
+	volatile unsigned	sc_reset_pending;
+
+	bool sc_trigger_reset;
 };
 
 /*
