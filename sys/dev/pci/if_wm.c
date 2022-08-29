@@ -851,7 +851,7 @@ static void	wm_attach(device_t, device_t, void *);
 static int	wm_detach(device_t, int);
 static bool	wm_suspend(device_t, const pmf_qual_t *);
 static bool	wm_resume(device_t, const pmf_qual_t *);
-static bool	wm_watchdog(struct ifnet *);
+static bool	wm_watchdog_tick(struct ifnet *);
 static void	wm_watchdog_txq(struct ifnet *, struct wm_txqueue *,
     uint16_t *);
 static void	wm_watchdog_txq_locked(struct ifnet *, struct wm_txqueue *,
@@ -3798,12 +3798,12 @@ wm_resume(device_t self, const pmf_qual_t *qual)
 }
 
 /*
- * wm_watchdog:
+ * wm_watchdog_tick:
  *
  *	Watchdog checker.
  */
 static bool
-wm_watchdog(struct ifnet *ifp)
+wm_watchdog_tick(struct ifnet *ifp)
 {
 	int qid;
 	struct wm_softc *sc = ifp->if_softc;
@@ -3840,6 +3840,8 @@ wm_handle_reset_work(struct work *work, void *arg)
 {
 	struct wm_softc * const sc = arg;
 	struct ifnet * const ifp = &sc->sc_ethercom.ec_if;
+
+	printf("%s: watchdog timeout -- resetting\n", ifp->if_xname);
 
 	/* Don't want ioctl operations to happen */
 	IFNET_LOCK(ifp);
@@ -3985,7 +3987,7 @@ wm_tick(void *arg)
 
 	mutex_exit(sc->sc_core_lock);
 
-	if (wm_watchdog(ifp))
+	if (wm_watchdog_tick(ifp))
 		callout_schedule(&sc->sc_tick_ch, hz);
 }
 
