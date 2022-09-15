@@ -1310,6 +1310,11 @@ struct aq_firmware_ops {
 #define AQ_LOCKED(sc)		KASSERT(mutex_owned(&(sc)->sc_mutex));
 
 /* lock for firmware interface */
+#define AQ_INTR_LOCK(sc)	mutex_enter(&(sc)->sc_intr_mutex);
+#define AQ_INTR_UNLOCK(sc)	mutex_exit(&(sc)->sc_intr_mutex);
+#define AQ_NITR_LOCKED(sc)	KASSERT(mutex_owned(&(sc)->sc_intr_mutex));
+
+/* lock for FW2X_MPI_{CONTROL,STATE]_REG read-modify-write */
 #define AQ_MPI_LOCK(sc)		mutex_enter(&(sc)->sc_mpi_mutex);
 #define AQ_MPI_UNLOCK(sc)	mutex_exit(&(sc)->sc_mpi_mutex);
 #define AQ_MPI_LOCKED(sc)	KASSERT(mutex_owned(&(sc)->sc_mpi_mutex));
@@ -1353,6 +1358,7 @@ struct aq_softc {
 	uint16_t sc_revision;
 
 	kmutex_t sc_mutex;
+	kmutex_t sc_intr_mutex;
 	kmutex_t sc_mpi_mutex;
 
 	const struct aq_firmware_ops *sc_fw_ops;
@@ -1400,8 +1406,8 @@ struct aq_softc {
 	struct ethercom sc_ethercom;
 	struct ether_addr sc_enaddr;
 	struct ifmedia sc_media;
-	int sc_ec_capenable;		/* last ec_capenable */
-	unsigned short sc_if_flags;	/* last if_flags */
+	int sc_ec_capenable;		/* last ec_capenable */	// sc_mutex
+	unsigned short sc_if_flags;	/* last if_flags */	// sc_mutex
 
 	bool sc_tx_sending;
 	bool sc_stopping;
@@ -1717,7 +1723,7 @@ aq_attach(device_t parent, device_t self, void *aux)
 	int error;
 
 	sc->sc_dev = self;
-	mutex_init(&sc->sc_mutex, MUTEX_DEFAULT, IPL_NET);
+	mutex_init(&sc->sc_mutex, MUTEX_DEFAULT, IPL_SOFTCLOCK);
 	mutex_init(&sc->sc_mpi_mutex, MUTEX_DEFAULT, IPL_NET);
 
 	sc->sc_pc = pc = pa->pa_pc;
@@ -1880,8 +1886,9 @@ aq_attach(device_t parent, device_t self, void *aux)
 	sc->sc_available_rates = aqp->aq_available_rates;
 
 	sc->sc_ethercom.ec_ifmedia = &sc->sc_media;
-	ifmedia_init(&sc->sc_media, IFM_IMASK,
-	    aq_ifmedia_change, aq_ifmedia_status);
+	//XXXNH intr?
+	ifmedia_init_with_lock(&sc->sc_media, IFM_IMASK,
+	    aq_ifmedia_change, aq_ifmedia_status, &sc->sc_intr_mutex);
 	aq_initmedia(sc);
 
 	strlcpy(ifp->if_xname, device_xname(self), IFNAMSIZ);
@@ -4499,6 +4506,8 @@ aq_update_link_status(struct aq_softc *sc)
 	unsigned int speed;
 	int changed = 0;
 
+	// Interrupt lock?
+
 	aq_get_linkmode(sc, &rate, &fc, &eee);
 
 	if (sc->sc_link_rate != rate)
@@ -4744,8 +4753,8 @@ aq_rxring_alloc(struct aq_softc *sc, struct aq_rxring *rxring)
 	for (i = 0; i < AQ_RXD_NUM; i++) {
 		rxring->rxr_mbufs[i].m = NULL;
 		/* XXX: TODO: error check */
-		bus_dmamap_create(sc->sc_dmat, MCLBYTES, 1, MCLBYTES, 0, 0,
-		    &rxring->rxr_mbufs[i].dmamap);
+		bus_dmamap_create(sc->sc_dmat, MCLBYTES, 1, MCLBYTES, 0,
+		    BUS_DMA_ALLOCNOW, &rxring->rxr_mbufs[i].dmamap);
 	}
 	return 0;
 }
@@ -5077,6 +5086,8 @@ aq_legacy_intr(void *arg)
 	uint32_t status;
 	int nintr = 0;
 
+	AQ_INTR_LOCK(sc);
+
 	status = AQ_READ_REG(sc, AQ_INTR_STATUS_REG);
 	AQ_WRITE_REG(sc, AQ_INTR_STATUS_CLR_REG, 0xffffffff);
 
@@ -5095,6 +5106,8 @@ aq_legacy_intr(void *arg)
 	if (status & __BIT(sc->sc_tx_irq[0])) {
 		nintr += aq_tx_intr(&sc->sc_queue[0].txring);
 	}
+
+	AQ_UNLOCK(sc);
 
 	return nintr;
 }
@@ -5134,6 +5147,8 @@ aq_link_intr(void *arg)
 	uint32_t status;
 	int nintr = 0;
 
+	AQ_INTR_LOCK(sc);
+
 	status = AQ_READ_REG(sc, AQ_INTR_STATUS_REG);
 	if (status & __BIT(sc->sc_linkstat_irq)) {
 		AQ_LOCK(sc);
@@ -5144,6 +5159,8 @@ aq_link_intr(void *arg)
 		    __BIT(sc->sc_linkstat_irq));
 		nintr++;
 	}
+
+	AQ_INTR_UNLOCK(sc);
 
 	return nintr;
 }
@@ -5788,6 +5805,7 @@ aq_init_locked(struct ifnet *ifp)
 	/* ready */
 	ifp->if_flags |= IFF_RUNNING;
 
+	// XXXNH INTR_LOCK?
 	/* start TX and RX */
 	aq_enable_intr(sc, /*link*/true, /*txrx*/true);
 	AQ_WRITE_REG_BIT(sc, TPB_TX_BUF_REG, TPB_TX_BUF_EN, 1);
