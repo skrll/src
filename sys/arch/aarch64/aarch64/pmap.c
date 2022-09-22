@@ -49,6 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.159 2026/08/23 22:08:39 riastradh Exp $")
 
 #include <uvm/uvm.h>
 #include <uvm/pmap/pmap_pvt.h>
+#include <uvm/pmap/pmap_tlb.h>
 
 #include <arm/cpufunc.h>
 

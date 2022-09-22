@@ -54,6 +54,9 @@
 #define	KERNEL_BASE		0x80000000
 #endif
 
+#define	KERNEL_MAXSIZE		(16 * 1024 * 1024)
+#define	KERNEL_DIRECTMAP_BASE	(KERNEL_BASE + KERNEL_MAXSIZE)
+
 /*
  * Size of User Raw I/O map
  */
