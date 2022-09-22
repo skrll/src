@@ -1168,6 +1168,8 @@ AARCH64REG_READWRITE_INLINE(tcr_el1)		// Translation Control Register
 #define TCR_EPD0		__BIT(7)		/* Walk Disable for TTBR0 */
 #define TCR_T0SZ		__BITS(5,0)		/* Size offset for TTBR0_EL1 */
 
+#define TCR_PAGE_SIZE1(tcr)	(1UL << ((1UL << __SHIFTOUT(tcr, TCR_TG1)) + 8))
+
 AARCH64REG_READWRITE_INLINE(tcr_el2)	// Translation Control Register EL2
 
 /* TCR_EL2 - Translation Control Register */

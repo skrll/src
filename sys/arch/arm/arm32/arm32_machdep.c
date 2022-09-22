@@ -779,6 +779,30 @@ cpu_init_secondary_processor(int cpuindex)
 	cpu_setup(boot_args);
 
 #ifdef ARM_MMU_EXTENDED
+
+	armreg_prrr_write(
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(TRE_NORMAL_NC)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(TRE_NORMAL_WB)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(TRE_NORMAL_WT)) |
+	    __SHIFTIN(PRRR_TR_DEVICE, PRRR_TRn(TRE_DEVICE)) |
+	    __SHIFTIN(PRRR_TR_STRONG, PRRR_TRn(TRE_STRONG)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(5)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(6)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(7)) |
+	    PRRR_DS1 |
+	    PRRR_NS1 |
+	    0);
+
+	armreg_nmrr_write(
+	    __SHIFTIN(NMRR_NC, NMRR_IRn(TRE_NORMAL_NC)) |
+	    __SHIFTIN(NMRR_NC, NMRR_ORn(TRE_NORMAL_NC)) |
+	    __SHIFTIN(NMRR_WBWA, NMRR_IRn(TRE_NORMAL_WB)) |
+	    __SHIFTIN(NMRR_WBWA, NMRR_ORn(TRE_NORMAL_WB)) |
+	    __SHIFTIN(NMRR_WT, NMRR_IRn(TRE_NORMAL_WT)) |
+	    __SHIFTIN(NMRR_WT, NMRR_ORn(TRE_NORMAL_WT)) |
+	    0);
+
+
 	/*
 	 * TTBCR should have been initialized by the MD start code.
 	 */
@@ -877,6 +901,8 @@ mm_md_direct_mapped_phys(paddr_t pa, vaddr_t *vap)
 bool
 mm_md_page_color(paddr_t pa, int *colorp)
 {
+#ifdef __HAVE_MM_MD_CACHE_ALIASING
+#endif
 #if (ARM_MMU_V6 + ARM_MMU_V7) != 0
 	*colorp = atop(pa & arm_cache_prefer_mask);
 

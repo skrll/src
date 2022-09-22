@@ -121,6 +121,12 @@ typedef uint32_t pd_entry_t;
 
 #if defined(_KERNEL)
 
+static inline const size_t
+pte_index(vaddr_t va)
+{
+	return ((va >> PGSHIFT) & (NPTEPG - 1));
+}
+
 static inline bool
 pte_valid_p(pt_entry_t pte)
 {
