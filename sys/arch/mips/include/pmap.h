@@ -115,7 +115,7 @@ struct vm_page_md;
  * EXT/INS instructions on their addresses.
  */
 #if (MIPS32R2 + MIPS64R2 + MIPS64R2_RMIXL) > 0
-#define	PMAP_SEGTAB_ALIGN __aligned(sizeof(void *)*NSEGPG) __section(".data1")
+#define PMAP_SEGTAB_ALIGN __aligned(sizeof(void *)*NSEGPG) __section(".data1")
 #endif
 
 #include <uvm/uvm_physseg.h>
@@ -140,6 +140,12 @@ static inline vsize_t
 pmap_md_cache_prefer_mask(void)
 {
 	return MIPS_HAS_R4K_MMU ? mips_cache_info.mci_cache_prefer_mask : 0;
+}
+
+static inline pt_entry_t *
+pmap_md_nptep(pt_entry_t *ptep)
+{
+	return ptep + 1;
 }
 
 static inline void
@@ -192,10 +198,25 @@ vaddr_t	pmap_md_pool_phystov(paddr_t);
 #define	POOL_VTOPHYS(va)	pmap_md_pool_vtophys((vaddr_t)va)
 #define	POOL_PHYSTOV(pa)	pmap_md_pool_phystov((paddr_t)pa)
 
+// these use register_t so we can pass XKPHYS addresses to them on N32
+bool	pmap_md_direct_mapped_vaddr_p(register_t);
+paddr_t	pmap_md_direct_mapped_vaddr_to_paddr(register_t);
+
+
 #define pmap_md_direct_map_paddr(pa)	pmap_md_pool_phystov((paddr_t)pa)
+
+bool	pmap_md_io_vaddr_p(vaddr_t);
+
+/*
+ * Alternate mapping hooks for pool pages.  Avoids thrashing the TLB.
+ */
+vaddr_t pmap_md_map_poolpage(paddr_t, size_t);
+paddr_t pmap_md_unmap_poolpage(vaddr_t, size_t);
+struct vm_page *pmap_md_alloc_poolpage(int);
 
 struct tlbmask {
 	vaddr_t	tlb_hi;
+/* XXX register_t */
 #ifdef __mips_o32
 	uint32_t tlb_lo0;
 	uint32_t tlb_lo1;

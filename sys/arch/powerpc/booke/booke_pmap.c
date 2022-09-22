@@ -132,7 +132,7 @@ pmap_kvtopte(const pmap_segtab_t *stb, vaddr_t va)
 	pmap_ptpage_t * const ppg = stb->seg_ppg[idx];
 	if (ppg == NULL)
 		return NULL;
-	const size_t pte_idx = (va >> PGSHIFT) & (NPTEPG - 1);
+	const size_t pte_idx = pte_index(va);
 
 	return &ppg->ppg_ptes[pte_idx];
 }

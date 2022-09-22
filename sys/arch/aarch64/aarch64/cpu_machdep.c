@@ -114,15 +114,13 @@ softint_init_md(lwp_t *l, u_int level, uintptr_t *machdep)
 void
 dosoftints(void)
 {
-	struct cpu_info * const ci = curcpu();
-	const int opl = ci->ci_cpl;
-	const uint32_t softiplmask = SOFTIPLMASK(opl);
-	int s;
-
+	const int opl = splhigh();
 	KDASSERT(kpreempt_disabled());
 
-	s = splhigh();
-	KASSERT(s == opl);
+	struct cpu_info * const ci = curcpu();
+	const uint32_t softiplmask = SOFTIPLMASK(opl);
+
+	KASSERT(ci->ci_intr_depth == 0);
 	for (;;) {
 		u_int softints = ci->ci_softints & softiplmask;
 		KASSERT((softints != 0) == ((ci->ci_softints >> opl) != 0));
@@ -153,7 +151,7 @@ dosoftints(void)
 		DOSOFTINT(CLOCK);
 		panic("dosoftints wtf (softints=%u?, ipl=%d)", softints, opl);
 	}
-	splx(s);
+	splx(opl);
 }
 #endif /* !__HAVE_PIC_FAST_SOFTINTS */
 #endif /* __HAVE_FAST_SOFTINTS */
