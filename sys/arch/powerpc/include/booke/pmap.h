@@ -156,6 +156,18 @@ pmap_md_kernel_vaddr_to_paddr(vaddr_t vax)
 	return 0;
 }
 
+static inline size_t
+pte_index(vaddr_t va)
+{
+	return ((va >> PGSHIFT) & (NPTEPG - 1));
+}
+
+static inline pt_entry_t *
+pmap_md_nptep(pt_entry_t *ptep)
+{
+	return ptep + 1;
+}
+
 static __inline size_t
 pmap_md_tlb_asid_max(void)
 {

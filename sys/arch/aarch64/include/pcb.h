@@ -36,9 +36,18 @@
 
 #include <aarch64/reg.h>
 
+struct pcb_faultinfo {
+	void *pfi_faultptep;
+	vaddr_t pfi_faultaddr;
+	u_int pfi_repeats;
+	pid_t pfi_lastpid;
+	uint8_t pfi_faulttype;
+};
+
 struct pcb {
 	struct fpreg pcb_fpregs;
 	struct trapframe *pcb_tf;
+	struct pcb_faultinfo pcb_faultinfo;
 };
 
 struct md_coredump {
