@@ -37,10 +37,11 @@
 #include <sys/cdefs.h>
 #include <sys/featuretest.h>
 #include <arm/int_types.h>
+#include <arm/cpuconf.h>
 
 #if defined(_KERNEL)
 typedef struct label_t {	/* Used by setjmp & longjmp */
-        int val[11];
+	int val[11];
 } label_t;
 #endif
 
@@ -93,6 +94,9 @@ typedef	int		__register_t;
 #if defined(_ARM_ARCH_6)
 #define	__HAVE_MAXPROC_HOOK
 #define	__HAVE_UCAS_MP
+#endif
+#if defined(ARM_MMU_EXTENDED)
+#define __HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #endif
 
 #if defined(_KERNEL) || defined(_KMEMUSER)

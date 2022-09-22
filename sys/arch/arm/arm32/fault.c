@@ -483,7 +483,7 @@ data_abort_handler(trapframe_t *tf)
 			    pfi->pfi_repeats, fsr & FAULT_TYPE_MASK,
 			    data_aborts[fsr & FAULT_TYPE_MASK].desc, va,
 			    far, tf->tf_pc, map->pmap->pm_pai[0].pai_asid,
-			    asid, ptep, ptep ? *ptep : 0);
+			    asid, ptep, ptep ? pte_value(*ptep) : 0);
 			cpu_Debugger();
 		}
 	} else {

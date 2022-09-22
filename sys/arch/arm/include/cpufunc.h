@@ -42,7 +42,8 @@
 #ifndef	_ARM_CPUFUNC_H_
 #define	_ARM_CPUFUNC_H_
 
-#ifdef _ARM_ARCH_7
+#if defined(_ARM_ARCH_7)
+
 /*
  * Options for DMB and DSB:
  *	oshld	Outer Shareable, load

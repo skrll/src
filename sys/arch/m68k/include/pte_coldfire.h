@@ -236,6 +236,8 @@ pte_make_kenter_pa(paddr_t pa, struct vm_page_md *mdpg, vm_prot_t prot,
 
 	return pt_entry;
 }
+
+
 #endif /* _KERNEL_ */
 
 #endif /* _M68K_PTE_COLDFIRE_H_ */

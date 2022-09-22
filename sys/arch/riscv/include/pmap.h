@@ -281,6 +281,7 @@ pmap_md_asid_deactivate(struct pmap *pmap)
 
 	/* switch to kernel pmap */
 	pmap_md_asid_activate(KERNEL_PID, pmap_kernel(), NULL);
+
 }
 
 #endif /* __PMAP_PRIVATE */

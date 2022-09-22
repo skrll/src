@@ -310,7 +310,8 @@ pmap_md_unmap_ephemeral_page(struct vm_page_md *mdpg, bool locked_p,
 static void
 pmap_md_vca_page_wbinv(struct vm_page_md *mdpg, bool locked_p)
 {
-	UVMHIST_FUNC(__func__); UVMHIST_CALLED(pmaphist);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLED(pmaphist);
 	pt_entry_t pte;
 
 	const register_t va = pmap_md_map_ephemeral_page(mdpg, locked_p,
@@ -353,6 +354,7 @@ pmap_bootstrap(void)
 
 #ifdef MULTIPROCESSOR
 	pmap_t pm = pmap_kernel();
+
 	kcpuset_create(&pm->pm_onproc, true);
 	kcpuset_create(&pm->pm_active, true);
 	KASSERT(pm->pm_onproc != NULL);
@@ -671,7 +673,8 @@ pmap_copy_page(paddr_t src_pa, paddr_t dst_pa)
 void
 pmap_md_page_syncicache(struct vm_page_md *mdpg, const kcpuset_t *onproc)
 {
-	UVMHIST_FUNC(__func__); UVMHIST_CALLED(pmaphist);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLED(pmaphist);
 	struct mips_options * const opts = &mips_options;
 	if (opts->mips_cpu_flags & CPU_MIPS_I_D_CACHE_COHERENT)
 		return;
@@ -739,9 +742,9 @@ pmap_md_map_poolpage(paddr_t pa, size_t len)
 		vaddr_t last_va = trunc_page(pv->pv_va);
 
 		KASSERT(len == PAGE_SIZE || last_va == pa);
-		KASSERT(pv->pv_pmap == NULL);
-		KASSERT(pv->pv_next == NULL);
+		KASSERT(VM_PAGEMD_PVLIST_EMPTY_P(mdpg));
 		KASSERT(!VM_PAGEMD_EXECPAGE_P(mdpg));
+		KASSERT(pv->pv_next == NULL);
 
 		/*
 		 * If this page was last mapped with an address that
@@ -774,10 +777,10 @@ pmap_md_unmap_poolpage(vaddr_t va, size_t len)
 
 	pv_entry_t pv = &mdpg->mdpg_first;
 
+	KASSERT(VM_PAGEMD_PVLIST_EMPTY_P(mdpg));
 	/* Note last mapped address for future color check */
 	pv->pv_va = va;
 
-	KASSERT(pv->pv_pmap == NULL);
 	KASSERT(pv->pv_next == NULL);
 
 	return pa;
@@ -821,14 +824,16 @@ pmap_md_io_vaddr_p(vaddr_t va)
 void
 pmap_md_icache_sync_range_index(vaddr_t va, vsize_t len)
 {
-	UVMHIST_FUNC(__func__); UVMHIST_CALLED(pmaphist);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLED(pmaphist);
 	mips_icache_sync_range_index(va, len);
 }
 
 void
 pmap_md_icache_sync_all(void)
 {
-	UVMHIST_FUNC(__func__); UVMHIST_CALLED(pmaphist);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLED(pmaphist);
 	mips_icache_sync_all();
 }
 
@@ -889,13 +894,13 @@ pmap_md_tlb_check_entry(void *ctx, vaddr_t va, tlb_asid_t asid, pt_entry_t pte)
 		}
 	}
 
-        KASSERTMSG(pte == xpte,
-            "pmap=%p va=%#"PRIxVADDR" asid=%u: TLB pte (%#"PRIxPTE
+	KASSERTMSG(pte == xpte,
+	    "pmap=%p va=%#"PRIxVADDR" asid=%u: TLB pte (%#"PRIxPTE
 	    ") != real pte (%#"PRIxPTE"/%#"PRIxPTE") @ %p",
-            pm, va, asid, pte_value(pte), pte_value(xpte), pte_value(opte),
+	    pm, va, asid, pte_value(pte), pte_value(xpte), pte_value(opte),
 	    ptep);
 
-        return true;
+	return true;
 }
 
 void
@@ -1017,7 +1022,8 @@ pmap_md_vca_add(struct vm_page_md *mdpg, vaddr_t va, pt_entry_t *ptep)
 void
 pmap_md_vca_clean(struct vm_page_md *mdpg, int op)
 {
-	UVMHIST_FUNC(__func__); UVMHIST_CALLED(pmaphist);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLED(pmaphist);
 	if (!MIPS_HAS_R4K_MMU || !MIPS_CACHE_VIRTUAL_ALIAS)
 		return;
 

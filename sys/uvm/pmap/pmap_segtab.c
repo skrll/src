@@ -447,7 +447,7 @@ pmap_pte_lookup(pmap_t pmap, vaddr_t va)
 	if (ppg == NULL)
 		return NULL;
 
-	const size_t pte_idx = (va >> PGSHIFT) & (NPTEPG - 1);
+	const size_t pte_idx = pte_index(va);
 
 	return ppg->ppg_ptes + pte_idx;
 }
@@ -1191,7 +1191,7 @@ pmap_pte_reserve(pmap_t pmap, vaddr_t va, int flags)
 #endif /* PMAP_HWPAGEWALKER && PMAP_MAP_PDETABPAGE */
 	}
 
-	const size_t pte_idx = (va >> PGSHIFT) & (NPTEPG - 1);
+	const size_t pte_idx = pte_index(va);
 
 	return ppg->ppg_ptes + pte_idx;
 }
