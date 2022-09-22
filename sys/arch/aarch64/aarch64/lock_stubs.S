@@ -49,10 +49,8 @@ ENTRY(mutex_enter)
 	ldaxr	x2, [x0]		/* load old value */
 	cbnz	x2, 3f			/*   equals zero? */
 	stxr	w3, x1, [x0]		/* store curlwp as new value */
-	cbnz	w3, 2f			/*   succeed? nope, try again. */
+	cbnz	w3, 1b			/*   succeed? nope, try again. */
 	ret
-2:
-	b	1b
 3:
 	b	_C_LABEL(mutex_vector_enter)
 END(mutex_enter)
@@ -70,10 +68,8 @@ ENTRY(mutex_exit)
 	cmp	x1, x2			/*   equals curlwp? */
 	b.ne	3f			/*     slow path if different */
 	stlxr	w3, xzr, [x0]		/* store zero as new value */
-	cbnz	w3, 2f			/*   succeed? nope, try again. */
+	cbnz	w3, 1b			/*   succeed? nope, try again. */
 	ret
-2:
-	b	1b
 3:
 	b	_C_LABEL(mutex_vector_exit)
 END(mutex_exit)
