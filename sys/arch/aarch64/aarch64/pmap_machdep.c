@@ -305,6 +305,17 @@ pmap_md_map_poolpage(paddr_t pa, size_t len)
 		KASSERT(pv->pv_next == NULL);
 		KASSERT(!VM_PAGEMD_EXECPAGE_P(mdpg));
 
+#ifdef PMAP_VIRTUAL_CACHE_ALIASES
+		/*
+		 * If this page was last mapped with an address that
+		 * might cause aliases, flush the page from the cache.
+		 */
+		if (AARCH64_CACHE_VIRTUAL_ALIAS
+		    && aarch64_cache_badalias(last_va, va)) {
+			pmap_md_vca_page_wbinv(mdpg, false);
+		}
+#endif
+
 		pv->pv_va = va;
 	}
 
@@ -324,6 +335,9 @@ pmap_md_unmap_poolpage(vaddr_t va, size_t len)
 	KASSERT(pg);
 	struct vm_page_md * const mdpg = VM_PAGE_TO_MD(pg);
 
+#ifdef PMAP_VIRTUAL_CACHE_ALIASES
+	KASSERT(VM_PAGEMD_CACHED_P(mdpg));
+#endif
 	KASSERT(!VM_PAGEMD_EXECPAGE_P(mdpg));
 
 	const pv_entry_t pv = &mdpg->mdpg_first;
@@ -460,6 +474,16 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	/*
 	 * Initialise the kernel pmap object
 	 */
+#if 0
+	/* uvmexp.ncolors = icachesize / icacheways / PAGE_SIZE; */
+	uvmexp.ncolors = aarch64_cache_vindexsize / PAGE_SIZE;
+
+	/* devmap already uses last of va? */
+	if ((virtual_devmap_addr != 0) && (virtual_devmap_addr < vend))
+		vend = virtual_devmap_addr;
+
+#endif
+
 	virtual_avail = vstart;
 	virtual_end = vend;
 
@@ -484,6 +508,27 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	kcpuset_set(pm->pm_onproc, cpu_number());
 	kcpuset_set(pm->pm_active, cpu_number());
 #endif
+
+	VPRINTF("specials(none) ");
+
+	/*
+	 * does VIPT exist for aarch64?
+	 */
+	//nptes = 1
+
+#if 0
+	pmap_alloc_specials(&virtual_avail, nptes, &csrcp, &csrc_pte);
+	pmap_set_pt_cache_mode(l1pt, (vaddr_t)csrc_pte, nptes);
+	pmap_alloc_specials(&virtual_avail, nptes, &cdstp, &cdst_pte);
+	pmap_set_pt_cache_mode(l1pt, (vaddr_t)cdst_pte, nptes);
+	pmap_alloc_specials(&virtual_avail, nptes, &memhook, NULL);
+	if (msgbufaddr == NULL) {
+		pmap_alloc_specials(&virtual_avail,
+		    round_page(MSGBUFSIZE) / PAGE_SIZE,
+		    (void *)&msgbufaddr, NULL);
+	}
+#endif
+
 
 	VPRINTF("nkmempages ");
 	/*
@@ -559,7 +604,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	VPRINTF("done\n");
 }
 
-
 #if defined(EFI_RUNTIME)
 void
 pmap_md_activate_efirt(void)
@@ -601,6 +645,25 @@ pmap_md_pdetab_fini(struct pmap *pm)
 	KASSERT(pm != NULL);
 }
 
+#ifdef PMAP_VIRTUAL_CACHE_ALIASES
+
+static void
+pmap_md_vca_page_wbinv(struct vm_page_md *mdpg, bool locked_p)
+{
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(pmaphist);
+#ifdef needtowrite
+	pt_entry_t pte;
+
+	const register_t va = pmap_md_map_ephemeral_page(mdpg, locked_p,
+	    VM_PROT_READ, &pte);
+
+	mips_dcache_wbinv_range(va, PAGE_SIZE);
+
+	pmap_md_unmap_ephemeral_page(mdpg, locked_p, va, pte);
+#endif
+}
+#endif
+
 
 void
 pmap_md_page_syncicache(struct vm_page_md *mdpg, const kcpuset_t *onproc)
@@ -621,10 +684,171 @@ pmap_md_page_syncicache(struct vm_page_md *mdpg, const kcpuset_t *onproc)
 bool
 pmap_md_ok_to_steal_p(const uvm_physseg_t bank, size_t npgs)
 {
+#ifdef needtowrite
+	if (uvm_physseg_get_avail_start(bank) + npgs >= atop(MIPS_PHYS_MASK + 1)) {
+		aprint_debug("%s: seg not enough in KSEG0 for %zu pages\n",
+		    __func__, npgs);
+		return false;
+	}
+#endif
+
+	if (uvm_physseg_get_avail_start(bank) + npgs >= atop(physical_start + 1 * 1024 * 1024 * 1024)) {
+		aprint_debug("%s: not enough space in direct map for %zu pages (%lx - %lx)\n",
+		    __func__, npgs, uvm_physseg_get_avail_start(bank), uvm_physseg_get_avail_end(bank));
+		return false;
+	}
 
 	return true;
 }
 
+#ifdef PMAP_VIRTUAL_CACHE_ALIASES
+
+bool
+pmap_md_vca_add(struct vm_page *pg, vaddr_t va, pt_entry_t *ptep)
+{
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(pmaphist);
+#ifdef needtowrite
+	struct vm_page_md * const mdpg = VM_PAGE_TO_MD(pg);
+	if (!MIPS_HAS_R4K_MMU || !MIPS_CACHE_VIRTUAL_ALIAS)
+		return false;
+
+	/*
+	 * There is at least one other VA mapping this page.
+	 * Check if they are cache index compatible.
+	 */
+
+	KASSERT(VM_PAGEMD_PVLIST_LOCKED_P(mdpg));
+	pv_entry_t pv = &mdpg->mdpg_first;
+#if defined(PMAP_NO_PV_UNCACHED)
+	/*
+	 * Instead of mapping uncached, which some platforms
+	 * cannot support, remove incompatible mappings from others pmaps.
+	 * When this address is touched again, the uvm will
+	 * fault it in.  Because of this, each page will only
+	 * be mapped with one index at any given time.
+	 *
+	 * We need to deal with all entries on the list - if the first is
+	 * incompatible with the new mapping then they all will be.
+	 */
+	if (__predict_true(!mips_cache_badalias(pv->pv_va, va))) {
+		return false;
+	}
+	KASSERT(pv->pv_pmap != NULL);
+	bool ret = false;
+	for (pv_entry_t npv = pv; npv && npv->pv_pmap;) {
+		if (npv->pv_va & PV_KENTER) {
+			npv = npv->pv_next;
+			continue;
+		}
+		ret = true;
+		vaddr_t nva = trunc_page(npv->pv_va);
+		pmap_t npm = npv->pv_pmap;
+		VM_PAGEMD_PVLIST_UNLOCK(mdpg);
+		pmap_remove(npm, nva, nva + PAGE_SIZE);
+
+		/*
+		 * pmap_update is not required here as we're the pmap
+		 * and we know that the invalidation happened or the
+		 * asid has been released (and activation is deferred)
+		 *
+		 * A deferred activation should NOT occur here.
+		 */
+		(void)VM_PAGEMD_PVLIST_LOCK(mdpg);
+
+		npv = pv;
+	}
+	KASSERT(ret == true);
+
+	return ret;
+#else	/* !PMAP_NO_PV_UNCACHED */
+	if (VM_PAGEMD_CACHED_P(mdpg)) {
+		/*
+		 * If this page is cached, then all mappings
+		 * have the same cache alias so we only need
+		 * to check the first page to see if it's
+		 * incompatible with the new mapping.
+		 *
+		 * If the mappings are incompatible, map this
+		 * page as uncached and re-map all the current
+		 * mapping as uncached until all pages can
+		 * share the same cache index again.
+		 */
+		if (mips_cache_badalias(pv->pv_va, va)) {
+			pmap_page_cache(pg, false);
+			pmap_md_vca_page_wbinv(mdpg, true);
+			*ptep = pte_cached_change(*ptep, false);
+			PMAP_COUNT(page_cache_evictions);
+		}
+	} else {
+		*ptep = pte_cached_change(*ptep, false);
+		PMAP_COUNT(page_cache_evictions);
+	}
+	return false;
+#endif	/* !PMAP_NO_PV_UNCACHED */
+#endif
+
+
+	return false;
+}
+
+void
+pmap_md_vca_clean(struct vm_page_md *mdpg, int op)
+{
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(pmaphist);
+#ifdef needtowrite
+	if (!MIPS_HAS_R4K_MMU || !MIPS_CACHE_VIRTUAL_ALIAS)
+		return;
+
+	UVMHIST_LOG(pmaphist, "(pg=%p, op=%d)", pg, op, 0, 0);
+	KASSERT(VM_PAGEMD_PVLIST_LOCKED_P(VM_PAGE_TO_MD(pg)));
+
+	if (op == PMAP_WB || op == PMAP_WBINV) {
+		pmap_md_vca_page_wbinv(mdpg, true);
+	} else if (op == PMAP_INV) {
+		KASSERT(op == PMAP_INV && false);
+		//mips_dcache_inv_range_index(va, PAGE_SIZE);
+	}
+#endif
+}
+
+/*
+ * In the PMAP_NO_PV_CACHED case, all conflicts are resolved at mapping
+ * so nothing needs to be done in removal.
+ */
+void
+pmap_md_vca_remove(struct vm_page *pg, vaddr_t va, bool dirty, bool last)
+{
+#ifdef needtowrite
+#if !defined(PMAP_NO_PV_UNCACHED)
+	struct vm_page_md * const mdpg = VM_PAGE_TO_MD(pg);
+	if (!MIPS_HAS_R4K_MMU
+	    || !MIPS_CACHE_VIRTUAL_ALIAS
+	    || !VM_PAGEMD_UNCACHED_P(mdpg))
+		return;
+
+	KASSERT(kpreempt_disabled());
+	KASSERT((va & PAGE_MASK) == 0);
+
+	/*
+	 * Page is currently uncached, check if alias mapping has been
+	 * removed.  If it was, then reenable caching.
+	 */
+	(void)VM_PAGEMD_PVLIST_READLOCK(mdpg);
+	pv_entry_t pv = &mdpg->mdpg_first;
+	pv_entry_t pv0 = pv->pv_next;
+
+	for (; pv0; pv0 = pv0->pv_next) {
+		if (mips_cache_badalias(pv->pv_va, pv0->pv_va))
+			break;
+	}
+	if (pv0 == NULL)
+		pmap_page_cache(pg, true);
+	VM_PAGEMD_PVLIST_UNLOCK(mdpg);
+#endif
+#endif
+}
+
+#endif
 
 pd_entry_t *
 pmap_l0table(struct pmap *pm)
