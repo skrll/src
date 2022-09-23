@@ -2,8 +2,15 @@
 
 SRCS+=	byte_swap_2.S byte_swap_4.S byte_swap_8.S
 SRCS+=	memcmp.S
-SRCS+=	memcpy.S
+#SRCS+=	memcpy.S
 SRCS+=	memmove.S
 SRCS+=	memset.S
+SRCS+=	memset.S
+SRCS+=	strcat.S
+SRCS+=	strchr.c
 #SRCS+=	strcmp.S
 #SRCS+=	strncmp.S
+
+
+
+#bcopy.S  Makefile.inc  memcmp.S  memcpy.S.old  memmove.S  memset.S  strcat.S  strlen.S  strnlen.S
