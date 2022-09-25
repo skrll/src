@@ -31,6 +31,7 @@
 
 #include "com.h"
 #include "plcom.h"
+#include "opt_console.h"
 #include "opt_efi.h"
 #include "opt_multiprocessor.h"
 
@@ -90,6 +91,39 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.40 2025/10/04 04:12:37 thorpej E
 #define	SPCR_BAUD_57600				6
 #define	SPCR_BAUD_115200			7
 
+#ifdef CONSADDR
+#define ACPI_CORE_VBASE		KERNEL_IO_VBASE
+#define ACPI_CORE_PBASE		L2_TRUNC_BLOCK(CONSADDR)
+#define ACPI_CORE_SIZE		0x08000000
+
+#define ACPI_CORE_PTOV(p)       (((p) - ACPI_CORE_PBASE) + ACPI_CORE_VBASE)
+
+#define ACPI_UART_BASE		CONSADDR
+
+
+void acpi_platform_early_putchar(char);
+
+void __noasan
+acpi_platform_early_putchar(char c)
+{
+	volatile uint32_t *uartaddr = cpu_earlydevice_va_p() ?
+		(volatile uint32_t *)ACPI_CORE_PTOV(ACPI_UART_BASE) :
+		(volatile uint32_t *)ACPI_UART_BASE;
+
+	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFF) != 0)
+		continue;
+
+	uartaddr[PL01XCOM_DR / 4] = htole32(c);
+	dsb(sy);
+
+	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFE) == 0)
+		continue;
+}
+
+#endif
+
+
+
 static const struct acpi_spcr_baud_rate {
 	uint8_t		id;
 	int		baud_rate;
@@ -134,6 +168,11 @@ static const struct pmap_devmap *
 acpi_platform_devmap(void)
 {
 	static const struct pmap_devmap devmap[] = {
+#ifdef CONSADDR
+		DEVMAP_ENTRY(ACPI_CORE_VBASE,
+			     ACPI_CORE_PBASE,
+			     ACPI_CORE_SIZE),
+#endif
 		DEVMAP_ENTRY_END
 	};
 
