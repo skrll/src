@@ -105,6 +105,7 @@ acpi_fdt_attach(device_t parent, device_t self, void *aux)
 	if (!acpi_probe())
 		panic("ACPI subsystem failed to initialize");
 
+	// XXXNH again?
 	platform_init();
 
 	memset(&aa, 0, sizeof(aa));
