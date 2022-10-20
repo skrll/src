@@ -168,6 +168,11 @@ fdt_memory_remove_reserved(uint64_t min_addr, uint64_t max_addr)
 			bus_addr_t addr;
 			bus_size_t size;
 
+			// XXXNH need to skip "no-map" areas too
+#if 0
+			if (!of_hasprop(child, "no-map"))
+				continue;
+#endif
 			if (fdtbus_get_reg(child, 0, &addr, &size) != 0)
 				continue;
 			if (size == 0)
