@@ -340,7 +340,7 @@ initarm(void *arg)
 	evbarm_cpu_rootconf = fdt_cpu_rootconf;
 
 	/* Talk to the user */
-	printf("NetBSD/evbarm (fdt) booting ...\n");
+	printf("NetBSD/evbarm (fdt) nick-aarch64 booting ...\n");
 
 #ifdef BOOT_ARGS
 	char mi_bootargs[] = BOOT_ARGS;
