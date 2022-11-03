@@ -396,6 +396,7 @@ vsize_t	pmap_kenter_range(vaddr_t, paddr_t, vsize_t, vm_prot_t, u_int);
 
 /* for ddb */
 void pmap_db_pmap_print(struct pmap *, void (*)(const char *, ...) __printflike(1, 2));
+void pmap_db_pg_print(struct vm_page *, void (*)(const char *, ...) __printflike(1, 2));
 void pmap_db_mdpg_print(struct vm_page *, void (*)(const char *, ...) __printflike(1, 2));
 
 #endif	/* !PMAP_MI */
