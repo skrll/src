@@ -337,6 +337,7 @@ kvtopte(vaddr_t va)
 
 /* for ddb */
 void pmap_db_pmap_print(struct pmap *, void (*)(const char *, ...) __printflike(1, 2));
+void pmap_db_pg_print(struct vm_page *, void (*)(const char *, ...) __printflike(1, 2));
 void pmap_db_mdpg_print(struct vm_page *, void (*)(const char *, ...) __printflike(1, 2));
 
 #if defined(EFI_RUNTIME)

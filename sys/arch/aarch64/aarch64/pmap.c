@@ -1114,6 +1114,27 @@ str_vmflags(uint32_t flags)
 }
 
 void
+pmap_db_pmap_print(struct pmap *pm,
+    void (*pr)(const char *, ...) __printflike(1, 2))
+{
+	struct pmap_asid_info * const pai = PMAP_PAI(pm, cpu_tlb_info(ci));
+
+	pr(" pm_asid       = %d\n", pai->pai_asid);
+	pr(" pm_l0table    = %p\n", pm->pm_l0table);
+	pr(" pm_l0table_pa = %lx\n", pm->pm_l0table_pa);
+	pr(" pm_activated  = %d\n\n", pm->pm_activated);
+}
+
+void
+pmap_db_pg_print(struct vm_page *pg,
+    void (*pr)(const char *, ...) __printflike(1, 2))
+{
+	const struct vm_page_md * const md = VM_PAGE_TO_MD(pg);
+
+	pr(", wire_count=%d, mdpg_ptep_parent=%p\n", pg->wire_count, md->mdpg_ptep_parent);
+}
+
+void
 pmap_db_mdpg_print(struct vm_page *pg, void (*pr)(const char *, ...) __printflike(1, 2))
 {
 	struct pmap_page *pp = VM_PAGE_TO_PP(pg);
@@ -2741,19 +2762,6 @@ kvtopte(vaddr_t va)
 	return _pmap_pte_lookup_bs(pmap_kernel(), va, NULL);
 }
 
-#ifdef DDB
-void
-pmap_db_pmap_print(struct pmap *pm,
-    void (*pr)(const char *, ...) __printflike(1, 2))
-{
-	struct pmap_asid_info * const pai = PMAP_PAI(pm, cpu_tlb_info(ci));
-
-	pr(" pm_asid       = %d\n", pai->pai_asid);
-	pr(" pm_l0table    = %p\n", pm->pm_l0table);
-	pr(" pm_l0table_pa = %lx\n", pm->pm_l0table_pa);
-	pr(" pm_activated  = %d\n\n", pm->pm_activated);
-}
-#endif /* DDB */
 
 /***************************** PMAP DEBUGGING ********************************/
 
