@@ -574,7 +574,8 @@ dump_ln_table(bool countmode, pd_entry_t *pdp, int level, int lnindex,
 	if (pg == NULL) {
 		pr("%sL%d: pa=%lx pg=NULL\n", spc, level, pa);
 	} else {
-		pr("%sL%d: pa=%lx pg=%p\n", spc, level, pa, pg);
+		pr("%sL%d: pa=%lx pg=%p", spc, level, pa, pg);
+		pmap_db_pg_print(pg, pr);
 	}
 
 	for (i = n = 0; i < Ln_ENTRIES; i++) {

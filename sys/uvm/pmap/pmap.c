@@ -2631,6 +2631,14 @@ pmap_unmap_poolpage(vaddr_t va)
 
 #ifdef DDB
 void
+pmap_db_pg_print(struct vm_page *pg, void (*pr)(const char *, ...) __printflike(1, 2))
+{
+	/* nothing */
+	pr("\n");
+}
+
+
+void
 pmap_db_mdpg_print(struct vm_page *pg, void (*pr)(const char *, ...) __printflike(1, 2))
 {
 	struct vm_page_md * const mdpg = VM_PAGE_TO_MD(pg);
