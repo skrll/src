@@ -1,0 +1,468 @@
+
+XSEGSHIFT is the shift required to get the last index, e.g.
+
+RV64 SV32 it's 22 (aka, 12 (PGHSIFT) + (12 - 2(sizeof(pte)) * 1 (number of levels(2) - 1))
+RV64 SV39 it's 30 (aka, 12 (PGSHIFT) + (12 - 3(sizeof(pte)) * 2 (number of levels(3) - 1))
+RV64 SV48 it's 39 (aka, 12 (PGHSIFT) + (12 - 3(sizeof(pte)) * 3 (number of levels(4) - 1))
+RV64 SV57 it's 48 (aka, 12 (PGHSIFT) + (12 - 3(sizeof(pte)) * 4 (number of levels(5) - 1))
+
+
+
+/*
+ * Create the amd64 direct map. Called only once at boot time. We map all of
+ * the physical memory contiguously using 2MB large pages, with RW permissions.
+ * However there is a hole: the kernel is mapped with RO permissions.
+ */
+static void
+pmap_init_directmap(struct pmap *kpm)
+{
+        extern phys_ram_seg_t mem_clusters[];
+        extern int mem_cluster_cnt;
+
+Boot HART MIDELEG         : 0x0000000000001666
+
+ b1 supervisor software interrupt
+ b2 ?
+
+ b5 supervisor timer interrupt
+ b6 ?
+
+ b9 supervisor external interrupt
+b10 ?
+
+b12 ?
+
+
+
+Boot HART MEDELEG         : 0x0000000000f0b509
+
+000009 (1001)
+ b0 misaligned
+ b3 breakpoint
+
+000500 (0101)
+
+ b8 environment u-mode call
+b10 ?
+
+00b000 (1101)
+
+b12
+b14
+b15
+
+f00000
+
+
+
+------------------------------------------------------------------------------
+busses
+======
+
+mainbus0 (root)
+ -> riscv/mainbus.c
+
+fdtN at mainbus0
+ -> fdt/riscv_fdt.c
+
+simplebusN at fdtN
+ -> normal FDT goop under sys/dev/fdt
+
+interrupts
+==========
+intc (supervisor timer, external (and software??)):
+   riscv/interrupt.c  (or riscv/intc.c)
+	--> software interrupts	????
+
+	functions:
+		riscv_set_extintr_handler()
+		riscv_set_timer_handler()
+
+		cpu_intr() -> calls registered handlers
+
+timer:
+   riscv/clock.c
+	--> currently only configure via sbi
+	--> use sbi probe extension TIME to check
+
+	functions:
+		riscv_timer_intr()
+		cpu_initclocks()
+			calls riscv_set_timer_handler(riscv_timer_intr);
+		setstatclockrate()	(stub)
+
+external interrupts:
+
+   sifive/qemu plic:
+      dev/plic.c	(or riscv/plic.c ??)
+      fdt/plic_fdt.c
+      acpi/plic_acpi.c (later on)
+
+   allwinner (later on):
+      sun20i/plic.c
+      sun20i/plic_fdt.c  (or fdt/sun20i_plic.c?)
+      sun20i/plic_acpi.c (or acpi/sun20i_plic.c?)
+
+
+   clint- ignore for now?  or attach dummy driver so looks better in dmesg?
+-------------------------------------------------------------------------------
+
+db> show fdt /f
+/
+    #address-cells = <0x2>
+    #size-cells = <0x2>
+    compatible = "riscv-virtio"
+    model = "riscv-virtio,qemu"
+/reserved-memory
+    #address-cells = <0x2>
+    #size-cells = <0x2>
+    ranges
+/reserved-memory/mmode_resv0@80000000
+    reg = <0 0x80000000 0 0x80000>
+/fw-cfg@10100000
+    dma-coherent
+    reg = <0 0x10100000 0 0x18>
+    compatible = "qemu,fw-cfg-mmio"
+/flash@20000000
+    bank-width = <0x4>
+    reg = <0 0x20000000 0 0x2000000 0 0x22000000 0 0x2000000>
+    compatible = "cfi-flash"
+/chosen
+    rng-seed = <0x484fa149 0xedaf9f2 0x8e4acb48 0xc09ec4b7 0xd5b1a097 0x9944767f 0x98b98e5b 0xfb70dcbd>
+    stdout-path = "/soc/serial@10000000"
+/poweroff
+    value = <0x5555>
+    offset = <0>
+    regmap = <0x6>
+    compatible = "syscon-poweroff"
+/reboot
+    value = <0x7777>
+    offset = <0>
+    regmap = <0x6>
+    compatible = "syscon-reboot"
+/platform-bus@4000000
+    interrupt-parent = <0x5>
+    ranges = <0 0 0x4000000 0x2000000>
+    #address-cells = <0x1>
+    #size-cells = <0x1>
+    compatible = "qemu,platform", "simple-bus"
+/memory@80000000
+    device_type = "memory"
+    reg = <0 0x80000000 0x1 0>
+/cpus
+    #address-cells = <0x1>
+    #size-cells = <0>
+    timebase-frequency = <0x989680>
+/cpus/cpu@0
+    phandle = <0x3>
+    device_type = "cpu"
+    reg = <0>
+    status = "okay"
+    compatible = "riscv"
+    riscv,isa = "rv64imafdch_zicsr_zifencei_zihintpause_zba_zbb_zbc_zbs_sstc"
+    mmu-type = "riscv,sv48"
+ /cpus/cpu@0/interrupt-controller
+    #interrupt-cells = <0x1>
+    interrupt-controller
+    compatible = "riscv,cpu-intc"
+    phandle = <0x4>
+/cpus/cpu@1
+    phandle = <0x1>
+    device_type = "cpu"
+    reg = <0x1>
+    status = "okay"
+    compatible = "riscv"
+    riscv,isa = "rv64imafdch_zicsr_zifencei_zihintpause_zba_zbb_zbc_zbs_sstc"
+    mmu-type = "riscv,sv48"
+/cpus/cpu@1/interrupt-controller
+    #interrupt-cells = <0x1>
+    interrupt-controller
+    compatible = "riscv,cpu-intc"
+    phandle = <0x2>
+/cpus/cpu-map
+/cpus/cpu-map/cluster0
+/cpus/cpu-map/cluster0/core0
+    cpu = <0x3>
+/cpus/cpu-map/cluster0/core1
+    cpu = <0x1>
+/soc
+    #address-cells = <0x2>
+    #size-cells = <0x2>
+    compatible = "simple-bus"
+    ranges
+/soc/pmu
+    compatible = "riscv,pmu"
+/soc/rtc@101000
+    interrupts = <0xb>
+    interrupt-parent = <0x5>
+    reg = <0 0x101000 0 0x1000>
+    compatible = "google,goldfish-rtc"
+/soc/serial@10000000
+    interrupts = <0xa>
+    interrupt-parent = <0x5>
+    clock-frequency = "", "8@"
+    reg = <0 0x10000000 0 0x100>
+    compatible = "ns16550a"
+/soc/test@100000
+    phandle = <0x6>
+    reg = <0 0x100000 0 0x1000>
+    compatible = "sifive,test1", "sifive,test0", "syscon"
+/soc/pci@30000000
+    interrupt-map-mask = <0x1800 0 0 0x7>
+    interrupt-map = <0 0 0 0x1 0x5 0x20 0 0 0 0x2 0x5 0x21 0 0 0 0x3 0x5 0x22 0 0 0 0x4 0x5 0x23 0x800 0 0 0x1 0x5 0x21 0x800 0 0 0x2 0x5 0x22 0x800 0 0 0x3 0x5 0x23 0x800 0 0 0x4 0x5 0x20 0x1000 0 0 0x1 0x5 0x22 0x1000 0 0 0x2 0x5 0x23 0x1000 0 0 0x3 0x5 0x20 0x1000 0 0 0x4 0x5 0x21 0x1800 0 0 0x1 0x5 0x23 0x1800 0 0 0x2 0x5 0x20 0x1800 0 0 0x3 0x5 0x21 0x1800 0 0 0x4 0x5 0x22>
+    ranges = <0x1000000 0 0 0 0x3000000 0 0x10000 0x2000000 0 0x40000000 0 0x40000000 0 0x40000000 0x3000000 0x4 0 0x4 0 0x4 0>
+    reg = <0 0x30000000 0 0x10000000>
+    dma-coherent
+    bus-range = <0 0xff>
+    linux,pci-domain = <0>
+    device_type = "pci"
+    compatible = "pci-host-ecam-generic"
+    #size-cells = <0x2>
+    #interrupt-cells = <0x1>
+    #address-cells = <0x3>
+/soc/virtio_mmio@10008000
+    interrupts = <0x8>
+    interrupt-parent = <0x5>
+    reg = <0 0x10008000 0 0x1000>
+    compatible = "virtio,mmio"
+/soc/virtio_mmio@10007000
+    interrupts = <0x7>
+    interrupt-parent = <0x5>
+    reg = <0 0x10007000 0 0x1000>
+    compatible = "virtio,mmio"
+/soc/virtio_mmio@10006000
+    interrupts = <0x6>
+    interrupt-parent = <0x5>
+    reg = <0 0x10006000 0 0x1000>
+    compatible = "virtio,mmio"
+/soc/virtio_mmio@10005000
+    interrupts = <0x5>
+    interrupt-parent = <0x5>
+    reg = <0 0x10005000 0 0x1000>
+    compatible = "virtio,mmio"
+/soc/virtio_mmio@10004000
+    interrupts = <0x4>
+    interrupt-parent = <0x5>
+    reg = <0 0x10004000 0 0x1000>
+    compatible = "virtio,mmio"
+/soc/virtio_mmio@10003000
+    interrupts = <0x3>
+    interrupt-parent = <0x5>
+    reg = <0 0x10003000 0 0x1000>
+    compatible = "virtio,mmio"
+/soc/virtio_mmio@10002000
+    interrupts = <0x2>
+    interrupt-parent = <0x5>
+    reg = <0 0x10002000 0 0x1000>
+    compatible = "virtio,mmio"
+/soc/virtio_mmio@10001000
+    interrupts = <0x1>
+    interrupt-parent = <0x5>
+    reg = <0 0x10001000 0 0x1000>
+    compatible = "virtio,mmio"
+/soc/plic@c000000
+    phandle = <0x5>
+    riscv,ndev = <0x60>
+    reg = <0 0xc000000 0 0x600000>
+    interrupts-extended = <0x4 0xffffffff 0x4 0x9 0x2 0xffffffff 0x2 0x9>
+    interrupt-controller
+    compatible = "sifive,plic-1.0.0", "riscv,plic0"
+    #address-cells = <0>
+    #interrupt-cells = <0x1>
+/soc/clint@2000000
+    interrupts-extended = <0x4 0x3 0x4 0x7 0x2 0x3 0x2 0x7>
+    reg = <0 0x2000000 0 0x10000>
+    compatible = "sifive,clint0", "riscv,clint0"
+db>
+-----------------------------------
+/
+    #address-cells = <0x2>
+    #size-cells = <0x2>
+    compatible = "sifive,hifive-unleashed-a00"
+    model = "SiFive HiFive Unleashed A00"
+/reserved-memory
+    #address-cells = <0x2>
+    #size-cells = <0x2>
+    ranges
+/reserved-memory/mmode_resv0@80000000
+    no-map
+    reg = <0 0x80000000 0 0x80000>
+/chosen
+    bootargs = "-v -x"
+    stdout-path = "/soc/serial@10010000"
+/aliases
+    serial0 = "/soc/serial@10010000"
+    serial1 = "/soc/serial@10011000"
+    ethernet0 = "/soc/ethernet@10090000"
+/gpio-restart
+    compatible = "gpio-restart"
+    gpios = <0x7 0xa 0x1>
+/cpus
+    #address-cells = <0x1>
+    #size-cells = <0>
+    timebase-frequency = <0xf4240>
+/cpus/cpu@0
+    device_type = "cpu"
+    reg = <0>
+    status = "disabled"
+    compatible = "riscv"
+    riscv,isa = "rv64imac_zicsr_zifencei"
+/cpus/cpu@0/interrupt-controller
+    #interrupt-cells = <0x1>
+    interrupt-controller
+    compatible = "riscv,cpu-intc"
+    phandle = <0x4>
+/cpus/cpu@1
+    device_type = "cpu"
+    reg = <0x1>
+    status = "okay"
+    compatible = "riscv"
+    riscv,isa = "rv64imafdc_zicsr_zifencei"
+    mmu-type = "riscv,sv48"
+/cpus/cpu@1/interrupt-controller
+    #interrupt-cells = <0x1>
+    interrupt-controller
+    compatible = "riscv,cpu-intc"
+    phandle = <0x3>
+/memory@80000000
+    device_type = "memory"
+    reg = <0 0x80000000 0x1 0>
+/rtcclk
+    #clock-cells = <0>
+    compatible = "fixed-clock"
+    clock-frequency = <0xf4240>
+    clock-output-names = "rtcclk"
+    phandle = <0x2>
+/hfclk
+    #clock-cells = <0>
+    compatible = "fixed-clock"
+    clock-frequency = <0x1fca055>
+    clock-output-names = "hfclk"
+    phandle = <0x1>
+/soc
+    #address-cells = <0x2>
+    #size-cells = <0x2>
+    compatible = "simple-bus"
+    ranges
+/soc/serial@10010000
+    interrupts = <0x4>
+    interrupt-parent = <0x6>
+    clocks = <0x5 0x3>
+    reg = <0 0x10010000 0 0x1000>
+    compatible = "sifive,uart0"
+/soc/serial@10011000
+    interrupts = <0x5>
+    interrupt-parent = <0x6>
+    clocks = <0x5 0x3>
+    reg = <0 0x10011000 0 0x1000>
+    compatible = "sifive,uart0"
+/soc/pwm@10021000
+    #pwm-cells = <0>
+    clocks = <0x5 0x3>
+    interrupts = <0x2e 0x2f 0x30 0x31>
+    interrupt-parent = <0x6>
+    reg = <0 0x10021000 0 0x1000>
+    compatible = "sifive,pwm0"
+/soc/pwm@10020000
+    #pwm-cells = <0>
+    clocks = <0x5 0x3>
+    interrupts = <0x2a 0x2b 0x2c 0x2d>
+    interrupt-parent = <0x6>
+    reg = <0 0x10020000 0 0x1000>
+    compatible = "sifive,pwm0"
+/soc/ethernet@10090000
+    #size-cells = <0>
+    #address-cells = <0x1>
+    local-mac-address = [52 54 00 12 34 56]
+    clock-names = "pclk", "hclk"
+    clocks = <0x5 0x2 0x5 0x2>
+    interrupts = <0x35>
+    interrupt-parent = <0x6>
+    phy-handle = <0x8>
+    phy-mode = "gmii"
+    reg-names = "control"
+    reg = <0 0x10090000 0 0x2000 0 0x100a0000 0 0x1000>
+    compatible = "sifive,fu540-c000-gem"
+/soc/ethernet@10090000/ethernet-phy@0
+    reg = <0>
+    phandle = <0x8>
+/soc/spi@10040000
+    compatible = "sifive,spi0"
+    reg = <0 0x10040000 0 0x1000>
+    interrupt-parent = <0x6>
+    interrupts = <0x33>
+    clocks = <0x5 0x3>
+    #address-cells = <0x1>
+    #size-cells = <0>
+/soc/spi@10040000/flash@0
+    compatible = "jedec,spi-nor"
+    reg = <0>
+    spi-max-frequency = <0x2faf080>
+    m25p,fast-read
+    spi-tx-bus-width = <0x4>
+    spi-rx-bus-width = <0x4>
+/soc/spi@10050000
+    compatible = "sifive,spi0"
+    reg = <0 0x10050000 0 0x1000>
+    interrupt-parent = <0x6>
+    interrupts = <0x6>
+    clocks = <0x5 0x3>
+    #address-cells = <0x1>
+    #size-cells = <0>
+/soc/spi@10050000/mmc@0
+    compatible = "mmc-spi-slot"
+    reg = <0>
+    spi-max-frequency = <0x1312d00>
+    voltage-ranges = <0xce4 0xce4>
+    disable-wp
+/soc/cache-controller@2010000
+    compatible = "sifive,fu540-c000-ccache"
+    cache-block-size = <0x40>
+    cache-level = <0x2>
+    cache-sets = <0x400>
+    cache-size = <0x200000>
+    cache-unified
+    interrupt-parent = <0x6>
+    interrupts = <0x1 0x2 0x3>
+    reg = <0 0x2010000 0 0x1000>
+/soc/dma@3000000
+    compatible = "sifive,fu540-c000-pdma"
+    reg = <0 0x3000000 0 0x100000>
+    interrupt-parent = <0x6>
+    interrupts = <0x17 0x18 0x19 0x1a 0x1b 0x1c 0x1d 0x1e>
+    #dma-cells = <0x1>
+/soc/gpio@10060000
+    compatible = "sifive,gpio0"
+    interrupt-parent = <0x6>
+    interrupts = <0x7 0x8 0x9 0xa 0xb 0xc 0xd 0xe 0xf 0x10 0x11 0x12 0x13 0x14 0
+x15 0x16>
+    reg = <0 0x10060000 0 0x1000>
+    gpio-controller
+    #gpio-cells = <0x2>
+    interrupt-controller
+    #interrupt-cells = <0x2>
+    clocks = <0x5 0x3>
+    phandle = <0x7>
+/soc/interrupt-controller@c000000
+    phandle = <0x6>
+    riscv,ndev = <0x35>
+    reg = <0 0xc000000 0 0x4000000>
+    interrupts-extended = <0x4 0xffffffff 0x3 0xffffffff 0x3 0x9>
+    interrupt-controller
+    compatible = "sifive,plic-1.0.0", "riscv,plic0"
+    #interrupt-cells = <0x1>
+/soc/clock-controller@10000000
+    compatible = "sifive,fu540-c000-prci"
+    reg = <0 0x10000000 0 0x1000>
+    clocks = <0x1 0x2>
+    #clock-cells = <0x1>
+    phandle = <0x5>
+/soc/otp@10070000
+    compatible = "sifive,fu540-c000-otp"
+    reg = <0 0x10070000 0 0x1000>
+    fuse-count = <0x1000>
+/soc/clint@2000000
+    interrupts-extended = <0x4 0x3 0x4 0x7 0x3 0x3 0x3 0x7>
+    reg = <0 0x2000000 0 0x10000>
+    compatible = "sifive,clint0", "riscv,clint0"
+db>
