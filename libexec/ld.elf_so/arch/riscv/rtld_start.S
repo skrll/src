@@ -36,6 +36,7 @@
 
 #define PTRSZ	__SIZEOF_POINTER__
 
+	// XXXNH see setregs and __start in
 /*
  * void
  * ___start(

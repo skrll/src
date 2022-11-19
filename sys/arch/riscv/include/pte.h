@@ -161,6 +161,7 @@ pte_deferred_exec_p(pt_entry_t pte)
 static inline pt_entry_t
 pte_wire_entry(pt_entry_t pte)
 {
+	//XXXNH is PTE_HARDWIRED right here?!?
 	return pte | PTE_HARDWIRED | PTE_WIRED;
 }
 
