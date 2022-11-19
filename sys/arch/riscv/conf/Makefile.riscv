@@ -51,6 +51,15 @@ GENASSYM_CONF=	${RISCV}/riscv/genassym.cf
 ##
 CPPFLAGS+=	-D${MACHINE}
 CFLAGS+=	-mcmodel=medany
+#.if !defined(LP64) || ${LP64} == "no"
+#CFLAGS+=	-m32
+#AFLAGS+=	-m32
+#LDFLAGS+=	-m elf32lriscv
+#LINKFORMAT+=	-m elf32lriscv
+#SYSTEM_LD_TAIL_EXTRA+= \
+#		;echo ${OBJCOPY} -O elf32-littleriscv $@ $@.elf32; \
+#		${OBJCOPY} -O elf32-littleriscv $@ $@.elf32
+#.endif # LP64=no
 AFLAGS+=	-x assembler-with-cpp ${AOPTS}
 
 ##
@@ -85,6 +94,10 @@ OBJCOPY_STRIPFLAGS=	-g -X
 # fw_jump jumps to.  This allows us to load the kernel with the -kernel flag
 # in QEMU without having to embed it inside BBL or OpenSBI's fw_payload first.
 #
+# XXXNH really???
+# Note: For rv32 the start address is different (0x80400000).
+# We set this value using --defsym rather than hardcoding it in ldscript.riscv
+# so that different kernel configs can override the load address.
 KERNEL_PHYS?=		0x80200000
 EXTRA_LINKFLAGS+=	--defsym='KERNEL_PHYS=${KERNEL_PHYS}'
 
