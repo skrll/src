@@ -157,6 +157,10 @@ intc_intr_establish(struct intc_fdt_softc *sc, u_int source, u_int ipl,
 
 		evcnt_attach_dynamic(&sc->sc_evs[source], EVCNT_TYPE_INTR, NULL,
 		    device_xname(sc->sc_dev), intc_sources[source]);
+
+		// XXXNH this makes it all go wrong at apl0
+//		csr_sie_set(__BIT(source));
+
 	} else {
 		if (irq->intr_arg == NULL || arg == NULL) {
 			device_printf(dev,

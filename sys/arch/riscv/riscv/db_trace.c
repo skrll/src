@@ -268,6 +268,10 @@ db_stack_trace_print(db_expr_t addr, bool have_addr, db_expr_t count,
 		if (!trace_user && (IN_USER_VM_ADDRESS(ra) || IN_USER_VM_ADDRESS(fp)))
 			break;
 #if defined(_KERNEL)
+		// XXXNH
+		// XXXNH also
+		// XXXNH - exception_userexit (syscall and other user trap)
+		// XXXNH - others?
 		extern char exception_kernexit[];
 
 		if (((char *)ra == (char *)exception_kernexit)) {
@@ -278,6 +282,15 @@ db_stack_trace_print(db_expr_t addr, bool have_addr, db_expr_t count,
 			ra = fp = 0;
 			db_read_bytes((db_addr_t)&tf->tf_pc, sizeof(ra), (char *)&ra);
 			db_read_bytes((db_addr_t)&tf->tf_s0, sizeof(fp), (char *)&fp);
+#if 0
+			/*
+			 * no need to display the frame of el0_trap
+			 * of kernel thread
+			 */
+			if (((char *)(lastra - 4) == (char *)el0_trap) &&
+			    (ra == 0))
+				break;
+#endif
 
 			pr_traceaddr("tf", (db_addr_t)tf, lastra, flags, pr);
 

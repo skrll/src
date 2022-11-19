@@ -161,6 +161,7 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 
 	memset(tf, 0, sizeof(*tf));
 	tf->tf_sp = (intptr_t)stack_align(stack);
+//XXXNH
 	tf->tf_pc = (intptr_t)pack->ep_entry & ~1;
 #ifdef _LP64
 	tf->tf_sr = (p->p_flag & PK_32) ? SR_USER32 : SR_USER64;

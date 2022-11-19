@@ -55,6 +55,7 @@ __RCSID("$NetBSD: mainbus.c,v 1.7 2024/08/04 08:16:25 skrll Exp $");
 
 #include <machine/sysreg.h>
 
+//XXXNH
 extern struct bus_space riscv_generic_bs_tag;
 
 bus_space_tag_t
@@ -105,6 +106,7 @@ mainbus_match(device_t parent, cfdata_t cf, void *aux)
 static void
 mainbus_attach_devicetree(device_t self)
 {
+//	const struct fdt_console *cons = fdtbus_get_console();
 	struct fdt_attach_args faa = {
 		.faa_name = "",
 		.faa_phandle = OF_peer(0),
@@ -112,6 +114,23 @@ mainbus_attach_devicetree(device_t self)
 	};
 
 	aprint_normal("\n");
+
+
+#if 0
+	if (cons != NULL) {
+		faa.faa_phandle = fdtbus_get_stdout_phandle();
+
+		if (of_getprop_uint32(faa.faa_phandle, "clock-frequency",
+		    &uart_freq) != 0) {
+			uart_freq = octeon_ioclock_speed();
+		}
+
+		if (uart_freq > 0)
+			delay(640000000 / uart_freq);
+
+		cons->consinit(&faa, uart_freq);
+	}
+#endif
 
 	config_found(self, &faa, NULL, CFARGS(.iattr = "fdt"));
 }

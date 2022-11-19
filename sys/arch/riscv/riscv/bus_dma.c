@@ -1711,6 +1711,33 @@ paddr_t
 _bus_dmamem_mmap(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs,
     off_t off, int prot, int flags)
 {
+#if 0
+	paddr_t map_flags;
+	int i;
+
+	for (i = 0; i < nsegs; i++) {
+		KASSERTMSG((off & PAGE_MASK) == 0,
+		    "off %#jx (%#x)", (uintmax_t)off, (int)off & PAGE_MASK);
+		KASSERTMSG((segs[i].ds_addr & PAGE_MASK) == 0,
+		    "ds_addr %#" PRIxBUSADDR " (%#" PRIxBUSADDR ")",
+		    segs[i].ds_addr, segs[i].ds_addr & PAGE_MASK);
+		KASSERTMSG((segs[i].ds_len & PAGE_MASK) == 0,
+		    "ds_len %#" PRIxBUSSIZE " (%#" PRIxBUSSIZE ")",
+		    segs[i].ds_len, segs[i].ds_len & PAGE_MASK);
+		if (off >= segs[i].ds_len) {
+			off -= segs[i].ds_len;
+			continue;
+		}
+
+		map_flags = 0;
+//		if (flags & BUS_DMA_PREFETCHABLE)
+//			map_flags |= RISCV_MMAP_WRITECOMBINE;
+
+
+		return riscv_btop((u_long)segs[i].ds_addr + off) | map_flags;
+
+	}
+#endif
 	/* Page not found. */
 	return -1;
 }
