@@ -91,6 +91,8 @@ define	IPL_NONE	IPL_NONE
 
 define	MAXCPUS		MAXCPUS
 
+# XXXNH bring this back?
+#define	TF_LEN		roundup(sizeof(struct trapframe), STACK_ALIGNBYTES+1)
 define	TF_LEN		sizeof(struct trapframe)
 define	TF_RA		offsetof(struct trapframe, tf_reg[_X_RA])
 define	TF_S0		offsetof(struct trapframe, tf_reg[_X_S0])

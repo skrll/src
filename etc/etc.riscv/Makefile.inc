@@ -74,5 +74,6 @@ snap_md_post_images: ${SNAP_MD_POST_DEPS_IMGZ} .WAIT ${SNAP_MD_POST_DEPS_HASHES}
 
 snap_md_post: check_DESTDIR check_RELEASEDIR snap_post .WAIT ${SNAP_MD_POST_DEPS} snap_md_post_images
 
+# XXXNH remove instkernel?
 INSTALLATION_DIRS+=	binary/gzimg		\
 			installation/instkernel
