@@ -232,6 +232,9 @@ RISCVREG_READ_SET_CLEAR_INLINE(sie)		// supervisor interrupt enable
 #define	SIE_SSIE	__BIT(1)	// S-mode software interrupt enable
 			/* Bit 0 is WIRI */
 
+/* Mask for all interrupts */
+#define	SIE_IM		(SIE_SEIE | SIE_STIE | SIE_SSIE)	/* XXX unused? */
+
 // U-mode sstatus values
 #ifdef _LP64
 #define	SR_USER64	(SR_SPIE | __SHIFTIN(SR_UXL_64, SR_UXL))

@@ -34,11 +34,14 @@
 #include <sys/cdefs.h>
 #include <sys/tls.h>
 
+// XXXNH not sure this text is 100% correct.
 /*
  * On RISC-V, since displacements are signed 12-bit values, the TCB Pointer
  * is biased by sizeof(tcb) so that first thread datum can be addressed by
  * -sizeof(tcb).
  */
+
+// XXXNH does the CTASSERT make sense?
 
 #define	TLS_TP_OFFSET	0x0
 #define	TLS_TCB_ALIGN	16

@@ -196,7 +196,7 @@ fpu_state_load(lwp_t *l, u_int flags)
 	// load FPCSR and disable FPU again
 	fcsr_write(fp->r_fcsr);
 
-	fpu_disable();
+	fpu_disable(); // XXXNH?
 }
 
 void
