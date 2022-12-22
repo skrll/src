@@ -104,6 +104,8 @@ pmap_devmap_bootstrap(vaddr_t root, const struct pmap_devmap *table)
 		    "pa %#jx -> %#jx @ va %#jx -> %#jx",
 		    pdp->pd_pa, pdp->pd_pa + pdp->pd_size - 1,
 		    pdp->pd_va, pdp->pd_va + pdp->pd_size - 1);
+		KASSERT(pdp->pd_va >= VM_KERNEL_IO_BASE);
+		KASSERT(pdp->pd_va  - VM_KERNEL_IO_BASE < VM_KERNEL_IO_SIZE);
 
 		pmap_kenter_range(pdp->pd_va, pdp->pd_pa, pdp->pd_size,
 		    pdp->pd_prot, pdp->pd_flags);
