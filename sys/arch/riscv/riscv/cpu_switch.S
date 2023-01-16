@@ -43,32 +43,22 @@ ENTRY_NP(cpu_switchto)
 	addi	sp, sp, -TF_LEN		// allocate trapframe
 	.cfi_def_cfa_offset TF_LEN
 
-	REG_S	ra, TF_RA(sp)		// save return address
-	.cfi_offset ra, TF_RA - TF_LEN
-	REG_S	s0, TF_S0(sp)		// save callee saved address
-	.cfi_offset s0, TF_S0 - TF_LEN
-	REG_S	s1, TF_S1(sp)		// save callee saved address
-	.cfi_offset s1, TF_S1 - TF_LEN
-	REG_S	s2, TF_S2(sp)		// save callee saved address
-	.cfi_offset s2, TF_S2 - TF_LEN
-	REG_S	s3, TF_S3(sp)		// save callee saved address
-	.cfi_offset s3, TF_S3 - TF_LEN
-	REG_S	s4, TF_S4(sp)		// save callee saved address
-	.cfi_offset s4, TF_S4 - TF_LEN
-	REG_S	s5, TF_S5(sp)		// save callee saved address
-	.cfi_offset s5, TF_S5 - TF_LEN
-	REG_S	s6, TF_S6(sp)		// save callee saved address
-	.cfi_offset s6, TF_S6 - TF_LEN
-	REG_S	s7, TF_S7(sp)		// save callee saved address
-	.cfi_offset s7, TF_S7 - TF_LEN
-	REG_S	s8, TF_S8(sp)		// save callee saved address
-	.cfi_offset s9, TF_S8 - TF_LEN
-	REG_S	s9, TF_S9(sp)		// save callee saved address
-	.cfi_offset s9, TF_S9 - TF_LEN
-	REG_S	s10, TF_S10(sp)		// save callee saved address
-	.cfi_offset s10, TF_S10 - TF_LEN
-	REG_S	s11, TF_S11(sp)		// save callee saved address
-	.cfi_offset s11, TF_S11 - TF_LEN
+	// save return address
+	REG_S	ra, TF_RA(sp)		; .cfi_offset ra, TF_RA - TF_LEN
+
+	// save callee saved addresses (s0 - s11)
+	REG_S	s0, TF_S0(sp)		; .cfi_offset s0, TF_S0 - TF_LEN
+	REG_S	s1, TF_S1(sp)		; .cfi_offset s1, TF_S1 - TF_LEN
+	REG_S	s2, TF_S2(sp)		; .cfi_offset s2, TF_S2 - TF_LEN
+	REG_S	s3, TF_S3(sp)		; .cfi_offset s3, TF_S3 - TF_LEN
+	REG_S	s4, TF_S4(sp)		; .cfi_offset s4, TF_S4 - TF_LEN
+	REG_S	s5, TF_S5(sp)		; .cfi_offset s5, TF_S5 - TF_LEN
+	REG_S	s6, TF_S6(sp)		; .cfi_offset s6, TF_S6 - TF_LEN
+	REG_S	s7, TF_S7(sp)		; .cfi_offset s7, TF_S7 - TF_LEN
+	REG_S	s8, TF_S8(sp)		; .cfi_offset s9, TF_S8 - TF_LEN
+	REG_S	s9, TF_S9(sp)		; .cfi_offset s9, TF_S9 - TF_LEN
+	REG_S	s10, TF_S10(sp)		;  .cfi_offset s10, TF_S10 - TF_LEN
+	REG_S	s11, TF_S11(sp)		;  .cfi_offset s11, TF_S11 - TF_LEN
 
 	REG_S	sp, L_MD_KTF(a0)	// record trapframe pointer
 
@@ -256,6 +246,7 @@ END(cpu_fast_switchto)
 
 ENTRY_NP(cpu_exception_handler)
 	.cfi_startproc
+	.cfi_return_column sepc
 	csrrw	tp, sscratch, tp	// swap scratch and thread pointer
 	beqz	tp, .Lexception_kernel	//   tp == 0, already on kernel stack
 	//
@@ -294,7 +285,8 @@ ENTRY_NP(cpu_exception_handler)
 	li	t1, 1			// indicate kernel exception
 
 .Lexception_common:
-	REG_S	ra, TF_RA(sp)		// save return address
+	// save return address
+	REG_S	ra, TF_RA(sp)		; .cfi_offset ra, TF_RA - TF_LEN
 					// sp
 	REG_S	gp, TF_GP(sp)		; .cfi_offset gp, TF_GP - TF_LEN
 					// tp
@@ -342,7 +334,7 @@ ENTRY_NP(cpu_exception_handler)
 	csrr	a2, sstatus		// get status
 	csrr	a3, scause		// get cause
 
-	REG_S	a1, TF_PC(sp)		; .cfi_offset sepc, TF_PC - TF_LEN ; .cfi_return_column sepc
+	REG_S	a1, TF_PC(sp)		; .cfi_offset sepc, TF_PC - TF_LEN
 	REG_S	a2, TF_SR(sp)
 	REG_S	a3, TF_CAUSE(sp)	// save cause
 
