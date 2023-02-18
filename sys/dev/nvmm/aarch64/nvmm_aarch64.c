@@ -31,6 +31,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/kmem.h>
 
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm_page.h>
@@ -38,6 +39,14 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/nvmm/nvmm.h>
 #include <dev/nvmm/nvmm_internal.h>
 #include <dev/nvmm/aarch64/nvmm_aarch64.h>
+
+struct aarch64_machdata {
+	void *unused1;
+};
+
+struct aarch64_cpudata {
+	void *unused1;
+};
 
 static bool
 nvmm_aarch64_ident(void)
@@ -70,13 +79,24 @@ nvmm_aarch64_capability(struct nvmm_capability *cap)
 static void
 nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 {
+	struct aarch64_machdata *machdata;
+
 	printf("%s:%d\n", __func__, __LINE__);
+
+	/* setup aarch64's pmap hooks */
+//	mach->vm->vm_map.pmap->pm_hook_arg = (void *)mach;
+//	mach->vm->vm_map.pmap->pm_hook_pmap_remove = xxx;
+
+	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
+	mach->machdata = machdata;
 }
 
 static void
 nvmm_aarch64_machine_destroy(struct nvmm_machine *mach)
 {
 	printf("%s:%d\n", __func__, __LINE__);
+
+	kmem_free(mach->machdata, sizeof(struct aarch64_machdata));
 }
 
 static int
@@ -90,14 +110,27 @@ nvmm_aarch64_machine_configure(struct nvmm_machine *mach, uint64_t op,
 static int
 nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 {
+	struct aarch64_cpudata *cpudata;
+
 	printf("%s:%d\n", __func__, __LINE__);
+
+	cpudata = (struct aarch64_cpudata *)uvm_km_alloc(kernel_map,
+	    roundup(sizeof(*cpudata), PAGE_SIZE), 0,
+	    UVM_KMF_WIRED | UVM_KMF_ZERO);
+	vcpu->cpudata = cpudata;
+
 	return 0;
 }
 
 static void
 nvmm_aarch64_vcpu_destroy(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 {
+	struct aarch64_cpudata *cpudata = vcpu->cpudata;
+
 	printf("%s:%d\n", __func__, __LINE__);
+
+	uvm_km_free(kernel_map, (vaddr_t)cpudata,
+	    roundup(sizeof(*cpudata), PAGE_SIZE), UVM_KMF_WIRED);
 }
 
 static int
@@ -131,6 +164,9 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
 	printf("%s:%d\n", __func__, __LINE__);
+
+	exit->reason = NVMM_VCPU_EXIT_HALTED;
+
 	return 0;
 }
 
