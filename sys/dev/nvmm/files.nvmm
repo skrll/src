@@ -5,7 +5,7 @@ defpseudodev nvmm
 file	dev/nvmm/nvmm.c			nvmm
 
 ifdef aarch64
-file	dev/nvmm/aarch64/nvmm_aarch64.c	nvmm
+file	dev/nvmm/aarch64/nvmm_aarch64.c	nvmm	needs-flag
 endif
 
 ifdef amd64
