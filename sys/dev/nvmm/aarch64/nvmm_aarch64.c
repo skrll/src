@@ -84,8 +84,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 	printf("%s:%d\n", __func__, __LINE__);
 
 	/* setup aarch64's pmap hooks */
-//	mach->vm->vm_map.pmap->pm_hook_arg = (void *)mach;
-//	mach->vm->vm_map.pmap->pm_hook_pmap_remove = xxx;
+	mach->vm->vm_map.pmap->pm_stage2 = true;
 
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
 	mach->machdata = machdata;

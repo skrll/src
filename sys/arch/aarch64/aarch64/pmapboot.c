@@ -62,12 +62,12 @@ pmapboot_protect_entry(pt_entry_t *pte, vm_prot_t clrprot)
 	if (clrprot & VM_PROT_READ)
 		*pte &= ~LX_BLKPAG_AF;
 	if (clrprot & VM_PROT_WRITE) {
-		*pte &= ~LX_BLKPAG_AP;
-		*pte |= LX_BLKPAG_AP_RO;
+		*pte &= ~LX_S1_BLKPAG_AP;
+		*pte |= LX_S1_BLKPAG_AP_RO;
 		*pte |= pmap_attr_gp;
 	}
 	if (clrprot & VM_PROT_EXECUTE)
-		*pte |= LX_BLKPAG_UXN | LX_BLKPAG_PXN;
+		*pte |= LX_S1_BLKPAG_UXN | LX_S1_BLKPAG_PXN;
 }
 
 /*

@@ -84,18 +84,21 @@ pmap_md_tlb_asid_max(void)
 
 
 /* memory attributes are configured MAIR_EL1 in locore */
-#define LX_BLKPAG_ATTR_NORMAL_WB	__SHIFTIN(0, LX_BLKPAG_ATTR_INDX)
-#define LX_BLKPAG_ATTR_NORMAL_NC	__SHIFTIN(1, LX_BLKPAG_ATTR_INDX)
-#define LX_BLKPAG_ATTR_NORMAL_WT	__SHIFTIN(2, LX_BLKPAG_ATTR_INDX)
-#define LX_BLKPAG_ATTR_DEVICE_MEM	__SHIFTIN(3, LX_BLKPAG_ATTR_INDX)
-#define LX_BLKPAG_ATTR_DEVICE_MEM_NP	__SHIFTIN(4, LX_BLKPAG_ATTR_INDX)
-#define LX_BLKPAG_ATTR_MASK		LX_BLKPAG_ATTR_INDX
+#define LX_BLKPAG_ATTR_NORMAL_WB	__SHIFTIN(0, LX_S1_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_NORMAL_NC	__SHIFTIN(1, LX_S1_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_NORMAL_WT	__SHIFTIN(2, LX_S1_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_DEVICE_MEM	__SHIFTIN(3, LX_S1_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_DEVICE_MEM_NP	__SHIFTIN(4, LX_S1_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_MASK		LX_S1_BLKPAG_ATTR_INDX
 
 #define lxpde_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
 #define lxpde_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
 #define l0pde_pa(pde)		lxpde_pa(pde)
 #define l0pde_index(v)		(((vaddr_t)(v) & L0_ADDR_BITS) >> L0_SHIFT)
 #define l0pde_valid(pde)	lxpde_valid(pde)
+
+#define lxpde_stage2(pde)	((pde) & LX_BLKPAG_OS_STAGE2)
+#define lxpde_stage1(pde)	(!lxpde_stage2(pde))
 /* l0pte always contains table entries */
 
 #define l1pde_pa(pde)		lxpde_pa(pde)
@@ -111,8 +114,10 @@ pmap_md_tlb_asid_max(void)
 #define l2pde_is_table(pde)	(((pde) & LX_TYPE) == LX_TYPE_TBL)
 
 #define l3pte_pa(pde)		lxpde_pa(pde)
-#define l3pte_executable(pde,user)	\
-    (((pde) & ((user) ? LX_BLKPAG_UXN : LX_BLKPAG_PXN)) == 0)
+#define l3pte_s1_executable(pde,user)	\
+    (((pde) & ((user) ? LX_S1_BLKPAG_UXN : LX_S1_BLKPAG_PXN)) == 0)
+#define l3pte_s2_executable(pde)	\
+	(((pde) & LX_S2_BLKPAG_XN) != LX_S2_BLKPAG_XN_XN)
 #define l3pte_readable(pde)	((pde) & LX_BLKPAG_AF)
 #define l3pte_writable(pde)	\
     (((pde) & (LX_BLKPAG_AF | LX_BLKPAG_AP)) == (LX_BLKPAG_AF | LX_BLKPAG_AP_RW))
@@ -134,24 +139,24 @@ pmap_kvattr(pt_entry_t *ptep, vm_prot_t prot)
 	pt_entry_t pte = *ptep;
 	const pt_entry_t opte = pte;
 
-	pte &= ~(LX_BLKPAG_AF | LX_BLKPAG_AP);
+	pte &= ~(LX_BLKPAG_AF | LX_S1_BLKPAG_AP);
 	switch (prot & (VM_PROT_READ | VM_PROT_WRITE)) {
 	case 0:
 		break;
 	case VM_PROT_READ:
-		pte |= LX_BLKPAG_AF | LX_BLKPAG_AP_RO;
+		pte |= LX_BLKPAG_AF | LX_S1_BLKPAG_AP_RO;
 		break;
 	case VM_PROT_WRITE:
 	case VM_PROT_READ | VM_PROT_WRITE:
-		pte |= LX_BLKPAG_AF | LX_BLKPAG_AP_RW;
+		pte |= LX_BLKPAG_AF | LX_S1_BLKPAG_AP_RW;
 		break;
 	}
 
 	if ((prot & VM_PROT_EXECUTE) == 0) {
-		pte |= LX_BLKPAG_PXN;
+		pte |= LX_S1_BLKPAG_PXN;
 	} else {
 		pte |= LX_BLKPAG_AF;
-		pte &= ~LX_BLKPAG_PXN;
+		pte &= ~LX_S1_BLKPAG_PXN;
 	}
 
 	*ptep = pte;
@@ -284,6 +289,7 @@ struct pmap {
 
 	struct pmap_asid_info pm_pai[PMAP_TLB_MAX];
 	bool pm_activated;
+	bool pm_stage2;
 };
 
 static inline paddr_t
@@ -330,6 +336,8 @@ struct vm_page_md {
 		(pp)->pp_pv.pv_va = 0;					\
 		(pp)->pp_pv.pv_ptep = NULL;				\
 	} while (/*CONSTCOND*/ 0)
+
+#define LX_BLKPAG_OS_STAGE2		LX_BLKPAG_OS_0
 
 #define PMAP_PTE_OS0	"OS0"
 #define PMAP_PTE_OS1	"OS1"
