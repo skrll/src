@@ -88,9 +88,25 @@ do {							\
 
 struct pmap_md {
 	paddr_t			pmd_l0_pa;
-};
 
-#define	pm_l0_pa	pm_md.pmd_l0_pa
+	/* for hypervisor */
+	void		       *pmd_nvmm;	/* struct nvmm_machine * */
+	bool			pmd_stage2;
+	int			pmd_st2_startlevel;	/* 0,1,2 */
+	int			pmd_st2_concatenate_num;/* 1-16 */
+	pd_entry_t	       *pmd_st2_table;		/* concatenated VTTBR */
+	paddr_t			pmd_st2_table_pa;
+};
+#define	pm_l0_pa		pm_md.pmd_l0_pa
+#define	pm_nvmm			pm_md.pmd_nvmm
+#define	pm_stage2		pm_md.pmd_stage2
+#define	pm_st2_startlevel	pm_md.pmd_st2_startlevel
+#define	pm_st2_concatenate_num	pm_md.pmd_st2_concatenate_num
+#define	pm_st2_table		pm_md.pmd_st2_table
+#define	pm_st2_table_pa		pm_md.pmd_st2_table_pa
+
+#define	pm_l0table		pm_pdetab->pde_pde
+#define	pm_l0table_pa		pm_md.pmd_l0_pa
 
 void	pmap_md_pdetab_init(struct pmap *);
 void	pmap_md_pdetab_fini(struct pmap *);
@@ -134,10 +150,11 @@ struct pmap_page {
 
 #define	PVLIST_EMPTY_P(pg)	VM_PAGEMD_PVLIST_EMPTY_P(VM_PAGE_TO_MD(pg))
 
-#define	LX_BLKPAG_OS_MODEMUL	LX_BLKPAG_OS_0
+#define	LX_BLKPAG_OS_STAGE2	LX_BLKPAG_OS_0
+#define	LX_BLKPAG_OS_MODEMUL	LX_BLKPAG_OS_1
 
-#define	PMAP_PTE_OS0		"modemul"
-#define	PMAP_PTE_OS1		"(unused)"
+#define	PMAP_PTE_OS0		"stage2"
+#define	PMAP_PTE_OS1		"modemul"
 
 static inline paddr_t
 pmap_l0pa(struct pmap *pm)
