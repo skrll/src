@@ -337,13 +337,8 @@ struct vm_page_md {
 		(pp)->pp_pv.pv_ptep = NULL;				\
 	} while (/*CONSTCOND*/ 0)
 
-/* saved permission bit for referenced/modified emulation */
-#define LX_BLKPAG_OS_READ		LX_BLKPAG_OS_0
-#define LX_BLKPAG_OS_WRITE		LX_BLKPAG_OS_1
-#define LX_BLKPAG_OS_RWMASK		(LX_BLKPAG_OS_WRITE | LX_BLKPAG_OS_READ)
-
-#define PMAP_PTE_OS0	"read"
-#define PMAP_PTE_OS1	"write"
+#define PMAP_PTE_OS0			"OS0"
+#define PMAP_PTE_OS1			"OS1"
 
 #define VTOPHYS_FAILED			((paddr_t)-1L)	/* POOL_PADDR_INVALID */
 #define POOL_VTOPHYS(va)		vtophys((vaddr_t) (va))
