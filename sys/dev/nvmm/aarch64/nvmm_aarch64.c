@@ -112,6 +112,9 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 {
 	struct aarch64_machdata *machdata;
 
+	/* setup aarch64's pmap hooks */
+	mach->vm->vm_map.pmap->pm_stage2 = true;
+
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
 	mach->machdata = machdata;
 }
