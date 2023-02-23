@@ -955,15 +955,37 @@ _pmap_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod,
 	pt_entry_t xn;
 
 	masked = prot & refmod;
-	pte &= ~(LX_BLKPAG_OS_RWMASK | LX_BLKPAG_AF | LX_BLKPAG_DBM | LX_BLKPAG_AP);
 
 	/*
-	 * keep actual prot in the pte as OS_{READ|WRITE} for ref/mod emulation,
-	 * and set the DBM bit for HAFDBS if it has write permission.
+	 * For ref/mod emulation, the logical AND of the actually requested
+	 * permissions (prot) and referenced/modified flag (refmod) is the
+	 * actually permissions.
+	 * The set flags are changed by pmap_fixup() as follows:
+	 *
+	 *  page           pte           pte would be changed by
+	 *  prot ref mod   AF/DBM/AP  -> fixup(READ)     fixup(WRITE)
+	 *  ---- --- ----  ---------     --------------- -----------------
+	 *  R-    0  0      0/0/RO    -> 1/0/RO          return and fault
+	 *  R-    0  1      0/0/RO    -> 1/0/RO          return and fault
+	 *  R-    1  0      1/0/RO    -> 1/0/RO          return and fault
+	 *  R-    1  1      1/0/RO    -> 1/0/RO          return and fault
+	 *  RW    0  0      0/1/RO    -> 1/1/RO          1/1/RW
+	 *  RW    0  1      1/1/RW    -> 1/1/RW          1/1/RW
+	 *  RW    1  0      1/1/RO    -> 1/1/RO          1/1/RW
+	 *  RW    1  1      1/1/RW    -> 1/1/RW          1/1/RW
+	 *
+	 * If the hardware supports HAFDBS, AF bit is automatically set to 1
+	 * without fixup() by accessing, and RO is automatically changed to
+	 * RW when the DBM bit is 1 by writing.
+	 *
+	 * The above allows us to handle the following:
+	 *  - pte.DBM as the writable bits
+	 *  - pte.AF as the reference bits
+	 *  - pte.W as the modified bits
 	 */
-	pte |= LX_BLKPAG_OS_READ;	/* a valid pte can always be readable */
+	pte &= ~(LX_BLKPAG_AF | LX_BLKPAG_DBM | LX_BLKPAG_AP);
 	if (prot & VM_PROT_WRITE)
-		pte |= LX_BLKPAG_OS_WRITE | LX_BLKPAG_DBM;
+		pte |= LX_BLKPAG_DBM;
 
 	switch (masked & (VM_PROT_READ | VM_PROT_WRITE)) {
 	case 0:
@@ -1239,7 +1261,7 @@ _pmap_protect_pv(struct pmap_page *pp, struct pv_entry *pv, vm_prot_t prot)
 
 	/* get prot mask from pte */
 	pteprot = VM_PROT_READ;	/* a valid pte can always be readable */
-	if ((pte & (LX_BLKPAG_OS_WRITE | LX_BLKPAG_DBM)) != 0)
+	if ((pte & LX_BLKPAG_DBM) != 0)
 		pteprot |= VM_PROT_WRITE;
 	if (l3pte_executable(pte, user))
 		pteprot |= VM_PROT_EXECUTE;
@@ -2422,7 +2444,7 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 	 * If DBM is 1, it is considered a writable page.
 	 */
 	pmap_prot = VM_PROT_READ;
-	if ((pte & (LX_BLKPAG_OS_WRITE | LX_BLKPAG_DBM)) != 0)
+	if ((pte & LX_BLKPAG_DBM) != 0)
 		pmap_prot |= VM_PROT_WRITE;
 
 	if (l3pte_executable(pte, pm != pmap_kernel()))
