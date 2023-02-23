@@ -344,12 +344,19 @@ void
 db_pte_print(pt_entry_t pte, int level,
     void (*pr)(const char *, ...) __printflike(1, 2))
 {
+	bool stage2 = false;
+
 	if (pte == 0) {
 		pr(" UNUSED\n");
 		return;
 	}
 
 	pr(" %s", (pte & LX_VALID) ? "VALID" : "**INVALID**");
+
+#ifdef lxpde_stage2
+	if (lxpde_stage2(pte))
+		stage2 = true;
+#endif
 
 	if (level == 0 ||
 	    (level == 1 && l1pde_is_table(pte)) ||
@@ -360,17 +367,20 @@ db_pte_print(pt_entry_t pte, int level,
 			pr(" **ILLEGAL TYPE**"); /* L0 doesn't support block */
 		else
 			pr(" L%d-TABLE", level);
-
+		if (stage2)
+			pr(" STAGE2");
 		pr(", PA=%lx", l0pde_pa(pte));
 
-		if (pte & LX_TBL_NSTABLE)
-			pr(", NSTABLE");
-		if (pte & LX_TBL_APTABLE)
-			pr(", APTABLE");
-		if (pte & LX_TBL_UXNTABLE)
-			pr(", UXNTABLE");
-		if (pte & LX_TBL_PXNTABLE)
-			pr(", PXNTABLE");
+		if (!stage2) {
+			if (pte & LX_TBL_NSTABLE)
+				pr(", NSTABLE");
+			if (pte & LX_TBL_APTABLE)
+				pr(", APTABLE");
+			if (pte & LX_TBL_UXNTABLE)
+				pr(", UXNTABLE");
+			if (pte & LX_TBL_PXNTABLE)
+				pr(", PXNTABLE");
+		}
 
 	} else if ((level == 1 && l1pde_is_block(pte)) ||
 	    (level == 2 && l2pde_is_block(pte)) ||
@@ -389,20 +399,30 @@ db_pte_print(pt_entry_t pte, int level,
 			    "L3(4K)-PAGE" : "**ILLEGAL TYPE**");
 			break;
 		}
-
+		if (stage2)
+			pr(" STAGE2");
 		pr(", PA=%lx", l3pte_pa(pte));
 
+		if (stage2) {
+			if ((pte & LX_S2_BLKPAG_XN) == LX_S2_BLKPAG_XN_XN)
+				pr(", XN");
+			if (pte & LX_S2_BLKPAG_FnXS)
+				pr(", FnXN");
+		} else {
 #ifdef ARMV81_HAFDBS
-		if (pte & LX_BLKPAG_DBM)
-			pr(", %s", "DBM");
+			if (pte & LX_BLKPAG_DBM)
+				pr(", %s", "DBM");
 #endif
-		pr(", %s", (pte & LX_BLKPAG_UXN) ? "UXN" : "UX");
-		pr(", %s", (pte & LX_BLKPAG_PXN) ? "PXN" : "PX");
+			pr(", %s", (pte & LX_BLKPAG_UXN) ? "UXN" : "UX");
+			pr(", %s", (pte & LX_BLKPAG_PXN) ? "PXN" : "PX");
+		}
 
 		if (pte & LX_BLKPAG_CONTIG)
 			pr(", CONTIG");
 
-		pr(", %s", (pte & LX_BLKPAG_NG) ? "nG" : "G");
+		if (!stage2)
+			pr(", %s", (pte & LX_BLKPAG_NG) ? "nG" : "G");
+
 		pr(", %s", (pte & LX_BLKPAG_AF) ?
 		    "accessible" :
 		    "**fault** ");
@@ -422,29 +442,74 @@ db_pte_print(pt_entry_t pte, int level,
 			break;
 		}
 
-		pr(", %s", (pte & LX_BLKPAG_AP_RO) ? "RO" : "RW");
-		pr(", %s", (pte & LX_BLKPAG_APUSER) ? "EL0" : "EL1");
-		pr(", %s", (pte & LX_BLKPAG_NS) ? "NS" : "secure");
+		if (stage2) {
+			switch (pte & LX_S2_BLKPAG_S2AP) {
+			case LX_S2_BLKPAG_S2AP_NA:
+				pr(", NA");
+				break;
+			case LX_S2_BLKPAG_S2AP_RO:
+				pr(", RO");
+				break;
+			case LX_S2_BLKPAG_S2AP_WO:
+				pr(", WO");
+				break;
+			case LX_S2_BLKPAG_S2AP_RW:
+				pr(", RW");
+				break;
+			}
 
-		switch (pte & LX_BLKPAG_ATTR_MASK) {
-		case LX_BLKPAG_ATTR_NORMAL_WB:
-			pr(", WB");
-			break;
-		case LX_BLKPAG_ATTR_NORMAL_NC:
-			pr(", NC");
-			break;
-		case LX_BLKPAG_ATTR_NORMAL_WT:
-			pr(", WT");
-			break;
-		case LX_BLKPAG_ATTR_DEVICE_MEM:
-			pr(", DEV");
-			break;
-		case LX_BLKPAG_ATTR_DEVICE_MEM_NP:
-			pr(", DEV(NP)");
-			break;
-		default:
-			pr(", ATTR(%lu)", __SHIFTOUT(pte, LX_BLKPAG_ATTR_INDX));
-			break;
+			switch (pte & LX_S2_BLKPAG_MEMATTR) {
+			case LX_S2_BLKPAG_MEMATTR_nGnRnE:
+				pr(", nGnRnE");
+				break;
+			case LX_S2_BLKPAG_MEMATTR_nGnRE:
+				pr(", nGnRE");
+				break;
+			case LX_S2_BLKPAG_MEMATTR_nGRE:
+				pr(", nGRE");
+				break;
+			case LX_S2_BLKPAG_MEMATTR_GRE:
+				pr(", GRE");
+				break;
+			case LX_S2_BLKPAG_MEMATTR_NC:
+				pr(", NC");
+				break;
+			case LX_S2_BLKPAG_MEMATTR_WT:
+				pr(", WT");
+				break;
+			case LX_S2_BLKPAG_MEMATTR_WB:
+				pr(", WB");
+				break;
+			default:
+				pr(", ATTR(0x%lx)",
+				    __SHIFTOUT(pte, LX_S2_BLKPAG_MEMATTR));
+			}
+		} else {
+			pr(", %s", (pte & LX_BLKPAG_AP_RO) ? "RO" : "RW");
+			pr(", %s", (pte & LX_BLKPAG_APUSER) ? "EL0" : "EL1");
+			pr(", %s", (pte & LX_BLKPAG_NS) ? "NS" : "secure");
+
+			switch (pte & LX_BLKPAG_ATTR_MASK) {
+			case LX_BLKPAG_ATTR_NORMAL_WB:
+				pr(", WB");
+				break;
+			case LX_BLKPAG_ATTR_NORMAL_NC:
+				pr(", NC");
+				break;
+			case LX_BLKPAG_ATTR_NORMAL_WT:
+				pr(", WT");
+				break;
+			case LX_BLKPAG_ATTR_DEVICE_MEM:
+				pr(", DEV");
+				break;
+			case LX_BLKPAG_ATTR_DEVICE_MEM_NP:
+				pr(", DEV(NP)");
+				break;
+			default:
+				pr(", ATTR(%lu)",
+				    __SHIFTOUT(pte, LX_BLKPAG_ATTR_INDX));
+				break;
+			}
 		}
 
 		if (pte & LX_BLKPAG_OS_0)

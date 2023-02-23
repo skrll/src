@@ -82,7 +82,6 @@ pmap_md_tlb_asid_max(void)
 
 #define KERNEL_PID		0	/* The kernel uses ASID 0 */
 
-
 /* memory attributes are configured MAIR_EL1 in locore */
 #define LX_BLKPAG_ATTR_NORMAL_WB	__SHIFTIN(0, LX_BLKPAG_ATTR_INDX)
 #define LX_BLKPAG_ATTR_NORMAL_NC	__SHIFTIN(1, LX_BLKPAG_ATTR_INDX)
@@ -111,8 +110,10 @@ pmap_md_tlb_asid_max(void)
 #define l2pde_is_table(pde)	(((pde) & LX_TYPE) == LX_TYPE_TBL)
 
 #define l3pte_pa(pde)		lxpde_pa(pde)
-#define l3pte_executable(pde,user)	\
+#define l3pte_s1_executable(pde,user)	\
     (((pde) & ((user) ? LX_BLKPAG_UXN : LX_BLKPAG_PXN)) == 0)
+#define l3pte_s2_executable(pde)	\
+	(((pde) & LX_S2_BLKPAG_XN) != LX_S2_BLKPAG_XN_XN)
 #define l3pte_readable(pde)	((pde) & LX_BLKPAG_AF)
 #define l3pte_writable(pde)	\
     (((pde) & (LX_BLKPAG_AF | LX_BLKPAG_AP)) == (LX_BLKPAG_AF | LX_BLKPAG_AP_RW))
@@ -258,8 +259,9 @@ void pmap_db_ttbrdump(bool, vaddr_t, void (*)(const char *, ...) __printflike(1,
 #define LX_BLKPAG_OS_WIRED		LX_BLKPAG_OS_2
 #define LX_BLKPAG_OS_BOOT		LX_BLKPAG_OS_3
 
-#define PMAP_PTE_OS2	"wired"
-#define PMAP_PTE_OS3	"boot"
+#define PMAP_PTE_OS2			"wired"
+#define PMAP_PTE_OS3			"boot"
+
 
 #if defined(PMAP_MI)
 #include <aarch64/pmap_machdep.h>
@@ -290,6 +292,13 @@ struct pmap {
 
 	struct pmap_asid_info pm_pai[PMAP_TLB_MAX];
 	bool pm_activated;
+
+	/* for hypervisor */
+	bool pm_stage2;
+	int pm_startlevel;			/* 0,1,2 */
+	int pm_concatenate_num;		/* 1-16 */
+	pd_entry_t *pm_starttable;	/* concatenated VTTBR */
+	paddr_t pm_starttable_pa;
 };
 
 static inline paddr_t
@@ -337,7 +346,11 @@ struct vm_page_md {
 		(pp)->pp_pv.pv_ptep = NULL;				\
 	} while (/*CONSTCOND*/ 0)
 
-#define PMAP_PTE_OS0			"OS0"
+#define LX_BLKPAG_OS_STAGE2		LX_BLKPAG_OS_0
+#define lxpde_stage2(pde)	((pde) & LX_BLKPAG_OS_STAGE2)
+#define lxpde_stage1(pde)	(!lxpde_stage2(pde))
+
+#define PMAP_PTE_OS0			"stage2"
 #define PMAP_PTE_OS1			"OS1"
 
 #define VTOPHYS_FAILED			((paddr_t)-1L)	/* POOL_PADDR_INVALID */
