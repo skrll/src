@@ -82,7 +82,11 @@ pmap_md_tlb_asid_max(void)
 
 #define KERNEL_PID		0	/* The kernel uses ASID 0 */
 
-/* memory attributes are configured MAIR_EL1 in locore */
+/*
+ * memory attributes are configured via
+ * - MAIR_EL1 in locore.S, and
+ * - MAIR_EL2 in nvmm_aarch64_el2.c
+ */
 #define LX_BLKPAG_ATTR_NORMAL_WB	__SHIFTIN(0, LX_BLKPAG_ATTR_INDX)
 #define LX_BLKPAG_ATTR_NORMAL_NC	__SHIFTIN(1, LX_BLKPAG_ATTR_INDX)
 #define LX_BLKPAG_ATTR_NORMAL_WT	__SHIFTIN(2, LX_BLKPAG_ATTR_INDX)
@@ -294,11 +298,12 @@ struct pmap {
 	bool pm_activated;
 
 	/* for hypervisor */
+	void *pm_nvmm;	/* struct nvmm_machine * */
 	bool pm_stage2;
-	int pm_startlevel;			/* 0,1,2 */
-	int pm_concatenate_num;		/* 1-16 */
-	pd_entry_t *pm_starttable;	/* concatenated VTTBR */
-	paddr_t pm_starttable_pa;
+	int pm_st2_startlevel;		/* 0,1,2 */
+	int pm_st2_concatenate_num;	/* 1-16 */
+	pd_entry_t *pm_st2_table;	/* concatenated VTTBR */
+	paddr_t pm_st2_table_pa;
 };
 
 static inline paddr_t
