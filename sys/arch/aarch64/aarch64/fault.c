@@ -150,6 +150,7 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 	UVMHIST_FUNC(__func__);
 	UVMHIST_CALLED(pmaphist);
 
+	// XXXNH needed? Almost certainly not
 	__asm __volatile ("clrex");
 
 	l = curlwp;

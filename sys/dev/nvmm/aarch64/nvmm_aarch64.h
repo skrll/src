@@ -29,44 +29,63 @@
 #ifndef _NVMM_AARCH64_H_
 #define _NVMM_AARCH64_H_
 
-/* generic */
+#include <aarch64/reg.h>
+
+/* Generic. */
 #define NVMM_VCPU_EXIT_NONE		0x0000000000000000ULL
 #define NVMM_VCPU_EXIT_STOPPED		0xfffffffffffffffeULL
 #define NVMM_VCPU_EXIT_INVALID		0xffffffffffffffffULL
+/* aarch64: operations. */
 #define NVMM_VCPU_EXIT_MEMORY		0x0000000000000001ULL
-
+/* aarch64: changes in VCPU state. */
 #define NVMM_VCPU_EXIT_SHUTDOWN		0x0000000000001000ULL
+#define NVMM_VCPU_EXIT_IRQ		0x0000000000001001ULL
 #define NVMM_VCPU_EXIT_HALTED		0x0000000000001003ULL
+/* aarch64: instructions. */
+#define NVMM_VCPU_EXIT_MSR		0x0000000000002000ULL
+#define NVMM_VCPU_EXIT_MRS		0x0000000000002001ULL
+#define NVMM_VCPU_EXIT_WFI		0x0000000000002010ULL
+#define NVMM_VCPU_EXIT_WFE		0x0000000000002011ULL
+#define NVMM_VCPU_EXIT_HVC		0x0000000000002020ULL
+#define NVMM_VCPU_EXIT_SMC		0x0000000000002021ULL
 
-//#define NVMM_VCPU_EXIT_MRS		0x0000000000002000ULL
-//#define NVMM_VCPU_EXIT_MSR		0x0000000000002001ULL
+struct cpu_info;
 
-
+struct nvmm_aarch64_el2_init {
+	struct cpu_info	*ni_cpuinfo;
+	uint64_t	 ni_ttbr0_el2;
+	uint64_t	 ni_vtcr_el2;
+};
 
 struct nvmm_aarch64_exit_memory {
-	int prot;
 	gpaddr_t gpa;
-};
-
-struct nvmm_aarch64_exit_insn {
-	uint64_t npc;
-};
-
-struct nvmm_aarch64_exit_invalid {
-	uint64_t hwcode;
+	int prot;
 };
 
 struct nvmm_aarch64_exit {
 	uint64_t reason;
 	union {
 		struct nvmm_aarch64_exit_memory mem;
-		struct nvmm_aarch64_exit_insn insn;
-		struct nvmm_aarch64_exit_invalid inv;
 	} u;
+	uint64_t esr;
+	uint32_t insn;		// Used by the MMIO emulation code
+        struct {
+		uint64_t evt_pending:1;
+		uint64_t vtimer:1;
+		uint64_t rsvd:62;
+        } exitstate;
 };
 
+// XXXNH make a bit mask for {SERROR,IRQ,FIQ} so >1 event
+// XXXNH can be sent.
 struct nvmm_aarch64_event {
-	uint64_t ___dummy___;
+	u_int type;
+#define NVMM_VCPU_EVENT_NONE	0
+#define NVMM_VCPU_EVENT_SYNC	1	// probably not
+#define NVMM_VCPU_EVENT_SERROR	2
+#define NVMM_VCPU_EVENT_IRQ	3
+#define NVMM_VCPU_EVENT_FIQ	4
+	uint64_t esr;	// SYNC only
 };
 
 #define NVMM_AARCH64_GPR_X0		0
@@ -100,16 +119,57 @@ struct nvmm_aarch64_event {
 #define NVMM_AARCH64_GPR_X28		28
 #define NVMM_AARCH64_GPR_X29		29
 #define NVMM_AARCH64_GPR_X30		30
-#define NVMM_AARCH64_GPR_X31		31
+#define NVMM_AARCH64_GPR_X31		31	/* SP_EL0 or SP_EL1 */
 #define NVMM_AARCH64_NGPR		32
 
 #define NVMM_AARCH64_SPR_PC		0	/* ELR_EL2 */
-#define NVMM_AARCH64_SPR_ELR_EL1	1
-#define NVMM_AARCH64_SPR_SPSR_EL1	2
-#define NVMM_AARCH64_SPR_TPIDR_EL0	3
-#define NVMM_AARCH64_SPR_TPIDR_EL1	4
-#define NVMM_AARCH64_SPR_TPIDRRO_EL0	5
+#define NVMM_AARCH64_SPR_SPSR_EL1	1
+/* when VMENTER, X31 has priority according to SPSR */
+#define NVMM_AARCH64_SPR_SP_EL0		2
+#define NVMM_AARCH64_SPR_SP_EL1		3
+
+#define NVMM_AARCH64_SPR_AMAIR_EL1	4
+#define NVMM_AARCH64_SPR_CNTKCTL_EL1	5
+#define NVMM_AARCH64_SPR_CONTEXTIDR_EL1	6
+#define NVMM_AARCH64_SPR_CPACR_EL1	6
+#define NVMM_AARCH64_SPR_CSSELR_EL1	8
+#define NVMM_AARCH64_SPR_ELR_EL1	9
+#define NVMM_AARCH64_SPR_ESR_EL1	10
+#define NVMM_AARCH64_SPR_FAR_EL1	11
+#define NVMM_AARCH64_SPR_FPCR		12
+#define NVMM_AARCH64_SPR_FPSR		13
+#define NVMM_AARCH64_SPR_MAIR_EL1	14
+#define NVMM_AARCH64_SPR_MDSCR_EL1	15
+#define NVMM_AARCH64_SPR_MIDR_EL1	16	/* VMIDR_EL2 */
+#define NVMM_AARCH64_SPR_MPIDR_EL1	17	/* VMPIDR_EL2 */
+#define NVMM_AARCH64_SPR_PAR_EL1	18
+#define NVMM_AARCH64_SPR_SCTLR_EL1	19
+#define NVMM_AARCH64_SPR_TCR_EL1	20
+#define NVMM_AARCH64_SPR_TPIDRRO_EL0	21
+#define NVMM_AARCH64_SPR_TPIDR_EL0	22
+#define NVMM_AARCH64_SPR_TPIDR_EL1	23
+#define NVMM_AARCH64_SPR_TTBR0_EL1	24
+#define NVMM_AARCH64_SPR_TTBR1_EL1	25
+#define NVMM_AARCH64_SPR_VBAR_EL1	26
+#define NVMM_AARCH64_SPR_CNTV_CTL_EL0	27
+#define NVMM_AARCH64_SPR_CNTV_CVAL_EL0	28
 #define NVMM_AARCH64_NSPR		64
+
+#define NVMM_AARCH64_TID_MVFR0_EL1		0	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_MVFR1_EL1		1	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_MVFR2_EL1		2	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64PFR0_EL1	3	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64PFR1_EL1	4	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64DFR0_EL1	5	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64DFR1_EL1	6	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64AFR0_EL1	7	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64AFR1_EL1	8	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64ISAR0_EL1	9	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64ISAR1_EL1	10	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64MMFR0_EL1	11	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64MMFR1_EL1	12	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_TID_ID_AA64MMFR2_EL1	13	/* HDR_EL2.TID3 */
+#define NVMM_AARCH64_NTID			32
 
 #define NVMM_AARCH64_FPR_V0		0
 #define NVMM_AARCH64_FPR_V1		1
@@ -148,14 +208,16 @@ struct nvmm_aarch64_event {
 /* flags */
 #define NVMM_AARCH64_STATE_GPRS		__BIT(0)
 #define NVMM_AARCH64_STATE_SPRS		__BIT(1)
-#define NVMM_AARCH64_STATE_FPRS		__BIT(2)
+#define NVMM_AARCH64_STATE_TIDS		__BIT(2)
+#define NVMM_AARCH64_STATE_FPRS		__BIT(16)
 #define NVMM_AARCH64_STATE_ALL		\
-    (NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS | NVMM_AARCH64_STATE_FPRS)
+    (NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS | NVMM_AARCH64_STATE_TIDS | NVMM_AARCH64_STATE_FPRS)
 
 struct nvmm_aarch64_state {
 	uint64_t gprs[NVMM_AARCH64_NGPR];
 	uint64_t sprs[NVMM_AARCH64_NSPR];
-	__uint128_t fprs[NVMM_AARCH64_NFPR];
+	uint64_t tids[NVMM_AARCH64_NTID];		/* XXX: read only. no need to include in host context */
+	union fpelem fprs[NVMM_AARCH64_NFPR];
 };
 
 struct nvmm_cap_md {
@@ -166,5 +228,16 @@ struct nvmm_cap_md {
 #define nvmm_vcpu_exit nvmm_aarch64_exit
 #define nvmm_vcpu_event nvmm_aarch64_event
 #define nvmm_vcpu_state nvmm_aarch64_state
+
+#define NVMM_EL2_HVC_INIT		0x0000
+#define NVMM_EL2_HVC_VMENTER		0x0001
+#define NVMM_EL2_HVC_MAINTAIN_IPA	0x0100
+
+u_int nvmm_aarch64_vmid(void *);
+
+void nvmm_aarch64_maintain_ipa(void *, uint64_t, uint64_t, uint64_t);
+#define NVMM_AARCH64_MAINTAIN_OP_TLBI		__BIT(0)	/* none */
+#define NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL	__BIT(1)	/* ipa */
+#define NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC	__BIT(2)	/* va */
 
 #endif /* _NVMM_AARCH64_H_ */

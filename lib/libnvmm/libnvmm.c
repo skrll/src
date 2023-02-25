@@ -45,7 +45,9 @@
 
 static struct nvmm_capability __capability;
 
-#ifdef __x86_64__
+#if defined(__aarch64__)
+#include "libnvmm_aarch64.c"
+#elif defined(__x86_64__)
 #include "libnvmm_x86.c"
 #endif
 
