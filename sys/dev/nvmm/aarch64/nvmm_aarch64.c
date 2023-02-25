@@ -46,7 +46,37 @@ struct aarch64_machdata {
 
 struct aarch64_cpudata {
 	void *unused1;
+
+	/* guest state */
+	uint64_t gprs[NVMM_AARCH64_NGPR];
+	uint64_t sprs[NVMM_AARCH64_NSPR];
+	__uint128_t fprs[NVMM_AARCH64_NFPR];
 };
+
+static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
+
+static void
+debugdump_cpudata(struct aarch64_cpudata *cpudata)
+{
+	printf("    x0=%016lx,     x1=%016lx\n", cpudata->gprs[0], cpudata->gprs[1]);
+	printf("    x2=%016lx,     x3=%016lx\n", cpudata->gprs[2], cpudata->gprs[3]);
+	printf("    x4=%016lx,     x5=%016lx\n", cpudata->gprs[4], cpudata->gprs[5]);
+	printf("    x6=%016lx,     x7=%016lx\n", cpudata->gprs[6], cpudata->gprs[7]);
+	printf("    x8=%016lx,     x9=%016lx\n", cpudata->gprs[8], cpudata->gprs[9]);
+	printf("   x10=%016lx,    x11=%016lx\n", cpudata->gprs[10], cpudata->gprs[11]);
+	printf("   x12=%016lx,    x13=%016lx\n", cpudata->gprs[12], cpudata->gprs[13]);
+	printf("   x14=%016lx,    x15=%016lx\n", cpudata->gprs[14], cpudata->gprs[15]);
+	printf("   x16=%016lx,    x17=%016lx\n", cpudata->gprs[16], cpudata->gprs[17]);
+	printf("   x18=%016lx,    x19=%016lx\n", cpudata->gprs[18], cpudata->gprs[19]);
+	printf("   x20=%016lx,    x21=%016lx\n", cpudata->gprs[20], cpudata->gprs[21]);
+	printf("   x22=%016lx,    x23=%016lx\n", cpudata->gprs[22], cpudata->gprs[23]);
+	printf("   x24=%016lx,    x25=%016lx\n", cpudata->gprs[24], cpudata->gprs[25]);
+	printf("   x26=%016lx,    x27=%016lx\n", cpudata->gprs[26], cpudata->gprs[27]);
+	printf("   x28=%016lx, fp=x29=%016lx\n", cpudata->gprs[28], cpudata->gprs[29]);
+	printf("lr=x30=%016lx,     sp=%016lx\n", cpudata->gprs[30], cpudata->gprs[31]);
+
+	printf("    PC=%016lx\n", cpudata->sprs[NVMM_AARCH64_SPR_PC]);
+}
 
 static bool
 nvmm_aarch64_ident(void)
@@ -83,7 +113,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 
 	printf("%s:%d\n", __func__, __LINE__);
 
-	/* setup aarch64's pmap hooks */
+	/* set aarch64 pmap to stage2 mode */
 	mach->vm->vm_map.pmap->pm_stage2 = true;
 
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
@@ -118,6 +148,12 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    UVM_KMF_WIRED | UVM_KMF_ZERO);
 	vcpu->cpudata = cpudata;
 
+	/* Install the RESET state. */
+	memset(&vcpu->comm->state, 0, sizeof(vcpu->comm->state));
+	vcpu->comm->state_wanted = NVMM_AARCH64_STATE_ALL;
+	vcpu->comm->state_cached = 0;
+	nvmm_aarch64_vcpu_setstate(vcpu);
+
 	return 0;
 }
 
@@ -142,13 +178,72 @@ nvmm_aarch64_vcpu_configure(struct nvmm_cpu *vcpu, uint64_t op, void *data)
 static void
 nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 {
+	struct nvmm_comm_page *comm = vcpu->comm;
+	const struct nvmm_aarch64_state *state = &comm->state;
+	struct aarch64_cpudata *cpudata = vcpu->cpudata;
+	uint64_t flags;
+
 	printf("%s:%d\n", __func__, __LINE__);
+
+	flags = comm->state_wanted;
+
+	if (flags & NVMM_AARCH64_STATE_GPRS) {
+printf("setstate: gprs[0]=%016lx\n", state->gprs[0]);
+printf("setstate: gprs[1]=%016lx\n", state->gprs[1]);
+printf("setstate: gprs[2]=%016lx\n", state->gprs[2]);
+
+		memcpy(cpudata->gprs, state->gprs, sizeof(state->gprs));
+	}
+	if (flags & NVMM_AARCH64_STATE_SPRS) {
+		memcpy(cpudata->sprs, state->sprs, sizeof(state->sprs));
+	}
+	if (flags & NVMM_AARCH64_STATE_FPRS) {
+		memcpy(cpudata->fprs, state->fprs, sizeof(state->fprs));
+	}
+
+	comm->state_wanted = 0;
+	comm->state_cached |= flags;
 }
 
 static void
 nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 {
+	struct nvmm_comm_page *comm = vcpu->comm;
+	struct nvmm_aarch64_state *state = &comm->state;
+	const struct aarch64_cpudata *cpudata = vcpu->cpudata;
+	uint64_t flags;
+
 	printf("%s:%d\n", __func__, __LINE__);
+
+	flags = comm->state_wanted;
+
+	if (flags & NVMM_AARCH64_STATE_GPRS) {
+		memcpy(state->gprs, cpudata->gprs, sizeof(state->gprs));
+	}
+	if (flags & NVMM_AARCH64_STATE_SPRS) {
+		memcpy(state->sprs, cpudata->sprs, sizeof(state->sprs));
+	}
+	if (flags & NVMM_AARCH64_STATE_FPRS) {
+		memcpy(state->fprs, cpudata->fprs, sizeof(state->fprs));
+	}
+
+	comm->state_wanted = 0;
+	comm->state_cached |= flags;
+}
+
+//static void
+//aarch64_vcpu_state_provide(struct nvmm_cpu *vcpu, uint64_t flags)
+//{
+//	vcpu->comm->state_wanted = flags;
+//	nvmm_aarch64_vcpu_getstate(vcpu);
+//}
+
+static void
+aarch64_vcpu_state_commit(struct nvmm_cpu *vcpu)
+{
+	vcpu->comm->state_wanted = vcpu->comm->state_commit;
+	vcpu->comm->state_commit = 0;
+	nvmm_aarch64_vcpu_setstate(vcpu);
 }
 
 static int
@@ -162,9 +257,30 @@ static int
 nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
+	struct nvmm_comm_page *comm = vcpu->comm;
+	struct aarch64_cpudata *cpudata = vcpu->cpudata;
+//	struct aarch64_machdata *machdata = mach->machdata;
+
 	printf("%s:%d\n", __func__, __LINE__);
 
-	exit->reason = NVMM_VCPU_EXIT_HALTED;
+	aarch64_vcpu_state_commit(vcpu);
+	comm->state_cached = 0;
+
+
+	//XXXX
+	debugdump_cpudata(cpudata);
+
+
+	//event commit
+
+
+	kpreempt_disable();
+	/*
+		XXXXXXXXXXXXXXXXXXXXXXXXXX
+	*/
+	kpreempt_enable();
+
+	exit->reason = NVMM_VCPU_EXIT_HALTED;	//XXXXXXXXX
 
 	return 0;
 }
