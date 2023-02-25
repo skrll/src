@@ -417,6 +417,9 @@ aarch64_dcache_wb_all(void)
 bool
 aarch64_earlydevice_va_p(void)
 {
+	if (__SHIFTOUT(reg_currentel_read(), CURRENTEL_EL) >= 2)
+		return false;
+
 	/* This function may be called before enabling MMU, or mapping KVA */
 	if ((reg_sctlr_el1_read() & SCTLR_M) == 0)
 		return false;

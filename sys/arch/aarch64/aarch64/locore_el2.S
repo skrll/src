@@ -28,6 +28,8 @@
  * $FreeBSD: head/sys/arm64/arm64/locore.S 316755 2017-04-13 11:56:27Z andrew $
  */
 
+#include "nvmm.h"
+
 #include <aarch64/asm.h>
 #include <aarch64/hypervisor.h>
 #include "assym.h"
@@ -50,6 +52,8 @@ drop_to_el1_inline:
 	/*
 	 * If we are started in EL2, configure the required hypervisor
 	 * registers and drop to EL1.
+	 *
+	 * x27 is cpuindex (0,1,2,...,MAXCPU-1)
 	 */
 drop_to_el1:
 	mrs	x1, CurrentEL
@@ -65,7 +69,7 @@ in_el2:
 	mrs	x2, hcr_el2
 	tbz	x2, #34, no_el2_host_mode	/* HCR_E2H not set? */
 
-	/* EL2 host mode supported, nothing to do, leave. */
+	/* EL2 host mode enabled, nothing to do, leave. */
 	ret
 
 no_el2_host_mode:
@@ -120,9 +124,6 @@ no_el2_host_mode:
 	adr	x2, hyp_vectors
 	msr	vbar_el2, x2
 
-	mov	x2, #(SPSR_F | SPSR_I | SPSR_A | SPSR_A64_D | SPSR_M_EL1H)
-	msr	spsr_el2, x2
-
 	/* Configure GICv3 CPU interface */
 	mrs	x2, id_aa64pfr0_el1
 	/* Extract GIC bits from the register */
@@ -138,13 +139,105 @@ no_el2_host_mode:
 	msr	icc_sre_el2, x2
 2:
 
-	/* Keep the stack pointer. */
+	// XXXNH Why???
+	/*
+	 * Set the current sp (=SP_EL2) to SP_EL1.
+	 */
 	mov	x0, sp
 	msr	sp_el1, x0
+#if NNVMM > 0
+	/* nvmm_available = 1 */
+	adrl	x0, _C_LABEL(nvmm_available)
+	mov	x1, #1
+	str	w1, [x0]
 
-	/* Set the address to return to. */
+	/*
+	 * Set new stackpointer for EL2 trap handlers.
+	 * sp = sp_el2 = &el2stack + cpuindex * PAGE_SIZE;
+	 *
+	 * cpuindex is [0, MAXCPUS - 1] and el2stack is placed after
+	 * cpu0's page.
+	 */
+	mov	x1, #PAGE_SIZE
+	mul	x1, x1, x27
+	adrl	x0, el2stack
+	add	sp, x0, x1
+
+	/* set current VMID zero */
+	msr	vttbr_el2, xzr
+
+	/*
+	 * NVMM uses tpidr_el2 as struct cpu_info *, but is initialised in
+	 * aarch64_el2_init.
+	 */
+	msr	tpidr_el2, xzr
+#endif
+
+	/*
+	 * DAIF = {1,1,1,1} thanks to boot protocol, so it's safe to set {elr,spsr}_el2
+	 * Set the address to return to.
+	 */
 	msr	elr_el2, lr
+	mov	x2, #(SPSR_F | SPSR_I | SPSR_A | SPSR_A64_D | SPSR_M_EL1H)
+	msr	spsr_el2, x2
 
+	/* Use DPRINTSREG for BP and CPU_DPRINTSREG for APs */
+	cmp	x27, #0
+	b.ne	3f
+
+	DPRINT("\n")
+	DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
+	DPRINTSREG("TCR_EL2          = ", tcr_el2)
+	DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
+	DPRINTSREG("MAIR_EL2         = ", mair_el2)
+	DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
+	DPRINTSREG("DAIF             = ", daif)
+
+	DPRINTREG("SP (EL2)         = ", sp)
+
+	mrs	x2, id_aa64pfr0_el1
+	/* Extract GIC bits from the register */
+	and	x2, x2, ID_AA64PFR0_EL1_GIC
+	lsr	x2, x2, ID_AA64PFR0_EL1_GIC_SHIFT
+	/* GIC[3:0] == 0001 - GIC CPU interface via special regs. supported */
+	cmp	x2, #ID_AA64PFR0_EL1_GIC_CPUIF_EN
+	b.ne	4f
+
+	DPRINTSREG("ICC_SRE_EL2      = ", icc_sre_el2)
+	DPRINTSREG("ICH_HCR_EL2      = ", ich_hcr_el2)
+	DPRINTSREG("ICH_VTR_EL2      = ", ich_vtr_el2)
+
+4:
+	/*
+	 * An isb is not required before eret if SCTLR_EL2.EOS=1 (RES1)
+	 */
+	eret
+
+3:
+	CPU_DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
+	CPU_DPRINTSREG("TCR_EL2          = ", tcr_el2)
+	CPU_DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	CPU_DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
+	CPU_DPRINTSREG("MAIR_EL2         = ", mair_el2)
+	CPU_DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
+	CPU_DPRINTSREG("DAIF             = ", daif)
+
+	CPU_DPRINTREG("SP (EL2)         = ", sp)
+
+	mrs	x2, id_aa64pfr0_el1
+	/* Extract GIC bits from the register */
+	and	x2, x2, ID_AA64PFR0_EL1_GIC
+	lsr	x2, x2, ID_AA64PFR0_EL1_GIC_SHIFT
+	/* GIC[3:0] == 0001 - GIC CPU interface via special regs. supported */
+	cmp	x2, #ID_AA64PFR0_EL1_GIC_CPUIF_EN
+	b.ne	5f
+
+	CPU_DPRINTSREG("ICC_SRE_EL2      = ", icc_sre_el2)
+	CPU_DPRINTSREG("ICH_HCR_EL2      = ", ich_hcr_el2)
+	CPU_DPRINTSREG("ICH_VTR_EL2      = ", ich_vtr_el2)
+
+5:
 	/*
 	 * An isb is not required before eret if
 	 * SCTLR_EL2.EOS=1 [bit 11] (RES1)
@@ -166,31 +259,16 @@ no_el2_host_mode:
 	     __BIT(4)   /* SA0 */					\
 	)
 
-#define	VECT_EMPTY	\
-	.align 7;	\
-	1:	b	1b
-
-	.align 11
-hyp_vectors:
-	VECT_EMPTY	/* Synchronous EL2t */
-	VECT_EMPTY	/* IRQ EL2t */
-	VECT_EMPTY	/* FIQ EL2t */
-	VECT_EMPTY	/* Error EL2t */
-
-	VECT_EMPTY	/* Synchronous EL2h */
-	VECT_EMPTY	/* IRQ EL2h */
-	VECT_EMPTY	/* FIQ EL2h */
-	VECT_EMPTY	/* Error EL2h */
-
-	VECT_EMPTY	/* Synchronous 64-bit EL1 */
-	VECT_EMPTY	/* IRQ 64-bit EL1 */
-	VECT_EMPTY	/* FIQ 64-bit EL1 */
-	VECT_EMPTY	/* Error 64-bit EL1 */
-
-	VECT_EMPTY	/* Synchronous 32-bit EL1 */
-	VECT_EMPTY	/* IRQ 32-bit EL1 */
-	VECT_EMPTY	/* FIQ 32-bit EL1 */
-	VECT_EMPTY	/* Error 32-bit EL1 */
-
 drop_to_el1_inline_done:
 	nop
+
+#if NNVMM > 0
+	.pushsection .bss
+	.align PGSHIFT
+	.space	PAGE_SIZE
+el2stack:
+#ifdef MULTIPROCESSOR
+	.space	PAGE_SIZE * (MAXCPUS - 1)
+#endif
+	.popsection
+#endif /* NNVMM */

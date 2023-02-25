@@ -116,8 +116,8 @@ RCSID("$NetBSD: locore.S,v 1.107 2026/07/11 12:23:51 skrll Exp $")
 	.align	3
 ASENTRY_NP(aarch64_start)
 	/* keep lr & sp for return to bootloader if possible */
-	mov	x27, lr
-	mov	x28, sp
+	mov	x24, lr
+	mov	x25, sp
 
 	/* set stack pointer for boot */
 	adrl	x0, bootstk
@@ -139,9 +139,6 @@ ASENTRY_NP(aarch64_start)
 	DPRINTSREG("HCR_EL2          = ", hcr_el2)
 	DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
 	DPRINTSREG("MAIR_EL2         = ", mair_el2)
-#if 0
-	DPRINTSREG("ICH_VTR_EL2      = ", ich_vtr_el2)
-#endif
 1:
 	DPRINTSREG("SPSR_EL1         = ", spsr_el1)
 	DPRINTSREG("CNTFREQ_EL0      = ", cntfrq_el0)
@@ -156,6 +153,7 @@ ASENTRY_NP(aarch64_start)
 	DPRINTSREG("ID_AA64MMFR1_EL1 = ", id_aa64mmfr1_el1)
 
 #ifdef LOCORE_EL2
+	mov	x27, xzr	/* x27 = cpuindex = 0 */
 	VPRINT("Drop to EL1...")
 # include <aarch64/aarch64/locore_el2.S>
 	VPRINT("OK\n")
@@ -184,8 +182,8 @@ ASENTRY_NP(aarch64_start)
 aarch64_fatal:
 	PRINT("fatal error occurred while booting\n")
 	/* return to bootloader. if switched from EL2 to EL1, It might fail */
-	mov	lr, x27
-	mov	sp, x28
+	mov	lr, x24
+	mov	sp, x25
 	ret
 
 /*
@@ -370,8 +368,23 @@ printcpu:
 
 #endif /* DEBUG_LOCORE */
 
+/*
+ * Assumed processor state is
+ *
+ * MMU: The MMU is Disabled (SCTLR_ELx.M = 0)
+ * Data Cache: Data caching is Disabled (SCTLR_ELx.C = 0).
+ * Instruction Cache: Instruction caching is Architecturally UNKNOWN
+ * (it could be enabled or disabled; software must treat it as uninitialized).
+ *
+ * Interrupt Masking: All local asynchronous exceptions are completely masked.
+ * In AArch64, PSTATE.DAIF = 0xF (Debug, SError, IRQ, and FIQ are disabled).
+ * SP Selector: In AArch64, the stack pointer selector is set to use the dedicated
+ * exception level stack pointer (SP_ELx rather than SP_EL0).
+ *
+ * If enabled by PSCI then the PSCI implementation ensures that the core is fully
+ *  integrated into the SoC's cache coherency domain
+ */
 ENTRY_NP(cpu_mpstart)
-
 	mrs	x8, CurrentEL
 	lsr	x8, x8, #2
 	cmp	x8, #0x2

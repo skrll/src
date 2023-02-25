@@ -32,6 +32,7 @@ if defined(_KERNEL_OPT)
 include "opt_multiprocessor.h"
 include "opt_compat_netbsd.h"
 include "opt_execfmt.h"
+include "nvmm.h"
 endif
 
 include <sys/param.h>
@@ -59,6 +60,11 @@ include <aarch64/armreg.h>
 include <aarch64/pte.h>
 
 include <arm/cpufunc.h>
+
+if NNVMM > 0
+include <dev/nvmm/nvmm.h>
+include <dev/nvmm/aarch64/nvmm_aarch64.h>
+endif
 
 define	__HAVE_FAST_SOFTINTS	1
 
@@ -244,6 +250,7 @@ define	TF_X27			offsetof(struct trapframe, tf_reg[27])
 define	TF_X28			offsetof(struct trapframe, tf_reg[28])
 define	TF_X29			offsetof(struct trapframe, tf_reg[29])
 define	TF_X30			offsetof(struct trapframe, tf_reg[30])
+define	TF_LR			offsetof(struct trapframe, tf_reg[30])
 define	TF_SP			offsetof(struct trapframe, tf_sp)
 define	TF_PC			offsetof(struct trapframe, tf_pc)
 define	TF_SPSR			offsetof(struct trapframe, tf_spsr)
@@ -302,6 +309,8 @@ define	CI_CC_NINTR		offsetof(struct cpu_info, ci_data.cpu_nintr)
 define	V_RESCHED_KPREEMPT	ilog2(RESCHED_KPREEMPT)
 
 define	SPSR_M_EL1T		SPSR_M_EL1T
+define	DAIF_D			DAIF_D
+define	DAIF_A			DAIF_A
 define	DAIF_I			DAIF_I
 define	DAIF_F			DAIF_F
 define	DAIF_MASK		DAIF_MASK
@@ -392,3 +401,9 @@ define	M_DATA			offsetof(struct mbuf, m_data)
 define	M_NEXT			offsetof(struct mbuf, m_next)
 define	IP_SRC			offsetof(struct ip, ip_src)
 define	IP_DST			offsetof(struct ip, ip_dst)
+
+if NNVMM > 0
+define NVMM_EL2_HVC_INIT		NVMM_EL2_HVC_INIT
+define NVMM_EL2_HVC_VMENTER		NVMM_EL2_HVC_VMENTER
+define NVMM_EL2_HVC_MAINTAIN_IPA	NVMM_EL2_HVC_MAINTAIN_IPA
+endif
