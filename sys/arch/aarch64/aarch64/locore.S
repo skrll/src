@@ -33,6 +33,7 @@
 #include "opt_fdt.h"
 #include "opt_kasan.h"
 #include "opt_multiprocessor.h"
+#include "nvmm.h"
 
 #include <aarch64/asm.h>
 #include <aarch64/hypervisor.h>
@@ -116,8 +117,8 @@ RCSID("$NetBSD: locore.S,v 1.107 2026/07/11 12:23:51 skrll Exp $")
 	.align	3
 ASENTRY_NP(aarch64_start)
 	/* keep lr & sp for return to bootloader if possible */
-	mov	x27, lr
-	mov	x28, sp
+	mov	x24, lr
+	mov	x25, sp
 
 	/* set stack pointer for boot */
 	adrl	x0, bootstk
@@ -156,6 +157,7 @@ ASENTRY_NP(aarch64_start)
 	DPRINTSREG("ID_AA64MMFR1_EL1 = ", id_aa64mmfr1_el1)
 
 #ifdef LOCORE_EL2
+	mov	x27, xzr	/* x27 = cpuindex = 0 */
 	VPRINT("Drop to EL1...")
 # include <aarch64/aarch64/locore_el2.S>
 	VPRINT("OK\n")
@@ -184,8 +186,8 @@ ASENTRY_NP(aarch64_start)
 aarch64_fatal:
 	PRINT("fatal error occurred while booting\n")
 	/* return to bootloader. if switched from EL2 to EL1, It might fail */
-	mov	lr, x27
-	mov	sp, x28
+	mov	lr, x24
+	mov	sp, x25
 	ret
 
 /*

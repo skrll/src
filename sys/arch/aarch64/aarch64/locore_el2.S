@@ -28,6 +28,8 @@
  * $FreeBSD: head/sys/arm64/arm64/locore.S 316755 2017-04-13 11:56:27Z andrew $
  */
 
+#include "nvmm.h"
+
 #include <aarch64/asm.h>
 #include <aarch64/hypervisor.h>
 #include "assym.h"
@@ -50,6 +52,8 @@ drop_to_el1_inline:
 	/*
 	 * If we are started in EL2, configure the required hypervisor
 	 * registers and drop to EL1.
+	 *
+	 * x27 is cpuindex (0,1,2,...,MAXCPU-1)
 	 */
 drop_to_el1:
 	mrs	x1, CurrentEL
@@ -138,9 +142,22 @@ no_el2_host_mode:
 	msr	icc_sre_el2, x2
 2:
 
-	/* Keep the stack pointer. */
+	/*
+	 * Set the current sp (=SP_EL2) to SP_EL1,
+	 * and set a new area as SP_EL2 if needed.
+	 */
 	mov	x0, sp
 	msr	sp_el1, x0
+#if NNVMM > 0
+	/*
+	 * set stackpointer for EL2.
+	 * sp = sp_el2 = &el2stack_bottom - cpuindex * PAGE_SIZE;
+	 */
+	mov	x1, #PAGE_SIZE
+	mul	x1, x1, x27
+	adrl	x0, el2stack_bottom
+	add	sp, x0, x1
+#endif
 
 	/* Set the address to return to. */
 	msr	elr_el2, lr
@@ -166,31 +183,18 @@ no_el2_host_mode:
 	     __BIT(4)   /* SA0 */					\
 	)
 
-#define	VECT_EMPTY	\
-	.align 7;	\
-	1:	b	1b
-
-	.align 11
-hyp_vectors:
-	VECT_EMPTY	/* Synchronous EL2t */
-	VECT_EMPTY	/* IRQ EL2t */
-	VECT_EMPTY	/* FIQ EL2t */
-	VECT_EMPTY	/* Error EL2t */
-
-	VECT_EMPTY	/* Synchronous EL2h */
-	VECT_EMPTY	/* IRQ EL2h */
-	VECT_EMPTY	/* FIQ EL2h */
-	VECT_EMPTY	/* Error EL2h */
-
-	VECT_EMPTY	/* Synchronous 64-bit EL1 */
-	VECT_EMPTY	/* IRQ 64-bit EL1 */
-	VECT_EMPTY	/* FIQ 64-bit EL1 */
-	VECT_EMPTY	/* Error 64-bit EL1 */
-
-	VECT_EMPTY	/* Synchronous 32-bit EL1 */
-	VECT_EMPTY	/* IRQ 32-bit EL1 */
-	VECT_EMPTY	/* FIQ 32-bit EL1 */
-	VECT_EMPTY	/* Error 32-bit EL1 */
-
 drop_to_el1_inline_done:
 	nop
+
+#if NNVMM > 0
+	.pushsection .bss
+	.align PGSHIFT
+el2stack:
+#ifdef MULTIPROCESSOR
+	.space	PAGE_SIZE * MAXCPUS
+#else
+	.space	PAGE_SIZE
+#endif
+el2stack_bottom:
+	.popsection
+#endif /* NNVMM */
