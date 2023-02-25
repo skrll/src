@@ -117,6 +117,7 @@ file	arch/aarch64/aarch64/syscall.c
 file	arch/aarch64/aarch64/trap.c
 file	arch/aarch64/aarch64/fault.c
 file	arch/aarch64/aarch64/vectors.S
+file	arch/aarch64/aarch64/vectors_el2.S
 file	arch/aarch64/aarch64/vm_machdep.c
 
 # pmap
