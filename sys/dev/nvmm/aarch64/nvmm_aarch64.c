@@ -55,7 +55,7 @@ struct aarch64_cpudata {
 
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
-static void
+static void __unused
 debugdump_cpudata(struct aarch64_cpudata *cpudata)
 {
 	printf("    x0=%016lx,     x1=%016lx\n", cpudata->gprs[0], cpudata->gprs[1]);
@@ -188,9 +188,9 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 	flags = comm->state_wanted;
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
-printf("setstate: gprs[0]=%016lx\n", state->gprs[0]);
-printf("setstate: gprs[1]=%016lx\n", state->gprs[1]);
-printf("setstate: gprs[2]=%016lx\n", state->gprs[2]);
+//printf("setstate: gprs[0]=%016lx\n", state->gprs[0]);
+//printf("setstate: gprs[1]=%016lx\n", state->gprs[1]);
+//printf("setstate: gprs[2]=%016lx\n", state->gprs[2]);
 
 		memcpy(cpudata->gprs, state->gprs, sizeof(state->gprs));
 	}
@@ -258,7 +258,7 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
 	struct nvmm_comm_page *comm = vcpu->comm;
-	struct aarch64_cpudata *cpudata = vcpu->cpudata;
+	struct aarch64_cpudata *cpudata __unused = vcpu->cpudata;
 //	struct aarch64_machdata *machdata = mach->machdata;
 
 	printf("%s:%d\n", __func__, __LINE__);
@@ -268,16 +268,18 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 
 	//XXXX
-	debugdump_cpudata(cpudata);
+//	debugdump_cpudata(cpudata);
 
 
 	//event commit
 
 
 	kpreempt_disable();
-	/*
-		XXXXXXXXXXXXXXXXXXXXXXXXXX
-	*/
+
+	printf("%s:%d: call hvc\n", __func__, __LINE__);
+	asm("hvc #99");
+	printf("%s:%d: call hvc done\n", __func__, __LINE__);
+
 	kpreempt_enable();
 
 	exit->reason = NVMM_VCPU_EXIT_HALTED;	//XXXXXXXXX

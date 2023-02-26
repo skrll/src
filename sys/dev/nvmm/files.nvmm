@@ -6,6 +6,7 @@ file	dev/nvmm/nvmm.c			nvmm
 
 ifdef aarch64
 file	dev/nvmm/aarch64/nvmm_aarch64.c	nvmm	needs-flag
+file	dev/nvmm/aarch64/trap_el2.c	nvmm
 endif
 
 ifdef amd64
