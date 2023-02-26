@@ -410,7 +410,7 @@ bool
 pmap_md_tlb_check_entry(void *ctx, vaddr_t va, tlb_asid_t asid, pt_entry_t pte)
 {
 	pmap_t pm = ctx;
-	struct pmap_asid_info * const pai = PMAP_PAI(pm, curcpu()->ci_tlb_info);
+	struct pmap_asid_info * const pai = PMAP_PAI(pm, cpu_tlb_info(curcpu()));
 
 	if (asid != pai->pai_asid)
 		return true;

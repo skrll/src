@@ -203,7 +203,7 @@ booke_cpu_startup(const char *model)
 	/*
 	 * Register the tlb's evcnts
 	 */
-	pmap_tlb_info_evcnt_attach(curcpu()->ci_tlb_info);
+	pmap_tlb_info_evcnt_attach(cpu_tlb_info(curcpu()));
 
 	/*
 	 * Set up the board properties database.
