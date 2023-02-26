@@ -84,21 +84,10 @@ END(hyp_vectors)
 
 #else /* NNVMM == 0 */
 
-	.balign 2048
-ENTRY_NBTI(hyp_vectors)
-	VECT_RETURN	/* Synchronous EL2t */
-	VECT_RETURN	/* IRQ EL2t */
-	VECT_RETURN	/* FIQ EL2t */
-	VECT_RETURN	/* Error EL2t */
-
-	VECT_RETURN	/* Synchronous EL2h */
-	VECT_RETURN	/* IRQ EL2h */
-	VECT_RETURN	/* FIQ EL2h */
-	VECT_RETURN	/* Error EL2h */
-
-	.balign 128	/* Synchronous 64-bit EL1 */
+.macro vector_entry, func, el
+	.balign 128
 	CTASSERT(TF_X0 == 0)
-	stp	x0, x1, [sp], #-TF_SIZE
+	stp	x0, x1, [sp, #-TF_SIZE]!
 	stp	x2, x3, [sp, #TF_X2]
 	stp	x4, x5, [sp, #TF_X4]
 	stp	x6, x7, [sp, #TF_X6]
@@ -115,7 +104,12 @@ ENTRY_NBTI(hyp_vectors)
 	stp	x28, x29, [sp, #TF_X28]
 
 	CTASSERT_CONTIGUOUS(TF_X30, TF_SP)
+	.if \el == 1
 	mrs	x20, sp_el1
+	.else
+	/* sp was already growed, so adjust x20 back */
+	add	x20, sp, #TF_SIZE
+	.endif
 	stp	x30, x20, [sp, #TF_X30]
 
 	CTASSERT_CONTIGUOUS(TF_PC, TF_SPSR)
@@ -127,21 +121,77 @@ ENTRY_NBTI(hyp_vectors)
 	mrs	x23, esr_el2
 	mrs	x24, far_el2
 	stp	x23, x24, [sp, #TF_ESR]
-	adr	x30, el2sync_el1_exit	/* return address */
-	mov	x0, sp			/* el2sync_el1(tf) */
-	b	el2sync_el1
+	adr	x30, el2trap_el\el\()_exit	/* return address */
+	mov	x0, sp				/* argument = tf */
+	b	\func
+.endm
 
-	VECT_RETURN	/* IRQ 64-bit EL1 */
-	VECT_RETURN	/* FIQ 64-bit EL1 */
-	VECT_RETURN	/* Error 64-bit EL1 */
 
-	VECT_RETURN	/* Synchronous 32-bit EL1 */
-	VECT_RETURN	/* IRQ 32-bit EL1 */
-	VECT_RETURN	/* FIQ 32-bit EL1 */
-	VECT_RETURN	/* Error 32-bit EL1 */
+	.balign 2048
+ENTRY_NBTI(hyp_vectors)
+	/* from EL2 with sp0 */
+	vector_entry	el2sync_el2t, 2
+	vector_entry	el2irq_el2t, 2
+	vector_entry	el2fiq_el2t, 2
+	vector_entry	el2error_el2t, 2
+
+	/* from EL2 with sp_el2 */
+	vector_entry	el2sync_el2h, 2
+	vector_entry	el2irq_el2h, 2
+	vector_entry	el2fiq_el2h, 2
+	vector_entry	el2error_el2h, 2
+
+	/* from 64bit EL1 */
+	vector_entry	el2sync_el1, 1
+	vector_entry	el2irq_el1, 1
+	vector_entry	el2fiq_el1, 1
+	vector_entry	el2error_el1, 1
+
+	/* from 32bit EL1 */
+	vector_entry	el2sync32_el1, 1
+	vector_entry	el2irq32_el1, 1
+	vector_entry	el2fiq32_el1, 1
+	vector_entry	el2error32_el1, 1
 
 	.balign 64
-ENTRY_NP(el2sync_el1_exit)
+ENTRY_NP(el2trap_el2_exit)
+	ldp	x8, x9, [sp, #TF_X8]
+	ldp	x10, x11, [sp, #TF_X10]
+	ldp	x12, x13, [sp, #TF_X12]
+	ldp	x14, x15, [sp, #TF_X14]
+	ldp	x16, x17, [sp, #TF_X16]
+	ldp	x18, x19, [sp, #TF_X18]
+	ldp	x20, x21, [sp, #TF_X20]
+	ldp	x22, x23, [sp, #TF_X22]
+	ldp	x24, x25, [sp, #TF_X24]
+	ldp	x26, x27, [sp, #TF_X26]
+	ldp	x28, x29, [sp, #TF_X28]
+	CTASSERT_CONTIGUOUS(TF_X30, TF_SP)
+	ldp	x30, x7, [sp, #TF_X30]
+
+	CTASSERT_CONTIGUOUS(TF_PC, TF_SPSR)
+	ldp	x0, x1, [sp, #TF_PC]
+	msr	elr_el2, x0
+	msr	spsr_el2, x1
+
+	CTASSERT_CONTIGUOUS(TF_ESR, TF_FAR)
+	ldp	x0, x1, [sp, #TF_ESR]
+	msr	esr_el2, x0
+	msr	far_el2, x1
+
+	ldp	x0, x1, [sp, #TF_X0]
+	ldp	x2, x3, [sp, #TF_X2]
+	ldp	x4, x5, [sp, #TF_X4]
+
+	mov	x6, sp
+	mov	sp, x7
+	ldp	x6, x7, [x6, #TF_X6]
+	isb
+	ERET
+END(el2trap_el2_exit)
+
+	.balign 64
+ENTRY_NP(el2trap_el1_exit)
 	ldp	x8, x9, [sp, #TF_X8]
 	ldp	x10, x11, [sp, #TF_X10]
 	ldp	x12, x13, [sp, #TF_X12]
@@ -175,7 +225,6 @@ ENTRY_NP(el2sync_el1_exit)
 	ldp	x0, x1, [sp], #TF_SIZE
 	isb
 	ERET
-END(el2sync_el1_exit)
+END(el2trap_el1_exit)
 
 #endif /* NNVMM == 0 */
-

@@ -45,6 +45,10 @@ __KERNEL_RCSID(0, "$NetBSD$");
  */
 
 void el2sync_el1(struct trapframe *);
+void el2irq_el1(struct trapframe *);
+void el2fiq_el1(struct trapframe *);
+void el2error_el1(struct trapframe *);
+
 char *uartputs(const char *);
 int uartprintf(const char * restrict, ...);
 
@@ -235,36 +239,126 @@ el2sync_el1(struct trapframe *tf)
 
 	switch (eclass) {
 	case ESR_EC_UNKNOWN:
+		uartprintf("ESR_EC_UNKNOWN\n");
+		break;
 	case ESR_EC_SERROR:
+		uartprintf("ESR_EC_SERROR\n");
+		break;
 	case ESR_EC_WFX:
+		uartprintf("ESR_EC_WFX\n");
+		break;
 	case ESR_EC_ILL_STATE:
+		uartprintf("ESR_EC_ILL_STATE\n");
+		break;
 	case ESR_EC_BTE_A64:
+		uartprintf("ESR_EC_BTE_A64\n");
+		break;
 	case ESR_EC_SYS_REG:
+		uartprintf("ESR_EC_SYS_REG\n");
+		break;
 	case ESR_EC_SVC_A64:
+		uartprintf("ESR_EC_SVC_A64\n");
+		break;
 	case ESR_EC_HVC_A64:
+		uartprintf("ESR_EC_HVC_A64\n");
+		break;
 	case ESR_EC_SMC_A64:
+		uartprintf("ESR_EC_SMC_A64\n");
 		break;
+
 	case ESR_EC_INSN_ABT_EL0:
+		uartprintf("ESR_EC_INSN_ABT_EL0\n");
+		break;
 	case ESR_EC_INSN_ABT_EL1:
+		uartprintf("ESR_EC_INSN_ABT_EL1\n");
+		break;
 	case ESR_EC_DATA_ABT_EL0:
+		uartprintf("ESR_EC_DATA_ABT_EL0\n");
+		break;
 	case ESR_EC_DATA_ABT_EL1:
+		uartprintf("ESR_EC_DATA_ABT_EL1\n");
 		break;
+
 	case ESR_EC_PC_ALIGNMENT:
+		uartprintf("ESR_EC_PC_ALIGNMENT\n");
+		break;
 	case ESR_EC_SP_ALIGNMENT:
+		uartprintf("ESR_EC_SP_ALIGNMENT\n");
 		break;
+
 	case ESR_EC_FP_ACCESS:
+		uartprintf("ESR_EC_FP_ACCESS\n");
+		break;
 	case ESR_EC_FP_TRAP_A64:
+		uartprintf("ESR_EC_FP_TRAP_A64\n");
 		break;
+
 	case ESR_EC_BRKPNT_EL0:
-	case ESR_EC_BRKPNT_EL1:
-	case ESR_EC_SW_STEP_EL0:
-	case ESR_EC_SW_STEP_EL1:
-	case ESR_EC_WTCHPNT_EL0:
-	case ESR_EC_WTCHPNT_EL1:
-	case ESR_EC_BKPT_INSN_A64:
+		uartprintf("ESR_EC_BRKPNT_EL0\n");
 		break;
+	case ESR_EC_BRKPNT_EL1:
+		uartprintf("ESR_EC_BRKPNT_EL1\n");
+		break;
+	case ESR_EC_SW_STEP_EL0:
+		uartprintf("ESR_EC_SW_STEP_EL0\n");
+		break;
+	case ESR_EC_SW_STEP_EL1:
+		uartprintf("ESR_EC_SW_STEP_EL1\n");
+		break;
+	case ESR_EC_WTCHPNT_EL0:
+		uartprintf("ESR_EC_WTCHPNT_EL0\n");
+		break;
+	case ESR_EC_WTCHPNT_EL1:
+		uartprintf("ESR_EC_WTCHPNT_EL1\n");
+		break;
+	case ESR_EC_BKPT_INSN_A64:
+		uartprintf("ESR_EC_BKPT_INSN_A64\n");
+		break;
+
 	default:
+		uartprintf("ECLASS=%d\n", eclass);
 		break;
 	}
 
 }
+
+void
+el2irq_el1(struct trapframe *tf)
+{
+	uartprintf("%s\n");
+}
+
+void
+el2fiq_el1(struct trapframe *tf)
+{
+	uartprintf("%s\n");
+}
+
+void
+el2error_el1(struct trapframe *tf)
+{
+	uartprintf("%s\n");
+}
+
+#define bad_trap_el2(trapfunc)				\
+void trapfunc(struct trapframe *);			\
+void							\
+trapfunc(struct trapframe *tf)				\
+{							\
+	uartprintf("unsupported trap: %s", __func__);	\
+}
+
+bad_trap_el2(el2sync_el2t)
+bad_trap_el2(el2irq_el2t)
+bad_trap_el2(el2fiq_el2t)
+bad_trap_el2(el2error_el2t)
+
+bad_trap_el2(el2sync_el2h)
+bad_trap_el2(el2irq_el2h)
+bad_trap_el2(el2fiq_el2h)
+bad_trap_el2(el2error_el2h)
+
+bad_trap_el2(el2sync32_el1)
+bad_trap_el2(el2irq32_el1)
+bad_trap_el2(el2fiq32_el1)
+bad_trap_el2(el2error32_el1)
