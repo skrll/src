@@ -239,6 +239,12 @@ void pmapboot_enter(vaddr_t, paddr_t, psize_t, psize_t, pt_entry_t,
     void (*pr)(const char *, ...) __printflike(1, 2));
 void pmapboot_enter_range(vaddr_t, paddr_t, psize_t, pt_entry_t,
     void (*)(const char *, ...) __printflike(1, 2));
+void pmapboot_enter_ttbr(vaddr_t, paddr_t, psize_t, psize_t, pt_entry_t,
+    void (*pr)(const char *, ...) __printflike(1, 2),
+    pd_entry_t *, bool, pd_entry_t *(*)(void));
+void pmapboot_enter_range_ttbr(vaddr_t, paddr_t, psize_t, pt_entry_t,
+    void (*)(const char *, ...) __printflike(1, 2),
+    pd_entry_t *, bool, pd_entry_t *(*)(void));
 int pmapboot_protect(vaddr_t, vaddr_t, vm_prot_t);
 
 vsize_t pmap_map_chunk(vaddr_t, vaddr_t, paddr_t, vsize_t, vm_prot_t, u_int);
