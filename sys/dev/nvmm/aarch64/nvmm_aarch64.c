@@ -59,6 +59,40 @@ void aarch64_hvc_init(paddr_t);
 void aarch64_hvc_vmrun(paddr_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
+const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
+	.gprs = {
+		0
+	},
+	.sprs = {
+		[NVMM_AARCH64_SPR_PC]			= 0,
+		[NVMM_AARCH64_SPR_SP_ELx]		= 0,
+		[NVMM_AARCH64_SPR_TPIDRRO_EL0]		= 0,
+		[NVMM_AARCH64_SPR_TPIDR_EL0]		= 0,
+		[NVMM_AARCH64_SPR_AMAIR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_CNTKCTL_EL1]		= 0,
+		[NVMM_AARCH64_SPR_CONTEXTIDR_EL1]	= 0,
+		[NVMM_AARCH64_SPR_CPACR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_CSSELR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_ELR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_ESR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_FAR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_MAIR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_MDSCR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_PAR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_SCTLR_EL1]		= 0x30d00800, /* RES1 */
+		[NVMM_AARCH64_SPR_SPSR_EL1]		= 0x00000005, /* EL1h */
+		[NVMM_AARCH64_SPR_SP_EL1]		= 0,
+		[NVMM_AARCH64_SPR_TCR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_TPIDR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_TTBR0_EL1]		= 0,
+		[NVMM_AARCH64_SPR_TTBR1_EL1]		= 0,
+		[NVMM_AARCH64_SPR_VBAR_EL1]		= 0,
+	},
+	.fprs = {
+		0
+	}
+};
+
 static void __unused
 debugdump_state(struct nvmm_aarch64_state *state)
 {
@@ -211,7 +245,8 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	vcpu->cpudata = cpudata;
 
 	/* Install the RESET state. */
-	memset(&vcpu->comm->state, 0, sizeof(vcpu->comm->state));
+	memcpy(&vcpu->comm->state, &nvmm_aarch64_reset_state,
+	    sizeof(vcpu->comm->state));
 	vcpu->comm->state_wanted = NVMM_AARCH64_STATE_ALL;
 	vcpu->comm->state_cached = 0;
 	nvmm_aarch64_vcpu_setstate(vcpu);
