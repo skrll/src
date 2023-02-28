@@ -34,6 +34,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/param.h>
 #include <sys/types.h>
 
+#include <aarch64/armreg.h>
 #include <aarch64/frame.h>
 #include <aarch64/machdep.h>
 
@@ -48,6 +49,10 @@ void el2sync_el1(struct trapframe *);
 void el2irq_el1(struct trapframe *);
 void el2fiq_el1(struct trapframe *);
 void el2error_el1(struct trapframe *);
+
+struct nvmm_aarch64_state;
+void aarch64_el2_init(paddr_t);
+void aarch64_el2_vmrun(struct nvmm_aarch64_state *);
 
 char *uartputs(const char *);
 int uartprintf(const char * restrict, ...);
@@ -186,7 +191,7 @@ uartprintf(const char * restrict fmt, ...)
 #endif /* EARLYCONS */
 }
 
-static void
+static void __unused
 dump_el2_trapframe(struct trapframe *tf)
 {
 	uartprintf("    pc=%016"PRIxREGISTER",   spsr=%016"PRIxREGISTER"\n",
@@ -227,15 +232,40 @@ dump_el2_trapframe(struct trapframe *tf)
 	    tf->tf_reg[30],  tf->tf_sp);
 }
 
+static void
+hvcall(struct trapframe *tf)
+{
+	uint32_t code;
+
+	code = tf->tf_esr & 0xffff;
+
+	switch (code) {
+	case 0:
+		aarch64_el2_init((paddr_t)tf->tf_reg[0]);
+		break;
+	case 1:
+		aarch64_el2_vmrun((struct nvmm_aarch64_state *)(tf->tf_reg[0]));
+		break;
+	default:
+		break;
+	}
+}
+
 void
 el2sync_el1(struct trapframe *tf)
 {
 	const uint32_t esr = tf->tf_esr;
 	const uint32_t eclass = __SHIFTOUT(esr, ESR_EC);
 
-	uartprintf("%s: ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, esr, eclass);
+	uartprintf("%s: PC=%016x ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, tf->tf_pc, esr, eclass);
 
-	dump_el2_trapframe(tf);
+//	XXXXXXXX: cannot use snprintf() because it is in subr_prf.c
+//	uartprintf("%s: %s: pc=%016" PRIx64 " sp=%016" PRIx64 " esr=%08x", __func__, eclass_trapname(eclass), tf->tf_pc, tf->tf_sp, esr);
+
+//	uartprintf("SCTLR_EL2: %016x\n", reg_sctlr_el2_read());
+//	uartprintf("TTBR0_EL2: %016x\n", reg_ttbr0_el2_read());
+//	uartprintf("VBAR_EL2:  %016x\n", reg_vbar_el2_read());
+//	dump_el2_trapframe(tf);
 
 	switch (eclass) {
 	case ESR_EC_UNKNOWN:
@@ -261,6 +291,7 @@ el2sync_el1(struct trapframe *tf)
 		break;
 	case ESR_EC_HVC_A64:
 		uartprintf("ESR_EC_HVC_A64\n");
+		hvcall(tf);
 		break;
 	case ESR_EC_SMC_A64:
 		uartprintf("ESR_EC_SMC_A64\n");
@@ -325,28 +356,32 @@ el2sync_el1(struct trapframe *tf)
 void
 el2irq_el1(struct trapframe *tf)
 {
-	uartprintf("%s\n");
+	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
 }
 
 void
 el2fiq_el1(struct trapframe *tf)
 {
-	uartprintf("%s\n");
+	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
 }
 
 void
 el2error_el1(struct trapframe *tf)
 {
-	uartprintf("%s\n");
+	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
 }
 
-#define bad_trap_el2(trapfunc)				\
-void trapfunc(struct trapframe *);			\
-void							\
-trapfunc(struct trapframe *tf)				\
-{							\
-	uartprintf("unsupported trap: %s", __func__);	\
+#define bad_trap_el2(trapfunc)						\
+void trapfunc(struct trapframe *);					\
+void									\
+trapfunc(struct trapframe *tf)						\
+{									\
+	uartprintf("unsupported trap: %s: PC=%016x ESR=0x%08x\n",	\
+	    __func__, tf->tf_pc, tf->tf_esr);				\
+	for (;;)							\
+		asm("wfi");						\
 }
+
 
 bad_trap_el2(el2sync_el2t)
 bad_trap_el2(el2irq_el2t)

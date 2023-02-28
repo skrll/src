@@ -29,53 +29,58 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
 
+#include "opt_arm_debug.h"
+#include "opt_console.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kmem.h>
 
-#include <uvm/uvm_extern.h>
-#include <uvm/uvm_page.h>
+#include <uvm/uvm.h>
 
 #include <dev/nvmm/nvmm.h>
 #include <dev/nvmm/nvmm_internal.h>
 #include <dev/nvmm/aarch64/nvmm_aarch64.h>
+
+#include <machine/bootconfig.h>
+
+#include <aarch64/cpufunc.h>
+#include <aarch64/pmap.h>
 
 struct aarch64_machdata {
 	void *unused1;
 };
 
 struct aarch64_cpudata {
-	void *unused1;
-
-	/* guest state */
-	uint64_t gprs[NVMM_AARCH64_NGPR];
-	uint64_t sprs[NVMM_AARCH64_NSPR];
-	__uint128_t fprs[NVMM_AARCH64_NFPR];
+	struct nvmm_aarch64_state s;
 };
 
+void aarch64_hvc_init(paddr_t);
+void aarch64_hvc_vmrun(paddr_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
 static void __unused
-debugdump_cpudata(struct aarch64_cpudata *cpudata)
+debugdump_state(struct nvmm_aarch64_state *state)
 {
-	printf("    x0=%016lx,     x1=%016lx\n", cpudata->gprs[0], cpudata->gprs[1]);
-	printf("    x2=%016lx,     x3=%016lx\n", cpudata->gprs[2], cpudata->gprs[3]);
-	printf("    x4=%016lx,     x5=%016lx\n", cpudata->gprs[4], cpudata->gprs[5]);
-	printf("    x6=%016lx,     x7=%016lx\n", cpudata->gprs[6], cpudata->gprs[7]);
-	printf("    x8=%016lx,     x9=%016lx\n", cpudata->gprs[8], cpudata->gprs[9]);
-	printf("   x10=%016lx,    x11=%016lx\n", cpudata->gprs[10], cpudata->gprs[11]);
-	printf("   x12=%016lx,    x13=%016lx\n", cpudata->gprs[12], cpudata->gprs[13]);
-	printf("   x14=%016lx,    x15=%016lx\n", cpudata->gprs[14], cpudata->gprs[15]);
-	printf("   x16=%016lx,    x17=%016lx\n", cpudata->gprs[16], cpudata->gprs[17]);
-	printf("   x18=%016lx,    x19=%016lx\n", cpudata->gprs[18], cpudata->gprs[19]);
-	printf("   x20=%016lx,    x21=%016lx\n", cpudata->gprs[20], cpudata->gprs[21]);
-	printf("   x22=%016lx,    x23=%016lx\n", cpudata->gprs[22], cpudata->gprs[23]);
-	printf("   x24=%016lx,    x25=%016lx\n", cpudata->gprs[24], cpudata->gprs[25]);
-	printf("   x26=%016lx,    x27=%016lx\n", cpudata->gprs[26], cpudata->gprs[27]);
-	printf("   x28=%016lx, fp=x29=%016lx\n", cpudata->gprs[28], cpudata->gprs[29]);
-	printf("lr=x30=%016lx,     sp=%016lx\n", cpudata->gprs[30], cpudata->gprs[31]);
+	printf("[state=%p]\n", state);
+	printf("    x0=%016lx,     x1=%016lx\n", state->gprs[0], state->gprs[1]);
+	printf("    x2=%016lx,     x3=%016lx\n", state->gprs[2], state->gprs[3]);
+	printf("    x4=%016lx,     x5=%016lx\n", state->gprs[4], state->gprs[5]);
+	printf("    x6=%016lx,     x7=%016lx\n", state->gprs[6], state->gprs[7]);
+	printf("    x8=%016lx,     x9=%016lx\n", state->gprs[8], state->gprs[9]);
+	printf("   x10=%016lx,    x11=%016lx\n", state->gprs[10], state->gprs[11]);
+	printf("   x12=%016lx,    x13=%016lx\n", state->gprs[12], state->gprs[13]);
+	printf("   x14=%016lx,    x15=%016lx\n", state->gprs[14], state->gprs[15]);
+	printf("   x16=%016lx,    x17=%016lx\n", state->gprs[16], state->gprs[17]);
+	printf("   x18=%016lx,    x19=%016lx\n", state->gprs[18], state->gprs[19]);
+	printf("   x20=%016lx,    x21=%016lx\n", state->gprs[20], state->gprs[21]);
+	printf("   x22=%016lx,    x23=%016lx\n", state->gprs[22], state->gprs[23]);
+	printf("   x24=%016lx,    x25=%016lx\n", state->gprs[24], state->gprs[25]);
+	printf("   x26=%016lx,    x27=%016lx\n", state->gprs[26], state->gprs[27]);
+	printf("   x28=%016lx, fp=x29=%016lx\n", state->gprs[28], state->gprs[29]);
+	printf("lr=x30=%016lx,     sp=%016lx\n", state->gprs[30], state->gprs[31]);
 
-	printf("    PC=%016lx\n", cpudata->sprs[NVMM_AARCH64_SPR_PC]);
+	printf("    PC=%016lx\n", state->sprs[NVMM_AARCH64_SPR_PC]);
 }
 
 static bool
@@ -85,10 +90,67 @@ nvmm_aarch64_ident(void)
 	return true;
 }
 
+
+static pd_entry_t *
+nvmm_aarch64_pagealloc(void)
+{
+	struct vm_page *pg;
+
+	for (;;) {
+		pg = uvm_pagealloc(NULL, 0, NULL, UVM_PGA_ZERO);
+		if (pg != NULL)
+			break;
+		uvm_wait("nvmm_aarch64_init");
+	}
+	pg->flags &= ~PG_BUSY;	/* never busy */
+	return (pd_entry_t *)VM_PAGE_TO_PHYS(pg);
+}
+
 static void
 nvmm_aarch64_init(void)
 {
-	printf("%s:%d\n", __func__, __LINE__);
+	static pd_entry_t *ttbr_pa;
+
+	if (ttbr_pa != NULL)
+		return;
+
+	ttbr_pa = nvmm_aarch64_pagealloc();
+
+#ifdef VERBOSE_INIT_ARM
+	printf("Creating EL2 page tables\n");
+#define PRFUNC	printf
+#else
+#define PRFUNC	NULL
+#endif
+
+#ifdef CONSADDR
+	/* XXX: for EL2 uartprintf debugging */
+	const pt_entry_t devattr = LX_BLKPAG_ATTR_DEVICE_MEM |
+	    LX_S1_BLKPAG_AP_RW | LX_S1_BLKPAG_XN | LX_S1_BLKPAG_AP1_SB0;
+	pmapboot_enter_ttbr(CONSADDR, CONSADDR, L2_SIZE, L2_SIZE,
+	    devattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
+#endif
+ 
+	/* EL2 VA=PA identity mapping */
+	const pt_entry_t memattr = LX_BLKPAG_ATTR_NORMAL_WB |
+	    LX_S1_BLKPAG_AP_RW | LX_S1_BLKPAG_AP1_SB0;
+	for (u_int blk = 0; blk < bootconfig.dramblocks; blk++) {
+		uint64_t start, end;
+
+		start = trunc_page(bootconfig.dram[blk].address);
+		end = round_page(bootconfig.dram[blk].address +
+		(uint64_t)bootconfig.dram[blk].pages * PAGE_SIZE);
+
+		pmapboot_enter_range_ttbr(start, start, end - start,
+		    memattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
+	}
+
+	/*
+	 * Once the EL2 MMU is enabled, it is never disabled again.
+	 * VA=PA identity mapping is enabled until reboot.
+	 * Allocated page tables are not released by calling nvmm_aarch64_fini().
+	 */
+	aarch64_hvc_init((paddr_t)ttbr_pa);
 }
 
 static void
@@ -188,17 +250,13 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 	flags = comm->state_wanted;
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
-//printf("setstate: gprs[0]=%016lx\n", state->gprs[0]);
-//printf("setstate: gprs[1]=%016lx\n", state->gprs[1]);
-//printf("setstate: gprs[2]=%016lx\n", state->gprs[2]);
-
-		memcpy(cpudata->gprs, state->gprs, sizeof(state->gprs));
+		memcpy(cpudata->s.gprs, state->gprs, sizeof(state->gprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
-		memcpy(cpudata->sprs, state->sprs, sizeof(state->sprs));
+		memcpy(cpudata->s.sprs, state->sprs, sizeof(state->sprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_FPRS) {
-		memcpy(cpudata->fprs, state->fprs, sizeof(state->fprs));
+		memcpy(cpudata->s.fprs, state->fprs, sizeof(state->fprs));
 	}
 
 	comm->state_wanted = 0;
@@ -218,13 +276,13 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 	flags = comm->state_wanted;
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
-		memcpy(state->gprs, cpudata->gprs, sizeof(state->gprs));
+		memcpy(state->gprs, cpudata->s.gprs, sizeof(state->gprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
-		memcpy(state->sprs, cpudata->sprs, sizeof(state->sprs));
+		memcpy(state->sprs, cpudata->s.sprs, sizeof(state->sprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_FPRS) {
-		memcpy(state->fprs, cpudata->fprs, sizeof(state->fprs));
+		memcpy(state->fprs, cpudata->s.fprs, sizeof(state->fprs));
 	}
 
 	comm->state_wanted = 0;
@@ -253,6 +311,9 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 	return 0;
 }
 
+
+
+
 static int
 nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
@@ -268,17 +329,21 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 
 	//XXXX
-//	debugdump_cpudata(cpudata);
+	debugdump_state(&cpudata->s);
 
 
 	//event commit
 
-
 	kpreempt_disable();
 
-	printf("%s:%d: call hvc\n", __func__, __LINE__);
-	asm("hvc #99");
-	printf("%s:%d: call hvc done\n", __func__, __LINE__);
+
+	vaddr_t state_va = (vaddr_t)&cpudata->s;
+	paddr_t state_pa;
+	if (!pmap_extract(pmap_kernel(), state_va, &state_pa))
+		panic("cannot resolve PA of cpudata.s");
+	printf("%s: state va=%016lx  pa=%016lx\n", __func__, state_va, state_pa);
+
+	aarch64_hvc_vmrun(state_pa);
 
 	kpreempt_enable();
 
