@@ -211,16 +211,18 @@ tlb_contiguous_p(vaddr_t va, paddr_t pa, vaddr_t start, vaddr_t end,
  * this should be called while identity mapping (VA=PA) available.
  */
 void
-pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
-    pt_entry_t attr, void (*pr)(const char *, ...) __printflike(1, 2))
+pmapboot_enter_ttbr(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
+    pt_entry_t attr, void (*pr)(const char *, ...) __printflike(1, 2),
+    pd_entry_t *l0_pa, bool use_kva,
+    pd_entry_t *(*pageallocator)(void))
 {
 	int level, idx0, idx1, idx2, idx3, nskip = 0;
-	int ttbr __unused;
 	vaddr_t va_end;
-	pd_entry_t *l0, *l1, *l2, *l3, pte;
+	pd_entry_t *l1_pa, *l2_pa, *l3_pa, pte;
+	pd_entry_t *l0_va, *l1_va, *l2_va, *l3_va;
 #ifdef OPTIMIZE_TLB_CONTIG
 	vaddr_t va_start;
-	pd_entry_t *ll;
+	pd_entry_t *ll_pa, *ll_va;
 	int i, llidx;
 #endif
 
@@ -250,46 +252,34 @@ pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
 #endif
 
 	attr |= LX_BLKPAG_OS_BOOT;
-
-	switch (aarch64_addressspace(va)) {
-	case AARCH64_ADDRSPACE_LOWER:
-		/* 0x0000xxxxxxxxxxxx */
-		l0 = (pd_entry_t *)(reg_ttbr0_el1_read() & TTBR_BADDR);
-		ttbr = 0;
-		break;
-	case AARCH64_ADDRSPACE_UPPER:
-		/* 0xFFFFxxxxxxxxxxxx */
-		l0 = (pd_entry_t *)(reg_ttbr1_el1_read() & TTBR_BADDR);
-		ttbr = 1;
-		break;
-	default:
-		panic("%s: unknown address space (%d/%" PRIxVADDR ")", __func__,
-		    aarch64_addressspace(va), va);
-	}
+	l0_va = use_kva ? (pd_entry_t *)AARCH64_PA_TO_KVA((paddr_t)l0_pa) :
+	    l0_pa;
 
 	while (va < va_end) {
 #ifdef OPTIMIZE_TLB_CONTIG
-		ll = NULL;
+		ll_pa = NULL;
 		llidx = -1;
 #endif
 
 		idx0 = l0pde_index(va);
-		if (l0[idx0] == 0) {
-			l1 = pmapboot_pagealloc();
-			if (l1 == NULL) {
+		if (l0_va[idx0] == 0) {
+			l1_pa = (*pageallocator)();
+			if (l1_pa == NULL) {
 				VPRINTF("pmapboot_enter: "
 				    "cannot allocate L1 page\n");
 				panic("%s: can't allocate memory", __func__);
 			}
 
-			pte = (uint64_t)l1 | L0_TABLE;
-			l0[idx0] = pte;
-			PMAPBOOT_DPRINTF("TTBR%d[%d] (new)\t= %016lx:",
-			    ttbr, idx0, pte);
+			pte = (uint64_t)l1_pa | L0_TABLE;
+			l0_va[idx0] = pte;
+			PMAPBOOT_DPRINTF("TTBR[%d] (new)\t= %016lx:",
+			    idx0, pte);
 			PMAPBOOT_DPRINT_PTE(pte, 0);
 		} else {
-			l1 = (uint64_t *)(l0[idx0] & LX_TBL_PA);
+			l1_pa = (uint64_t *)(l0_va[idx0] & LX_TBL_PA);
 		}
+		l1_va = use_kva ?
+		    (pd_entry_t *)AARCH64_PA_TO_KVA((paddr_t)l1_pa) : l1_pa;
 
 		idx1 = l1pde_index(va);
 		if (level == 1) {
@@ -303,38 +293,41 @@ pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
 #ifdef OPTIMIZE_TLB_CONTIG
 			if (tlb_contiguous_p(va, pa, va_start, va_end, blocksize))
 				pte |= LX_BLKPAG_CONTIG;
-			ll = l1;
+			ll_pa = l1_pa;
+			ll_va = l1_va;
 			llidx = idx1;
 #endif
 
-			if (l1pde_valid(l1[idx1]) && l1[idx1] != pte) {
+			if (l1pde_valid(l1_va[idx1]) && l1_va[idx1] != pte) {
 				nskip++;
 				goto nextblk;
 			}
 
-			l1[idx1] = pte;
-			PMAPBOOT_DPRINTF("TTBR%d[%d][%d]\t= %016lx:", ttbr,
+			l1_va[idx1] = pte;
+			PMAPBOOT_DPRINTF("TTBR[%d][%d]\t= %016lx:",
 			    idx0, idx1, pte);
 			PMAPBOOT_DPRINT_PTE(pte, 1);
 			goto nextblk;
 		}
 
-		if (!l1pde_valid(l1[idx1])) {
-			l2 = pmapboot_pagealloc();
-			if (l2 == NULL) {
+		if (!l1pde_valid(l1_va[idx1])) {
+			l2_pa = (*pageallocator)();
+			if (l2_pa == NULL) {
 				VPRINTF("pmapboot_enter: "
 				    "cannot allocate L2 page\n");
 				panic("%s: can't allocate memory", __func__);
 			}
 
-			pte = (uint64_t)l2 | L1_TABLE;
-			l1[idx1] = pte;
-			PMAPBOOT_DPRINTF("TTBR%d[%d][%d] (new)\t= %016lx:",
-			    ttbr, idx0, idx1, pte);
+			pte = (uint64_t)l2_pa | L1_TABLE;
+			l1_va[idx1] = pte;
+			PMAPBOOT_DPRINTF("TTBR[%d][%d] (new)\t= %016lx:",
+			    idx0, idx1, pte);
 			PMAPBOOT_DPRINT_PTE(pte, 1);
 		} else {
-			l2 = (uint64_t *)(l1[idx1] & LX_TBL_PA);
+			l2_pa = (uint64_t *)(l1_va[idx1] & LX_TBL_PA);
 		}
+		l2_va = use_kva ?
+		    (pd_entry_t *)AARCH64_PA_TO_KVA((paddr_t)l2_pa) : l2_pa;
 
 		idx2 = l2pde_index(va);
 		if (level == 2) {
@@ -348,40 +341,42 @@ pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
 #ifdef OPTIMIZE_TLB_CONTIG
 			if (tlb_contiguous_p(va, pa, va_start, va_end, blocksize))
 				pte |= LX_BLKPAG_CONTIG;
-			ll = l2;
+			ll_pa = l2_pa;
+			ll_va = l2_va;
 			llidx = idx2;
 #endif
-			if (l2pde_valid(l2[idx2]) && l2[idx2] != pte) {
+			if (l2pde_valid(l2_va[idx2]) && l2_va[idx2] != pte) {
 				nskip++;
 				goto nextblk;
 			}
 
-			l2[idx2] = pte;
-			PMAPBOOT_DPRINTF("TTBR%d[%d][%d][%d]\t= %016lx:", ttbr,
+			l2_va[idx2] = pte;
+			PMAPBOOT_DPRINTF("TTBR[%d][%d][%d]\t= %016lx:",
 			    idx0, idx1, idx2, pte);
 			PMAPBOOT_DPRINT_PTE(pte, 2);
 			goto nextblk;
 		}
 
-		if (!l2pde_valid(l2[idx2])) {
-			l3 = pmapboot_pagealloc();
-			if (l3 == NULL) {
+		if (!l2pde_valid(l2_va[idx2])) {
+			l3_pa = (*pageallocator)();
+			if (l3_pa == NULL) {
 				VPRINTF("pmapboot_enter: "
 				    "cannot allocate L3 page\n");
 				panic("%s: can't allocate memory", __func__);
 			}
 
-			pte = (uint64_t)l3 | L2_TABLE;
-			l2[idx2] = pte;
-			PMAPBOOT_DPRINTF("TTBR%d[%d][%d][%d] (new)\t= %016lx:",
-			    ttbr, idx0, idx1, idx2, pte);
+			pte = (uint64_t)l3_pa | L2_TABLE;
+			l2_va[idx2] = pte;
+			PMAPBOOT_DPRINTF("TTBR[%d][%d][%d] (new)\t= %016lx:",
+			    idx0, idx1, idx2, pte);
 			PMAPBOOT_DPRINT_PTE(pte, 2);
 		} else {
-			l3 = (uint64_t *)(l2[idx2] & LX_TBL_PA);
+			l3_pa = (uint64_t *)(l2_va[idx2] & LX_TBL_PA);
 		}
+		l3_va = use_kva ?
+		    (pd_entry_t *)AARCH64_PA_TO_KVA((paddr_t)l3_pa) : l3_pa;
 
 		idx3 = l3pte_index(va);
-
 		pte = pa |
 		    L3_PAGE |
 		    LX_BLKPAG_AF |
@@ -392,16 +387,17 @@ pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
 #ifdef OPTIMIZE_TLB_CONTIG
 		if (tlb_contiguous_p(va, pa, va_start, va_end, blocksize))
 			pte |= LX_BLKPAG_CONTIG;
-		ll = l3;
+		ll_pa = l3_pa;
+		ll_va = l3_va;
 		llidx = idx3;
 #endif
-		if (l3pte_valid(l3[idx3]) && l3[idx3] != pte) {
+		if (l3pte_valid(l3_va[idx3]) && l3_va[idx3] != pte) {
 			nskip++;
 			goto nextblk;
 		}
 
-		l3[idx3] = pte;
-		PMAPBOOT_DPRINTF("TTBR%d[%d][%d][%d][%d]\t= %lx:", ttbr,
+		l3_va[idx3] = pte;
+		PMAPBOOT_DPRINTF("TTBR[%d][%d][%d][%d]\t= %lx:",
 		    idx0, idx1, idx2, idx3, pte);
 		PMAPBOOT_DPRINT_PTE(pte, 3);
  nextblk:
@@ -410,18 +406,18 @@ pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
 		 * when overwriting a pte entry the contiguous bit in entries
 		 * before/after the entry should be cleared.
 		 */
-		if (ll != NULL) {
+		if (ll_pa != NULL) {
 			if (va == va_start && (llidx & 15) != 0) {
 				/* clear CONTIG flag before this pte entry */
 				for (i = (llidx & ~15); i < llidx; i++) {
-					ll[i] &= ~LX_BLKPAG_CONTIG;
+					ll_va[i] &= ~LX_BLKPAG_CONTIG;
 				}
 			}
 			if (va == va_end && (llidx & 15) != 15) {
 				/* clear CONTIG flag after this pte entry */
 				for (i = (llidx + 1); i < ((llidx + 16) & ~15);
 				    i++) {
-					ll[i] &= ~LX_BLKPAG_CONTIG;
+					ll_va[i] &= ~LX_BLKPAG_CONTIG;
 				}
 			}
 		}
@@ -448,6 +444,26 @@ pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
 		panic("%s: overlapping/incompatible mappings (%d)", __func__, nskip);
 }
 
+/* return PA of ttbr */
+static pd_entry_t *
+pmapboot_ttbr(vaddr_t va)
+{
+	pd_entry_t *ttbr = NULL;
+
+	switch (aarch64_addressspace(va)) {
+	case AARCH64_ADDRSPACE_LOWER:
+		/* 0x0000xxxxxxxxxxxx */
+		ttbr = (pd_entry_t *)(reg_ttbr0_el1_read() & TTBR_BADDR);
+		break;
+	case AARCH64_ADDRSPACE_UPPER:
+		/* 0xFFFFxxxxxxxxxxxx */
+		ttbr = (pd_entry_t *)(reg_ttbr1_el1_read() & TTBR_BADDR);
+		break;
+	}
+
+	return ttbr;
+}
+
 paddr_t pmapboot_pagebase __attribute__((__section__(".data")));
 
 pd_entry_t *
@@ -471,8 +487,24 @@ pmapboot_pagealloc(void)
 }
 
 void
-pmapboot_enter_range(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
-    void (*pr)(const char *, ...) __printflike(1, 2))
+pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
+    pt_entry_t attr, void (*pr)(const char *, ...) __printflike(1, 2))
+{
+	pd_entry_t *ttbr_pa;
+
+	ttbr_pa = pmapboot_ttbr(va);
+	if (ttbr_pa == NULL)
+		panic("%s: unknown address space (%d/%" PRIxVADDR ")", __func__,
+		    aarch64_addressspace(va), va);
+
+	pmapboot_enter_ttbr(va, pa, size, blocksize, attr, pr, ttbr_pa, false,
+	    pmapboot_pagealloc);
+}
+
+void
+pmapboot_enter_range_ttbr(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
+    void (*pr)(const char *, ...) __printflike(1, 2),
+    pd_entry_t *l0_pa, bool use_kva, pd_entry_t *(*pageallocator)(void))
 {
 	vaddr_t vend;
 	vsize_t left, mapsize, nblocks;
@@ -488,7 +520,8 @@ pmapboot_enter_range(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
 		mapsize = nblocks * L3_SIZE;
 		VPRINTF("Creating L3 tables: %016lx-%016lx : %016lx-%016lx\n",
 		    va, va + mapsize - 1, pa, pa + mapsize - 1);
-		pmapboot_enter(va, pa, mapsize, L3_SIZE, attr, pr);
+		pmapboot_enter_ttbr(va, pa, mapsize, L3_SIZE, attr, pr, l0_pa,
+		    use_kva, pageallocator);
 		va += mapsize;
 		pa += mapsize;
 		left -= mapsize;
@@ -501,7 +534,8 @@ pmapboot_enter_range(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
 		mapsize = nblocks * L2_SIZE;
 		VPRINTF("Creating L2 tables: %016lx-%016lx : %016lx-%016lx\n",
 		    va, va + mapsize - 1, pa, pa + mapsize - 1);
-		pmapboot_enter(va, pa, mapsize, L2_SIZE, attr, pr);
+		pmapboot_enter_ttbr(va, pa, mapsize, L2_SIZE, attr, pr, l0_pa,
+		    use_kva, pageallocator);
 		va += mapsize;
 		pa += mapsize;
 		left -= mapsize;
@@ -512,7 +546,8 @@ pmapboot_enter_range(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
 		mapsize = nblocks * L1_SIZE;
 		VPRINTF("Creating L1 tables: %016lx-%016lx : %016lx-%016lx\n",
 		    va, va + mapsize - 1, pa, pa + mapsize - 1);
-		pmapboot_enter(va, pa, mapsize, L1_SIZE, attr, pr);
+		pmapboot_enter_ttbr(va, pa, mapsize, L1_SIZE, attr, pr, l0_pa,
+		    use_kva, pageallocator);
 		va += mapsize;
 		pa += mapsize;
 		left -= mapsize;
@@ -523,7 +558,8 @@ pmapboot_enter_range(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
 		mapsize = nblocks * L2_SIZE;
 		VPRINTF("Creating L2 tables: %016lx-%016lx : %016lx-%016lx\n",
 		    va, va + mapsize - 1, pa, pa + mapsize - 1);
-		pmapboot_enter(va, pa, mapsize, L2_SIZE, attr, pr);
+		pmapboot_enter_ttbr(va, pa, mapsize, L2_SIZE, attr, pr, l0_pa,
+		    use_kva, pageallocator);
 		va += mapsize;
 		pa += mapsize;
 		left -= mapsize;
@@ -534,9 +570,25 @@ pmapboot_enter_range(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
 		mapsize = nblocks * L3_SIZE;
 		VPRINTF("Creating L3 tables: %016lx-%016lx : %016lx-%016lx\n",
 		    va, va + mapsize - 1, pa, pa + mapsize - 1);
-		pmapboot_enter(va, pa, mapsize, L3_SIZE, attr, pr);
+		pmapboot_enter_ttbr(va, pa, mapsize, L3_SIZE, attr, pr, l0_pa,
+		    use_kva, pageallocator);
 		va += mapsize;
 		pa += mapsize;
 		left -= mapsize;
 	}
+}
+
+void
+pmapboot_enter_range(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
+    void (*pr)(const char *, ...) __printflike(1, 2))
+{
+	pd_entry_t *ttbr_pa;
+
+	ttbr_pa = pmapboot_ttbr(va);
+	if (ttbr_pa == NULL)
+		panic("%s: unknown address space (%d/%" PRIxVADDR ")", __func__,
+		    aarch64_addressspace(va), va);
+
+	pmapboot_enter_range_ttbr(va, pa, size, attr, pr, ttbr_pa, false,
+	    pmapboot_pagealloc);
 }
