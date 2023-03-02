@@ -50,9 +50,13 @@ void el2irq_el1(struct trapframe *);
 void el2fiq_el1(struct trapframe *);
 void el2error_el1(struct trapframe *);
 
+void dump_el2_trapframe(struct trapframe *tf);
+
 struct nvmm_aarch64_state;
-void aarch64_el2_init(paddr_t);
-void aarch64_el2_vmrun(struct nvmm_aarch64_state *);
+void aarch64_el2_init(struct trapframe *);
+void aarch64_el2_vmenter(struct trapframe *);
+void aarch64_el2_vmexit(struct trapframe *tf);
+void aarch64_el2_vmexit_irq(struct trapframe *tf);
 
 char *uartputs(const char *);
 int uartprintf(const char * restrict, ...);
@@ -191,7 +195,7 @@ uartprintf(const char * restrict fmt, ...)
 #endif /* EARLYCONS */
 }
 
-static void __unused
+void
 dump_el2_trapframe(struct trapframe *tf)
 {
 	uartprintf("    pc=%016"PRIxREGISTER",   spsr=%016"PRIxREGISTER"\n",
@@ -232,123 +236,32 @@ dump_el2_trapframe(struct trapframe *tf)
 	    tf->tf_reg[30],  tf->tf_sp);
 }
 
-static void
-hvcall(struct trapframe *tf)
-{
-	uint32_t code;
-
-	code = tf->tf_esr & 0xffff;
-
-	switch (code) {
-	case 0:
-		aarch64_el2_init((paddr_t)tf->tf_reg[0]);
-		break;
-	case 1:
-		aarch64_el2_vmrun((struct nvmm_aarch64_state *)(tf->tf_reg[0]));
-		break;
-	default:
-		break;
-	}
-}
-
 void
 el2sync_el1(struct trapframe *tf)
 {
 	const uint32_t esr = tf->tf_esr;
 	const uint32_t eclass = __SHIFTOUT(esr, ESR_EC);
 
-	uartprintf("%s: PC=%016x ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, tf->tf_pc, esr, eclass);
-
 //	XXXXXXXX: cannot use snprintf() because it is in subr_prf.c
 //	uartprintf("%s: %s: pc=%016" PRIx64 " sp=%016" PRIx64 " esr=%08x", __func__, eclass_trapname(eclass), tf->tf_pc, tf->tf_sp, esr);
 
-//	uartprintf("SCTLR_EL2: %016x\n", reg_sctlr_el2_read());
-//	uartprintf("TTBR0_EL2: %016x\n", reg_ttbr0_el2_read());
-//	uartprintf("VBAR_EL2:  %016x\n", reg_vbar_el2_read());
 //	dump_el2_trapframe(tf);
 
-	switch (eclass) {
-	case ESR_EC_UNKNOWN:
-		uartprintf("ESR_EC_UNKNOWN\n");
-		break;
-	case ESR_EC_SERROR:
-		uartprintf("ESR_EC_SERROR\n");
-		break;
-	case ESR_EC_WFX:
-		uartprintf("ESR_EC_WFX\n");
-		break;
-	case ESR_EC_ILL_STATE:
-		uartprintf("ESR_EC_ILL_STATE\n");
-		break;
-	case ESR_EC_BTE_A64:
-		uartprintf("ESR_EC_BTE_A64\n");
-		break;
-	case ESR_EC_SYS_REG:
-		uartprintf("ESR_EC_SYS_REG\n");
-		break;
-	case ESR_EC_SVC_A64:
-		uartprintf("ESR_EC_SVC_A64\n");
-		break;
-	case ESR_EC_HVC_A64:
-		uartprintf("ESR_EC_HVC_A64\n");
-		hvcall(tf);
-		break;
-	case ESR_EC_SMC_A64:
-		uartprintf("ESR_EC_SMC_A64\n");
-		break;
-
-	case ESR_EC_INSN_ABT_EL0:
-		uartprintf("ESR_EC_INSN_ABT_EL0\n");
-		break;
-	case ESR_EC_INSN_ABT_EL1:
-		uartprintf("ESR_EC_INSN_ABT_EL1\n");
-		break;
-	case ESR_EC_DATA_ABT_EL0:
-		uartprintf("ESR_EC_DATA_ABT_EL0\n");
-		break;
-	case ESR_EC_DATA_ABT_EL1:
-		uartprintf("ESR_EC_DATA_ABT_EL1\n");
-		break;
-
-	case ESR_EC_PC_ALIGNMENT:
-		uartprintf("ESR_EC_PC_ALIGNMENT\n");
-		break;
-	case ESR_EC_SP_ALIGNMENT:
-		uartprintf("ESR_EC_SP_ALIGNMENT\n");
-		break;
-
-	case ESR_EC_FP_ACCESS:
-		uartprintf("ESR_EC_FP_ACCESS\n");
-		break;
-	case ESR_EC_FP_TRAP_A64:
-		uartprintf("ESR_EC_FP_TRAP_A64\n");
-		break;
-
-	case ESR_EC_BRKPNT_EL0:
-		uartprintf("ESR_EC_BRKPNT_EL0\n");
-		break;
-	case ESR_EC_BRKPNT_EL1:
-		uartprintf("ESR_EC_BRKPNT_EL1\n");
-		break;
-	case ESR_EC_SW_STEP_EL0:
-		uartprintf("ESR_EC_SW_STEP_EL0\n");
-		break;
-	case ESR_EC_SW_STEP_EL1:
-		uartprintf("ESR_EC_SW_STEP_EL1\n");
-		break;
-	case ESR_EC_WTCHPNT_EL0:
-		uartprintf("ESR_EC_WTCHPNT_EL0\n");
-		break;
-	case ESR_EC_WTCHPNT_EL1:
-		uartprintf("ESR_EC_WTCHPNT_EL1\n");
-		break;
-	case ESR_EC_BKPT_INSN_A64:
-		uartprintf("ESR_EC_BKPT_INSN_A64\n");
-		break;
-
-	default:
-		uartprintf("ECLASS=%d\n", eclass);
-		break;
+	if (eclass == ESR_EC_HVC_A64) {
+		/* hvc #n */
+		switch (tf->tf_esr & 0xffff) {
+		case 0:
+			aarch64_el2_init(tf);
+			break;
+		case 1:
+			aarch64_el2_vmenter(tf);
+			break;
+		default:
+			break;
+		}
+	} else {
+		uartprintf("%s: PC=%016x ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, tf->tf_pc, esr, eclass);
+		aarch64_el2_vmexit(tf);
 	}
 
 }
@@ -357,18 +270,21 @@ void
 el2irq_el1(struct trapframe *tf)
 {
 	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
+	aarch64_el2_vmexit_irq(tf);
 }
 
 void
 el2fiq_el1(struct trapframe *tf)
 {
 	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
+	aarch64_el2_vmexit_irq(tf);
 }
 
 void
 el2error_el1(struct trapframe *tf)
 {
 	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
+	aarch64_el2_vmexit(tf);
 }
 
 #define bad_trap_el2(trapfunc)						\

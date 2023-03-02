@@ -41,14 +41,7 @@ ENTRY_NP(aarch64_hvc_init)
 	ret
 END(aarch64_hvc_init)
 
-ENTRY_NP(aarch64_hvc_vmrun)
-	mov	x2, #2
-	mov	x3, #3
-	mov	x4, #4
-	mov	x5, #5
-	mov	x6, #6
-	mov	x7, #7
-	mov	x8, #8
+ENTRY_NP(aarch64_hvc_vmenter)
 	hvc	#1
 	ret
-END(aarch64_hvc_vmrun)
+END(aarch64_hvc_vmenter)

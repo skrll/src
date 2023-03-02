@@ -35,6 +35,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kmem.h>
+#include <sys/xcall.h>
 
 #include <uvm/uvm.h>
 
@@ -51,12 +52,8 @@ struct aarch64_machdata {
 	void *unused1;
 };
 
-struct aarch64_cpudata {
-	struct nvmm_aarch64_state s;
-};
-
 void aarch64_hvc_init(paddr_t);
-void aarch64_hvc_vmrun(paddr_t);
+void aarch64_hvc_vmenter(paddr_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
 const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
@@ -79,8 +76,8 @@ const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 		[NVMM_AARCH64_SPR_MAIR_EL1]		= 0,
 		[NVMM_AARCH64_SPR_MDSCR_EL1]		= 0,
 		[NVMM_AARCH64_SPR_PAR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_SCTLR_EL1]		= 0x30d00800, /* RES1 */
-		[NVMM_AARCH64_SPR_SPSR_EL1]		= 0x00000005, /* EL1h */
+		[NVMM_AARCH64_SPR_SCTLR_EL1]		= SCTLR_RES1,
+		[NVMM_AARCH64_SPR_SPSR_EL1]		= SPSR_M_EL1H,
 		[NVMM_AARCH64_SPR_SP_EL1]		= 0,
 		[NVMM_AARCH64_SPR_TCR_EL1]		= 0,
 		[NVMM_AARCH64_SPR_TPIDR_EL1]		= 0,
@@ -120,7 +117,6 @@ debugdump_state(struct nvmm_aarch64_state *state)
 static bool
 nvmm_aarch64_ident(void)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	return true;
 }
 
@@ -184,19 +180,26 @@ nvmm_aarch64_init(void)
 	 * VA=PA identity mapping is enabled until reboot.
 	 * Allocated page tables are not released by calling nvmm_aarch64_fini().
 	 */
-	aarch64_hvc_init((paddr_t)ttbr_pa);
+
+	/* calll aarch64_hvc_init(ttbr_pa) on all cpus */
+	uint64_t where = xc_broadcast(0, (xcfunc_t)aarch64_hvc_init,
+	    (void *)ttbr_pa, NULL);
+	xc_wait(where);
 }
 
 static void
 nvmm_aarch64_fini(void)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 }
 
 static void
 nvmm_aarch64_capability(struct nvmm_capability *cap)
 {
-	printf("%s:%d\n", __func__, __LINE__);
+	/*
+	 * VMID 0 is for netbsd kernel, and VMID of aarch64 is 8bit.
+	 * then, number of max machines is 254.
+	 */
+	KASSERT(cap->max_machines < 255);
 
 	cap->arch.mach_conf_support = 0;
 	cap->arch.vcpu_conf_support = 0;
@@ -206,11 +209,63 @@ static void
 nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 {
 	struct aarch64_machdata *machdata;
+	struct pmap *pm;
+	struct pglist pglist;
+	size_t concat_tablesize;
+	int error;
 
-	printf("%s:%d\n", __func__, __LINE__);
+	pm = mach->vm->vm_map.pmap;
 
 	/* set aarch64 pmap to stage2 mode */
-	mach->vm->vm_map.pmap->pm_stage2 = true;
+	pm->pm_stage2 = true;
+
+
+	/*
+	 * allocate concatenated translation table. must be n-page aligned.
+	 */
+
+	/* The code assumes a 4kbyte page */
+	CTASSERT(PAGE_SIZE == L3_SIZE);
+
+	/* XXXXXXXXX: TODO: calculated from ID_AA64MMFR1_EL1.PARANGE */
+	pm->pm_startlevel = 1;
+	pm->pm_concatenate_num = 2;
+
+	concat_tablesize = L3_SIZE * pm->pm_concatenate_num;
+	error = uvm_pglistalloc(concat_tablesize, 0, ~0UL,
+	    concat_tablesize, 0, &pglist, 1, 1);
+	KASSERTMSG(error == 0, "cannot allocate concatenated page");
+
+	pm->pm_starttable_pa = VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
+	pm->pm_starttable = (pd_entry_t *)AARCH64_PA_TO_KVA(pm->pm_starttable_pa);
+
+	KASSERT((pm->pm_starttable_pa & (concat_tablesize - 1)) == 0);
+	memset(pm->pm_starttable, 0, concat_tablesize);
+
+	for (int i = 0; i < pm->pm_concatenate_num; i++) {
+		/*
+		 * create L0->L1 table entry for pmap.
+		 * The hardware MMU starts the lookup from the L1 table.
+		 */
+		pm->pm_l0table[i] = (pm->pm_starttable_pa + i * PAGE_SIZE) |
+		    LX_TYPE_TBL | LX_VALID | LX_BLKPAG_OS_STAGE2;
+
+		/*
+		 * ...and these pages must be pmap_append_pdp() so that they
+		 * are uvm_pagefree()'d by pmap_free_pdp() upon pmap_destroy.
+		 * This is somewhat confusing code...
+		 */
+		pmap_append_pdp(pm, pm->pm_starttable_pa + i * PAGE_SIZE);
+	}
+
+	printf("%s:%d: pmap pm=%p, startlevel=%d, starttable=%p, starttable_pa=%016lx (%d concatenated)\n",
+	     __func__, __LINE__,
+	    mach->vm->vm_map.pmap,
+	    pm->pm_startlevel,
+	    mach->vm->vm_map.pmap->pm_starttable,
+	    mach->vm->vm_map.pmap->pm_starttable_pa,
+	    pm->pm_concatenate_num);
+
 
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
 	mach->machdata = machdata;
@@ -219,8 +274,6 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 static void
 nvmm_aarch64_machine_destroy(struct nvmm_machine *mach)
 {
-	printf("%s:%d\n", __func__, __LINE__);
-
 	kmem_free(mach->machdata, sizeof(struct aarch64_machdata));
 }
 
@@ -228,7 +281,6 @@ static int
 nvmm_aarch64_machine_configure(struct nvmm_machine *mach, uint64_t op,
     void *data)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -236,8 +288,6 @@ static int
 nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 {
 	struct aarch64_cpudata *cpudata;
-
-	printf("%s:%d\n", __func__, __LINE__);
 
 	cpudata = (struct aarch64_cpudata *)uvm_km_alloc(kernel_map,
 	    roundup(sizeof(*cpudata), PAGE_SIZE), 0,
@@ -259,8 +309,6 @@ nvmm_aarch64_vcpu_destroy(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 {
 	struct aarch64_cpudata *cpudata = vcpu->cpudata;
 
-	printf("%s:%d\n", __func__, __LINE__);
-
 	uvm_km_free(kernel_map, (vaddr_t)cpudata,
 	    roundup(sizeof(*cpudata), PAGE_SIZE), UVM_KMF_WIRED);
 }
@@ -268,7 +316,6 @@ nvmm_aarch64_vcpu_destroy(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 static int
 nvmm_aarch64_vcpu_configure(struct nvmm_cpu *vcpu, uint64_t op, void *data)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -280,18 +327,16 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 	struct aarch64_cpudata *cpudata = vcpu->cpudata;
 	uint64_t flags;
 
-	printf("%s:%d\n", __func__, __LINE__);
-
 	flags = comm->state_wanted;
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
-		memcpy(cpudata->s.gprs, state->gprs, sizeof(state->gprs));
+		memcpy(cpudata->guest.gprs, state->gprs, sizeof(state->gprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
-		memcpy(cpudata->s.sprs, state->sprs, sizeof(state->sprs));
+		memcpy(cpudata->guest.sprs, state->sprs, sizeof(state->sprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_FPRS) {
-		memcpy(cpudata->s.fprs, state->fprs, sizeof(state->fprs));
+		memcpy(cpudata->guest.fprs, state->fprs, sizeof(state->fprs));
 	}
 
 	comm->state_wanted = 0;
@@ -306,18 +351,16 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 	const struct aarch64_cpudata *cpudata = vcpu->cpudata;
 	uint64_t flags;
 
-	printf("%s:%d\n", __func__, __LINE__);
-
 	flags = comm->state_wanted;
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
-		memcpy(state->gprs, cpudata->s.gprs, sizeof(state->gprs));
+		memcpy(state->gprs, cpudata->guest.gprs, sizeof(state->gprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
-		memcpy(state->sprs, cpudata->s.sprs, sizeof(state->sprs));
+		memcpy(state->sprs, cpudata->guest.sprs, sizeof(state->sprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_FPRS) {
-		memcpy(state->fprs, cpudata->s.fprs, sizeof(state->fprs));
+		memcpy(state->fprs, cpudata->guest.fprs, sizeof(state->fprs));
 	}
 
 	comm->state_wanted = 0;
@@ -364,25 +407,32 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 
 	//XXXX
-	debugdump_state(&cpudata->s);
+//	debugdump_state(&cpudata->guest);
 
+	/* XXX: assert NVMM_MAX_MACHINES < (1 << ID_AA64MMFR1.VMIDBITS) */
+	cpudata->vttbr_el2 =
+	    __SHIFTIN(mach->machid + 10, VTTBR_VIMD) |
+	    __SHIFTIN(mach->vm->vm_map.pmap->pm_starttable_pa, VTTBR_BADDR);
 
 	//event commit
 
 	kpreempt_disable();
 
 
-	vaddr_t state_va = (vaddr_t)&cpudata->s;
-	paddr_t state_pa;
-	if (!pmap_extract(pmap_kernel(), state_va, &state_pa))
-		panic("cannot resolve PA of cpudata.s");
-	printf("%s: state va=%016lx  pa=%016lx\n", __func__, state_va, state_pa);
+	vaddr_t cpudata_va = (vaddr_t)cpudata;
+	vaddr_t exit_va = (vaddr_t)exit;
+	paddr_t cpudata_pa;
+	paddr_t exit_pa;
+	if (!pmap_extract(pmap_kernel(), cpudata_va, &cpudata_pa))
+		panic("cannot resolve PA of cpudata");
+	if (!pmap_extract(pmap_kernel(), exit_va, &exit_pa))
+		panic("cannot resolve PA of exit");
+	cpudata->exit_pa = exit_pa;
 
-	aarch64_hvc_vmrun(state_pa);
+	aarch64_dcache_wb_all();
+	aarch64_hvc_vmenter(cpudata_pa);
 
 	kpreempt_enable();
-
-	exit->reason = NVMM_VCPU_EXIT_HALTED;	//XXXXXXXXX
 
 	return 0;
 }

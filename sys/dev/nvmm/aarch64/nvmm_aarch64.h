@@ -104,11 +104,28 @@ struct nvmm_aarch64_event {
 #define NVMM_AARCH64_NGPR		32
 
 #define NVMM_AARCH64_SPR_PC		0	/* ELR_EL2 */
-#define NVMM_AARCH64_SPR_ELR_EL1	1
-#define NVMM_AARCH64_SPR_SPSR_EL1	2
+#define NVMM_AARCH64_SPR_SP_ELx		1
+#define NVMM_AARCH64_SPR_TPIDRRO_EL0	2
 #define NVMM_AARCH64_SPR_TPIDR_EL0	3
-#define NVMM_AARCH64_SPR_TPIDR_EL1	4
-#define NVMM_AARCH64_SPR_TPIDRRO_EL0	5
+#define NVMM_AARCH64_SPR_AMAIR_EL1	4
+#define NVMM_AARCH64_SPR_CNTKCTL_EL1	5
+#define NVMM_AARCH64_SPR_CONTEXTIDR_EL1	6
+#define NVMM_AARCH64_SPR_CPACR_EL1	7
+#define NVMM_AARCH64_SPR_CSSELR_EL1	8
+#define NVMM_AARCH64_SPR_ELR_EL1	9
+#define NVMM_AARCH64_SPR_ESR_EL1	10
+#define NVMM_AARCH64_SPR_FAR_EL1	11
+#define NVMM_AARCH64_SPR_MAIR_EL1	12
+#define NVMM_AARCH64_SPR_MDSCR_EL1	13
+#define NVMM_AARCH64_SPR_PAR_EL1	14
+#define NVMM_AARCH64_SPR_SCTLR_EL1	15
+#define NVMM_AARCH64_SPR_SPSR_EL1	16
+#define NVMM_AARCH64_SPR_SP_EL1		17
+#define NVMM_AARCH64_SPR_TCR_EL1	18
+#define NVMM_AARCH64_SPR_TPIDR_EL1	19
+#define NVMM_AARCH64_SPR_TTBR0_EL1	20
+#define NVMM_AARCH64_SPR_TTBR1_EL1	21
+#define NVMM_AARCH64_SPR_VBAR_EL1	22
 #define NVMM_AARCH64_NSPR		64
 
 #define NVMM_AARCH64_FPR_V0		0
@@ -155,6 +172,14 @@ struct nvmm_aarch64_state {
 	uint64_t gprs[NVMM_AARCH64_NGPR];
 	uint64_t sprs[NVMM_AARCH64_NSPR];
 	__uint128_t fprs[NVMM_AARCH64_NFPR];
+};
+
+struct aarch64_cpudata {
+	uint64_t vttbr_el2;
+	uint64_t exit_pa;
+
+	struct nvmm_aarch64_state host;
+	struct nvmm_aarch64_state guest;
 };
 
 struct nvmm_cap_md {

@@ -29,7 +29,6 @@
 #include "opt_multiprocessor.h"
 
 #include <aarch64/asm.h>
-
 #include "assym.h"
 
 RCSID("$NetBSD$")
@@ -63,6 +62,8 @@ ENTRY_NP(aarch64_el2_mmu_enable)
 	isb
 
 	ldr	x1, .Ltcr_el2_setting
+	mrs	x2, id_aa64mmfr0_el1
+	bfi	x1, x2, #16, #3		/* ID_AA64MMFR0_EL1.PARANGE */
 	msr	tcr_el2, x1
 	isb
 
@@ -80,9 +81,10 @@ END(aarch64_el2_mmu_enable)
 #define VIRT_BIT	48
 	.quad (						\
 	   __BIT(31) | __BIT(23) |	/* RES1 */	\
-	   __SHIFTIN(64 - VIRT_BIT, TCR_T0SZ) |		\
-	   TCR_TG0_4KB |				\
-	   TCR_ORGN0_WB_WA |				\
-	   TCR_IRGN0_WB_WA |				\
-	   TCR_SH0_INNER				\
+	   TCR_EL2_TG0_4KB |				\
+	   TCR_EL2_SH0_INNER |				\
+	   TCR_EL2_IRGN0_WB_WA |			\
+	   TCR_EL2_ORGN0_WB_WA |			\
+	   __SHIFTIN(64 - VIRT_BIT, TCR_EL2_T0SZ) |	\
+	   0 \
 	)
