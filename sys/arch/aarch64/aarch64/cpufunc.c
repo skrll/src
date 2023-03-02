@@ -616,3 +616,30 @@ aarch64_pac_init(int primary)
 	return -1;
 #endif
 }
+
+int
+aarch64_parange(void)
+{
+	uint64_t mmfr_parange =
+	    __SHIFTOUT(reg_id_aa64mmfr0_el1_read(), ID_AA64MMFR0_EL1_PARANGE);
+
+	switch (mmfr_parange) {
+	case ID_AA64MMFR0_EL1_PARANGE_4G:
+		return 32;
+	case ID_AA64MMFR0_EL1_PARANGE_64G:
+		return 36;
+	case ID_AA64MMFR0_EL1_PARANGE_1T:
+		return 40;
+	case ID_AA64MMFR0_EL1_PARANGE_4T:
+		return 42;
+	case ID_AA64MMFR0_EL1_PARANGE_16T:
+		return 44;
+	case ID_AA64MMFR0_EL1_PARANGE_256T:
+		return 48;
+	case ID_AA64MMFR0_EL1_PARANGE_4P:
+		return 52;
+	}
+
+	/* unknown Physical address range */
+	return -1;
+}
