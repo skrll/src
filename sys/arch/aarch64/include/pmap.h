@@ -295,7 +295,13 @@ struct pmap {
 
 	struct pmap_asid_info pm_pai[PMAP_TLB_MAX];
 	bool pm_activated;
+
+	/* for hypervisor */
 	bool pm_stage2;
+	int pm_startlevel;			/* 0,1,2 */
+	int pm_concatenate_num;		/* 1-16 */
+	pd_entry_t *pm_starttable;	/* concatenated VTTBR */
+	paddr_t pm_starttable_pa;
 };
 
 static inline paddr_t
@@ -406,6 +412,9 @@ vsize_t	pmap_kenter_range(vaddr_t, paddr_t, vsize_t, vm_prot_t, u_int);
 /* for ddb */
 void pmap_db_pmap_print(struct pmap *, void (*)(const char *, ...) __printflike(1, 2));
 void pmap_db_mdpg_print(struct vm_page *, void (*)(const char *, ...) __printflike(1, 2));
+
+/* for NVMM helper function */
+void pmap_append_pdp(struct pmap *, paddr_t);
 
 #endif	/* !PMAP_MI */
 

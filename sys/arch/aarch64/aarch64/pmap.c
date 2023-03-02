@@ -549,6 +549,29 @@ pmap_reference(struct pmap *pm)
 	atomic_inc_uint(&pm->pm_refcnt);
 }
 
+static void
+_pmap_link_pdp(struct pmap *pm, struct vm_page *pg)
+{
+	KASSERT(pg != NULL);
+	LIST_INSERT_HEAD(&pm->pm_vmlist, pg, pageq.list);
+	pg->flags &= ~PG_BUSY;	/* never busy */
+	pg->wire_count = 1;	/* max = 1 + Ln_ENTRIES = 513 */
+	PMAP_COUNT(pdp_alloc);
+	PMAP_PAGE_INIT(VM_PAGE_TO_PP(pg));
+}
+
+#if NNVMM > 0
+void
+pmap_append_pdp(struct pmap *pm, paddr_t pa)
+{
+	struct vm_page *pg = PHYS_TO_VM_PAGE(pa);
+
+	pm_lock(pm);
+	_pmap_link_pdp(pm, pg);
+	pm_unlock(pm);
+}
+#endif /* NNVMM */
+
 static paddr_t
 pmap_alloc_pdp(struct pmap *pm, struct vm_page **pgp, int flags, bool waitok)
 {
@@ -571,13 +594,8 @@ pmap_alloc_pdp(struct pmap *pm, struct vm_page **pgp, int flags, bool waitok)
 			}
 			return POOL_PADDR_INVALID;
 		}
-
-		LIST_INSERT_HEAD(&pm->pm_vmlist, pg, pageq.list);
-		pg->flags &= ~PG_BUSY;	/* never busy */
-		pg->wire_count = 1;	/* max = 1 + Ln_ENTRIES = 513 */
+		_pmap_link_pdp(pm, pg);
 		pa = VM_PAGE_TO_PHYS(pg);
-		PMAP_COUNT(pdp_alloc);
-		PMAP_PAGE_INIT(VM_PAGE_TO_PP(pg));
 	} else {
 		/* uvm_pageboot_alloc() returns a direct mapping address */
 		pg = NULL;
@@ -1097,7 +1115,7 @@ static pt_entry_t
 _pmap_pte_adjust_cacheflags(pt_entry_t pte, u_int flags)
 {
 #if NNVMM > 0
-	if (pte & LX_BLKPAG_OS_STAGE2)
+	if (lxpde_stage2(pte))
 		return _pmap_stage2_pte_adjust_cacheflags(pte, flags);
 #endif
 
@@ -1535,6 +1553,9 @@ pmap_activate(struct lwp *l)
 	UVMHIST_CALLARGS(pmaphist, "lwp=%p (pid=%d, kernel=%u)", l,
 	    l->l_proc->p_pid, pm == pmap_kernel() ? 1 : 0, 0);
 
+#if NNVMM > 0
+	KASSERT(!pm->pm_stage2);
+#endif
 	KASSERT(kpreempt_disabled());
 	KASSERT((reg_tcr_el1_read() & TCR_EPD0) != 0);
 
@@ -1582,6 +1603,9 @@ pmap_deactivate(struct lwp *l)
 	UVMHIST_CALLARGS(pmaphist, "lwp=%p (pid=%d, (kernel=%u))", l,
 	    l->l_proc->p_pid, pm == pmap_kernel() ? 1 : 0, 0);
 
+#if NNVMM > 0
+	KASSERT(!pm->pm_stage2);
+#endif
 	KASSERT(kpreempt_disabled());
 
 	struct cpu_info * const ci = curcpu();
@@ -1910,6 +1934,17 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	KASSERT((prot & VM_PROT_ALL) != VM_PROT_NONE);
 	KASSERT(pa < AARCH64_MAX_PA);
 
+
+#if 1 /* XXXXXXXXXXXXXXXXXXXX DEBUG */
+	if (pm->pm_stage2) {
+		printf("pmap_enter stage2: va=%016lx, pa=%016lx, prot=%08x, flags=%08x\n",
+		    va, pa, prot, flags);
+	}
+#endif
+
+
+
+
 #ifdef PMAPCOUNTERS
 	PMAP_COUNT(mappings);
 	if (_pmap_color(va) == _pmap_color(pa)) {
@@ -2089,10 +2124,17 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 				KASSERT((vaddr_t)l3 == trunc_page((vaddr_t)ptep));
 				_pmap_pdp_delref(pm, AARCH64_KVA_TO_PA((vaddr_t)l3),
 				    true);
-				struct pmap_asid_info * const pai = PMAP_PAI(pm,
-				    cpu_tlb_info(ci));
 
-				AARCH64_TLBI_BY_ASID_VA(pai->pai_asid, va);
+#if NNVMM > 0
+				if (pm->pm_stage2) {
+//XXXXXXXXXXXXXXXXXXXXXXXXXXX		nvmm_aarch64_tlbi_by_ipa(va);
+				} else
+#endif
+				{
+					struct pmap_asid_info * const pai =
+					    PMAP_PAI(pm, cpu_tlb_info(ci));
+					AARCH64_TLBI_BY_ASID_VA(pai->pai_asid, va);
+				}
 			}
 			PMAP_COUNT(pv_entry_cannotalloc);
 			if (flags & PMAP_CANFAIL)
@@ -2144,27 +2186,50 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 
 	pte = pa | attr;
 
-	struct pmap_asid_info * const pai = PMAP_PAI(pm, cpu_tlb_info(ci));
-	const tlb_asid_t asid = pai->pai_asid;
-
-	if (need_sync_icache) {
-		/* non-exec -> exec */
-		UVMHIST_LOG(pmaphist,
-		    "icache_sync: pm=%p, va=%016lx, pte: %016lx -> %016lx",
-		    pm, va, opte, pte);
-
-		if (!l3pte_readable(pte)) {
-			PTE_ICACHE_SYNC_PAGE(pte, ptep, asid, va);
+#if NNVMM > 0
+	if (pm->pm_stage2) {
+//XXXXXXXXXXXXXXXXXXXXXXXXXXX
+		if (need_sync_icache) {
+			/* non-exec -> exec */
+			if (!l3pte_readable(pte)) {
+//XXXXXXXXXXXXXXXXXXXXX		PTE_ICACHE_SYNC_PAGE(pte, ptep, asid, va);
+				atomic_swap_64(ptep, pte);
+//XXXXXXXXXXXXXXXXXXXXX		nvmm_aarch64_tlbi_by_ipa(va);
+			} else {
+				atomic_swap_64(ptep, pte);
+//XXXXXXXXXXXXXXXXXXXXX		nvmm_aarch64_tlbi_by_ipa(va);
+//				cpu_icache_sync_range(va, PAGE_SIZE);
+			}
+		} else {
 			atomic_swap_64(ptep, pte);
-			AARCH64_TLBI_BY_ASID_VA(asid, va);
+//XXXXXXXXXXXXX		nvmm_aarch64_tlbi_by_ipa(va);
+		}
+	} else
+#endif
+	{
+		struct pmap_asid_info * const pai = PMAP_PAI(pm,
+		    cpu_tlb_info(ci));
+		const tlb_asid_t asid = pai->pai_asid;
+
+		if (need_sync_icache) {
+			/* non-exec -> exec */
+			UVMHIST_LOG(pmaphist, "icache_sync: "
+			    "pm=%p, va=%016lx, pte: %016lx -> %016lx",
+			    pm, va, opte, pte);
+
+			if (!l3pte_readable(pte)) {
+				PTE_ICACHE_SYNC_PAGE(pte, ptep, asid, va);
+				atomic_swap_64(ptep, pte);
+				AARCH64_TLBI_BY_ASID_VA(asid, va);
+			} else {
+				atomic_swap_64(ptep, pte);
+				AARCH64_TLBI_BY_ASID_VA(asid, va);
+				cpu_icache_sync_range(va, PAGE_SIZE);
+			}
 		} else {
 			atomic_swap_64(ptep, pte);
 			AARCH64_TLBI_BY_ASID_VA(asid, va);
-			cpu_icache_sync_range(va, PAGE_SIZE);
 		}
-	} else {
-		atomic_swap_64(ptep, pte);
-		AARCH64_TLBI_BY_ASID_VA(asid, va);
 	}
 
 	if (pte & LX_BLKPAG_OS_WIRED) {
