@@ -40,7 +40,7 @@ RCSID("$NetBSD$")
 
 .macro CTASSERT	expr
 	.if !(\expr)
-	.err
+	.error "assemble time assertion \"\expr\" failed"
 	.endif
 .endm
 
