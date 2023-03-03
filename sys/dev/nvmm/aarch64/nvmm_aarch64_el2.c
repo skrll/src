@@ -47,7 +47,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 int uartprintf(const char * restrict, ...);
 void dump_el2_trapframe(struct trapframe *tf);
-void aarch64_el2_mmu_enable(paddr_t);
+void aarch64_el2_mmu_enable(void);
 void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
 void aarch64_el2_vmexit(struct trapframe *);
@@ -72,7 +72,11 @@ xxx_hexdump(void *addr, unsigned int len)
 void
 aarch64_el2_init(struct trapframe *tf)
 {
-	/* for EL0/1 stage2 translate configuration */
+	/*
+	 * Setup EL0/1 stage2 translate configuration. The activation and
+	 * deactivation of stage2 translation itself is done in VMENTER/VMEXIT.
+	 * But VTCR_EL2 is a fixed value, so it should be set here.
+	 */
 	const uint64_t mmfr0_parange = __SHIFTOUT(reg_id_aa64mmfr0_el1_read(),
 	    ID_AA64MMFR0_EL1_PARANGE);
 	int parange = aarch64_parange();
@@ -91,9 +95,6 @@ aarch64_el2_init(struct trapframe *tf)
 	else
 		startlevel = 0;
 
-	uartprintf("%s: startlevel=%d, parange=%d\n", __func__, startlevel, parange);
-
-
 #ifdef ARMV81_HAFDBS
 	switch (aarch64_hafdbs_enabled) {
 	case ID_AA64MMFR1_EL1_HAFDBS_NONE:
@@ -106,15 +107,13 @@ aarch64_el2_init(struct trapframe *tf)
 		break;
 	}
 #endif
-
 	if (__SHIFTOUT(ID_AA64PFR0_EL1_SEL2, reg_id_aa64pfr0_el1_read()) !=
 	    ID_AA64PFR0_EL1_SEL2_NONE) {
 		vtcr_options |= VTCR_EL2_NSA;
 		vtcr_options |= VTCR_EL2_NSW;
 	}
-
 	reg_vtcr_el2_write(
-	    __BIT(31) |
+	    __BIT(31) |				/* RES1 */
 	    vtcr_options |
 	    __SHIFTIN(mmfr0_parange, VTCR_EL2_PS) |
 	    __SHIFTIN(0, VTCR_EL2_TG0) |	/* 4k page */
@@ -136,8 +135,34 @@ aarch64_el2_init(struct trapframe *tf)
 	 *
 	 * If EL2 is not run with MMU enable, cache does not work on EL2
 	 * or exclusive load/store cannot be used.
+	 *
+	 * if the MMU is already enabled, do nothing
 	 */
-	aarch64_el2_mmu_enable(tf->tf_reg[0]);
+	if (reg_sctlr_el2_read() & SCTLR_M)
+		return;
+
+#define VIRT_BIT	48
+	/* set TCR_EL2 */
+	uint64_t tcr_el2 =
+	    __BIT(31) | __BIT(23) |	/* RES1 */
+	    __SHIFTIN(mmfr0_parange, TCR_EL2_PS) |
+	    TCR_EL2_TG0_4KB |
+#ifdef MULTIPROCESSOR
+	    TCR_EL2_SH0_INNER |
+#else
+	    TCR_EL2_SH0_NONE |
+#endif
+	    TCR_EL2_ORGN0_WB_WA |
+	    TCR_EL2_IRGN0_WB_WA |
+	    __SHIFTIN(64 - VIRT_BIT, TCR_EL2_T0SZ);
+	reg_tcr_el2_write(tcr_el2);
+
+	/* MAIR_EL2 = MAIR_EL1 */
+	reg_mair_el2_write(reg_mair_el1_read());
+
+	/* x0 = L0 table of PA */
+	reg_ttbr0_el2_write(tf->tf_reg[0]);
+	aarch64_el2_mmu_enable();
 }
 
 static void
@@ -244,13 +269,12 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
 
 	reg_hcr_el2_write(HCR_EL2_RW);
 	reg_hstr_el2_write(0);
-//	reg_vtcr_el2_write(0);
+	reg_vttbr_el2_write(0);
 
-//	uartprintf("%s: save guest\n", __func__);
+	/* save guest state */
 	vcpu_context_save(tf, &cpudata_pa->guest);
-//	uartprintf("%s: load host\n", __func__);
+	/* load host state */
 	vcpu_context_load(tf, &cpudata_pa->host);
-//	uartprintf("%s: load done\n", __func__);
 }
 
 void
@@ -362,20 +386,16 @@ aarch64_el2_vmenter(struct trapframe *tf)
 
 	reg_tpidr_el2_write((register_t)cpudata_pa);
 
-//	uartprintf("%s: save host\n", __func__);
+	/* save host state */
 	vcpu_context_save(tf, &cpudata_pa->host);
-//	uartprintf("%s: load guest\n", __func__);
+	/* load guest state */
 	vcpu_context_load(tf, &cpudata_pa->guest);
-//	uartprintf("%s: load done\n", __func__);
-
-	//set VTTBR_EL2 from cpudata->vttbr_el2
-	//enable VTCR_EL2
 
 	uint64_t hcr = HCR_EL2_RW;	/* 64bit */
 	hcr |= HCR_EL2_ID;
 	hcr |= HCR_EL2_CD;
 //	hcr |= HCR_EL2_TRVM;
-	hcr |= HCR_EL2_HCD;	/* disable hvc */
+	hcr |= HCR_EL2_HCD;	/* disable hvc from guest */
 //	hcr |= HCR_EL2_TDZ;
 //	hcr |= HCR_EL2_TGE;
 //	hcr |= HCR_EL2_TVM;
@@ -404,13 +424,10 @@ aarch64_el2_vmenter(struct trapframe *tf)
 //	hcr |= HCR_EL2_PTW;
 //	hcr |= HCR_EL2_SWIO;
 	hcr |= HCR_EL2_VM;
-	reg_hcr_el2_write(hcr);
-	reg_hstr_el2_write(0xffff);
 
-//	uartprintf("%s: VTTBR_EL2 = %016lx\n", __func__, cpudata_pa->vttbr_el2);
 	reg_vttbr_el2_write(cpudata_pa->vttbr_el2);
-//	uartprintf("vttbr_el2:%016x\n", reg_vttbr_el2_read());
-//	uartprintf("vtcr_el2:%016x\n", reg_vtcr_el2_read());
+	reg_hstr_el2_write(0xffff);
+	reg_hcr_el2_write(hcr);
 
 	asm("dsb ishst");
 	asm("ic ialluis");

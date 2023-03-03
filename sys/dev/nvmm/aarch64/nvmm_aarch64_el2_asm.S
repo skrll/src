@@ -37,16 +37,6 @@ RCSID("$NetBSD$")
 	.text
 
 ENTRY_NP(aarch64_el2_mmu_enable)
-	/* if the MMU is already enabled, do nothing */
-	mrs	x1, sctlr_el2
-	and	x1, x1, #SCTLR_M
-	cbz	x1, 1f
-	ret
-1:
-
-	/* install new TTBR */
-	msr	ttbr0_el2, x0
-
 	/* invalidate all TLB */
 	dsb	ishst
 #ifdef MULTIPROCESSOR
@@ -57,16 +47,6 @@ ENTRY_NP(aarch64_el2_mmu_enable)
 	dsb	ish
 	isb
 
-	mrs	x1, mair_el1
-	msr	mair_el2, x1
-	isb
-
-	ldr	x1, .Ltcr_el2_setting
-	mrs	x2, id_aa64mmfr0_el1
-	bfi	x1, x2, #16, #3		/* ID_AA64MMFR0_EL1.PARANGE */
-	msr	tcr_el2, x1
-	isb
-
 	mrs	x1, sctlr_el2
 	orr	x1, x1, #SCTLR_I	/* ICache on */
 	orr	x1, x1, #SCTLR_C	/* DCache on */
@@ -75,24 +55,3 @@ ENTRY_NP(aarch64_el2_mmu_enable)
 
 	ret
 END(aarch64_el2_mmu_enable)
-
-	.align 3
-
-#define VIRT_BIT	48
-
-#ifdef MULTIPROCESSOR
-#define TCR_SHAREABLE	TCR_EL2_SH0_INNER
-#else
-#define TCR_SHAREABLE	TCR_EL2_SH0_NONE
-#endif
-
-.Ltcr_el2_setting:
-	.quad (						\
-	    __BIT(31) | __BIT(23) |	/* RES1 */	\
-	    TCR_EL2_TG0_4KB |				\
-	    TCR_SHAREABLE |				\
-	    TCR_EL2_IRGN0_WB_WA |			\
-	    TCR_EL2_ORGN0_WB_WA |			\
-	    __SHIFTIN(64 - VIRT_BIT, TCR_EL2_T0SZ) |	\
-	    0 \
-	)
