@@ -298,10 +298,10 @@ struct pmap {
 
 	/* for hypervisor */
 	bool pm_stage2;
-	int pm_startlevel;			/* 0,1,2 */
-	int pm_concatenate_num;		/* 1-16 */
-	pd_entry_t *pm_starttable;	/* concatenated VTTBR */
-	paddr_t pm_starttable_pa;
+	int pm_st2_startlevel;		/* 0,1,2 */
+	int pm_st2_concatenate_num;	/* 1-16 */
+	pd_entry_t *pm_st2_table;	/* concatenated VTTBR */
+	paddr_t pm_st2_table_pa;
 };
 
 static inline paddr_t

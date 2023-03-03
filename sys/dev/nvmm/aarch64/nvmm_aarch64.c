@@ -48,6 +48,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <aarch64/cpufunc.h>
 #include <aarch64/pmap.h>
 
+//#define AARCH64_VMID(mach)	(mach->machid + 1)
+#define AARCH64_VMID(mach)	(mach->machid + 0x77)	/* XXX debug */
+
 struct aarch64_machdata {
 	void *unused1;
 };
@@ -205,20 +208,19 @@ nvmm_aarch64_capability(struct nvmm_capability *cap)
 	cap->arch.vcpu_conf_support = 0;
 }
 
+static char l1table_buf[NVMM_MAX_MACHINES][L3_SIZE * 16] __aligned(L3_SIZE * 16);
+
 static void
 nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 {
 	struct aarch64_machdata *machdata;
 	struct pmap *pm;
-	struct pglist pglist;
 	size_t concat_tablesize;
-	int error;
 
 	pm = mach->vm->vm_map.pmap;
 
 	/* set aarch64 pmap to stage2 mode */
 	pm->pm_stage2 = true;
-
 
 	/*
 	 * allocate concatenated translation table. must be n-page aligned.
@@ -228,43 +230,45 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 	CTASSERT(PAGE_SIZE == L3_SIZE);
 
 	/* XXXXXXXXX: TODO: calculated from ID_AA64MMFR1_EL1.PARANGE */
-	pm->pm_startlevel = 1;
-	pm->pm_concatenate_num = 2;
+	pm->pm_st2_startlevel = 1;
+	pm->pm_st2_concatenate_num = 2;
 
-	concat_tablesize = L3_SIZE * pm->pm_concatenate_num;
-	error = uvm_pglistalloc(concat_tablesize, 0, ~0UL,
+	concat_tablesize = L3_SIZE * pm->pm_st2_concatenate_num;
+
+#if 0
+	struct pglist pglist;
+	int error = uvm_pglistalloc(concat_tablesize, 0, ~0UL,
 	    concat_tablesize, 0, &pglist, 1, 1);
 	KASSERTMSG(error == 0, "cannot allocate concatenated page");
+	pm->pm_st2_table_pa = VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
+	pm->pm_st2_table = (pd_entry_t *)AARCH64_PA_TO_KVA(pm->pm_st2_table_pa);
 
-	pm->pm_starttable_pa = VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
-	pm->pm_starttable = (pd_entry_t *)AARCH64_PA_TO_KVA(pm->pm_starttable_pa);
+	/* XXX: free pglist in nvmm_aarch64_machine_destroy() */
 
-	KASSERT((pm->pm_starttable_pa & (concat_tablesize - 1)) == 0);
-	memset(pm->pm_starttable, 0, concat_tablesize);
+#else
+	pm->pm_st2_table = (pd_entry_t *)l1table_buf[AARCH64_VMID(mach)];
+	pmap_extract(pmap_kernel(), (vaddr_t)pm->pm_st2_table, &pm->pm_st2_table_pa);
+#endif
 
-	for (int i = 0; i < pm->pm_concatenate_num; i++) {
+	KASSERT((pm->pm_st2_table_pa & (concat_tablesize - 1)) == 0);
+	memset(pm->pm_st2_table, 0, concat_tablesize);
+
+	for (int i = 0; i < pm->pm_st2_concatenate_num; i++) {
 		/*
 		 * create L0->L1 table entry for pmap.
 		 * The hardware MMU starts the lookup from the L1 table.
 		 */
-		pm->pm_l0table[i] = (pm->pm_starttable_pa + i * PAGE_SIZE) |
+		pm->pm_l0table[i] = (pm->pm_st2_table_pa + i * PAGE_SIZE) |
 		    LX_TYPE_TBL | LX_VALID | LX_BLKPAG_OS_STAGE2;
-
-		/*
-		 * ...and these pages must be pmap_append_pdp() so that they
-		 * are uvm_pagefree()'d by pmap_free_pdp() upon pmap_destroy.
-		 * This is somewhat confusing code...
-		 */
-		pmap_append_pdp(pm, pm->pm_starttable_pa + i * PAGE_SIZE);
 	}
 
-	printf("%s:%d: pmap pm=%p, startlevel=%d, starttable=%p, starttable_pa=%016lx (%d concatenated)\n",
+	printf("%s:%d: pmap pm=%p, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
 	     __func__, __LINE__,
 	    mach->vm->vm_map.pmap,
-	    pm->pm_startlevel,
-	    mach->vm->vm_map.pmap->pm_starttable,
-	    mach->vm->vm_map.pmap->pm_starttable_pa,
-	    pm->pm_concatenate_num);
+	    pm->pm_st2_startlevel,
+	    mach->vm->vm_map.pmap->pm_st2_table,
+	    mach->vm->vm_map.pmap->pm_st2_table_pa,
+	    pm->pm_st2_concatenate_num);
 
 
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
@@ -411,8 +415,8 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	/* XXX: assert NVMM_MAX_MACHINES < (1 << ID_AA64MMFR1.VMIDBITS) */
 	cpudata->vttbr_el2 =
-	    __SHIFTIN(mach->machid + 10, VTTBR_VIMD) |
-	    __SHIFTIN(mach->vm->vm_map.pmap->pm_starttable_pa, VTTBR_BADDR);
+	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
+	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
 
 	//event commit
 

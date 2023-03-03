@@ -560,18 +560,6 @@ _pmap_link_pdp(struct pmap *pm, struct vm_page *pg)
 	PMAP_PAGE_INIT(VM_PAGE_TO_PP(pg));
 }
 
-#if NNVMM > 0
-void
-pmap_append_pdp(struct pmap *pm, paddr_t pa)
-{
-	struct vm_page *pg = PHYS_TO_VM_PAGE(pa);
-
-	pm_lock(pm);
-	_pmap_link_pdp(pm, pg);
-	pm_unlock(pm);
-}
-#endif /* NNVMM */
-
 static paddr_t
 pmap_alloc_pdp(struct pmap *pm, struct vm_page **pgp, int flags, bool waitok)
 {
@@ -1723,6 +1711,12 @@ _pmap_pdp_addref(struct pmap *pm, paddr_t pdppa, struct vm_page *pdppg_hint)
 	/* no need for L0 page */
 	if (pm->pm_l0table_pa == pdppa)
 		return;
+#if NNVMM > 0
+	/* also contatenate table for stage2 must be ignored */
+	if (pm->pm_stage2 && IN_RANGE(pdppa, pm->pm_st2_table_pa,
+	    pm->pm_st2_table_pa + PAGE_SIZE * pm->pm_st2_concatenate_num))
+		return;
+#endif
 
 	pg = pdppg_hint;
 	if (pg == NULL)
@@ -1732,7 +1726,7 @@ _pmap_pdp_addref(struct pmap *pm, paddr_t pdppa, struct vm_page *pdppg_hint)
 	pg->wire_count++;
 
 	KASSERTMSG(pg->wire_count <= (Ln_ENTRIES + 1),
-	    "pg=%p, wire_count=%d", pg, pg->wire_count);
+	    "pm=%p, pg=%p, wire_count=%d", pm, pg, pg->wire_count);
 }
 
 /*
@@ -1763,6 +1757,12 @@ _pmap_pdp_delref(struct pmap *pm, paddr_t pdppa, bool do_free_pdp)
 	/* no need for L0 page */
 	if (pm->pm_l0table_pa == pdppa)
 		return false;
+#if NNVMM > 0
+	/* also contatenate table for stage2 must be ignored */
+	if (pm->pm_stage2 && IN_RANGE(pdppa, pm->pm_st2_table_pa,
+	    pm->pm_st2_table_pa + PAGE_SIZE * pm->pm_st2_concatenate_num))
+		return false;
+#endif
 
 	pg = PHYS_TO_VM_PAGE(pdppa);
 	KASSERT(pg != NULL);
@@ -3031,7 +3031,15 @@ pmap_db_pmap_print(struct pmap *pm,
 	pr(" pm_asid       = %d\n", pai->pai_asid);
 	pr(" pm_l0table    = %p\n", pm->pm_l0table);
 	pr(" pm_l0table_pa = %lx\n", pm->pm_l0table_pa);
-	pr(" pm_activated  = %d\n\n", pm->pm_activated);
+	pr(" pm_activated  = %d\n", pm->pm_activated);
+#if NNVMM > 0
+	pr(" pm_stage2         = %d\n", pm->pm_stage2);
+	pr(" pm_st2_startlevel = %d\n", pm->pm_st2_startlevel);
+	pr(" pm_st2_concatenate_num = %d\n", pm->pm_st2_concatenate_num);
+	pr(" pm_st2_table      = %p\n", pm->pm_st2_table);
+	pr(" pm_st2_table_pa   = %lx\n", pm->pm_st2_table_pa);
+#endif
+	pr("\n");
 }
 #endif /* DDB */
 
