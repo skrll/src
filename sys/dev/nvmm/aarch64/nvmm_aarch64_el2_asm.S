@@ -77,14 +77,22 @@ ENTRY_NP(aarch64_el2_mmu_enable)
 END(aarch64_el2_mmu_enable)
 
 	.align 3
-.Ltcr_el2_setting:
+
 #define VIRT_BIT	48
+
+#ifdef MULTIPROCESSOR
+#define TCR_SHAREABLE	TCR_EL2_SH0_INNER
+#else
+#define TCR_SHAREABLE	TCR_EL2_SH0_NONE
+#endif
+
+.Ltcr_el2_setting:
 	.quad (						\
-	   __BIT(31) | __BIT(23) |	/* RES1 */	\
-	   TCR_EL2_TG0_4KB |				\
-	   TCR_EL2_SH0_INNER |				\
-	   TCR_EL2_IRGN0_WB_WA |			\
-	   TCR_EL2_ORGN0_WB_WA |			\
-	   __SHIFTIN(64 - VIRT_BIT, TCR_EL2_T0SZ) |	\
-	   0 \
+	    __BIT(31) | __BIT(23) |	/* RES1 */	\
+	    TCR_EL2_TG0_4KB |				\
+	    TCR_SHAREABLE |				\
+	    TCR_EL2_IRGN0_WB_WA |			\
+	    TCR_EL2_ORGN0_WB_WA |			\
+	    __SHIFTIN(64 - VIRT_BIT, TCR_EL2_T0SZ) |	\
+	    0 \
 	)
