@@ -374,7 +374,6 @@ db_pte_print(pt_entry_t pte, int level,
 			if (pte & LX_S1_TBL_PXNTABLE)
 				pr(", PXNTABLE");
 		}
-
 	} else if ((level == 1 && l1pde_is_block(pte)) ||
 	    (level == 2 && l2pde_is_block(pte)) ||
 	    level == 3) {
@@ -504,18 +503,19 @@ db_pte_print(pt_entry_t pte, int level,
 				break;
 			}
 		}
-
-		if (pte & LX_BLKPAG_OS_0)
-			pr(", " PMAP_PTE_OS0);
-		if (pte & LX_BLKPAG_OS_1)
-			pr(", " PMAP_PTE_OS1);
-		if (pte & LX_BLKPAG_OS_2)
-			pr(", " PMAP_PTE_OS2);
-		if (pte & LX_BLKPAG_OS_3)
-			pr(", " PMAP_PTE_OS3);
 	} else {
 		pr(" **ILLEGAL TYPE**");
 	}
+
+	if (pte & LX_BLKPAG_OS_0)
+		pr(", " PMAP_PTE_OS0);
+	if (pte & LX_BLKPAG_OS_1)
+		pr(", " PMAP_PTE_OS1);
+	if (pte & LX_BLKPAG_OS_2)
+		pr(", " PMAP_PTE_OS2);
+	if (pte & LX_BLKPAG_OS_3)
+		pr(", " PMAP_PTE_OS3);
+
 	pr("\n");
 }
 
