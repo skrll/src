@@ -50,28 +50,18 @@ void dump_el2_trapframe(struct trapframe *tf);
 void aarch64_el2_mmu_enable(void);
 void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
-void aarch64_el2_vmexit(struct trapframe *);
+void aarch64_el2_vmexit_trap(struct trapframe *);
 void aarch64_el2_vmexit_irq(struct trapframe *);
-
-static void __unused
-xxx_hexdump(void *addr, unsigned int len)
-{
-	uint8_t *p = (uint8_t *)addr;
-	unsigned int i;
-	for (i = 0; i < len; i++) {
-		if ((i & 15) == 0)
-			uartprintf("%p:", &p[i]);
-		uartprintf(" %02x", p[i]);
-		if ((i & 15) == 15)
-			uartprintf("\n");
-	}
-	if ((i & 15) != 0)
-		uartprintf("\n");
-}
 
 void
 aarch64_el2_init(struct trapframe *tf)
 {
+	static int aarch64_el2_initted = 0;
+
+	if (aarch64_el2_initted != 0)
+		return;
+	aarch64_el2_initted = 1;
+
 	/*
 	 * Setup EL0/1 stage2 translate configuration. The activation and
 	 * deactivation of stage2 translation itself is done in VMENTER/VMEXIT.
@@ -130,7 +120,7 @@ aarch64_el2_init(struct trapframe *tf)
 
 
 	/*
-	 * Enable EL2 MMU (VA=PA).
+	 * Enable *EL2* MMU (VA=PA).
 	 * Not a stage2 translation for EL0/1.
 	 *
 	 * If EL2 is not run with MMU enable, cache does not work on EL2
@@ -171,6 +161,7 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	state->sprs[NVMM_AARCH64_SPR_PC] = tf->tf_pc;
 	state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] = tf->tf_spsr;
 
+	/* XXX: TODO: SP0 and SP1 must be distinguished */
 	memcpy(state->gprs, tf->tf_reg, sizeof(state->gprs));
 
 	state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0] = reg_tpidrro_el0_read();
@@ -201,33 +192,8 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	tf->tf_pc = state->sprs[NVMM_AARCH64_SPR_PC];
 	tf->tf_spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
 
+	/* XXX: TODO: SP0 and SP1 must be distinguished */
 	memcpy(tf->tf_reg, state->gprs, sizeof(state->gprs));
-
-#if 0
-	uartprintf("load: PC   = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_PC]);
-	uartprintf("load: SPSR = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_SPSR_EL1]);
-
-	uartprintf("load: TPIDRRO_EL0    = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0]);
-	uartprintf("load: TPIDR_EL0      = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0]);
-	uartprintf("load: AMAIR_EL1      = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1]);
-	uartprintf("load: CNTKCTL_EL1    = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1]);
-	uartprintf("load: CONTEXTIDR_EL1 = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1]);
-	uartprintf("load: CPACR_EL1      = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_CPACR_EL1]);
-	uartprintf("load: CSSELR_EL1     = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_CSSELR_EL1]);
-	uartprintf("load: ELR_EL1        = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_ELR_EL1]);
-	uartprintf("load: ESR_EL1        = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_ESR_EL1]);
-	uartprintf("load: FAR_EL1        = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_FAR_EL1]);
-	uartprintf("load: MAIR_EL1       = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_MAIR_EL1]);
-	uartprintf("load: MDSCR_EL1      = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1]);
-	uartprintf("load: PAR_EL1        = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_PAR_EL1]);
-	uartprintf("load: SCTLR_EL1      = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1]);
-	uartprintf("load: SP_EL1         = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_SP_EL1]);
-	uartprintf("load: TCR_EL1        = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_TCR_EL1]);
-	uartprintf("load: TPIDR_EL1      = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1]);
-	uartprintf("load: TTBR0_EL1      = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1]);
-	uartprintf("load: TTBR1_EL1      = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1]);
-	uartprintf("load: VBAR_EL1       = 0x%016x\n", state->sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
-#endif
 
 	reg_tpidrro_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0]);
 	reg_tpidr_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0]);
@@ -251,34 +217,35 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	reg_vbar_el1_write(state->sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
 }
 
+static void
+aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
+{
+	reg_hcr_el2_write(HCR_EL2_RW);
+	reg_hstr_el2_write(0);
+	reg_vttbr_el2_write(0);
+
+	/* save guest state */
+	vcpu_context_save(tf, &cpudata->guest);
+	/* load host state */
+	vcpu_context_load(tf, &cpudata->host);
+}
+
 void
 aarch64_el2_vmexit_irq(struct trapframe *tf)
 {
 	struct aarch64_cpudata *cpudata_pa;
 	struct nvmm_aarch64_exit *exit_pa;
 
-//	dump_el2_trapframe(tf);
-
 	cpudata_pa = (struct aarch64_cpudata *)reg_tpidr_el2_read();
 	exit_pa = (struct nvmm_aarch64_exit *)cpudata_pa->exit_pa;
+	exit_pa->reason = NVMM_VCPU_EXIT_NONE;
 
-	exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
-//	exit_pa->u.mem
-//	exit_pa->u.insn
-//	exit_pa->u.inv
-
-	reg_hcr_el2_write(HCR_EL2_RW);
-	reg_hstr_el2_write(0);
-	reg_vttbr_el2_write(0);
-
-	/* save guest state */
-	vcpu_context_save(tf, &cpudata_pa->guest);
-	/* load host state */
-	vcpu_context_load(tf, &cpudata_pa->host);
+	aarch64_vmexit_context(tf, cpudata_pa);
+	reg_tpidr_el2_write(0);
 }
 
 void
-aarch64_el2_vmexit(struct trapframe *tf)
+aarch64_el2_vmexit_trap(struct trapframe *tf)
 {
 	struct aarch64_cpudata *cpudata_pa;
 	struct nvmm_aarch64_exit *exit_pa;
@@ -295,17 +262,15 @@ aarch64_el2_vmexit(struct trapframe *tf)
 	switch (eclass) {
 	case ESR_EC_INSN_ABT_EL_LOW:
 	case ESR_EC_DATA_ABT_EL_LOW:
-//		dump_el2_trapframe(tf);
-//		uartprintf("hpfar_el2:%016x (%016x)\n", reg_hpfar_el2_read(), reg_hpfar_el2_read() << 8);
-//		uartprintf("sctlr_el1:%016x\n", reg_sctlr_el1_read());
-//		uartprintf("tcr_el1:%016x\n", reg_tcr_el1_read());
-
 		if (eclass == ESR_EC_INSN_ABT_EL_LOW)
 			ftype = VM_PROT_EXECUTE;
 		else if (__SHIFTOUT(esr, ESR_ISS_DATAABORT_CM))
 			ftype = VM_PROT_READ;
 		else
 			ftype = (rw == 0) ? VM_PROT_READ : VM_PROT_WRITE;
+
+		/* XXX: distinguish cache op. ftype is incomplete */
+
 		exit_pa->reason = NVMM_VCPU_EXIT_MEMORY;
 		exit_pa->u.mem.gpa = tf->tf_far;
 		exit_pa->u.mem.prot = ftype;
@@ -314,7 +279,7 @@ aarch64_el2_vmexit(struct trapframe *tf)
 	case ESR_EC_INSN_ABT_EL_CUR:
 	case ESR_EC_DATA_ABT_EL_CUR:
 		uartprintf("%s: INSN or DATA ABORT occured on EL2?\n", __func__);
-		//panic. never occur data abort on EL2...
+		//panic. never occur data abort on EL2...?
 	case ESR_EC_UNKNOWN:
 	case ESR_EC_SERROR:
 	case ESR_EC_WFX:
@@ -342,49 +307,22 @@ aarch64_el2_vmexit(struct trapframe *tf)
 		break;
 	}
 
-
-	reg_hcr_el2_write(HCR_EL2_RW);
-	reg_hstr_el2_write(0);
-	reg_vttbr_el2_write(0);
-
-	/* save guest state */
-	vcpu_context_save(tf, &cpudata_pa->guest);
-	/* lost host state */
-	vcpu_context_load(tf, &cpudata_pa->host);
+	aarch64_vmexit_context(tf, cpudata_pa);
+	reg_tpidr_el2_write(0);
 }
 
 void
 aarch64_el2_vmenter(struct trapframe *tf)
 {
 	struct aarch64_cpudata *cpudata_pa;
-//	struct nvmm_aarch64_exit *exit_pa;
 
 	cpudata_pa = (struct aarch64_cpudata *)tf->tf_reg[0];
-//	exit_pa = (struct aarch64_exit *)cpudata_pa->exit_pa;
 
-#if 0
-	uartprintf("%s: cpudata_pa=%p\n", __func__, cpudata_pa);
-
-	uartprintf("    x0=%016lx,     x1=%016lx\n", cpudata_pa->guest.gprs[0], cpudata_pa->guest.gprs[1]);
-	uartprintf("    x2=%016lx,     x3=%016lx\n", cpudata_pa->guest.gprs[2], cpudata_pa->guest.gprs[3]);
-	uartprintf("    x4=%016lx,     x5=%016lx\n", cpudata_pa->guest.gprs[4], cpudata_pa->guest.gprs[5]);
-	uartprintf("    x6=%016lx,     x7=%016lx\n", cpudata_pa->guest.gprs[6], cpudata_pa->guest.gprs[7]);
-	uartprintf("    x8=%016lx,     x9=%016lx\n", cpudata_pa->guest.gprs[8], cpudata_pa->guest.gprs[9]);
-	uartprintf("   x10=%016lx,    x11=%016lx\n", cpudata_pa->guest.gprs[10], cpudata_pa->guest.gprs[11]);
-	uartprintf("   x12=%016lx,    x13=%016lx\n", cpudata_pa->guest.gprs[12], cpudata_pa->guest.gprs[13]);
-	uartprintf("   x14=%016lx,    x15=%016lx\n", cpudata_pa->guest.gprs[14], cpudata_pa->guest.gprs[15]);
-	uartprintf("   x16=%016lx,    x17=%016lx\n", cpudata_pa->guest.gprs[16], cpudata_pa->guest.gprs[17]);
-	uartprintf("   x18=%016lx,    x19=%016lx\n", cpudata_pa->guest.gprs[18], cpudata_pa->guest.gprs[19]);
-	uartprintf("   x20=%016lx,    x21=%016lx\n", cpudata_pa->guest.gprs[20], cpudata_pa->guest.gprs[21]);
-	uartprintf("   x22=%016lx,    x23=%016lx\n", cpudata_pa->guest.gprs[22], cpudata_pa->guest.gprs[23]);
-	uartprintf("   x24=%016lx,    x25=%016lx\n", cpudata_pa->guest.gprs[24], cpudata_pa->guest.gprs[25]);
-	uartprintf("   x26=%016lx,    x27=%016lx\n", cpudata_pa->guest.gprs[26], cpudata_pa->guest.gprs[27]);
-	uartprintf("   x28=%016lx, fp=x29=%016lx\n", cpudata_pa->guest.gprs[28], cpudata_pa->guest.gprs[29]);
-	uartprintf("lr=x30=%016lx,     sp=%016lx\n", cpudata_pa->guest.gprs[30], cpudata_pa->guest.gprs[31]);
-	uartprintf("    PC=%016lx\n", cpudata_pa->guest.sprs[NVMM_AARCH64_SPR_PC]);
-#endif
+	if (reg_tpidr_el2_read() != 0)
+		uartprintf("panic: %s: tpidr_el2 is not zero: %016lx\n", __func__, reg_tpidr_el2_read());
 
 	reg_tpidr_el2_write((register_t)cpudata_pa);
+	uartprintf("VMENTER: PC=%016lx\n", cpudata_pa->guest.sprs[NVMM_AARCH64_SPR_PC]);
 
 	/* save host state */
 	vcpu_context_save(tf, &cpudata_pa->host);
@@ -392,10 +330,10 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	vcpu_context_load(tf, &cpudata_pa->guest);
 
 	uint64_t hcr = HCR_EL2_RW;	/* 64bit */
-	hcr |= HCR_EL2_ID;
-	hcr |= HCR_EL2_CD;
+//	hcr |= HCR_EL2_ID;
+//	hcr |= HCR_EL2_CD;
 //	hcr |= HCR_EL2_TRVM;
-	hcr |= HCR_EL2_HCD;	/* disable hvc from guest */
+//	hcr |= HCR_EL2_HCD;
 //	hcr |= HCR_EL2_TDZ;
 //	hcr |= HCR_EL2_TGE;
 //	hcr |= HCR_EL2_TVM;
@@ -429,6 +367,7 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	reg_hstr_el2_write(0xffff);
 	reg_hcr_el2_write(hcr);
 
+	/* XXX */
 	asm("dsb ishst");
 	asm("ic ialluis");
 	asm("tlbi vmalle1is");

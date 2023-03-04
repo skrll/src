@@ -55,7 +55,7 @@ void dump_el2_trapframe(struct trapframe *tf);
 struct nvmm_aarch64_state;
 void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
-void aarch64_el2_vmexit(struct trapframe *tf);
+void aarch64_el2_vmexit_trap(struct trapframe *tf);
 void aarch64_el2_vmexit_irq(struct trapframe *tf);
 
 char *uartputs(const char *);
@@ -263,11 +263,11 @@ el2sync_el1(struct trapframe *tf)
 		} else {
 			/* hvc #n from guest */
 			uartprintf("%s: PC=%016x ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, tf->tf_pc, esr, eclass);
-			aarch64_el2_vmexit(tf);
+			aarch64_el2_vmexit_trap(tf);
 		}
 	} else {
 		uartprintf("%s: PC=%016x ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, tf->tf_pc, esr, eclass);
-		aarch64_el2_vmexit(tf);
+		aarch64_el2_vmexit_trap(tf);
 	}
 
 }
@@ -290,7 +290,7 @@ void
 el2error_el1(struct trapframe *tf)
 {
 	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
-	aarch64_el2_vmexit(tf);
+	aarch64_el2_vmexit_trap(tf);
 }
 
 extern u_long kern_vtopdiff;
