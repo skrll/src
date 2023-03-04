@@ -1,7 +1,7 @@
 /*	$NetBSD$	*/
 
 /*-
- * Copyright (c) 2022 Ryo Shimizu <ryo@nerv.org>
+ * Copyright (c) 2023 Ryo Shimizu <ryo@nerv.org>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -61,7 +61,7 @@ static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
 const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 	.gprs = {
-		0
+		0	/* x0-x31 are all zero */
 	},
 	.sprs = {
 		[NVMM_AARCH64_SPR_PC]			= 0,
@@ -93,36 +93,11 @@ const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 	}
 };
 
-static void __unused
-debugdump_state(struct nvmm_aarch64_state *state)
-{
-	printf("[state=%p]\n", state);
-	printf("    x0=%016lx,     x1=%016lx\n", state->gprs[0], state->gprs[1]);
-	printf("    x2=%016lx,     x3=%016lx\n", state->gprs[2], state->gprs[3]);
-	printf("    x4=%016lx,     x5=%016lx\n", state->gprs[4], state->gprs[5]);
-	printf("    x6=%016lx,     x7=%016lx\n", state->gprs[6], state->gprs[7]);
-	printf("    x8=%016lx,     x9=%016lx\n", state->gprs[8], state->gprs[9]);
-	printf("   x10=%016lx,    x11=%016lx\n", state->gprs[10], state->gprs[11]);
-	printf("   x12=%016lx,    x13=%016lx\n", state->gprs[12], state->gprs[13]);
-	printf("   x14=%016lx,    x15=%016lx\n", state->gprs[14], state->gprs[15]);
-	printf("   x16=%016lx,    x17=%016lx\n", state->gprs[16], state->gprs[17]);
-	printf("   x18=%016lx,    x19=%016lx\n", state->gprs[18], state->gprs[19]);
-	printf("   x20=%016lx,    x21=%016lx\n", state->gprs[20], state->gprs[21]);
-	printf("   x22=%016lx,    x23=%016lx\n", state->gprs[22], state->gprs[23]);
-	printf("   x24=%016lx,    x25=%016lx\n", state->gprs[24], state->gprs[25]);
-	printf("   x26=%016lx,    x27=%016lx\n", state->gprs[26], state->gprs[27]);
-	printf("   x28=%016lx, fp=x29=%016lx\n", state->gprs[28], state->gprs[29]);
-	printf("lr=x30=%016lx,     sp=%016lx\n", state->gprs[30], state->gprs[31]);
-
-	printf("    PC=%016lx\n", state->sprs[NVMM_AARCH64_SPR_PC]);
-}
-
 static bool
 nvmm_aarch64_ident(void)
 {
 	return true;
 }
-
 
 static pd_entry_t *
 nvmm_aarch64_pagealloc(void)
@@ -142,8 +117,16 @@ nvmm_aarch64_pagealloc(void)
 static void
 nvmm_aarch64_init(void)
 {
+	/*
+	 * Enable EL2 MMU via hvc. The entity is in aarch64_el2_init().
+	 * There is a way to do it at the beginning of aarch64/locore_el2,
+	 * but the process is complicated, so we do it in this nvmm initialization.
+	 *
+	 * Once the EL2 MMU is enabled, it is never disabled again.
+	 * EL2 VA=PA identity mapping is enabled until reboot.
+	 * Allocated page tables are not released by calling nvmm_aarch64_fini().
+	 */
 	static pd_entry_t *ttbr_pa;
-
 	if (ttbr_pa != NULL)
 		return;
 
@@ -163,7 +146,7 @@ nvmm_aarch64_init(void)
 	pmapboot_enter_ttbr(CONSADDR, CONSADDR, L2_SIZE, L2_SIZE,
 	    devattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
 #endif
- 
+
 	/* EL2 VA=PA identity mapping */
 	const pt_entry_t memattr = LX_BLKPAG_ATTR_NORMAL_WB |
 	    LX_S1_BLKPAG_AP_RW | LX_S1_BLKPAG_AP1_RES1;
@@ -177,12 +160,6 @@ nvmm_aarch64_init(void)
 		pmapboot_enter_range_ttbr(start, start, end - start,
 		    memattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
 	}
-
-	/*
-	 * Once the EL2 MMU is enabled, it is never disabled again.
-	 * VA=PA identity mapping is enabled until reboot.
-	 * Allocated page tables are not released by calling nvmm_aarch64_fini().
-	 */
 
 	/* calll aarch64_hvc_init(ttbr_pa) on all cpus */
 	uint64_t where = xc_broadcast(0, (xcfunc_t)aarch64_hvc_init,
@@ -208,7 +185,13 @@ nvmm_aarch64_capability(struct nvmm_capability *cap)
 	cap->arch.vcpu_conf_support = 0;
 }
 
-static char l1table_buf[NVMM_MAX_MACHINES][L3_SIZE * 16] __aligned(L3_SIZE * 16);
+/*
+ * Buffers for stage2 concatenated table must be aligned PAGE_SIZE*2^n.
+ * Even if NVVMM_MAX_MACHINES=128, it is at most 8Mbytes. (4kpage)
+ * It would be better than dynamically allocating them and getting caught up
+ * in pmap page table management. (_pmap_pdp_*() in aarch64/pmap.c)
+ */
+static char stage2table_buf[NVMM_MAX_MACHINES][PAGE_SIZE * 16] __aligned(PAGE_SIZE * 16);
 
 static void
 nvmm_aarch64_machine_create(struct nvmm_machine *mach)
@@ -217,49 +200,110 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 	struct pmap *pm;
 	size_t concat_tablesize;
 
-	pm = mach->vm->vm_map.pmap;
+	/* XXX: (*nvmm_impl->machine_create)(mach) should be able to return an error... */
+	if (AARCH64_VMID(mach) >= 0x100)
+		panic("%s: VMID %d is too large", __func__, AARCH64_VMID(mach));
 
 	/* set aarch64 pmap to stage2 mode */
+	pm = mach->vm->vm_map.pmap;
 	pm->pm_stage2 = true;
 
+	int parange = aarch64_parange();
+	if (parange > 48 || parange <= 30)
+		panic("%s: unsupported PA range: %d", __func__, parange);	/* XXX */
+
+	CTASSERT(PGSHIFT == 12);
 	/*
-	 * allocate concatenated translation table. must be n-page aligned.
+	 * 12: bitwidth of page (4Kpage)
+	 *  9: bitwidth of PTE entries per page (4k/sizeof(pte) = 512)
+	 *  4: bitwidth of maximum number of concatenated TTBR (16)
+	 *
+	 * PArange      Initial Concatenated 
+	 * bit           Lookup   Ln table   
+	 * width          Level        num Behaviour
+	 * ------------ ------- ---------- ------------------------------------------------------
+	 * 30(12+9+9)         2          1                       L2[512] -> L3[512] -> page
+	 * 31(12+9+9+1)       2          2                   L2c[2][512] -> L3[512] -> page
+	 * 32(12+9+9+2)       2          4                   L2c[4][512] -> L3[512] -> page
+	 * 33(12+9+9+3)       2          8                   L2c[8][512] -> L3[512] -> page
+	 * 34(12+9+9+4)       2         16                  L2c[16][512] -> L3[512] -> page
+	 * 35(12+9+9+5)       1          1            L1[32]  -> L2[512] -> L3[512] -> page
+	 * 36(12+9+9+6)       1          1            L1[64]  -> L2[512] -> L3[512] -> page
+	 * 37(12+9+9+7)       1          1            L1[128] -> L2[512] -> L3[512] -> page
+	 * 38(12+9+9+8)       1          1            L1[256] -> L2[512] -> L3[512] -> page
+	 * 39(12+9+9+9)       1          1            L1[512] -> L2[512] -> L3[512] -> page
+	 * 40(12+9+9+9+1)     1          2        L1c[2][512] -> L2[512] -> L3[512] -> page
+	 * 41(12+9+9+9+2)     1          4        L1c[4][512] -> L2[512] -> L3[512] -> page
+	 * 42(12+9+9+9+3)     1          8        L1c[8][512] -> L2[512] -> L3[512] -> page
+	 * 43(12+9+9+9+4)     1         16       L1c[16][512] -> L2[512] -> L3[512] -> page
+	 * 44(12+9+9+9+5)     0          1 L0[32]  -> L1[512] -> L2[512] -> L3[512] -> page
+	 * 45(12+9+9+9+6)     0          1 L0[64]  -> L1[512] -> L2[512] -> L3[512] -> page
+	 * 46(12+9+9+9+7)     0          1 L0[128] -> L1[512] -> L2[512] -> L3[512] -> page
+	 * 47(12+9+9+9+8)     0          1 L0[256] -> L1[512] -> L2[512] -> L3[512] -> page
+	 * 48(12+9+9+9+9)     0          1 L0[512] -> L1[512] -> L2[512] -> L3[512] -> page
+	 *
+	 * L0,L1,L2,L3 are normal Ln table.
+	 * L1c and L2c are concatenated Ln table.
 	 */
+	if (parange <= (12 + 9 + 9 + 4)) {		/* PArange <= 34bit */
+		pm->pm_st2_startlevel = 2;
+		if (parange >= 12 + 9 + 9)
+			pm->pm_st2_concatenate_num = 1 << (parange - 12 - 9 - 9);
+		else
+			pm->pm_st2_concatenate_num = 1;
+	} else if (parange <= (12 + 9 + 9 + 9 + 4)) {	/* PArange <= 43bit */
+		pm->pm_st2_startlevel = 1;
+		if (parange >= 12 + 9 + 9 + 9)
+			pm->pm_st2_concatenate_num = 1 << (parange - 12 - 9 - 9 - 9);
+		else
+			pm->pm_st2_concatenate_num = 1;
+	} else {
+		pm->pm_st2_startlevel = 0;
+		pm->pm_st2_concatenate_num = 0;
+	}
 
-	/* The code assumes a 4kbyte page */
-	CTASSERT(PAGE_SIZE == L3_SIZE);
-
-	/* XXXXXXXXX: TODO: calculated from ID_AA64MMFR1_EL1.PARANGE */
-	pm->pm_st2_startlevel = 1;
-	pm->pm_st2_concatenate_num = 2;
-
-	concat_tablesize = L3_SIZE * pm->pm_st2_concatenate_num;
-
-#if 0
-	struct pglist pglist;
-	int error = uvm_pglistalloc(concat_tablesize, 0, ~0UL,
-	    concat_tablesize, 0, &pglist, 1, 1);
-	KASSERTMSG(error == 0, "cannot allocate concatenated page");
-	pm->pm_st2_table_pa = VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
-	pm->pm_st2_table = (pd_entry_t *)AARCH64_PA_TO_KVA(pm->pm_st2_table_pa);
-
-	/* XXX: free pglist in nvmm_aarch64_machine_destroy() */
-
+	if (pm->pm_st2_startlevel > 0) {
+		/*
+		 * concatenated initial lookup translation table must be aligned
+		 * to pagesize*2^n
+		 */
+		concat_tablesize = PAGE_SIZE * pm->pm_st2_concatenate_num;
+#if 1
+		pm->pm_st2_table =
+		    (pd_entry_t *)stage2table_buf[AARCH64_VMID(mach)];
+		pmap_extract(pmap_kernel(), (vaddr_t)pm->pm_st2_table,
+		    &pm->pm_st2_table_pa);
 #else
-	pm->pm_st2_table = (pd_entry_t *)l1table_buf[AARCH64_VMID(mach)];
-	pmap_extract(pmap_kernel(), (vaddr_t)pm->pm_st2_table, &pm->pm_st2_table_pa);
+		/* allocate dynamically. Not well tested. */
+		struct pglist pglist;
+		int error = uvm_pglistalloc(concat_tablesize, 0, ~0UL,
+		    concat_tablesize, 0, &pglist, 1, 1);
+		if (error != 0) {
+			panic("%s: cannot allocate initial lookup page",
+			    __func__);
+		}
+		pm->pm_st2_table_pa = VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
+		pm->pm_st2_table =
+		    (pd_entry_t *)AARCH64_PA_TO_KVA(pm->pm_st2_table_pa);
+		/* XXX: TODO: free pglist in nvmm_aarch64_machine_destroy() */
 #endif
 
-	KASSERT((pm->pm_st2_table_pa & (concat_tablesize - 1)) == 0);
-	memset(pm->pm_st2_table, 0, concat_tablesize);
+		KASSERT((pm->pm_st2_table_pa & (concat_tablesize - 1)) == 0);
+		memset(pm->pm_st2_table, 0, concat_tablesize);
 
-	for (int i = 0; i < pm->pm_st2_concatenate_num; i++) {
+		/* XXX */
+		if (pm->pm_st2_startlevel != 1)
+			panic("Initial lookup from L2 is not supported yet");
+
 		/*
-		 * create L0->L1 table entry for pmap.
-		 * The hardware MMU starts the lookup from the L1 table.
+		 * create L0->L1 table entry for pmap. The hardware MMU starts
+		 * the lookup from the concatenated L1 table.
 		 */
-		pm->pm_l0table[i] = (pm->pm_st2_table_pa + i * PAGE_SIZE) |
-		    LX_TYPE_TBL | LX_VALID | LX_BLKPAG_OS_STAGE2;
+		for (int i = 0; i < pm->pm_st2_concatenate_num; i++) {
+			pm->pm_l0table[i] =
+			    (pm->pm_st2_table_pa + i * PAGE_SIZE) |
+			    LX_TYPE_TBL | LX_VALID | LX_BLKPAG_OS_STAGE2;
+		}
 	}
 
 	printf("%s:%d: pmap pm=%p, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
@@ -393,35 +437,22 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 	return 0;
 }
 
-
-
-
 static int
 nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
 	struct nvmm_comm_page *comm = vcpu->comm;
-	struct aarch64_cpudata *cpudata __unused = vcpu->cpudata;
+	struct aarch64_cpudata *cpudata = vcpu->cpudata;
 //	struct aarch64_machdata *machdata = mach->machdata;
-
-	printf("%s:%d\n", __func__, __LINE__);
 
 	aarch64_vcpu_state_commit(vcpu);
 	comm->state_cached = 0;
 
-
-	//XXXX
-//	debugdump_state(&cpudata->guest);
-
-	/* XXX: assert NVMM_MAX_MACHINES < (1 << ID_AA64MMFR1.VMIDBITS) */
 	cpudata->vttbr_el2 =
 	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
 	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
 
 	//event commit
-
-	kpreempt_disable();
-
 
 	vaddr_t cpudata_va = (vaddr_t)cpudata;
 	vaddr_t exit_va = (vaddr_t)exit;
@@ -433,7 +464,9 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		panic("cannot resolve PA of exit");
 	cpudata->exit_pa = exit_pa;
 
-	aarch64_dcache_wb_all();
+	kpreempt_disable();
+
+	aarch64_dcache_wb_all();	// XXX: currently, it is unstable without this...
 	aarch64_hvc_vmenter(cpudata_pa);
 
 	kpreempt_enable();
