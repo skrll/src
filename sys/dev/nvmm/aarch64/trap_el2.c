@@ -59,7 +59,7 @@ void aarch64_el2_vmexit_trap(struct trapframe *tf);
 void aarch64_el2_vmexit_irq(struct trapframe *tf);
 
 char *uartputs(const char *);
-int uartprintf(const char * restrict, ...);	// __printflike(1, 2));
+int uartprintf(const char * restrict, ...) __printflike(1, 2);
 
 /*
  * uartprintf() is a simple printf() for debugging that depends only on
@@ -239,11 +239,11 @@ dump_el2_trapframe(struct trapframe *tf)
 void
 el2sync_el1(struct trapframe *tf)
 {
-	const uint32_t esr = tf->tf_esr;
-	const uint32_t eclass = __SHIFTOUT(esr, ESR_EC);
+	const uint64_t esr = tf->tf_esr;
+	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
 
 //	XXXXXXXX: cannot use snprintf() because it is in subr_prf.c
-//	uartprintf("%s: %s: pc=%016" PRIx64 " sp=%016" PRIx64 " esr=%08x", __func__, eclass_trapname(eclass), tf->tf_pc, tf->tf_sp, esr);
+//	uartprintf("%s: %s: pc=%016"PRIx64" sp=%016"PRIx64" esr=%08"PRIx64"\n", __func__, eclass_trapname(eclass), tf->tf_pc, tf->tf_sp, esr);
 
 //	dump_el2_trapframe(tf);
 
@@ -262,11 +262,11 @@ el2sync_el1(struct trapframe *tf)
 			}
 		} else {
 			/* hvc #n from guest */
-			uartprintf("%s: PC=%016x ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, tf->tf_pc, esr, eclass);
+			uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
 			aarch64_el2_vmexit_trap(tf);
 		}
 	} else {
-		uartprintf("%s: PC=%016x ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, tf->tf_pc, esr, eclass);
+		uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
 		aarch64_el2_vmexit_trap(tf);
 	}
 
@@ -275,21 +275,21 @@ el2sync_el1(struct trapframe *tf)
 void
 el2irq_el1(struct trapframe *tf)
 {
-	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
+	uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
 	aarch64_el2_vmexit_irq(tf);
 }
 
 void
 el2fiq_el1(struct trapframe *tf)
 {
-	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
+	uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
 	aarch64_el2_vmexit_irq(tf);
 }
 
 void
 el2error_el1(struct trapframe *tf)
 {
-	uartprintf("%s: PC=%016x ESR=0x%08x\n", __func__, tf->tf_pc, tf->tf_esr);
+	uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
 	aarch64_el2_vmexit_trap(tf);
 }
 
@@ -301,14 +301,14 @@ void									\
 trapfunc(struct trapframe *tf)						\
 {									\
 	uint64_t vpc = tf->tf_pc + kern_vtopdiff;			\
-	uartprintf("EL2 trap: %s: PC=%016x (->va %016x) ESR=0x%08x\n",	\
+	uartprintf("EL2 trap: %s: PC=%016"PRIx64" (->va %016"PRIx64")"	\
+	    " ESR=0x%08"PRIx64"\n",					\
 	    __func__, tf->tf_pc, vpc, tf->tf_esr);			\
-	uartprintf("tpidr_el2: %016x\n", reg_tpidr_el2_read());		\
+	uartprintf("tpidr_el2: %016"PRIx64"\n", reg_tpidr_el2_read());	\
 	dump_el2_trapframe(tf);						\
 	for (;;)							\
 		asm("wfi");						\
 }
-
 
 bad_trap_el2(el2sync_el2t)
 bad_trap_el2(el2irq_el2t)

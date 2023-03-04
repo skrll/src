@@ -45,7 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <aarch64/cpufunc.h>
 
-int uartprintf(const char * restrict, ...);
+int uartprintf(const char * restrict, ...) __printflike(1, 2);
 void dump_el2_trapframe(struct trapframe *tf);
 void aarch64_el2_mmu_enable(void);
 void aarch64_el2_init(struct trapframe *);
@@ -249,8 +249,8 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 {
 	struct aarch64_cpudata *cpudata_pa;
 	struct nvmm_aarch64_exit *exit_pa;
-	const uint32_t esr = tf->tf_esr;
-	const uint32_t eclass = __SHIFTOUT(esr, ESR_EC);
+	const uint64_t esr = tf->tf_esr;
+	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
 	uint32_t rw;
 	vm_prot_t ftype;
 
