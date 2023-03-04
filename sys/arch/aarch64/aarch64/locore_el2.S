@@ -143,20 +143,22 @@ no_el2_host_mode:
 2:
 
 	/*
-	 * Set the current sp (=SP_EL2) to SP_EL1,
-	 * and set a new area as SP_EL2 if needed.
+	 * Set the current sp (=SP_EL2) to SP_EL1.
 	 */
 	mov	x0, sp
 	msr	sp_el1, x0
 #if NNVMM > 0
 	/*
-	 * set stackpointer for EL2.
+	 * Set new stackpointer for EL2 trap handlers.
 	 * sp = sp_el2 = &el2stack_bottom - cpuindex * PAGE_SIZE;
 	 */
 	mov	x1, #PAGE_SIZE
 	mul	x1, x1, x27
 	adrl	x0, el2stack_bottom
 	add	sp, x0, x1
+
+	/* set current VMID zero */
+	msr	vttbr_el2, xzr
 
 	/* NVVMM uses tpidr_el2 as vm identifier. In host, tpidr_el2 is 0. */
 	msr	tpidr_el2, xzr
