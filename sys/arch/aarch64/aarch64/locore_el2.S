@@ -157,6 +157,9 @@ no_el2_host_mode:
 	mul	x1, x1, x27
 	adrl	x0, el2stack_bottom
 	add	sp, x0, x1
+
+	/* NVVMM uses tpidr_el2 as vm identifier. In host, tpidr_el2 is 0. */
+	msr	tpidr_el2, xzr
 #endif
 
 	/* Set the address to return to. */
