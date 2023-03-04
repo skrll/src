@@ -306,14 +306,15 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 		}
 	}
 
-	printf("%s:%d: pmap pm=%p, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
-	     __func__, __LINE__,
-	    mach->vm->vm_map.pmap,
-	    pm->pm_st2_startlevel,
-	    mach->vm->vm_map.pmap->pm_st2_table,
-	    mach->vm->vm_map.pmap->pm_st2_table_pa,
-	    pm->pm_st2_concatenate_num);
-
+	if (nvmm_debug) {
+		printf("%s:%d: pmap pm=%p, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
+		     __func__, __LINE__,
+		    mach->vm->vm_map.pmap,
+		    pm->pm_st2_startlevel,
+		    mach->vm->vm_map.pmap->pm_st2_table,
+		    mach->vm->vm_map.pmap->pm_st2_table_pa,
+		    pm->pm_st2_concatenate_num);
+	}
 
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
 	mach->machdata = machdata;

@@ -29,6 +29,9 @@
 #ifndef _NVMM_AARCH64_H_
 #define _NVMM_AARCH64_H_
 
+//XXX: for debug
+extern int nvmm_debug;
+
 /* generic */
 #define NVMM_VCPU_EXIT_NONE		0x0000000000000000ULL
 #define NVMM_VCPU_EXIT_STOPPED		0xfffffffffffffffeULL

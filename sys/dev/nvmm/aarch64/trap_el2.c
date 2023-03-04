@@ -38,6 +38,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <aarch64/frame.h>
 #include <aarch64/machdep.h>
 
+int nvmm_debug;
+
 /*
  * EL2 trap handler.
  *
@@ -245,8 +247,6 @@ el2sync_el1(struct trapframe *tf)
 //	XXXXXXXX: cannot use snprintf() because it is in subr_prf.c
 //	uartprintf("%s: %s: pc=%016"PRIx64" sp=%016"PRIx64" esr=%08"PRIx64"\n", __func__, eclass_trapname(eclass), tf->tf_pc, tf->tf_sp, esr);
 
-//	dump_el2_trapframe(tf);
-
 	if (eclass == ESR_EC_HVC_A64) {
 		if (reg_tpidr_el2_read() == 0) {
 			/* hvc #n from host */
@@ -263,10 +263,12 @@ el2sync_el1(struct trapframe *tf)
 		} else {
 			/* hvc #n from guest */
 			uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
+			dump_el2_trapframe(tf);
 			aarch64_el2_vmexit_trap(tf);
 		}
 	} else {
-		uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
+	if (nvmm_debug >= 2)
+			uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
 		aarch64_el2_vmexit_trap(tf);
 	}
 
@@ -275,14 +277,16 @@ el2sync_el1(struct trapframe *tf)
 void
 el2irq_el1(struct trapframe *tf)
 {
-	uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
+	if (nvmm_debug >= 2)
+		uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
 	aarch64_el2_vmexit_irq(tf);
 }
 
 void
 el2fiq_el1(struct trapframe *tf)
 {
-	uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
+	if (nvmm_debug >= 2)
+		uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
 	aarch64_el2_vmexit_irq(tf);
 }
 

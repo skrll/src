@@ -269,8 +269,6 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		else
 			ftype = (rw == 0) ? VM_PROT_READ : VM_PROT_WRITE;
 
-		/* XXX: distinguish cache op. ftype is incomplete */
-
 		exit_pa->reason = NVMM_VCPU_EXIT_MEMORY;
 		exit_pa->u.mem.gpa = tf->tf_far;
 		exit_pa->u.mem.prot = ftype;
@@ -278,17 +276,15 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 
 	case ESR_EC_INSN_ABT_EL_CUR:
 	case ESR_EC_DATA_ABT_EL_CUR:
+		/* el2sync_el2h() should be called, so it shouldn't come here... */
 		uartprintf("%s: INSN or DATA ABORT occured on EL2?\n", __func__);
-		//panic. never occur data abort on EL2...?
+		exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
+		break;
 	case ESR_EC_UNKNOWN:
 	case ESR_EC_SERROR:
-	case ESR_EC_WFX:
 	case ESR_EC_ILL_STATE:
 	case ESR_EC_BTE_A64:
-	case ESR_EC_SYS_REG:
 	case ESR_EC_SVC_A64:
-	case ESR_EC_HVC_A64:
-	case ESR_EC_SMC_A64:
 	case ESR_EC_PC_ALIGNMENT:
 	case ESR_EC_SP_ALIGNMENT:
 	case ESR_EC_FP_ACCESS:
@@ -300,10 +296,21 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	case ESR_EC_WTCHPNT_EL0:
 	case ESR_EC_WTCHPNT_EL1:
 	case ESR_EC_BKPT_INSN_A64:
+	default:
+		uartprintf("%s:%d: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64") \n",
+		    __func__, __LINE__, tf->tf_pc, esr, eclass);
+		dump_el2_trapframe(tf);
 		exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
-//		exit_pa->u.mem
-//		exit_pa->u.insn
-//		exit_pa->u.inv
+		break;
+	case ESR_EC_SYS_REG:
+		/* system register trap */
+		//XXX: notyet?
+		exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
+		break;
+	case ESR_EC_HVC_A64:
+	case ESR_EC_SMC_A64:
+	case ESR_EC_WFX:
+		exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
 		break;
 	}
 
@@ -322,7 +329,8 @@ aarch64_el2_vmenter(struct trapframe *tf)
 		uartprintf("panic: %s: tpidr_el2 is not zero: %016lx\n", __func__, reg_tpidr_el2_read());
 
 	reg_tpidr_el2_write((register_t)cpudata_pa);
-	uartprintf("VMENTER: PC=%016lx\n", cpudata_pa->guest.sprs[NVMM_AARCH64_SPR_PC]);
+	if (nvmm_debug >= 2)
+		uartprintf("VMENTER: PC=%016lx\n", cpudata_pa->guest.sprs[NVMM_AARCH64_SPR_PC]);
 
 	/* save host state */
 	vcpu_context_save(tf, &cpudata_pa->host);
@@ -330,38 +338,38 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	vcpu_context_load(tf, &cpudata_pa->guest);
 
 	uint64_t hcr = HCR_EL2_RW;	/* 64bit */
-//	hcr |= HCR_EL2_ID;
-//	hcr |= HCR_EL2_CD;
-//	hcr |= HCR_EL2_TRVM;
-//	hcr |= HCR_EL2_HCD;
-//	hcr |= HCR_EL2_TDZ;
-//	hcr |= HCR_EL2_TGE;
-//	hcr |= HCR_EL2_TVM;
-//	hcr |= HCR_EL2_TTLB;
-//	hcr |= HCR_EL2_TPU;
-//	hcr |= HCR_EL2_TPC;
-//	hcr |= HCR_EL2_TSW;
-//	hcr |= HCR_EL2_TACR;
-//	hcr |= HCR_EL2_TIDCP;
-	hcr |= HCR_EL2_TSC;
-//	hcr |= HCR_EL2_TID3;
-//	hcr |= HCR_EL2_TID2;
-//	hcr |= HCR_EL2_TID1;
-//	hcr |= HCR_EL2_TID0;
-	hcr |= HCR_EL2_TWE;
-	hcr |= HCR_EL2_TWI;
-//	hcr |= HCR_EL2_DC;
-//	hcr |= HCR_EL2_BSU;
-//	hcr |= HCR_EL2_FB;
-//	hcr |= HCR_EL2_VSE;
-//	hcr |= HCR_EL2_VI;
-//	hcr |= HCR_EL2_VF;
-	hcr |= HCR_EL2_AMO;
-	hcr |= HCR_EL2_IMO;
-	hcr |= HCR_EL2_FMO;
-//	hcr |= HCR_EL2_PTW;
-//	hcr |= HCR_EL2_SWIO;
-	hcr |= HCR_EL2_VM;
+//	hcr |= HCR_EL2_ID;		/* stage2 IC disable */
+//	hcr |= HCR_EL2_CD;		/* stage2 DC disable */
+//	hcr |= HCR_EL2_TRVM;	/* trap EL1 reads SCTLR_EL1,TTBR0_EL1,TTBR1_EL1,TCR_EL1,ESR_EL1,FAR_EL1,AFSR0_EL1,AFSR1_EL1,MAIR_EL1,AMAIR_EL1,CONTEXTIDR_EL1 */
+//	hcr |= HCR_EL2_HCD;		/* hvc disable (if EL3 is not implemented) */
+//	hcr |= HCR_EL2_TDZ;		/* trap DC ZVA */
+//	hcr |= HCR_EL2_TGE;		/* trap EL0/EL1 general exceptions */
+//	hcr |= HCR_EL2_TVM;		/* trap EL1 writes SCTLR_EL1,TTBR0_EL1,TTBR1_EL1,TCR_EL1,ESR_EL1,FAR_EL1,AFSR0_EL1,AFSR1_EL1,MAIR_EL1,AMAIR_EL1,CONTEXTIDR_EL1 */
+//	hcr |= HCR_EL2_TTLB;	/* trap EL1 TLB op */
+//	hcr |= HCR_EL2_TPU;		/* trap EL0/EL1 cache op: IC IVAU,IC IALLU,IC IALLUIS,DC CVAU */
+//	hcr |= HCR_EL2_TPC;		/* trap EL0/EL1 cache op: DC IVAC,DC CIVAC,DC CVAC */
+//	hcr |= HCR_EL2_TSW;		/* trap EL0/EL1 cache op: DC ISW,DC CSW,DC CISW */
+//	hcr |= HCR_EL2_TACR;	/* trap EL1 accessing ACTLR_EL1 */
+//	hcr |= HCR_EL2_TIDCP;	/* trap IMPLEMENTATION DEFINED system registers */
+	hcr |= HCR_EL2_TSC;		/* trap SMC */
+//	hcr |= HCR_EL2_TID3;	/* trap ID group3 regs: ID_PFR*_EL1,ID_DFR*_EL1,ID_AFR*_EL1,ID_MMFR*_EL1,ID_ISAR*_EL1,MVFR*_EL1,ID_AA64PFR*_EL1,ID_AA64DFR*_EL1,ID_AA64ISAR*_EL1,ID_AA64MMFR*_EL1,ID_AA64AFR*_EL1 */
+//	hcr |= HCR_EL2_TID2;	/* trap ID group2 regs: CTR_EL0,CCSIDR_EL1,CLIDR_EL1,CSSELR_EL1 */
+//	hcr |= HCR_EL2_TID1;	/* trap ID group1 regs: AIDR_EL1,REVIDR_EL1 */
+//	hcr |= HCR_EL2_TID0;	/* trap ID group0 regs: none (aarch32:FPSID,JIDR) */
+	hcr |= HCR_EL2_TWE;		/* trap WFE */
+	hcr |= HCR_EL2_TWI;		/* trap WFI */
+//	hcr |= HCR_EL2_DC;		/* default cacheable */
+//	hcr |= HCR_EL2_BSU;		/* barrier shareability upgrade */
+//	hcr |= HCR_EL2_FB;		/* force broadcast TLBI VMALLE1,TLBI VAE1,TLBI ASIDE1,TLBI VAAE1,TLBI VALE1,TLBI VAALE1,IC IALLU */
+//	hcr |= HCR_EL2_VSE;		/* Virtual SError/AsyncAbort */
+//	hcr |= HCR_EL2_VI;		/* Virtual IRQ */
+//	hcr |= HCR_EL2_VF;		/* Virtual FIQ */
+	hcr |= HCR_EL2_AMO;		/* trap SError/AsyncAbort */
+	hcr |= HCR_EL2_IMO;		/* trap Physical IRQ */
+	hcr |= HCR_EL2_FMO;		/* trap Physical FIQ */
+//	hcr |= HCR_EL2_PTW;		/* Protect table walk */
+//	hcr |= HCR_EL2_SWIO;	/* override DC ISW to DC CISW */
+	hcr |= HCR_EL2_VM;		/* enable Stage2 translation */
 
 	reg_vttbr_el2_write(cpudata_pa->vttbr_el2);
 	reg_hstr_el2_write(0xffff);

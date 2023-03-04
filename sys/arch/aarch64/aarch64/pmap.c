@@ -1972,12 +1972,17 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 
 #if 1 /* XXXXXXXXXXXXXXXXXXXX DEBUG */
 	if (pm->pm_stage2) {
-		printf("pmap_enter stage2: va=%016lx, pa=%016lx, prot=%08x, flags=%08x\n",
-		    va, pa, prot, flags);
+		extern int nvmm_debug;
+		if (nvmm_debug) {
+			printf("pmap_enter stage2: IPA(va)=%016lx, PA=%016lx, prot=%08x(%c%c%c), flags=%08x\n",
+			    va, pa, prot,
+			    (prot & VM_PROT_READ) ? 'R' : '-',
+			    (prot & VM_PROT_WRITE) ? 'W' : '-',
+			    (prot & VM_PROT_EXECUTE) ? 'X' : '-',
+			    flags);
+		}
 	}
 #endif
-
-
 
 
 #ifdef PMAPCOUNTERS
