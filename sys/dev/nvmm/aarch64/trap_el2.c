@@ -59,7 +59,7 @@ void aarch64_el2_vmexit(struct trapframe *tf);
 void aarch64_el2_vmexit_irq(struct trapframe *tf);
 
 char *uartputs(const char *);
-int uartprintf(const char * restrict, ...);
+int uartprintf(const char * restrict, ...);	// __printflike(1, 2));
 
 /*
  * uartprintf() is a simple printf() for debugging that depends only on
@@ -248,16 +248,22 @@ el2sync_el1(struct trapframe *tf)
 //	dump_el2_trapframe(tf);
 
 	if (eclass == ESR_EC_HVC_A64) {
-		/* hvc #n */
-		switch (tf->tf_esr & 0xffff) {
-		case 0:
-			aarch64_el2_init(tf);
-			break;
-		case 1:
-			aarch64_el2_vmenter(tf);
-			break;
-		default:
-			break;
+		if (reg_tpidr_el2_read() == 0) {
+			/* hvc #n from host */
+			switch (tf->tf_esr & 0xffff) {
+			case 0:
+				aarch64_el2_init(tf);
+				break;
+			case 1:
+				aarch64_el2_vmenter(tf);
+				break;
+			default:
+				break;
+			}
+		} else {
+			/* hvc #n from guest */
+			uartprintf("%s: PC=%016x ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, tf->tf_pc, esr, eclass);
+			aarch64_el2_vmexit(tf);
 		}
 	} else {
 		uartprintf("%s: PC=%016x ESR_EL2=0x%08x (eclass=0x%x)\n", __func__, tf->tf_pc, esr, eclass);
@@ -287,13 +293,18 @@ el2error_el1(struct trapframe *tf)
 	aarch64_el2_vmexit(tf);
 }
 
+extern u_long kern_vtopdiff;
+
 #define bad_trap_el2(trapfunc)						\
 void trapfunc(struct trapframe *);					\
 void									\
 trapfunc(struct trapframe *tf)						\
 {									\
-	uartprintf("unsupported trap: %s: PC=%016x ESR=0x%08x\n",	\
-	    __func__, tf->tf_pc, tf->tf_esr);				\
+	uint64_t vpc = tf->tf_pc + kern_vtopdiff;			\
+	uartprintf("EL2 trap: %s: PC=%016x (->va %016x) ESR=0x%08x\n",	\
+	    __func__, tf->tf_pc, vpc, tf->tf_esr);			\
+	uartprintf("tpidr_el2: %016x\n", reg_tpidr_el2_read());		\
+	dump_el2_trapframe(tf);						\
 	for (;;)							\
 		asm("wfi");						\
 }
