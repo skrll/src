@@ -47,22 +47,37 @@ extern int nvmm_debug;
 
 
 struct nvmm_aarch64_exit_memory {
-	int prot;
+	uint64_t esr;
 	gpaddr_t gpa;
+	uint32_t insn;
+	int prot;
+};
+
+struct nvmm_aarch64_exit_mrs {
+	uint64_t esr;
+	uint32_t insn;
+};
+
+struct nvmm_aarch64_exit_msr {
+	uint64_t esr;
+	uint32_t insn;
 };
 
 struct nvmm_aarch64_exit_insn {
-	uint64_t npc;
+	uint64_t esr;
+	uint32_t insn;
 };
 
 struct nvmm_aarch64_exit_invalid {
-	uint64_t hwcode;
+	uint64_t esr;
 };
 
 struct nvmm_aarch64_exit {
 	uint64_t reason;
 	union {
 		struct nvmm_aarch64_exit_memory mem;
+		struct nvmm_aarch64_exit_mrs mrs;
+		struct nvmm_aarch64_exit_mrs msr;
 		struct nvmm_aarch64_exit_insn insn;
 		struct nvmm_aarch64_exit_invalid inv;
 	} u;

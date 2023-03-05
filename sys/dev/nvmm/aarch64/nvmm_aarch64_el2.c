@@ -43,6 +43,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/nvmm/nvmm_internal.h>
 #include <dev/nvmm/aarch64/nvmm_aarch64.h>
 
+#include <arm/cpufunc.h>
+
 #include <aarch64/cpufunc.h>
 
 int uartprintf(const char * restrict, ...) __printflike(1, 2);
@@ -244,6 +246,13 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
 	reg_tpidr_el2_write(0);
 }
 
+static inline paddr_t
+pa_hpfar_far(vaddr_t hpfar, vaddr_t far)
+{
+	return ((__SHIFTOUT(hpfar, HPFAR_EL2_FIPA) << HPFAR_EL2_FIPA_BITSHIFT) &
+	    ~PAGE_MASK) | (far & PAGE_MASK);
+}
+
 void
 aarch64_el2_vmexit_trap(struct trapframe *tf)
 {
@@ -251,27 +260,68 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	struct nvmm_aarch64_exit *exit_pa;
 	const uint64_t esr = tf->tf_esr;
 	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
-	uint32_t rw;
 	vm_prot_t ftype;
-
-	rw = __SHIFTOUT(esr, ESR_ISS_DATAABORT_WnR); /* 0 if IFSC */
 
 	cpudata_pa = (struct aarch64_cpudata *)reg_tpidr_el2_read();
 	exit_pa = (struct nvmm_aarch64_exit *)cpudata_pa->exit_pa;
 
 	switch (eclass) {
 	case ESR_EC_INSN_ABT_EL_LOW:
+		/*
+		 * Abort on instruction fetch.
+		 * this requires PROT_EXEC and implicit PROT_READ.
+		 */
+		ftype = VM_PROT_READ | VM_PROT_EXECUTE;
+		exit_pa->reason = NVMM_VCPU_EXIT_MEMORY;
+		exit_pa->u.mem.esr = tf->tf_esr;
+		exit_pa->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
+		exit_pa->u.mem.prot = ftype;
+		exit_pa->u.mem.insn = 0;
+		break;
 	case ESR_EC_DATA_ABT_EL_LOW:
-		if (eclass == ESR_EC_INSN_ABT_EL_LOW)
-			ftype = VM_PROT_EXECUTE;
-		else if (__SHIFTOUT(esr, ESR_ISS_DATAABORT_CM))
+		/* Abort on data load or store */
+		if (__SHIFTOUT(esr, ESR_ISS_DATAABORT_CM)) {
 			ftype = VM_PROT_READ;
-		else
+		} else {
+			uint64_t rw = __SHIFTOUT(esr, ESR_ISS_DATAABORT_WnR);
 			ftype = (rw == 0) ? VM_PROT_READ : VM_PROT_WRITE;
+		}
 
 		exit_pa->reason = NVMM_VCPU_EXIT_MEMORY;
-		exit_pa->u.mem.gpa = tf->tf_far;
+		exit_pa->u.mem.esr = tf->tf_esr;
+		exit_pa->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
 		exit_pa->u.mem.prot = ftype;
+		exit_pa->u.mem.insn = 0;
+
+		/* read instruction at $PC */
+		uint64_t va = tf->tf_pc;
+		unsigned int el =
+		    (__SHIFTOUT(tf->tf_spsr, SPSR_M) == SPSR_M_EL0T) ? 0 : 1;
+		if (el == 0)
+			reg_s12e0r_write(va);
+		else
+			reg_s12e1r_write(va);
+		isb();
+		uint64_t par = reg_par_el1_read();
+		if ((par & PAR_F) == 0) {
+			uint32_t *pa = (uint32_t *)
+			    ((par & PAR_PA) + (va & PAR_PA_LOWMASK));
+			exit_pa->u.mem.insn = *pa;
+
+			if (nvmm_debug >= 2) {
+				uartprintf("%s: EL%d data abort: pc=%016lx(%p) %s %016lx: insn=%08x\n",
+				    __func__, el, tf->tf_pc, pa,
+				    (ftype == VM_PROT_READ) ? "read" : "write",
+				    tf->tf_far, exit_pa->u.mem.insn);
+			}
+		} else {
+			if (nvmm_debug >= 2) {
+				uartprintf("%s: EL%d data abort: pc=%016lx %s %016lx: cannot translate. PAR_EL1=%016lx\n",
+				    __func__, el, tf->tf_pc,
+				    (ftype == VM_PROT_READ) ? "read" : "write",
+				    tf->tf_far, par);
+			}
+		}
 		break;
 
 	case ESR_EC_INSN_ABT_EL_CUR:
