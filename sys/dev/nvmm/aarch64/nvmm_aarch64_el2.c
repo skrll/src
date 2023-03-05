@@ -265,6 +265,9 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	cpudata_pa = (struct aarch64_cpudata *)reg_tpidr_el2_read();
 	exit_pa = (struct nvmm_aarch64_exit *)cpudata_pa->exit_pa;
 
+	exit_pa->esr = esr;
+	exit_pa->insn = 0;
+
 	switch (eclass) {
 	case ESR_EC_INSN_ABT_EL_LOW:
 		/*
@@ -273,10 +276,8 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		 */
 		ftype = VM_PROT_READ | VM_PROT_EXECUTE;
 		exit_pa->reason = NVMM_VCPU_EXIT_MEMORY;
-		exit_pa->u.mem.esr = tf->tf_esr;
 		exit_pa->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
 		exit_pa->u.mem.prot = ftype;
-		exit_pa->u.mem.insn = 0;
 		break;
 	case ESR_EC_DATA_ABT_EL_LOW:
 		/* Abort on data load or store */
@@ -286,44 +287,10 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 			uint64_t rw = __SHIFTOUT(esr, ESR_ISS_DATAABORT_WnR);
 			ftype = (rw == 0) ? VM_PROT_READ : VM_PROT_WRITE;
 		}
-
 		exit_pa->reason = NVMM_VCPU_EXIT_MEMORY;
-		exit_pa->u.mem.esr = tf->tf_esr;
 		exit_pa->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
 		exit_pa->u.mem.prot = ftype;
-		exit_pa->u.mem.insn = 0;
-
-		/* read instruction at $PC */
-		uint64_t va = tf->tf_pc;
-		unsigned int el =
-		    (__SHIFTOUT(tf->tf_spsr, SPSR_M) == SPSR_M_EL0T) ? 0 : 1;
-		if (el == 0)
-			reg_s12e0r_write(va);
-		else
-			reg_s12e1r_write(va);
-		isb();
-		uint64_t par = reg_par_el1_read();
-		if ((par & PAR_F) == 0) {
-			uint32_t *pa = (uint32_t *)
-			    ((par & PAR_PA) + (va & PAR_PA_LOWMASK));
-			exit_pa->u.mem.insn = *pa;
-
-			if (nvmm_debug >= 2) {
-				uartprintf("%s: EL%d data abort: pc=%016lx(%p) %s %016lx: insn=%08x\n",
-				    __func__, el, tf->tf_pc, pa,
-				    (ftype == VM_PROT_READ) ? "read" : "write",
-				    tf->tf_far, exit_pa->u.mem.insn);
-			}
-		} else {
-			if (nvmm_debug >= 2) {
-				uartprintf("%s: EL%d data abort: pc=%016lx %s %016lx: cannot translate. PAR_EL1=%016lx\n",
-				    __func__, el, tf->tf_pc,
-				    (ftype == VM_PROT_READ) ? "read" : "write",
-				    tf->tf_far, par);
-			}
-		}
 		break;
-
 	case ESR_EC_INSN_ABT_EL_CUR:
 	case ESR_EC_DATA_ABT_EL_CUR:
 		/* el2sync_el2h() should be called, so it shouldn't come here... */
@@ -354,14 +321,36 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		break;
 	case ESR_EC_SYS_REG:
 		/* system register trap */
-		//XXX: notyet?
-		exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
+		if (__SHIFTOUT(esr, ESR_ISS_MCRR_DIRECTION) == 0)
+			exit_pa->reason = NVMM_VCPU_EXIT_MSR;
+		else
+			exit_pa->reason = NVMM_VCPU_EXIT_MRS;
 		break;
 	case ESR_EC_HVC_A64:
 	case ESR_EC_SMC_A64:
 	case ESR_EC_WFX:
 		exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
 		break;
+	}
+
+	if (eclass != ESR_EC_INSN_ABT_EL_LOW &&
+	    eclass != ESR_EC_INSN_ABT_EL_CUR) {
+		/*
+		 * read an instruction from PC.
+		 * if instruction abort, it cannot be read.
+		 */
+		uint64_t va = tf->tf_pc;
+		if (__SHIFTOUT(tf->tf_spsr, SPSR_M) == SPSR_M_EL0T)
+			reg_s12e0r_write(va);
+		else
+			reg_s12e1r_write(va);
+		isb();
+		uint64_t par = reg_par_el1_read();
+		if ((par & PAR_F) == 0) {
+			uint32_t *pa = (uint32_t *)
+			    ((par & PAR_PA) + (va & PAR_PA_LOWMASK));
+			exit_pa->insn = *pa;
+		}
 	}
 
 	aarch64_vmexit_context(tf, cpudata_pa);

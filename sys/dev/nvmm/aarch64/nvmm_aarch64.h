@@ -40,47 +40,22 @@ extern int nvmm_debug;
 
 //#define NVMM_VCPU_EXIT_SHUTDOWN		0x0000000000001000ULL
 #define NVMM_VCPU_EXIT_HALTED		0x0000000000001003ULL
-
-//#define NVMM_VCPU_EXIT_MRS		0x0000000000002000ULL
-//#define NVMM_VCPU_EXIT_MSR		0x0000000000002001ULL
-
-
+#define NVMM_VCPU_EXIT_MRS		0x0000000000002000ULL
+#define NVMM_VCPU_EXIT_MSR		0x0000000000002001ULL
 
 struct nvmm_aarch64_exit_memory {
-	uint64_t esr;
 	gpaddr_t gpa;
 	uint32_t insn;
 	int prot;
-};
-
-struct nvmm_aarch64_exit_mrs {
-	uint64_t esr;
-	uint32_t insn;
-};
-
-struct nvmm_aarch64_exit_msr {
-	uint64_t esr;
-	uint32_t insn;
-};
-
-struct nvmm_aarch64_exit_insn {
-	uint64_t esr;
-	uint32_t insn;
-};
-
-struct nvmm_aarch64_exit_invalid {
-	uint64_t esr;
 };
 
 struct nvmm_aarch64_exit {
 	uint64_t reason;
 	union {
 		struct nvmm_aarch64_exit_memory mem;
-		struct nvmm_aarch64_exit_mrs mrs;
-		struct nvmm_aarch64_exit_mrs msr;
-		struct nvmm_aarch64_exit_insn insn;
-		struct nvmm_aarch64_exit_invalid inv;
 	} u;
+	uint32_t insn;
+	uint64_t esr;
 };
 
 struct nvmm_aarch64_event {
