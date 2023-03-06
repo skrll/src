@@ -270,7 +270,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 		concat_tablesize = PAGE_SIZE * pm->pm_st2_concatenate_num;
 #if 1
 		pm->pm_st2_table =
-		    (pd_entry_t *)stage2table_buf[AARCH64_VMID(mach)];
+		    (pd_entry_t *)stage2table_buf[mach->machid];
 		pmap_extract(pmap_kernel(), (vaddr_t)pm->pm_st2_table,
 		    &pm->pm_st2_table_pa);
 #else
