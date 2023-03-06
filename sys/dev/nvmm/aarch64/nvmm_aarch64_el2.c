@@ -349,7 +349,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		if ((par & PAR_F) == 0) {
 			uint32_t *pa = (uint32_t *)
 			    ((par & PAR_PA) + (va & PAR_PA_LOWMASK));
-			exit_pa->insn = *pa;
+			exit_pa->insn = le32toh(*pa);
 		}
 	}
 
