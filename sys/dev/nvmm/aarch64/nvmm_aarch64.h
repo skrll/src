@@ -45,7 +45,6 @@ extern int nvmm_debug;
 
 struct nvmm_aarch64_exit_memory {
 	gpaddr_t gpa;
-	uint32_t insn;
 	int prot;
 };
 
@@ -54,8 +53,8 @@ struct nvmm_aarch64_exit {
 	union {
 		struct nvmm_aarch64_exit_memory mem;
 	} u;
-	uint32_t insn;
 	uint64_t esr;
+	uint32_t insn;
 };
 
 struct nvmm_aarch64_event {
