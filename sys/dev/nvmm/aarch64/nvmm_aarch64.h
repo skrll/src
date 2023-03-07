@@ -57,8 +57,12 @@ struct nvmm_aarch64_exit {
 	uint32_t insn;
 };
 
+#define NVMM_VCPU_EVENT_SERROR	0
+#define NVMM_VCPU_EVENT_IRQ	1
+#define NVMM_VCPU_EVENT_FIQ	2
+
 struct nvmm_aarch64_event {
-	uint64_t ___dummy___;
+	u_int type;
 };
 
 #define NVMM_AARCH64_GPR_X0		0
@@ -169,6 +173,7 @@ struct nvmm_aarch64_state {
 struct aarch64_cpudata {
 	uint64_t vttbr_el2;
 	uint64_t exit_pa;
+	uint64_t comm_pa;
 
 	struct nvmm_aarch64_state host;
 	struct nvmm_aarch64_state guest;

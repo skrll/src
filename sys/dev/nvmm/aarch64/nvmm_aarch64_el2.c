@@ -361,6 +361,7 @@ void
 aarch64_el2_vmenter(struct trapframe *tf)
 {
 	struct aarch64_cpudata *cpudata_pa;
+	struct nvmm_comm_page *comm_pa;
 
 	cpudata_pa = (struct aarch64_cpudata *)tf->tf_reg[0];
 
@@ -409,6 +410,21 @@ aarch64_el2_vmenter(struct trapframe *tf)
 //	hcr |= HCR_EL2_PTW;		/* Protect table walk */
 //	hcr |= HCR_EL2_SWIO;	/* override DC ISW to DC CISW */
 	hcr |= HCR_EL2_VM;		/* enable Stage2 translation */
+
+	if (__predict_false(cpudata_pa->comm_pa != 0)) {
+		comm_pa = (struct nvmm_comm_page *)cpudata_pa->comm_pa;
+		switch (comm_pa->event.type) {
+		case NVMM_VCPU_EVENT_SERROR:
+			hcr |= HCR_EL2_VSE;
+			break;
+		case NVMM_VCPU_EVENT_IRQ:
+			hcr |= HCR_EL2_VI;
+			break;
+		case NVMM_VCPU_EVENT_FIQ:
+			hcr |= HCR_EL2_VF;
+			break;
+		}
+	}
 
 	reg_vttbr_el2_write(cpudata_pa->vttbr_el2);
 	reg_hstr_el2_write(0xffff);

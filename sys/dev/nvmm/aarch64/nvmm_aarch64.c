@@ -453,17 +453,24 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
 	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
 
-	//event commit
-
 	vaddr_t cpudata_va = (vaddr_t)cpudata;
 	vaddr_t exit_va = (vaddr_t)exit;
-	paddr_t cpudata_pa;
-	paddr_t exit_pa;
+	vaddr_t comm_va  = (vaddr_t)vcpu->comm;
+	paddr_t cpudata_pa, exit_pa, comm_pa = 0;
 	if (!pmap_extract(pmap_kernel(), cpudata_va, &cpudata_pa))
 		panic("cannot resolve PA of cpudata");
 	if (!pmap_extract(pmap_kernel(), exit_va, &exit_pa))
 		panic("cannot resolve PA of exit");
 	cpudata->exit_pa = exit_pa;
+
+	/* event commit */
+	if (__predict_false(vcpu->comm->event_commit)) {
+		vcpu->comm->event_commit = false;
+		if (!pmap_extract(pmap_kernel(), comm_va, &comm_pa))
+			panic("cannot resolve PA of comm");
+	}
+	cpudata->comm_pa = comm_pa;
+
 
 	kpreempt_disable();
 
