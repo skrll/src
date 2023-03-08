@@ -45,8 +45,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <arm/cpufunc.h>
 
-#include <aarch64/cpufunc.h>
-
 int uartprintf(const char * restrict, ...) __printflike(1, 2);
 void dump_el2_trapframe(struct trapframe *tf);
 void aarch64_el2_mmu_enable(void);
