@@ -369,14 +369,47 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 	const struct nvmm_aarch64_state *state = &comm->state;
 	struct aarch64_cpudata *cpudata = vcpu->cpudata;
 	uint64_t flags;
+	bool force_override_spsr = false;
 
 	flags = comm->state_wanted;
+
+	/* sanity check */
+	if (flags & NVMM_AARCH64_STATE_SPRS) {
+		switch (__SHIFTOUT(state->sprs[NVMM_AARCH64_SPR_SPSR_EL1], SPSR_M)) {
+		case SPSR_M_EL1H:
+		case SPSR_M_EL1T:
+		case SPSR_M_EL0T:
+			break;
+		case SPSR_M_SYS32:
+		case SPSR_M_UND32:
+		case SPSR_M_ABT32:
+		case SPSR_M_SVC32:
+		case SPSR_M_IRQ32:
+		case SPSR_M_FIQ32:
+		case SPSR_M_USR32:
+			/* XXX: TODO: check if CPU core supports aarch32 */
+			break;
+		default:
+			/* XXX: insufficiency API... */
+			//errno = EINVAL;
+			//return -1;
+			force_override_spsr = true;
+			break;
+		}
+
+		/* XXX: TODO: check if CPU core supports specified endian */
+
+	}
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
 		memcpy(cpudata->guest.gprs, state->gprs, sizeof(state->gprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
 		memcpy(cpudata->guest.sprs, state->sprs, sizeof(state->sprs));
+		if (force_override_spsr) {
+			cpudata->guest.sprs[NVMM_AARCH64_SPR_SPSR_EL1] &= ~SPSR_M;
+			cpudata->guest.sprs[NVMM_AARCH64_SPR_SPSR_EL1] |= SPSR_M_EL1H;
+		}
 	}
 	if (flags & NVMM_AARCH64_STATE_FPRS) {
 		memcpy(cpudata->guest.fprs, state->fprs, sizeof(state->fprs));
