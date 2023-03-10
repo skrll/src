@@ -62,6 +62,9 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.158 2026/05/21 10:07:02 skrll Exp $");
 #include <aarch64/db_machdep.h>
 #include <ddb/db_access.h>
 #endif
+#if NNVMM > 0
+#include <dev/nvmm/nvmm.h>
+#endif
 
 #include <arm/cpufunc.h>
 
@@ -1374,8 +1377,9 @@ _pmap_protect_pv(struct pmap_page *pp, struct pv_entry *pv, vm_prot_t prot)
 
 #if NNVMM > 0
 	if (lxpde_stage2(pte)) {
-//		struct pmap * const pm = pv->pv_pmap;
-//		AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vimd, va);
+		struct pmap * const pm = pv->pv_pmap;
+		nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+		    NVMM_AARCH64_MAINTAIN_OP_TLBI, trunc_page(pv->pv_va));
 	} else
 #endif
 	{
@@ -1490,17 +1494,24 @@ pmap_protect(struct pmap *pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 			if (!executable && (prot & VM_PROT_EXECUTE)) {
 				/* non-exec -> exec */
 				if (!l3pte_readable(pte)) {
-//XXXXXXXXXXXXXXXXXXXXX			PTE_ICACHE_SYNC_PAGE(pte, ptep, pm->pm_st2_vimd, va);
+					atomic_swap_64(ptep, pte | LX_BLKPAG_AF);
+					nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+					    NVMM_AARCH64_MAINTAIN_OP_TLBI |
+					    NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC,
+					    va);
 					atomic_swap_64(ptep, pte);
-//XXXXXXXXXXXXXXXXXXXXX			AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vimd, va);
+					nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+					    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 				} else {
 					atomic_swap_64(ptep, pte);
-//XXXXXXXXXXXXXXXXXXXXX			AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vimd, va);
-//					cpu_icache_sync_range(va, PAGE_SIZE);
+				nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+				    NVMM_AARCH64_MAINTAIN_OP_TLBI |
+				    NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC, va);
 				}
 			} else {
 				atomic_swap_64(ptep, pte);
-//XXXXXXXXXXXXXXXXXXXXX		AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vimd, va);
+				nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+				    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 			}
 		} else
 #endif
@@ -2167,7 +2178,8 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 
 #if NNVMM > 0
 				if (pm->pm_stage2) {
-//					AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vimd, va);
+					nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+					    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 				} else
 #endif
 				{
@@ -2228,21 +2240,26 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 
 #if NNVMM > 0
 	if (pm->pm_stage2) {
-//XXXXXXXXXXXXXXXXXXXXXXXXXXX
 		if (need_sync_icache) {
 			/* non-exec -> exec */
 			if (!l3pte_readable(pte)) {
-//XXXXXXXXXXXXXXXXXXXXX		PTE_ICACHE_SYNC_PAGE(pte, ptep, pm->pm_st2_vimd, va);
+				atomic_swap_64(ptep, pte | LX_BLKPAG_AF);
+				nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+				    NVMM_AARCH64_MAINTAIN_OP_TLBI |
+				    NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC, va);
 				atomic_swap_64(ptep, pte);
-//XXXXXXXXXXXXXXXXXXXXX		AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vimd, va);
+				nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+				    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 			} else {
 				atomic_swap_64(ptep, pte);
-//XXXXXXXXXXXXXXXXXXXXX		AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vimd, va);
-//				cpu_icache_sync_range(va, PAGE_SIZE);
+				nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+				    NVMM_AARCH64_MAINTAIN_OP_TLBI |
+				    NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC, va);
 			}
 		} else {
 			atomic_swap_64(ptep, pte);
-//XXXXXXXXXXXXXXXXXXXXX	AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vimd, va);
+			nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+			    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 		}
 	} else
 #endif
@@ -2363,7 +2380,8 @@ pmap_remove_all(struct pmap *pm)
 
 #if NNVMM > 0
 	if (pm->pm_stage2) {
-//XXXXXXXXXXX	AARCH64_TLBI_BY_VMID(pm->pm_st2_vimd);
+		nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+		    NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL, 0);
 	} else
 #endif
 	aarch64_tlbi_by_asid(PMAP_PAI(pm, cpu_tlb_info(ci))->pai_asid);
@@ -2436,7 +2454,8 @@ _pmap_remove(struct pmap *pm, vaddr_t sva, vaddr_t eva, bool kremove,
 
 #if NNVMM > 0
 		if (pm->pm_stage2) {
-//XXXXXXXXXXXXXXXXXX	AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vmid, va);
+			nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+			    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 		} else
 #endif
 		{
@@ -2510,7 +2529,8 @@ pmap_page_remove(struct pmap_page *pp, vm_prot_t prot)
 
 #if NNVMM > 0
 			if (pm->pm_stage2) {
-//XXXXXXXXXXXXXXXXXXXXXXX	AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vmid, va);
+				nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+				    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 			} else
 #endif
 			{
@@ -2786,7 +2806,8 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 
 #if NNVMM > 0
 	if (pm->pm_stage2) {
-//XXXXXXXXXXX	AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vmid, va);
+		nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+		    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 	} else
 #endif
 	{
@@ -2878,13 +2899,9 @@ pmap_clear_modify(struct vm_page *pg)
 				goto tryagain;
 			}
 
-			/* NVMM XXXXXXXXXXXXXXXXXX */
-			printf("stage2: %s: "
-			    "va=%016lx, ptep=%p, pa=%016lx, RW -> RO", __func__,
-			    va, ptep, l3pte_pa(pte));
-
-//			struct pmap * const pm = pv->pv_pmap;
-//XXXXXXXXXXXXXXXXXXXX	AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vmid, va);
+			struct pmap * const pm = pv->pv_pmap;
+			nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+			    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 
 			UVMHIST_LOG(pmaphist,
 			    "va=%016llx, ptep=%p, pa=%016lx, RW -> RO",
@@ -2988,8 +3005,9 @@ pmap_clear_reference(struct vm_page *pg)
 
 #if NNVMM > 0
 		if (lxpde_stage2(pte)) {
-//			struct pmap * const pm = pv->pv_pmap;
-//XXXXXXXXXXXXXXXXXX	AARCH64_TLBI_BY_VMID_IPA(pm->pm_st2_vmid, va);
+			struct pmap * const pm = pv->pv_pmap;
+			nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+			    NVMM_AARCH64_MAINTAIN_OP_TLBI, va);
 		} else
 #endif
 		{

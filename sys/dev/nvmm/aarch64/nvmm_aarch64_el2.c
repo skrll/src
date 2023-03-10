@@ -161,8 +161,31 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	state->sprs[NVMM_AARCH64_SPR_PC] = tf->tf_pc;
 	state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] = tf->tf_spsr;
 
-	/* XXX: TODO: SP0 and SP1 must be distinguished */
 	memcpy(state->gprs, tf->tf_reg, sizeof(state->gprs));
+
+	/*
+	 * exception
+	 * from       gprs[NVMM_AARCH64_GPR_X31]
+	 * ---------- --------------------------
+	 * EL0T       sp_el0
+	 * EL1T       sp_el0
+	 * EL1H       sp_el1
+	 * SYS32      sp_el1
+	 * UND32      sp_el1
+	 * ABT32      sp_el1
+	 * SVC32      sp_el1
+	 * IRQ32      sp_el1
+	 * FIQ32      sp_el1
+	 * USR32      sp_el0
+	 */
+	state->sprs[NVMM_AARCH64_SPR_SP_EL0] = reg_sp_el0_read();
+	state->sprs[NVMM_AARCH64_SPR_SP_EL1] = reg_sp_el1_read();
+	if (SPSR_USER_P(tf->tf_spsr) ||
+	    __SHIFTOUT(SPSR_M, tf->tf_spsr) == SPSR_M_EL1T) {
+		state->gprs[NVMM_AARCH64_GPR_X31] = state->sprs[NVMM_AARCH64_SPR_SP_EL0];
+	} else {
+		state->gprs[NVMM_AARCH64_GPR_X31] = state->sprs[NVMM_AARCH64_SPR_SP_EL1];
+	}
 
 	state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0] = reg_tpidrro_el0_read();
 	state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0] = reg_tpidr_el0_read();
@@ -178,7 +201,7 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1] = reg_mdscr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_PAR_EL1] = reg_par_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1] = reg_sctlr_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_SP_EL1] = reg_sp_el1_read();
+
 	state->sprs[NVMM_AARCH64_SPR_TCR_EL1] = reg_tcr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1] = reg_tpidr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1] = reg_ttbr0_el1_read();
@@ -192,8 +215,16 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	tf->tf_pc = state->sprs[NVMM_AARCH64_SPR_PC];
 	tf->tf_spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
 
-	/* XXX: TODO: SP0 and SP1 must be distinguished */
 	memcpy(tf->tf_reg, state->gprs, sizeof(state->gprs));
+
+	if (SPSR_USER_P(tf->tf_spsr) ||
+	    __SHIFTOUT(SPSR_M, tf->tf_spsr) == SPSR_M_EL1T) {
+		reg_sp_el0_write(state->gprs[NVMM_AARCH64_GPR_X31]);
+		reg_sp_el1_write(state->sprs[NVMM_AARCH64_SPR_SP_EL1]);
+	} else {
+		reg_sp_el0_write(state->sprs[NVMM_AARCH64_SPR_SP_EL0]);
+		reg_sp_el1_write(state->gprs[NVMM_AARCH64_GPR_X31]);
+	}
 
 	reg_tpidrro_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0]);
 	reg_tpidr_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0]);
@@ -209,7 +240,6 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	reg_mdscr_el1_write(state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1]);
 	reg_par_el1_write(state->sprs[NVMM_AARCH64_SPR_PAR_EL1]);
 	reg_sctlr_el1_write(state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1]);
-	reg_sp_el1_write(state->sprs[NVMM_AARCH64_SPR_SP_EL1]);
 	reg_tcr_el1_write(state->sprs[NVMM_AARCH64_SPR_TCR_EL1]);
 	reg_tpidr_el1_write(state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1]);
 	reg_ttbr0_el1_write(state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1]);
@@ -234,11 +264,9 @@ void
 aarch64_el2_vmexit_irq(struct trapframe *tf)
 {
 	struct aarch64_cpudata *cpudata_pa;
-	struct nvmm_aarch64_exit *exit_pa;
 
 	cpudata_pa = (struct aarch64_cpudata *)reg_tpidr_el2_read();
-	exit_pa = (struct nvmm_aarch64_exit *)cpudata_pa->exit_pa;
-	exit_pa->reason = NVMM_VCPU_EXIT_NONE;
+	cpudata_pa->exit.reason = NVMM_VCPU_EXIT_NONE;
 
 	aarch64_vmexit_context(tf, cpudata_pa);
 	reg_tpidr_el2_write(0);
@@ -255,16 +283,16 @@ void
 aarch64_el2_vmexit_trap(struct trapframe *tf)
 {
 	struct aarch64_cpudata *cpudata_pa;
-	struct nvmm_aarch64_exit *exit_pa;
+	struct nvmm_aarch64_exit *exit;
 	const uint64_t esr = tf->tf_esr;
 	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
 	vm_prot_t ftype;
 
 	cpudata_pa = (struct aarch64_cpudata *)reg_tpidr_el2_read();
-	exit_pa = (struct nvmm_aarch64_exit *)cpudata_pa->exit_pa;
+	exit = &cpudata_pa->exit;	/* exit is PA */
 
-	exit_pa->esr = esr;
-	exit_pa->insn = 0;
+	exit->esr = esr;
+	exit->insn = 0;
 
 	switch (eclass) {
 	case ESR_EC_INSN_ABT_EL_LOW:
@@ -273,9 +301,9 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		 * this requires PROT_EXEC and implicit PROT_READ.
 		 */
 		ftype = VM_PROT_READ | VM_PROT_EXECUTE;
-		exit_pa->reason = NVMM_VCPU_EXIT_MEMORY;
-		exit_pa->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
-		exit_pa->u.mem.prot = ftype;
+		exit->reason = NVMM_VCPU_EXIT_MEMORY;
+		exit->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
+		exit->u.mem.prot = ftype;
 		break;
 	case ESR_EC_DATA_ABT_EL_LOW:
 		/* Abort on data load or store */
@@ -285,15 +313,15 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 			uint64_t rw = __SHIFTOUT(esr, ESR_ISS_DATAABORT_WnR);
 			ftype = (rw == 0) ? VM_PROT_READ : VM_PROT_WRITE;
 		}
-		exit_pa->reason = NVMM_VCPU_EXIT_MEMORY;
-		exit_pa->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
-		exit_pa->u.mem.prot = ftype;
+		exit->reason = NVMM_VCPU_EXIT_MEMORY;
+		exit->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
+		exit->u.mem.prot = ftype;
 		break;
 	case ESR_EC_INSN_ABT_EL_CUR:
 	case ESR_EC_DATA_ABT_EL_CUR:
 		/* el2sync_el2h() should be called, so it shouldn't come here... */
 		uartprintf("%s: INSN or DATA ABORT occured on EL2?\n", __func__);
-		exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
+		exit->reason = NVMM_VCPU_EXIT_HALTED;
 		break;
 	case ESR_EC_UNKNOWN:
 	case ESR_EC_SERROR:
@@ -315,19 +343,19 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		uartprintf("%s:%d: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64") \n",
 		    __func__, __LINE__, tf->tf_pc, esr, eclass);
 		dump_el2_trapframe(tf);
-		exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
+		exit->reason = NVMM_VCPU_EXIT_HALTED;
 		break;
 	case ESR_EC_SYS_REG:
 		/* system register trap */
 		if (__SHIFTOUT(esr, ESR_ISS_MCRR_DIRECTION) == 0)
-			exit_pa->reason = NVMM_VCPU_EXIT_MSR;
+			exit->reason = NVMM_VCPU_EXIT_MSR;
 		else
-			exit_pa->reason = NVMM_VCPU_EXIT_MRS;
+			exit->reason = NVMM_VCPU_EXIT_MRS;
 		break;
 	case ESR_EC_HVC_A64:
 	case ESR_EC_SMC_A64:
 	case ESR_EC_WFX:
-		exit_pa->reason = NVMM_VCPU_EXIT_HALTED;
+		exit->reason = NVMM_VCPU_EXIT_HALTED;
 		break;
 	}
 
@@ -347,7 +375,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		if ((par & PAR_F) == 0) {
 			uint32_t *pa = (uint32_t *)
 			    ((par & PAR_PA) + (va & PAR_PA_LOWMASK));
-			exit_pa->insn = le32toh(*pa);
+			exit->insn = le32toh(*pa);
 		}
 	}
 
@@ -359,7 +387,6 @@ void
 aarch64_el2_vmenter(struct trapframe *tf)
 {
 	struct aarch64_cpudata *cpudata_pa;
-	struct nvmm_comm_page *comm_pa;
 
 	cpudata_pa = (struct aarch64_cpudata *)tf->tf_reg[0];
 
@@ -409,9 +436,9 @@ aarch64_el2_vmenter(struct trapframe *tf)
 //	hcr |= HCR_EL2_SWIO;	/* override DC ISW to DC CISW */
 	hcr |= HCR_EL2_VM;		/* enable Stage2 translation */
 
-	if (__predict_false(cpudata_pa->comm_pa != 0)) {
-		comm_pa = (struct nvmm_comm_page *)cpudata_pa->comm_pa;
-		switch (comm_pa->event.type) {
+
+	if (__predict_false(cpudata_pa->send_event_type != 0)) {
+		switch (cpudata_pa->send_event_type) {
 		case NVMM_VCPU_EVENT_SERROR:
 			hcr |= HCR_EL2_VSE;
 			break;
@@ -423,6 +450,7 @@ aarch64_el2_vmenter(struct trapframe *tf)
 			break;
 		}
 	}
+
 
 	reg_vttbr_el2_write(cpudata_pa->vttbr_el2);
 	reg_hstr_el2_write(0xffff);

@@ -71,15 +71,15 @@ ENTRY_NBTI(hyp_vectors)
 	VECT_HALT	/* FIQ EL2h */
 	VECT_HALT	/* Error EL2h */
 
-	VECT_HALT	/* Synchronous 64-bit EL1 */
-	VECT_HALT	/* IRQ 64-bit EL1 */
-	VECT_HALT	/* FIQ 64-bit EL1 */
-	VECT_HALT	/* Error 64-bit EL1 */
+	VECT_HALT	/* Synchronous 64-bit EL0/EL1 */
+	VECT_HALT	/* IRQ 64-bit EL0/EL1 */
+	VECT_HALT	/* FIQ 64-bit EL0/EL1 */
+	VECT_HALT	/* Error 64-bit EL0/EL1 */
 
-	VECT_HALT	/* Synchronous 32-bit EL1 */
-	VECT_HALT	/* IRQ 32-bit EL1 */
-	VECT_HALT	/* FIQ 32-bit EL1 */
-	VECT_HALT	/* Error 32-bit EL1 */
+	VECT_HALT	/* Synchronous 32-bit EL0/EL1 */
+	VECT_HALT	/* IRQ 32-bit EL0/EL1 */
+	VECT_HALT	/* FIQ 32-bit EL0/EL1 */
+	VECT_HALT	/* Error 32-bit EL0/EL1 */
 END(hyp_vectors)
 
 #else /* NNVMM == 0 */
@@ -103,24 +103,30 @@ END(hyp_vectors)
 	stp	x26, x27, [sp, #TF_X26]
 	stp	x28, x29, [sp, #TF_X28]
 
-	CTASSERT_CONTIGUOUS(TF_X30, TF_SP)
-	.if \el == 1
-	mrs	x20, sp_el1
-	.else
-	/* sp was already growed, so adjust x20 back */
-	add	x20, sp, #TF_SIZE
-	.endif
-	stp	x30, x20, [sp, #TF_X30]
-
 	CTASSERT_CONTIGUOUS(TF_PC, TF_SPSR)
 	mrs	x21, elr_el2
 	mrs	x22, spsr_el2
 	stp	x21, x22, [sp, #TF_PC]
+	/* x22 = spsr */
+
+.if \el == 2
+	/* sp was already growed, x8 = sp + TF_SIZE = original sp */
+	add	x8, sp, #TF_SIZE
+.else
+	/*
+	 * from EL0/EL1, tf_sp is not stored.
+	 * entity of SP(x31) is SP_EL0 or SP_EL1 depending on the mode.
+	 */
+	mov	x8, xzr
+.endif
+	CTASSERT_CONTIGUOUS(TF_X30, TF_SP)
+	stp	x30, x8, [sp, #TF_X30]
 
 	CTASSERT_CONTIGUOUS(TF_ESR, TF_FAR)
 	mrs	x23, esr_el2
 	mrs	x24, far_el2
 	stp	x23, x24, [sp, #TF_ESR]
+
 	adr	x30, el2trap_el\el\()_exit	/* return address */
 	mov	x0, sp				/* argument = tf */
 	b	\func
@@ -129,7 +135,7 @@ END(hyp_vectors)
 
 	.balign 2048
 ENTRY_NBTI(hyp_vectors)
-	/* from EL2 with sp0 */
+	/* from EL2 with sp_el0 */
 	vector_entry	el2sync_el2t, 2
 	vector_entry	el2irq_el2t, 2
 	vector_entry	el2fiq_el2t, 2
@@ -141,13 +147,13 @@ ENTRY_NBTI(hyp_vectors)
 	vector_entry	el2fiq_el2h, 2
 	vector_entry	el2error_el2h, 2
 
-	/* from 64bit EL1 */
+	/* from 64bit EL0/EL1 */
 	vector_entry	el2sync_el1, 1
 	vector_entry	el2irq_el1, 1
 	vector_entry	el2fiq_el1, 1
 	vector_entry	el2error_el1, 1
 
-	/* from 32bit EL1 */
+	/* from 32bit EL0/EL1 */
 	vector_entry	el2sync32_el1, 1
 	vector_entry	el2irq32_el1, 1
 	vector_entry	el2fiq32_el1, 1
@@ -204,23 +210,21 @@ ENTRY_NP(el2trap_el1_exit)
 	ldp	x26, x27, [sp, #TF_X26]
 	ldp	x28, x29, [sp, #TF_X28]
 
-	CTASSERT_CONTIGUOUS(TF_X30, TF_SP)
-	ldp	x30, x0, [sp, #TF_X30]
-	msr	sp_el1, x0
-
 	CTASSERT_CONTIGUOUS(TF_PC, TF_SPSR)
 	ldp	x0, x1, [sp, #TF_PC]
 	msr	elr_el2, x0
 	msr	spsr_el2, x1
+	/* x1 = spsr */
 
-	CTASSERT_CONTIGUOUS(TF_ESR, TF_FAR)
-	ldp	x0, x1, [sp, #TF_ESR]
-	msr	esr_el2, x0
-	msr	far_el2, x1
+	/*
+	 * SP(x31) is not restored here. its entity is sp_el0 or sp_el1.
+	 */
+	ldr	x30, [sp, #TF_X30]
 
 	ldp	x2, x3, [sp, #TF_X2]
 	ldp	x4, x5, [sp, #TF_X4]
 	ldp	x6, x7, [sp, #TF_X6]
+	CTASSERT_CONTIGUOUS(TF_X0, TF_X1)
 	CTASSERT(TF_X0 == 0)
 	ldp	x0, x1, [sp], #TF_SIZE
 	isb

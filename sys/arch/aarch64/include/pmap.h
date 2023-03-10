@@ -297,6 +297,7 @@ struct pmap {
 	bool pm_activated;
 
 	/* for hypervisor */
+	void *pm_nvmm;	/* struct nvmm_machine * */
 	bool pm_stage2;
 	int pm_st2_startlevel;		/* 0,1,2 */
 	int pm_st2_concatenate_num;	/* 1-16 */

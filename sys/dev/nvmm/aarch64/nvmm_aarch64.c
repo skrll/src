@@ -64,29 +64,8 @@ const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 		0	/* x0-x31 are all zero */
 	},
 	.sprs = {
-		[NVMM_AARCH64_SPR_PC]			= 0,
-		[NVMM_AARCH64_SPR_SP_ELx]		= 0,
-		[NVMM_AARCH64_SPR_TPIDRRO_EL0]		= 0,
-		[NVMM_AARCH64_SPR_TPIDR_EL0]		= 0,
-		[NVMM_AARCH64_SPR_AMAIR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_CNTKCTL_EL1]		= 0,
-		[NVMM_AARCH64_SPR_CONTEXTIDR_EL1]	= 0,
-		[NVMM_AARCH64_SPR_CPACR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_CSSELR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_ELR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_ESR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_FAR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_MAIR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_MDSCR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_PAR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_SCTLR_EL1]		= SCTLR_RES1,
-		[NVMM_AARCH64_SPR_SPSR_EL1]		= SPSR_M_EL1H,
-		[NVMM_AARCH64_SPR_SP_EL1]		= 0,
-		[NVMM_AARCH64_SPR_TCR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_TPIDR_EL1]		= 0,
-		[NVMM_AARCH64_SPR_TTBR0_EL1]		= 0,
-		[NVMM_AARCH64_SPR_TTBR1_EL1]		= 0,
-		[NVMM_AARCH64_SPR_VBAR_EL1]		= 0,
+		[NVMM_AARCH64_SPR_SCTLR_EL1]	= SCTLR_RES1,
+		[NVMM_AARCH64_SPR_SPSR_EL1]	= SPSR_M_EL1H,
 	},
 	.fprs = {
 		0
@@ -207,6 +186,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 	/* set aarch64 pmap to stage2 mode */
 	pm = mach->vm->vm_map.pmap;
 	pm->pm_stage2 = true;
+	pm->pm_nvmm = (void *)mach;
 
 	int parange = aarch64_parange();
 	if (parange > 48 || parange <= 30)
@@ -338,10 +318,24 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 {
 	struct aarch64_cpudata *cpudata;
 
+	/*
+	 * XXX: struct aarch64_cpudata is accessed by physical address from EL2,
+	 *      and must fit on a single page.
+	 */
+	KASSERT(sizeof(*cpudata) < PAGE_SIZE);
+
 	cpudata = (struct aarch64_cpudata *)uvm_km_alloc(kernel_map,
-	    roundup(sizeof(*cpudata), PAGE_SIZE), 0,
+	    roundup(sizeof(*cpudata), PAGE_SIZE), PAGE_SIZE,
 	    UVM_KMF_WIRED | UVM_KMF_ZERO);
 	vcpu->cpudata = cpudata;
+
+	cpudata->vttbr_el2 =
+	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
+	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
+
+	if (!pmap_extract(pmap_kernel(), (vaddr_t)cpudata, &cpudata->cpudata_pa))
+		panic("cannot resolve PA of cpudata");
+
 
 	/* Install the RESET state. */
 	memcpy(&vcpu->comm->state, &nvmm_aarch64_reset_state,
@@ -442,44 +436,42 @@ static int
 nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
-	struct nvmm_comm_page *comm = vcpu->comm;
 	struct aarch64_cpudata *cpudata = vcpu->cpudata;
-//	struct aarch64_machdata *machdata = mach->machdata;
 
 	aarch64_vcpu_state_commit(vcpu);
-	comm->state_cached = 0;
-
-	cpudata->vttbr_el2 =
-	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
-	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
-
-	vaddr_t cpudata_va = (vaddr_t)cpudata;
-	vaddr_t exit_va = (vaddr_t)exit;
-	vaddr_t comm_va  = (vaddr_t)vcpu->comm;
-	paddr_t cpudata_pa, exit_pa, comm_pa = 0;
-	if (!pmap_extract(pmap_kernel(), cpudata_va, &cpudata_pa))
-		panic("cannot resolve PA of cpudata");
-	if (!pmap_extract(pmap_kernel(), exit_va, &exit_pa))
-		panic("cannot resolve PA of exit");
-	cpudata->exit_pa = exit_pa;
+	vcpu->comm->state_cached = 0;
 
 	/* event commit */
 	if (__predict_false(vcpu->comm->event_commit)) {
 		vcpu->comm->event_commit = false;
-		if (!pmap_extract(pmap_kernel(), comm_va, &comm_pa))
-			panic("cannot resolve PA of comm");
+		cpudata->send_event_type = vcpu->comm->event.type;
+	} else {
+		cpudata->send_event_type = 0;
 	}
-	cpudata->comm_pa = comm_pa;
 
 
 	kpreempt_disable();
 
 	aarch64_dcache_wb_all();	// XXX: currently, it is unstable without this...
-	aarch64_hvc_vmenter(cpudata_pa);
+	aarch64_hvc_vmenter(cpudata->cpudata_pa);
 
 	kpreempt_enable();
 
+	memcpy(exit, &cpudata->exit, sizeof(*exit));
+
 	return 0;
+}
+
+void
+nvmm_aarch64_maintain_ipa(void *nvmm, uint64_t op, uint64_t addr)
+{
+	if (nvmm_debug) {
+		printf("%s:%d: op=%08lx, addr=%016lx\n", __func__, __LINE__, op, addr);
+	}
+
+//	struct nvmm_machine *mach = (struct nvmm_machine *)nvmm;
+//	xxxxxxxxxxxxxx
+//	aarch64_hvc_maintain_ipa(cpudata_pa, op, addr);
 }
 
 const struct nvmm_impl nvmm_aarch64 = {
