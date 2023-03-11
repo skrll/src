@@ -91,6 +91,10 @@ void aarch64_tlbi_by_va_ll(vaddr_t);		/* all ASID, a VA, lastlevel */
 void aarch64_tlbi_by_asid_va(int, vaddr_t);	/*  an ASID, a VA */
 void aarch64_tlbi_by_asid_va_ll(int, vaddr_t);	/*  an ASID, a VA, lastlevel */
 
+void aarch64_tlbi_by_vmid(void);		/* EL2: current VMID, all EL0/1 VA and stage1 IPA */
+void aarch64_tlbi_by_vmid_ipa(paddr_t);		/* EL2: current VMID, a stage1 IPA */
+void aarch64_tlbi_all_local_el2(void);		/* EL2: all local TLB EL2 VA */
+
 /* misc */
 #define cpu_idnum()			aarch64_cpuid()
 #define cpu_earlydevice_va_p()		aarch64_earlydevice_va_p()
