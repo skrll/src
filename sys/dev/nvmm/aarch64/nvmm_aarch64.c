@@ -57,6 +57,7 @@ struct aarch64_machdata {
 
 void aarch64_hvc_init(paddr_t);
 void aarch64_hvc_vmenter(paddr_t);
+void aarch64_hvc_maintain_ipa(paddr_t, uint64_t, uint64_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
 const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
@@ -140,6 +141,9 @@ nvmm_aarch64_init(void)
 		    memattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
 	}
 
+	/* XXX: no need to flush cache here? EL2 may be cache off... */
+
+
 	/* calll aarch64_hvc_init(ttbr_pa) on all cpus */
 	uint64_t where = xc_broadcast(0, (xcfunc_t)aarch64_hvc_init,
 	    (void *)ttbr_pa, NULL);
@@ -186,7 +190,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 	/* set aarch64 pmap to stage2 mode */
 	pm = mach->vm->vm_map.pmap;
 	pm->pm_stage2 = true;
-	pm->pm_nvmm = (void *)mach;
+	pm->pm_nvmm = mach;
 
 	int parange = aarch64_parange();
 	if (parange > 48 || parange <= 30)
@@ -303,6 +307,11 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 static void
 nvmm_aarch64_machine_destroy(struct nvmm_machine *mach)
 {
+	struct pmap *pm;
+
+	pm = mach->vm->vm_map.pmap;
+	pm->pm_nvmm = NULL;
+
 	kmem_free(mach->machdata, sizeof(struct aarch64_machdata));
 }
 
@@ -496,15 +505,23 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 }
 
 void
-nvmm_aarch64_maintain_ipa(void *nvmm, uint64_t op, uint64_t addr)
+nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t addr)
 {
-	if (nvmm_debug) {
-		printf("%s:%d: op=%08lx, addr=%016lx\n", __func__, __LINE__, op, addr);
+	if (nvmm_mach == NULL)
+		return;
+
+	struct nvmm_machine *mach = nvmm_mach;
+	struct nvmm_cpu *vcpu = &mach->cpus[0];
+	if (vcpu != NULL) {
+		struct aarch64_cpudata *cpudata = vcpu->cpudata;
+
+		if (nvmm_debug) {
+			printf("%s:%d: op=%08lx, addr=%016lx\n", __func__, __LINE__, op, addr);
+		}
+
+		aarch64_hvc_maintain_ipa(cpudata->cpudata_pa, op, addr);
 	}
 
-//	struct nvmm_machine *mach = (struct nvmm_machine *)nvmm;
-//	xxxxxxxxxxxxxx
-//	aarch64_hvc_maintain_ipa(cpudata_pa, op, addr);
 }
 
 const struct nvmm_impl nvmm_aarch64 = {

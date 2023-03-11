@@ -41,7 +41,14 @@ ENTRY_NP(aarch64_hvc_init)
 	ret
 END(aarch64_hvc_init)
 
+/* aarch64_hvc_vmenter(x0:cpudata_pa) */
 ENTRY_NP(aarch64_hvc_vmenter)
 	hvc	#1
+	ret
+END(aarch64_hvc_vmenter)
+
+/* aarch64_hvc_maintain_ipa(x0:cpudata_pa, x1:op, x2:va) */
+ENTRY_NP(aarch64_hvc_maintain_ipa)
+	hvc	#0x100
 	ret
 END(aarch64_hvc_vmenter)

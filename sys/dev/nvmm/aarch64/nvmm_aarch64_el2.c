@@ -45,6 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <arm/cpufunc.h>
 
+//XXXXXXXXX decl
 int uartprintf(const char * restrict, ...) __printflike(1, 2);
 void dump_el2_trapframe(struct trapframe *tf);
 void aarch64_el2_mmu_enable(void);
@@ -52,6 +53,7 @@ void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
 void aarch64_el2_vmexit_trap(struct trapframe *);
 void aarch64_el2_vmexit_irq(struct trapframe *);
+void aarch64_el2_maintain_ipa(struct trapframe *tf);
 
 void
 aarch64_el2_init(struct trapframe *tf)
@@ -457,10 +459,52 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	reg_hcr_el2_write(hcr);
 
 	/* XXX */
-	asm("dsb ishst");
+	asm("dsb ish");
 	asm("ic ialluis");
-	asm("tlbi vmalle1is");
 	asm("tlbi vmalls12e1is");
 	asm("dsb ish");
 	asm("isb");
+}
+
+
+/* do TLB and CACHE operation with vm's VTTBR_EL2 */
+void
+aarch64_el2_maintain_ipa(struct trapframe *tf)
+{
+	struct aarch64_cpudata *cpudata_pa;
+	uint64_t op, ipa;
+
+	/* void aarch64_hvc_maintain_ipa(cpudata_pa, op, addr) */
+	cpudata_pa = (struct aarch64_cpudata *)tf->tf_reg[0];
+	op = tf->tf_reg[1];
+	ipa = tf->tf_reg[2];
+
+	reg_vttbr_el2_write(cpudata_pa->vttbr_el2);
+	reg_hcr_el2_write(HCR_EL2_RW | HCR_EL2_VM);
+	isb();
+
+	if (op & NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL) {
+		if (nvmm_debug >= 2) {
+			uartprintf("%s: TLBI VMID=0x%"PRIx64"/ALL\n",
+			    __func__, __SHIFTOUT(reg_vttbr_el2_read(), VTTBR_VIMD));
+		}
+		aarch64_tlbi_by_vmid();
+	} else if (op & NVMM_AARCH64_MAINTAIN_OP_TLBI) {
+		if (nvmm_debug >= 2) {
+			uartprintf("%s: TLBI VMID=0x%"PRIx64", IPA=%016"PRIx64"\n",
+			    __func__, __SHIFTOUT(reg_vttbr_el2_read(), VTTBR_VIMD), ipa);
+		}
+		aarch64_tlbi_by_vmid_ipa(ipa);
+	}
+
+	if (op & NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC) {
+		/* XXX */
+
+		// We need to do an iCache invalidate on the guest va (far_el2),
+		// However, the guest vCPU is lost to this context.
+	}
+
+	reg_hcr_el2_write(HCR_EL2_RW);
+	reg_vttbr_el2_write(0);
+	isb();
 }

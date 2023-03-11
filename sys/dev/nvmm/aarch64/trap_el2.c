@@ -55,10 +55,12 @@ void el2error_el1(struct trapframe *);
 void dump_el2_trapframe(struct trapframe *tf);
 
 struct nvmm_aarch64_state;
+//XXXXX decl
 void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
 void aarch64_el2_vmexit_trap(struct trapframe *tf);
 void aarch64_el2_vmexit_irq(struct trapframe *tf);
+void aarch64_el2_maintain_ipa(struct trapframe *tf);
 
 char *uartputs(const char *);
 int uartprintf(const char * restrict, ...) __printflike(1, 2);
@@ -256,6 +258,9 @@ el2sync_el1(struct trapframe *tf)
 				break;
 			case 1:
 				aarch64_el2_vmenter(tf);
+				break;
+			case 0x100:
+				aarch64_el2_maintain_ipa(tf);
 				break;
 			default:
 				break;
