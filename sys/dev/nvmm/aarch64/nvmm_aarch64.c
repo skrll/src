@@ -52,12 +52,12 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define AARCH64_VMID(mach)	(mach->machid + 0x77)	/* XXX debug */
 
 struct aarch64_machdata {
-	void *unused1;
+	uint64_t vttbr_el2;
 };
 
 void aarch64_hvc_init(paddr_t);
 void aarch64_hvc_vmenter(paddr_t);
-void aarch64_hvc_maintain_ipa(paddr_t, uint64_t, uint64_t);
+void aarch64_hvc_maintain_ipa(uint64_t, uint64_t, uint64_t, uint64_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
 const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
@@ -310,6 +310,9 @@ nvmm_aarch64_machine_destroy(struct nvmm_machine *mach)
 	struct pmap *pm;
 
 	pm = mach->vm->vm_map.pmap;
+
+	nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+	    NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL, 0, 0);
 	pm->pm_nvmm = NULL;
 
 	kmem_free(mach->machdata, sizeof(struct aarch64_machdata));
@@ -325,6 +328,7 @@ nvmm_aarch64_machine_configure(struct nvmm_machine *mach, uint64_t op,
 static int
 nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 {
+	struct aarch64_machdata *machdata = mach->machdata;
 	struct aarch64_cpudata *cpudata;
 
 	/*
@@ -338,7 +342,7 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    UVM_KMF_WIRED | UVM_KMF_ZERO);
 	vcpu->cpudata = cpudata;
 
-	cpudata->vttbr_el2 =
+	machdata->vttbr_el2 = cpudata->vttbr_el2 =
 	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
 	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
 
@@ -505,23 +509,20 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 }
 
 void
-nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t addr)
+nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t va)
 {
 	if (nvmm_mach == NULL)
 		return;
 
 	struct nvmm_machine *mach = nvmm_mach;
-	struct nvmm_cpu *vcpu = &mach->cpus[0];
-	if (vcpu != NULL) {
-		struct aarch64_cpudata *cpudata = vcpu->cpudata;
+	struct aarch64_machdata *machdata = mach->machdata;
 
+	if (machdata != NULL) {
 		if (nvmm_debug) {
-			printf("%s:%d: op=%08lx, addr=%016lx\n", __func__, __LINE__, op, addr);
+			printf("%s:%d: op=%08lx, ipa=%016lx, va=%016lx\n", __func__, __LINE__, op, ipa, va);
 		}
-
-		aarch64_hvc_maintain_ipa(cpudata->cpudata_pa, op, addr);
+		aarch64_hvc_maintain_ipa(machdata->vttbr_el2, op, ipa, va);
 	}
-
 }
 
 const struct nvmm_impl nvmm_aarch64 = {

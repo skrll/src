@@ -189,9 +189,9 @@ struct nvmm_cap_md {
 #define nvmm_vcpu_event nvmm_aarch64_event
 #define nvmm_vcpu_state nvmm_aarch64_state
 
-void nvmm_aarch64_maintain_ipa(void *, uint64_t, uint64_t);
-#define NVMM_AARCH64_MAINTAIN_OP_TLBI		0x00000001
-#define NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL	0x00000002
-#define NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC	0x00000004
+void nvmm_aarch64_maintain_ipa(void *, uint64_t, uint64_t, uint64_t);
+#define NVMM_AARCH64_MAINTAIN_OP_TLBI		0x00000001	/* none */
+#define NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL	0x00000002	/* ipa */
+#define NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC	0x00000004	/* va */
 
 #endif /* _NVMM_AARCH64_H_ */

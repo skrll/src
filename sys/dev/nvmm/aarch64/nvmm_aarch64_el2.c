@@ -453,33 +453,33 @@ aarch64_el2_vmenter(struct trapframe *tf)
 		}
 	}
 
-
 	reg_vttbr_el2_write(cpudata_pa->vttbr_el2);
 	reg_hstr_el2_write(0xffff);
 	reg_hcr_el2_write(hcr);
 
-	/* XXX */
+	/*
+	 * XXX: Icache invalidation must be implement in
+	 *      aarch64_el2_maintain_ipa().
+	 */
 	asm("dsb ish");
 	asm("ic ialluis");
-	asm("tlbi vmalls12e1is");
 	asm("dsb ish");
 	asm("isb");
 }
-
 
 /* do TLB and CACHE operation with vm's VTTBR_EL2 */
 void
 aarch64_el2_maintain_ipa(struct trapframe *tf)
 {
-	struct aarch64_cpudata *cpudata_pa;
-	uint64_t op, ipa;
+	uint64_t vttbr_el2, op, ipa, va __unused;
 
-	/* void aarch64_hvc_maintain_ipa(cpudata_pa, op, addr) */
-	cpudata_pa = (struct aarch64_cpudata *)tf->tf_reg[0];
+	/* void aarch64_hvc_maintain_ipa(vttbr_el2, op, addr) */
+	vttbr_el2 = tf->tf_reg[0];
 	op = tf->tf_reg[1];
 	ipa = tf->tf_reg[2];
+	va = tf->tf_reg[3];
 
-	reg_vttbr_el2_write(cpudata_pa->vttbr_el2);
+	reg_vttbr_el2_write(vttbr_el2);
 	reg_hcr_el2_write(HCR_EL2_RW | HCR_EL2_VM);
 	isb();
 
@@ -500,8 +500,13 @@ aarch64_el2_maintain_ipa(struct trapframe *tf)
 	if (op & NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC) {
 		/* XXX */
 
-		// We need to do an iCache invalidate on the guest va (far_el2),
-		// However, the guest vCPU is lost to this context.
+		// We need to do invalidate Icache for the guest VA (far_el2),
+		// However, However, the guest vCPU is lost in this context,
+		// so VA is not known...
+		//
+		// In nvme.c:vmm_do_vcpu_run(), from vcpu_run() back with
+		// NVVMM_VCPU_EXIT_MEMORY to uvm_fault(), the VA (not equal IPA)
+		// in this context must be stored somewhere.
 	}
 
 	reg_hcr_el2_write(HCR_EL2_RW);
