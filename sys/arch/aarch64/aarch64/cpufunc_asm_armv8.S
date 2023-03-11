@@ -293,3 +293,44 @@ ENTRY(aarch64_tlbi_by_asid_va_ll)
 	isb
 	ret
 END(aarch64_tlbi_by_asid_va_ll)
+
+
+
+/* EL2: aarch64_tlbi_by_vmid(void) */
+ENTRY(aarch64_tlbi_by_vmid)
+	dsb	ishst
+#ifdef MULTIPROCESSOR
+	tlbi	vmalls12e1is
+#else
+	tlbi	vmalls12e1
+#endif
+	dsb	ish
+	isb
+	ret
+END(aarch64_tlbi_by_vmid)
+
+/* EL2: aarch64_tlbi_by_vmid_ipa(paddr_t) */
+ENTRY(aarch64_tlbi_by_vmid_ipa)
+	dsb	ishst
+#ifdef MULTIPROCESSOR
+	tlbi	ipas2e1is, x0
+#else
+	tlbi	ipas2e1, x0
+#endif
+	dsb	ish
+	isb
+	ret
+END(aarch64_tlbi_by_vmid_ipa)
+
+/* EL2: aarch64_tlbi_all_el2(void) */
+ENTRY(aarch64_tlbi_all_el2)
+	dsb	ishst
+#ifdef MULTIPROCESSOR
+	tlbi	alle2is
+#else
+	tlbi	alle2
+#endif
+	dsb	ish
+	isb
+	ret
+END(aarch64_tlbi_all_el2)
