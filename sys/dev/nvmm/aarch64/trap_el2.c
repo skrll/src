@@ -47,10 +47,10 @@ int nvmm_debug;
  * Keep in mind that the code should not be KVA-dependent.
  */
 
-void el2sync_el1(struct trapframe *);
-void el2irq_el1(struct trapframe *);
-void el2fiq_el1(struct trapframe *);
-void el2error_el1(struct trapframe *);
+void el2sync_el_low(struct trapframe *);
+void el2irq_el_low(struct trapframe *);
+void el2fiq_el_low(struct trapframe *);
+void el2error_el_low(struct trapframe *);
 
 void dump_el2_trapframe(struct trapframe *tf);
 
@@ -241,7 +241,7 @@ dump_el2_trapframe(struct trapframe *tf)
 }
 
 void
-el2sync_el1(struct trapframe *tf)
+el2sync_el_low(struct trapframe *tf)
 {
 	const uint64_t esr = tf->tf_esr;
 	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
@@ -280,7 +280,7 @@ el2sync_el1(struct trapframe *tf)
 }
 
 void
-el2irq_el1(struct trapframe *tf)
+el2irq_el_low(struct trapframe *tf)
 {
 	if (nvmm_debug >= 2)
 		uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
@@ -288,7 +288,7 @@ el2irq_el1(struct trapframe *tf)
 }
 
 void
-el2fiq_el1(struct trapframe *tf)
+el2fiq_el_low(struct trapframe *tf)
 {
 	if (nvmm_debug >= 2)
 		uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
@@ -296,7 +296,7 @@ el2fiq_el1(struct trapframe *tf)
 }
 
 void
-el2error_el1(struct trapframe *tf)
+el2error_el_low(struct trapframe *tf)
 {
 	uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
 	aarch64_el2_vmexit_trap(tf);
@@ -329,7 +329,7 @@ bad_trap_el2(el2irq_el2h)
 bad_trap_el2(el2fiq_el2h)
 bad_trap_el2(el2error_el2h)
 
-bad_trap_el2(el2sync32_el1)
-bad_trap_el2(el2irq32_el1)
-bad_trap_el2(el2fiq32_el1)
-bad_trap_el2(el2error32_el1)
+bad_trap_el2(el2sync32_el_low)
+bad_trap_el2(el2irq32_el_low)
+bad_trap_el2(el2fiq32_el_low)
+bad_trap_el2(el2error32_el_low)

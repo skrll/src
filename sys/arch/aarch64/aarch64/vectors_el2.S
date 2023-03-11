@@ -127,7 +127,11 @@ END(hyp_vectors)
 	mrs	x24, far_el2
 	stp	x23, x24, [sp, #TF_ESR]
 
-	adr	x30, el2trap_el\el\()_exit	/* return address */
+.if \el == 2
+	adr	x30, el2trap_el2_exit		/* return address */
+.else
+	adr	x30, el2trap_el_low_exit	/* return address */
+.endif
 	mov	x0, sp				/* argument = tf */
 	b	\func
 .endm
@@ -148,16 +152,16 @@ ENTRY_NBTI(hyp_vectors)
 	vector_entry	el2error_el2h, 2
 
 	/* from 64bit EL0/EL1 */
-	vector_entry	el2sync_el1, 1
-	vector_entry	el2irq_el1, 1
-	vector_entry	el2fiq_el1, 1
-	vector_entry	el2error_el1, 1
+	vector_entry	el2sync_el_low, 1
+	vector_entry	el2irq_el_low, 1
+	vector_entry	el2fiq_el_low, 1
+	vector_entry	el2error_el_low, 1
 
 	/* from 32bit EL0/EL1 */
-	vector_entry	el2sync32_el1, 1
-	vector_entry	el2irq32_el1, 1
-	vector_entry	el2fiq32_el1, 1
-	vector_entry	el2error32_el1, 1
+	vector_entry	el2sync32_el_low, 1
+	vector_entry	el2irq32_el_low, 1
+	vector_entry	el2fiq32_el_low, 1
+	vector_entry	el2error32_el_low, 1
 
 	.balign 64
 ENTRY_NP(el2trap_el2_exit)
@@ -197,7 +201,7 @@ ENTRY_NP(el2trap_el2_exit)
 END(el2trap_el2_exit)
 
 	.balign 64
-ENTRY_NP(el2trap_el1_exit)
+ENTRY_NP(el2trap_el_low_exit)
 	ldp	x8, x9, [sp, #TF_X8]
 	ldp	x10, x11, [sp, #TF_X10]
 	ldp	x12, x13, [sp, #TF_X12]
@@ -229,6 +233,6 @@ ENTRY_NP(el2trap_el1_exit)
 	ldp	x0, x1, [sp], #TF_SIZE
 	isb
 	ERET
-END(el2trap_el1_exit)
+END(el2trap_el_low_exit)
 
 #endif /* NNVMM == 0 */
