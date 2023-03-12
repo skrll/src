@@ -272,7 +272,7 @@ el2sync_el_low(struct trapframe *tf)
 			aarch64_el2_vmexit_trap(tf);
 		}
 	} else {
-	if (nvmm_debug >= 2)
+		if (nvmm_debug >= 2)
 			uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
 		aarch64_el2_vmexit_trap(tf);
 	}
