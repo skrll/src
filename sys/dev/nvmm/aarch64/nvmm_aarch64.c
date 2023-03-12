@@ -60,6 +60,11 @@ void aarch64_hvc_vmenter(paddr_t);
 void aarch64_hvc_maintain_ipa(uint64_t, uint64_t, uint64_t, uint64_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
+extern int aarch64_el2_initted;	/* nvmm_aarch64_el2.c */
+
+static unsigned int stage2_startlevel;
+static unsigned int stage2_concatenate_num;
+
 const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 	.gprs = {
 		0	/* x0-x31 are all zero */
@@ -97,6 +102,152 @@ nvmm_aarch64_pagealloc(void)
 static void
 nvmm_aarch64_init(void)
 {
+	/*
+	 * calculate VTCR_EL2 setting from ID_AA64MMFR0_EL1.PARange
+	 */
+	struct cpu_info *ci;
+	CPU_INFO_ITERATOR cii;
+	uint64_t mmfr0_parange, parange;
+	uint64_t vtcr_ps, vtcr_options = 0, vtcr_el2;
+
+	/* pick up the smallest PARange among all CPUs */
+	vtcr_ps = ID_AA64MMFR0_EL1_PARANGE;
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		mmfr0_parange = __SHIFTOUT(reg_id_aa64mmfr0_el1_read(),
+		    ID_AA64MMFR0_EL1_PARANGE);
+		if (vtcr_ps > mmfr0_parange)
+			vtcr_ps = mmfr0_parange;
+	}
+#if NVMM_MAX_RAM <= (4 * 1024 * 1024 * 1024)
+	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_4G;
+#elif NVMM_MAX_RAM <= (64 * 1024 * 1024 * 1024)
+	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_64G;
+#elif NVMM_MAX_RAM <= (1 * 1024 * 1024 * 1024 * 1024)
+	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_1T;
+#elif NVMM_MAX_RAM <= (4 * 1024 * 1024 * 1024 * 1024)
+	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_4T;
+#elif NVMM_MAX_RAM <= (16 * 1024 * 1024 * 1024 * 1024)
+	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_16T;
+#elif NVMM_MAX_RAM <= (256 * 1024 * 1024 * 1024 * 1024)
+	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_256T
+#else
+#error Physical addresses of 48bits or more are not supported
+#endif
+	if (vtcr_ps > mmfr0_parange)
+		vtcr_ps = mmfr0_parange;
+
+	switch (vtcr_ps) {
+	case ID_AA64MMFR0_EL1_PARANGE_4G:
+		parange = 32;
+		break;
+	case ID_AA64MMFR0_EL1_PARANGE_64G:
+		parange = 36;
+		break;
+	case ID_AA64MMFR0_EL1_PARANGE_1T:
+		parange = 40;
+		break;
+	case ID_AA64MMFR0_EL1_PARANGE_4T:
+		parange = 42;
+		break;
+	case ID_AA64MMFR0_EL1_PARANGE_16T:
+		parange = 44;
+		break;
+	case ID_AA64MMFR0_EL1_PARANGE_256T:
+	default:
+		vtcr_ps = ID_AA64MMFR0_EL1_PARANGE_256T;
+		parange = 48;
+		break;
+	}
+
+	CTASSERT(PGSHIFT == 12);
+	/*
+	 * 12: bitwidth of page (4Kpage)
+	 *  9: bitwidth of PTE entries per page (4k/sizeof(pte) = 512)
+	 *  4: bitwidth of maximum number of concatenated TTBR (16)
+	 *
+	 * PArange      Initial Concat-
+	 * bit           Lookup enated Ln
+	 * width          Level table num Behaviour
+	 * ------------ ------- --------- ------------------------------------------------
+	 * 30(12+9+9)         2         1                       L2[512] -> L3[512] -> page
+	 * 31(12+9+9+1)       2         2                   L2c[2][512] -> L3[512] -> page
+	 * 32(12+9+9+2)       2         4                   L2c[4][512] -> L3[512] -> page
+	 * 33(12+9+9+3)       2         8                   L2c[8][512] -> L3[512] -> page
+	 * 34(12+9+9+4)       2        16                  L2c[16][512] -> L3[512] -> page
+	 * 35(12+9+9+5)       1         1            L1[32]  -> L2[512] -> L3[512] -> page
+	 * 36(12+9+9+6)       1         1            L1[64]  -> L2[512] -> L3[512] -> page
+	 * 37(12+9+9+7)       1         1            L1[128] -> L2[512] -> L3[512] -> page
+	 * 38(12+9+9+8)       1         1            L1[256] -> L2[512] -> L3[512] -> page
+	 * 39(12+9+9+9)       1         1            L1[512] -> L2[512] -> L3[512] -> page
+	 * 40(12+9+9+9+1)     1         2        L1c[2][512] -> L2[512] -> L3[512] -> page
+	 * 41(12+9+9+9+2)     1         4        L1c[4][512] -> L2[512] -> L3[512] -> page
+	 * 42(12+9+9+9+3)     1         8        L1c[8][512] -> L2[512] -> L3[512] -> page
+	 * 43(12+9+9+9+4)     1        16       L1c[16][512] -> L2[512] -> L3[512] -> page
+	 * 44(12+9+9+9+5)     0         1 L0[32]  -> L1[512] -> L2[512] -> L3[512] -> page
+	 * 45(12+9+9+9+6)     0         1 L0[64]  -> L1[512] -> L2[512] -> L3[512] -> page
+	 * 46(12+9+9+9+7)     0         1 L0[128] -> L1[512] -> L2[512] -> L3[512] -> page
+	 * 47(12+9+9+9+8)     0         1 L0[256] -> L1[512] -> L2[512] -> L3[512] -> page
+	 * 48(12+9+9+9+9)     0         1 L0[512] -> L1[512] -> L2[512] -> L3[512] -> page
+	 *
+	 * L0,L1,L2,L3 are normal Ln table.
+	 * L1c and L2c are concatenated Ln table.
+	 */
+	if (parange <= (12 + 9 + 9 + 4)) {		/* PArange <= 34bit */
+		stage2_startlevel = 2;
+		if (parange >= 12 + 9 + 9)
+			stage2_concatenate_num = 1 << (parange - 12 - 9 - 9);
+		else
+			stage2_concatenate_num = 1;
+	} else if (parange <= (12 + 9 + 9 + 9 + 4)) {	/* PArange <= 43bit */
+		stage2_startlevel = 1;
+		if (parange >= 12 + 9 + 9 + 9)
+			stage2_concatenate_num = 1 << (parange - 12 - 9 - 9 - 9);
+		else
+			stage2_concatenate_num = 1;
+	} else {
+		stage2_startlevel = 0;
+		stage2_concatenate_num = 0;
+	}
+
+#ifdef ARMV81_HAFDBS
+	switch (aarch64_hafdbs_enabled) {
+	case ID_AA64MMFR1_EL1_HAFDBS_NONE:
+		break;
+	case ID_AA64MMFR1_EL1_HAFDBS_A:
+		vtcr_options |= TCR_HA;
+		break;
+	case ID_AA64MMFR1_EL1_HAFDBS_AD:
+		vtcr_options |= (TCR_HD | TCR_HA);
+		break;
+	}
+#endif
+
+#if 0
+	if (__SHIFTOUT(ID_AA64PFR0_EL1_SEL2, reg_id_aa64pfr0_el1_read()) !=
+	    ID_AA64PFR0_EL1_SEL2_NONE) {
+		vtcr_options |= VTCR_EL2_NSA;
+		vtcr_options |= VTCR_EL2_NSW;
+	}
+#endif
+
+	vtcr_el2 =
+	    __BIT(31) |				/* RES1 */
+	    vtcr_options |
+	    __SHIFTIN(vtcr_ps, VTCR_EL2_PS) |
+	    __SHIFTIN(0, VTCR_EL2_TG0) |	/* 4k page */
+#ifdef MULTIPROCESSOR
+	    __SHIFTIN(3, VTCR_EL2_SH0) |	/* Inner Shareable */
+#else
+	    __SHIFTIN(0, VTCR_EL2_SH0) |	/* Non-Shareable */
+#endif
+	    __SHIFTIN(1, VTCR_EL2_ORGN0) |	/* WB WA */
+	    __SHIFTIN(1, VTCR_EL2_IRGN0) |	/* WB WA */
+	    __SHIFTIN(2 - stage2_startlevel, VTCR_EL2_SL0) |
+	    __SHIFTIN(64 - parange, VTCR_EL2_T0SZ);
+
+	printf("%s: VTCR_EL2=%08"PRIx64", vtcr_ps=%"PRIu64", parange=%"PRIu64", stage2_startlevel=%u, stage2_concatenate_num=%u\n",
+	    cpu_name(curcpu()), vtcr_el2, vtcr_ps, parange, stage2_startlevel, stage2_concatenate_num);
+
 	/*
 	 * Enable EL2 MMU via hvc. The entity is in aarch64_el2_init().
 	 * There is a way to do it at the beginning of aarch64/locore_el2,
@@ -143,11 +294,12 @@ nvmm_aarch64_init(void)
 
 	/* XXX: no need to flush cache here? EL2 may be cache off... */
 
-
-	/* calll aarch64_hvc_init(ttbr_pa) on all cpus */
+	/* calll aarch64_hvc_init(ttbr_pa, vtcr_el2) on all cpus */
 	uint64_t where = xc_broadcast(0, (xcfunc_t)aarch64_hvc_init,
-	    (void *)ttbr_pa, NULL);
+	    (void *)ttbr_pa, (void *)vtcr_el2);
 	xc_wait(where);
+
+	aarch64_el2_initted = 1;
 }
 
 static void
@@ -191,60 +343,8 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 	pm = mach->vm->vm_map.pmap;
 	pm->pm_stage2 = true;
 	pm->pm_nvmm = mach;
-
-	int parange = aarch64_parange();
-	if (parange > 48 || parange <= 30)
-		panic("%s: unsupported PA range: %d", __func__, parange);	/* XXX */
-
-	CTASSERT(PGSHIFT == 12);
-	/*
-	 * 12: bitwidth of page (4Kpage)
-	 *  9: bitwidth of PTE entries per page (4k/sizeof(pte) = 512)
-	 *  4: bitwidth of maximum number of concatenated TTBR (16)
-	 *
-	 * PArange      Initial Concatenated 
-	 * bit           Lookup   Ln table   
-	 * width          Level        num Behaviour
-	 * ------------ ------- ---------- ------------------------------------------------------
-	 * 30(12+9+9)         2          1                       L2[512] -> L3[512] -> page
-	 * 31(12+9+9+1)       2          2                   L2c[2][512] -> L3[512] -> page
-	 * 32(12+9+9+2)       2          4                   L2c[4][512] -> L3[512] -> page
-	 * 33(12+9+9+3)       2          8                   L2c[8][512] -> L3[512] -> page
-	 * 34(12+9+9+4)       2         16                  L2c[16][512] -> L3[512] -> page
-	 * 35(12+9+9+5)       1          1            L1[32]  -> L2[512] -> L3[512] -> page
-	 * 36(12+9+9+6)       1          1            L1[64]  -> L2[512] -> L3[512] -> page
-	 * 37(12+9+9+7)       1          1            L1[128] -> L2[512] -> L3[512] -> page
-	 * 38(12+9+9+8)       1          1            L1[256] -> L2[512] -> L3[512] -> page
-	 * 39(12+9+9+9)       1          1            L1[512] -> L2[512] -> L3[512] -> page
-	 * 40(12+9+9+9+1)     1          2        L1c[2][512] -> L2[512] -> L3[512] -> page
-	 * 41(12+9+9+9+2)     1          4        L1c[4][512] -> L2[512] -> L3[512] -> page
-	 * 42(12+9+9+9+3)     1          8        L1c[8][512] -> L2[512] -> L3[512] -> page
-	 * 43(12+9+9+9+4)     1         16       L1c[16][512] -> L2[512] -> L3[512] -> page
-	 * 44(12+9+9+9+5)     0          1 L0[32]  -> L1[512] -> L2[512] -> L3[512] -> page
-	 * 45(12+9+9+9+6)     0          1 L0[64]  -> L1[512] -> L2[512] -> L3[512] -> page
-	 * 46(12+9+9+9+7)     0          1 L0[128] -> L1[512] -> L2[512] -> L3[512] -> page
-	 * 47(12+9+9+9+8)     0          1 L0[256] -> L1[512] -> L2[512] -> L3[512] -> page
-	 * 48(12+9+9+9+9)     0          1 L0[512] -> L1[512] -> L2[512] -> L3[512] -> page
-	 *
-	 * L0,L1,L2,L3 are normal Ln table.
-	 * L1c and L2c are concatenated Ln table.
-	 */
-	if (parange <= (12 + 9 + 9 + 4)) {		/* PArange <= 34bit */
-		pm->pm_st2_startlevel = 2;
-		if (parange >= 12 + 9 + 9)
-			pm->pm_st2_concatenate_num = 1 << (parange - 12 - 9 - 9);
-		else
-			pm->pm_st2_concatenate_num = 1;
-	} else if (parange <= (12 + 9 + 9 + 9 + 4)) {	/* PArange <= 43bit */
-		pm->pm_st2_startlevel = 1;
-		if (parange >= 12 + 9 + 9 + 9)
-			pm->pm_st2_concatenate_num = 1 << (parange - 12 - 9 - 9 - 9);
-		else
-			pm->pm_st2_concatenate_num = 1;
-	} else {
-		pm->pm_st2_startlevel = 0;
-		pm->pm_st2_concatenate_num = 0;
-	}
+	pm->pm_st2_startlevel = stage2_startlevel;
+	pm->pm_st2_concatenate_num = stage2_concatenate_num;
 
 	if (pm->pm_st2_startlevel > 0) {
 		/*
@@ -290,9 +390,10 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 		}
 	}
 
+
 	if (nvmm_debug) {
-		printf("%s:%d: pmap pm=%p, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
-		     __func__, __LINE__,
+		printf("%s:%s:%d: pmap pm=%p, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
+		    cpu_name(curcpu()), __func__, __LINE__,
 		    mach->vm->vm_map.pmap,
 		    pm->pm_st2_startlevel,
 		    mach->vm->vm_map.pmap->pm_st2_table,
@@ -491,10 +592,12 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	if (__predict_false(vcpu->comm->event_commit)) {
 		vcpu->comm->event_commit = false;
 		cpudata->send_event_type = vcpu->comm->event.type;
+		if (nvmm_debug > 0) {
+			printf("%s:%s:%d: send event: %u\n", cpu_name(curcpu()), __func__, __LINE__, vcpu->comm->event.type);
+		}
 	} else {
 		cpudata->send_event_type = 0;
 	}
-
 
 	kpreempt_disable();
 
@@ -519,7 +622,7 @@ nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t v
 
 	if (machdata != NULL) {
 		if (nvmm_debug) {
-			printf("%s:%d: op=%08lx, ipa=%016lx, va=%016lx\n", __func__, __LINE__, op, ipa, va);
+			printf("%s:%s:%d: op=%08lx, ipa=%016lx, va=%016lx\n", cpu_name(curcpu()), __func__, __LINE__, op, ipa, va);
 		}
 		aarch64_hvc_maintain_ipa(machdata->vttbr_el2, op, ipa, va);
 	}

@@ -48,77 +48,25 @@ __KERNEL_RCSID(0, "$NetBSD$");
 //XXXXXXXXX decl
 int uartprintf(const char * restrict, ...) __printflike(1, 2);
 void dump_el2_trapframe(struct trapframe *tf);
-void aarch64_el2_mmu_enable(void);
 void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
 void aarch64_el2_vmexit_trap(struct trapframe *);
 void aarch64_el2_vmexit_irq(struct trapframe *);
 void aarch64_el2_maintain_ipa(struct trapframe *tf);
 
+int aarch64_el2_initted;
+
 void
 aarch64_el2_init(struct trapframe *tf)
 {
-	static int aarch64_el2_initted = 0;
-
 	if (aarch64_el2_initted != 0)
 		return;
-	aarch64_el2_initted = 1;
 
 	/*
-	 * Setup EL0/1 stage2 translate configuration. The activation and
-	 * deactivation of stage2 translation itself is done in VMENTER/VMEXIT.
-	 * But VTCR_EL2 is a fixed value, so it should be set here.
+	 * x1 := VTCR_EL2
+	 * VTCR_EL2 is a fixed value and should be initialized here.
 	 */
-	const uint64_t mmfr0_parange = __SHIFTOUT(reg_id_aa64mmfr0_el1_read(),
-	    ID_AA64MMFR0_EL1_PARANGE);
-	int parange = aarch64_parange();
-	int startlevel = 0;	/* starting level of translation lookup table */
-	uint64_t vtcr_options = 0;
-
-	/*
-	 * 12: bitwidth of page (4Kpage)
-	 *  9: bitwidth of PTE entries per page (4k/sizeof(pte) = 512)
-	 *  4: maximum number of concatenated TTBR (16)
-	 */
-	if (parange <= (12 + 9 + 9 + 4))		/* PArange <= 34bit */
-		startlevel = 2;
-	else if (parange <= (12 + 9 + 9 + 9 + 4))	/* PArange <= 43bit */
-		startlevel = 1;
-	else
-		startlevel = 0;
-
-#ifdef ARMV81_HAFDBS
-	switch (aarch64_hafdbs_enabled) {
-	case ID_AA64MMFR1_EL1_HAFDBS_NONE:
-		break;
-	case ID_AA64MMFR1_EL1_HAFDBS_A:
-		vtcr_options |= TCR_HA;
-		break;
-	case ID_AA64MMFR1_EL1_HAFDBS_AD:
-		vtcr_options |= (TCR_HD | TCR_HA);
-		break;
-	}
-#endif
-	if (__SHIFTOUT(ID_AA64PFR0_EL1_SEL2, reg_id_aa64pfr0_el1_read()) !=
-	    ID_AA64PFR0_EL1_SEL2_NONE) {
-		vtcr_options |= VTCR_EL2_NSA;
-		vtcr_options |= VTCR_EL2_NSW;
-	}
-	reg_vtcr_el2_write(
-	    __BIT(31) |				/* RES1 */
-	    vtcr_options |
-	    __SHIFTIN(mmfr0_parange, VTCR_EL2_PS) |
-	    __SHIFTIN(0, VTCR_EL2_TG0) |	/* 4k page */
-#ifdef MULTIPROCESSOR
-	    __SHIFTIN(3, VTCR_EL2_SH0) |	/* Inner Shareable */
-#else
-	    __SHIFTIN(0, VTCR_EL2_SH0) |	/* Non-Shareable */
-#endif
-	    __SHIFTIN(1, VTCR_EL2_ORGN0) |	/* WB WA */
-	    __SHIFTIN(1, VTCR_EL2_IRGN0) |	/* WB WA */
-	    __SHIFTIN(2 - startlevel, VTCR_EL2_SL0) |
-	    __SHIFTIN(64 - parange, VTCR_EL2_T0SZ)
-	);
+	reg_vtcr_el2_write(tf->tf_reg[1]);
 
 
 	/*
@@ -130,9 +78,13 @@ aarch64_el2_init(struct trapframe *tf)
 	 *
 	 * if the MMU is already enabled, do nothing
 	 */
-	if (reg_sctlr_el2_read() & SCTLR_M)
+	if (reg_sctlr_el2_read() & SCTLR_M) {
+		uartprintf("%s:%d: MMU is already enabled?!\n", __func__, __LINE__);
 		return;
+	}
 
+	uint64_t mmfr0_parange =
+	    __SHIFTOUT(reg_id_aa64mmfr0_el1_read(), ID_AA64MMFR0_EL1_PARANGE);
 #define VIRT_BIT	48
 	/* set TCR_EL2 */
 	uint64_t tcr_el2 =
@@ -152,9 +104,16 @@ aarch64_el2_init(struct trapframe *tf)
 	/* MAIR_EL2 = MAIR_EL1 */
 	reg_mair_el2_write(reg_mair_el1_read());
 
-	/* x0 = L0 table of PA */
+	/* x0 := L0 table of PA */
 	reg_ttbr0_el2_write(tf->tf_reg[0]);
-	aarch64_el2_mmu_enable();
+	isb();
+
+	/* enable Icache, Dcache, MMU! */
+	aarch64_tlbi_all_el2();
+
+	reg_sctlr_el2_write(reg_sctlr_el2_read() |
+	     SCTLR_I | SCTLR_C |SCTLR_M);
+	isb();
 }
 
 static void
@@ -461,8 +420,10 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	 * XXX: Icache invalidation must be implement in
 	 *      aarch64_el2_maintain_ipa().
 	 */
-	asm("dsb ish");
+	asm("dsb ishst");
 	asm("ic ialluis");
+	asm("tlbi vmalle1is");
+	asm("tlbi vmalls12e1is");
 	asm("dsb ish");
 	asm("isb");
 }
