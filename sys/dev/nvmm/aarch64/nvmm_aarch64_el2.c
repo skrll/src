@@ -385,11 +385,13 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	hcr |= HCR_EL2_TWE;		/* trap WFE */
 	hcr |= HCR_EL2_TWI;		/* trap WFI */
 //	hcr |= HCR_EL2_DC;		/* default cacheable */
-//	hcr |= HCR_EL2_BSU;		/* barrier shareability upgrade */
-//	hcr |= HCR_EL2_FB;		/* force broadcast TLBI VMALLE1,TLBI VAE1,TLBI ASIDE1,TLBI VAAE1,TLBI VALE1,TLBI VAALE1,IC IALLU */
-//	hcr |= HCR_EL2_VSE;		/* Virtual SError/AsyncAbort */
-//	hcr |= HCR_EL2_VI;		/* Virtual IRQ */
-//	hcr |= HCR_EL2_VF;		/* Virtual FIQ */
+
+#ifdef MULTIPROCESSOR
+	/* barrier shareability upgrade */
+	hcr |= __SHIFTIN(1, HCR_EL2_BSU);	/* upgrade to inner-shareable */
+	hcr |= HCR_EL2_FB;		/* force broadcast TLBI VMALLE1,TLBI VAE1,TLBI ASIDE1,TLBI VAAE1,TLBI VALE1,TLBI VAALE1,IC IALLU */
+#endif
+
 	hcr |= HCR_EL2_AMO;		/* trap SError/AsyncAbort */
 	hcr |= HCR_EL2_IMO;		/* trap Physical IRQ */
 	hcr |= HCR_EL2_FMO;		/* trap Physical FIQ */
