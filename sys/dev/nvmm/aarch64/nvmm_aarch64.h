@@ -38,7 +38,7 @@ extern int nvmm_debug;
 #define NVMM_VCPU_EXIT_INVALID		0xffffffffffffffffULL
 #define NVMM_VCPU_EXIT_MEMORY		0x0000000000000001ULL
 
-//#define NVMM_VCPU_EXIT_SHUTDOWN		0x0000000000001000ULL
+#define NVMM_VCPU_EXIT_SHUTDOWN		0x0000000000001000ULL
 #define NVMM_VCPU_EXIT_HALTED		0x0000000000001003ULL
 #define NVMM_VCPU_EXIT_MRS		0x0000000000002000ULL
 #define NVMM_VCPU_EXIT_MSR		0x0000000000002001ULL
@@ -48,10 +48,15 @@ struct nvmm_aarch64_exit_memory {
 	int prot;
 };
 
+struct nvmm_aarch64_exit_invalid {
+	uint64_t hwcode;
+};
+
 struct nvmm_aarch64_exit {
 	uint64_t reason;
 	union {
 		struct nvmm_aarch64_exit_memory mem;
+		struct nvmm_aarch64_exit_invalid inv;
 	} u;
 	uint64_t esr;
 	uint32_t insn;
