@@ -160,9 +160,10 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	state->sprs[NVMM_AARCH64_SPR_FAR_EL1] = reg_far_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_MAIR_EL1] = reg_mair_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1] = reg_mdscr_el1_read();
+	state->sprs[NVMM_AARCH64_SPR_MIDR_EL1] = reg_vpidr_el2_read();
+	state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1] = reg_vmpidr_el2_read();
 	state->sprs[NVMM_AARCH64_SPR_PAR_EL1] = reg_par_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1] = reg_sctlr_el1_read();
-
 	state->sprs[NVMM_AARCH64_SPR_TCR_EL1] = reg_tcr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1] = reg_tpidr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1] = reg_ttbr0_el1_read();
@@ -206,6 +207,8 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	reg_ttbr0_el1_write(state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1]);
 	reg_ttbr1_el1_write(state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1]);
 	reg_vbar_el1_write(state->sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
+	reg_vpidr_el2_write(state->sprs[NVMM_AARCH64_SPR_MIDR_EL1]);
+	reg_vmpidr_el2_write(state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1]);
 }
 
 static void

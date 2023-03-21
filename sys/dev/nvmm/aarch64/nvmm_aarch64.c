@@ -454,6 +454,12 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	/* Install the RESET state. */
 	memcpy(&vcpu->comm->state, &nvmm_aarch64_reset_state,
 	    sizeof(vcpu->comm->state));
+
+	/* The default value of MIDR_EL1 is the same as the host */
+	vcpu->comm->state.sprs[NVMM_AARCH64_SPR_MIDR_EL1] = reg_midr_el1_read();
+	vcpu->comm->state.sprs[NVMM_AARCH64_SPR_MPIDR_EL1] =
+	    MPIDR_RES1 | vcpu->cpuid;
+
 	vcpu->comm->state_wanted = NVMM_AARCH64_STATE_ALL;
 	vcpu->comm->state_cached = 0;
 	nvmm_aarch64_vcpu_setstate(vcpu);
