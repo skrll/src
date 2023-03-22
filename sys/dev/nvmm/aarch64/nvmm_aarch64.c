@@ -42,6 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/nvmm/nvmm.h>
 #include <dev/nvmm/nvmm_internal.h>
 #include <dev/nvmm/aarch64/nvmm_aarch64.h>
+#include <dev/nvmm/aarch64/nvmm_aarch64_internal.h>
 
 #include <machine/bootconfig.h>
 
@@ -66,16 +67,12 @@ static unsigned int stage2_startlevel;
 static unsigned int stage2_concatenate_num;
 
 const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
-	.gprs = {
-		0	/* x0-x31 are all zero */
-	},
+	.gprs = {},	/* x0-x31 are all zero */
 	.sprs = {
 		[NVMM_AARCH64_SPR_SCTLR_EL1]	= SCTLR_RES1,
 		[NVMM_AARCH64_SPR_SPSR_EL1]	= SPSR_M_EL1H,
 	},
-	.fprs = {
-		0
-	}
+	.fprs = {},	/* q0-q31 are all zero */
 };
 
 static bool

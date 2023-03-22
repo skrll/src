@@ -36,6 +36,9 @@ RCSID("$NetBSD$")
 	ARMV8_DEFINE_OPTIONS
 	.text
 
+/*
+ * called from EL1
+ */
 ENTRY_NP(aarch64_hvc_init)
 	hvc	#0
 	ret
@@ -52,3 +55,48 @@ ENTRY_NP(aarch64_hvc_maintain_ipa)
 	hvc	#0x100
 	ret
 END(aarch64_hvc_vmenter)
+
+
+/*
+ * called from EL2
+ */
+	.balign	128
+ENTRY_NP(nvmm_aarch64_load_fpregs)
+	ldp	q0, q1, [x0, #(0 * 16)]
+	ldp	q2, q3, [x0, #(2 * 16)]
+	ldp	q4, q5, [x0, #(4 * 16)]
+	ldp	q6, q7, [x0, #(6 * 16)]
+	ldp	q8, q9, [x0, #(8 * 16)]
+	ldp	q10, q11, [x0, #(10 * 16)]
+	ldp	q12, q13, [x0, #(12 * 16)]
+	ldp	q14, q15, [x0, #(14 * 16)]
+	ldp	q16, q17, [x0, #(16 * 16)]
+	ldp	q18, q19, [x0, #(18 * 16)]
+	ldp	q20, q21, [x0, #(20 * 16)]
+	ldp	q22, q23, [x0, #(22 * 16)]
+	ldp	q24, q25, [x0, #(24 * 16)]
+	ldp	q26, q27, [x0, #(26 * 16)]
+	ldp	q28, q29, [x0, #(28 * 16)]
+	ldp	q30, q31, [x0, #(30 * 16)]
+	ret
+END(nvmm_aarch64_load_fpregs)
+
+ENTRY_NP(nvmm_aarch64_save_fpregs)
+	stp	q0, q1, [x0, #(0 * 16)]
+	stp	q2, q3, [x0, #(2 * 16)]
+	stp	q4, q5, [x0, #(4 * 16)]
+	stp	q6, q7, [x0, #(6 * 16)]
+	stp	q8, q9, [x0, #(8 * 16)]
+	stp	q10, q11, [x0, #(10 * 16)]
+	stp	q12, q13, [x0, #(12 * 16)]
+	stp	q14, q15, [x0, #(14 * 16)]
+	stp	q16, q17, [x0, #(16 * 16)]
+	stp	q18, q19, [x0, #(18 * 16)]
+	stp	q20, q21, [x0, #(20 * 16)]
+	stp	q22, q23, [x0, #(22 * 16)]
+	stp	q24, q25, [x0, #(24 * 16)]
+	stp	q26, q27, [x0, #(26 * 16)]
+	stp	q28, q29, [x0, #(28 * 16)]
+	stp	q30, q31, [x0, #(30 * 16)]
+	ret
+END(nvmm_aarch64_save_fpregs)

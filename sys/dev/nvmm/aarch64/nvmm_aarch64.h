@@ -29,6 +29,8 @@
 #ifndef _NVMM_AARCH64_H_
 #define _NVMM_AARCH64_H_
 
+#include <aarch64/reg.h>
+
 //XXX: for debug
 extern int nvmm_debug;
 
@@ -106,8 +108,9 @@ struct nvmm_aarch64_event {
 
 #define NVMM_AARCH64_SPR_PC		0	/* ELR_EL2 */
 #define NVMM_AARCH64_SPR_SPSR_EL1	1
-#define NVMM_AARCH64_SPR_SP_EL0		2	/* X31 or empty depending on $SPSR */
-#define NVMM_AARCH64_SPR_SP_EL1		3	/* X31 or empty depending on $SPSR */
+/* when VMENTER, X31 has priority according to SPSR */
+#define NVMM_AARCH64_SPR_SP_EL0		2
+#define NVMM_AARCH64_SPR_SP_EL1		3
 
 #define NVMM_AARCH64_SPR_AMAIR_EL1	4
 #define NVMM_AARCH64_SPR_CNTKCTL_EL1	5
@@ -117,19 +120,21 @@ struct nvmm_aarch64_event {
 #define NVMM_AARCH64_SPR_ELR_EL1	9
 #define NVMM_AARCH64_SPR_ESR_EL1	10
 #define NVMM_AARCH64_SPR_FAR_EL1	11
-#define NVMM_AARCH64_SPR_MAIR_EL1	12
-#define NVMM_AARCH64_SPR_MDSCR_EL1	13
-#define NVMM_AARCH64_SPR_MIDR_EL1	14	/* VMIDR_EL2 */
-#define NVMM_AARCH64_SPR_MPIDR_EL1	15	/* VMPIDR_EL2 */
-#define NVMM_AARCH64_SPR_PAR_EL1	16
-#define NVMM_AARCH64_SPR_SCTLR_EL1	17
-#define NVMM_AARCH64_SPR_TCR_EL1	18
-#define NVMM_AARCH64_SPR_TPIDRRO_EL0	19
-#define NVMM_AARCH64_SPR_TPIDR_EL0	20
-#define NVMM_AARCH64_SPR_TPIDR_EL1	21
-#define NVMM_AARCH64_SPR_TTBR0_EL1	22
-#define NVMM_AARCH64_SPR_TTBR1_EL1	23
-#define NVMM_AARCH64_SPR_VBAR_EL1	24
+#define NVMM_AARCH64_SPR_FPCR		12
+#define NVMM_AARCH64_SPR_FPSR		13
+#define NVMM_AARCH64_SPR_MAIR_EL1	14
+#define NVMM_AARCH64_SPR_MDSCR_EL1	15
+#define NVMM_AARCH64_SPR_MIDR_EL1	16	/* VMIDR_EL2 */
+#define NVMM_AARCH64_SPR_MPIDR_EL1	17	/* VMPIDR_EL2 */
+#define NVMM_AARCH64_SPR_PAR_EL1	18
+#define NVMM_AARCH64_SPR_SCTLR_EL1	19
+#define NVMM_AARCH64_SPR_TCR_EL1	20
+#define NVMM_AARCH64_SPR_TPIDRRO_EL0	21
+#define NVMM_AARCH64_SPR_TPIDR_EL0	22
+#define NVMM_AARCH64_SPR_TPIDR_EL1	23
+#define NVMM_AARCH64_SPR_TTBR0_EL1	24
+#define NVMM_AARCH64_SPR_TTBR1_EL1	25
+#define NVMM_AARCH64_SPR_VBAR_EL1	26
 #define NVMM_AARCH64_NSPR		64
 
 #define NVMM_AARCH64_FPR_V0		0
@@ -175,18 +180,7 @@ struct nvmm_aarch64_event {
 struct nvmm_aarch64_state {
 	uint64_t gprs[NVMM_AARCH64_NGPR];
 	uint64_t sprs[NVMM_AARCH64_NSPR];
-	__uint128_t fprs[NVMM_AARCH64_NFPR];
-};
-
-//XXX: internal
-struct aarch64_cpudata {
-	uint64_t cpudata_pa;
-	uint64_t vttbr_el2;
-	uint64_t send_event_type;
-
-	struct nvmm_aarch64_exit exit;
-	struct nvmm_aarch64_state host;
-	struct nvmm_aarch64_state guest;
+	union fpelem fprs[NVMM_AARCH64_NFPR];
 };
 
 struct nvmm_cap_md {

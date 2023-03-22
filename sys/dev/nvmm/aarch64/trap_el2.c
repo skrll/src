@@ -38,6 +38,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <aarch64/frame.h>
 #include <aarch64/machdep.h>
 
+#include <dev/nvmm/nvmm.h>
+#include <dev/nvmm/aarch64/nvmm_aarch64_internal.h>
+
 int nvmm_debug;
 
 /*
@@ -52,18 +55,7 @@ void el2irq_el_low(struct trapframe *);
 void el2fiq_el_low(struct trapframe *);
 void el2error_el_low(struct trapframe *);
 
-void dump_el2_trapframe(struct trapframe *tf);
-
 struct nvmm_aarch64_state;
-//XXXXX decl
-void aarch64_el2_init(struct trapframe *);
-void aarch64_el2_vmenter(struct trapframe *);
-void aarch64_el2_vmexit_trap(struct trapframe *tf);
-void aarch64_el2_vmexit_irq(struct trapframe *tf);
-void aarch64_el2_maintain_ipa(struct trapframe *tf);
-
-char *uartputs(const char *);
-int uartprintf(const char * restrict, ...) __printflike(1, 2);
 
 /*
  * uartprintf() is a simple printf() for debugging that depends only on

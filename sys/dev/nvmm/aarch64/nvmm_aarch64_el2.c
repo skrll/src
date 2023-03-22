@@ -42,17 +42,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/nvmm/nvmm.h>
 #include <dev/nvmm/nvmm_internal.h>
 #include <dev/nvmm/aarch64/nvmm_aarch64.h>
+#include <dev/nvmm/aarch64/nvmm_aarch64_internal.h>
 
 #include <arm/cpufunc.h>
-
-//XXXXXXXXX decl
-int uartprintf(const char * restrict, ...) __printflike(1, 2);
-void dump_el2_trapframe(struct trapframe *tf);
-void aarch64_el2_init(struct trapframe *);
-void aarch64_el2_vmenter(struct trapframe *);
-void aarch64_el2_vmexit_trap(struct trapframe *);
-void aarch64_el2_vmexit_irq(struct trapframe *);
-void aarch64_el2_maintain_ipa(struct trapframe *tf);
 
 int aarch64_el2_initted;
 
@@ -123,6 +115,7 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] = tf->tf_spsr;
 
 	memcpy(state->gprs, tf->tf_reg, sizeof(state->gprs));
+	nvmm_aarch64_save_fpregs(state->fprs);	/* q0-q31 */
 
 	/*
 	 * exception
@@ -158,6 +151,8 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	state->sprs[NVMM_AARCH64_SPR_ELR_EL1] = reg_elr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_ESR_EL1] = reg_esr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_FAR_EL1] = reg_far_el1_read();
+	state->sprs[NVMM_AARCH64_SPR_FPCR] = reg_fpcr_read();
+	state->sprs[NVMM_AARCH64_SPR_FPSR] = reg_fpsr_read();
 	state->sprs[NVMM_AARCH64_SPR_MAIR_EL1] = reg_mair_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1] = reg_mdscr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_MIDR_EL1] = reg_vpidr_el2_read();
@@ -178,6 +173,7 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	tf->tf_spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
 
 	memcpy(tf->tf_reg, state->gprs, sizeof(state->gprs));
+	nvmm_aarch64_load_fpregs(state->fprs);	/* q0-q31 */
 
 	if (SPSR_USER_P(tf->tf_spsr) ||
 	    __SHIFTOUT(SPSR_M, tf->tf_spsr) == SPSR_M_EL1T) {
@@ -198,6 +194,8 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	reg_elr_el1_write(state->sprs[NVMM_AARCH64_SPR_ELR_EL1]);
 	reg_esr_el1_write(state->sprs[NVMM_AARCH64_SPR_ESR_EL1]);
 	reg_far_el1_write(state->sprs[NVMM_AARCH64_SPR_FAR_EL1]);
+	reg_fpcr_write(state->sprs[NVMM_AARCH64_SPR_FPCR]);
+	reg_fpsr_write(state->sprs[NVMM_AARCH64_SPR_FPSR]);
 	reg_mair_el1_write(state->sprs[NVMM_AARCH64_SPR_MAIR_EL1]);
 	reg_mdscr_el1_write(state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1]);
 	reg_par_el1_write(state->sprs[NVMM_AARCH64_SPR_PAR_EL1]);
