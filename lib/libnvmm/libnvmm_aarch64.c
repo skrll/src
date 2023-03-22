@@ -64,7 +64,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define FAULT_ACROSS_A_PAGE(va, gpa)	\
 	(((va) & PAGE_MASK) != ((gpa) & PAGE_MASK))
 #define ACCESS_WITHIN_A_PAGE(addr, size)	\
-	(((addr) & ~PAGE_MASK) == (((addr) + (size)) & ~PAGE_MASK))
+	(((addr) & ~PAGE_MASK) == (((addr) + (size) - 1) & ~PAGE_MASK))
 
 static inline bool
 endian_eb_p(struct nvmm_vcpu *vcpu)
@@ -237,6 +237,43 @@ SignExtend(int bitwidth, uint64_t imm, unsigned int multiply)
 	if (imm & signbit)
 		imm -= immmax;
 	return imm * multiply;
+}
+
+/* emul "dc zva,Rt" */
+OP1FUNC(op_dc_zva, Rt)
+{
+	struct nvmm_aarch64_state *state = vcpu->state;
+	const struct nvmm_vcpu_exit *exit = vcpu->exit;
+	gpaddr_t gpa = exit->u.mem.gpa;
+
+	if (Rt == 31) {
+		warnx("%s: dc zva with x31: PC=%016lx", __func__, state->sprs[NVMM_AARCH64_SPR_PC]);
+		return -1;	/* XX */
+	}
+
+	uint64_t va = state->gprs[NVMM_AARCH64_GPR_X0 + Rt];
+	/*
+	 * XXX: The value of dczid_el0 may be different for each CPU,
+	 *      so we must refer to the dczid of the vcpu that executed
+	 *      this instruction.
+	 */
+	uint64_t dcz_size = 4 << __SHIFTOUT(reg_dczid_el0_read(), DCZID_BS);
+
+	/* XXX: illegal alignment access is not supported */
+	if (FAULT_ACROSS_A_PAGE(va, gpa)) {
+		return -1;
+	}
+	if (!ACCESS_WITHIN_A_PAGE(gpa, dcz_size)) {
+		return -1;
+	}
+
+	for (; dcz_size > 0; dcz_size -= 8) {
+		nvmm_assist_mem_write(mach, vcpu, gpa, 0, 8);
+		gpa += 8;
+	}
+	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+
+	return 0;
 }
 
 /* emul "ldrb Rt,[Rn],#imm9" */
@@ -1043,14 +1080,16 @@ struct insn_info {
 };
 
 /* bit positions of arg in opecode. { bitpos, biwidth } */
+#define FMT_RT			{{ 0, 5}}
 #define FMT_IMM9_RN_RT		{{12, 9}, { 5, 5}, { 0, 5}}
 #define FMT_OPC_IMM9_RN_RT	{{22, 1}, {12, 9}, { 5, 5}, { 0, 5}}
-#define FMT_SF_IMM7_RT2_RN_RT	{{31, 1}, {15, 7}, {10, 5}, { 5, 5}, { 0, 5}}
 #define FMT_SF_IMM9_RN_RT	{{30, 1}, {12, 9}, { 5, 5}, { 0, 5}}
+#define FMT_SF_IMM7_RT2_RN_RT	{{31, 1}, {15, 7}, {10, 5}, { 5, 5}, { 0, 5}}
 
 static const struct insn_info insn_tables[] = {
  /* mask,      pattern,    opcode format,               opfunc             */
  /* ---------  ----------  ---------------------------	------------------ */
+ { 0xffffffe0, 0xd50b7420, FMT_RT,			op_dc_zva },
  { 0xffe00c00, 0x38400400, FMT_IMM9_RN_RT,		op_ldrb_immpostidx },
  { 0xffe00c00, 0x38400c00, FMT_IMM9_RN_RT,		op_ldrb_immpreidx },
  { 0xffe00c00, 0x78400400, FMT_IMM9_RN_RT,		op_ldrh_immpostidx },
@@ -1217,7 +1256,8 @@ nvmm_assist_mem(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 	/* XXX */
 	if (exit->insn == 0) {
 		/* XXX: fetch it ourselves from GPA -> HVA */
-		warnx("%s: unknown instruction", __func__);
+		struct nvmm_aarch64_state *state = vcpu->state;
+		warnx("%s: unknown instruction. ESR=%016lx, PC=%016lx, insn=%08x, GPA=%016lx, prot=0x%x", __func__, exit->esr, state->sprs[NVMM_AARCH64_SPR_PC], exit->insn, exit->u.mem.gpa, exit->u.mem.prot);
 		goto assist_failure;
 	}
 
@@ -1253,6 +1293,12 @@ nvmm_assist_mem(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 		return nvmm_vcpu_setstate(mach, vcpu, update);
 
  assist_failure:
+	//XXX DEBUG
+	{
+		struct nvmm_aarch64_state *state = vcpu->state;
+		warnx("%s: unsupported instruction: ESR=%016lx, PC=%016lx, insn=%08x, GPA=%016lx, prot=0x%x", __func__, exit->esr, state->sprs[NVMM_AARCH64_SPR_PC], exit->insn, exit->u.mem.gpa, exit->u.mem.prot);
+	}
+
 	/* inject SError to guest */
 	vcpu->event->type = NVMM_VCPU_EVENT_SERROR;
 	nvmm_vcpu_inject(mach, vcpu);
