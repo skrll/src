@@ -11,8 +11,10 @@ struct aarch64_cpudata {
 	struct nvmm_aarch64_state guest;
 };
 
-//XXXXXXXXX decl
+
+char *uartputs(const char *);
 int uartprintf(const char * restrict, ...) __printflike(1, 2);
+
 void dump_el2_trapframe(struct trapframe *tf);
 void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
@@ -20,10 +22,12 @@ void aarch64_el2_vmexit_trap(struct trapframe *tf);
 void aarch64_el2_vmexit_irq(struct trapframe *tf);
 void aarch64_el2_maintain_ipa(struct trapframe *tf);
 
-char *uartputs(const char *);
-int uartprintf(const char * restrict, ...) __printflike(1, 2);
-
 void nvmm_aarch64_load_fpregs(const union fpelem *);
 void nvmm_aarch64_save_fpregs(union fpelem *);
+
+extern int aarch64_el2_initted;	/* nvmm_aarch64_el2.c */
+
+//XXX: for debug
+extern int nvmm_debug;
 
 #endif /* _NVMM_AARCH64_INTERNAL_H_ */

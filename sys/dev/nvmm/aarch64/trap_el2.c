@@ -41,8 +41,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/nvmm/nvmm.h>
 #include <dev/nvmm/aarch64/nvmm_aarch64_internal.h>
 
-int nvmm_debug;
-
 /*
  * EL2 trap handler.
  *

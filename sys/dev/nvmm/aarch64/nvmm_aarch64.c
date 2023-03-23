@@ -49,8 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <aarch64/cpufunc.h>
 #include <aarch64/pmap.h>
 
-//#define AARCH64_VMID(mach)	(mach->machid + 1)
-#define AARCH64_VMID(mach)	(mach->machid + 0x77)	/* XXX debug */
+#define AARCH64_VMID(mach) (mach->machid + 1) /* avoid 0. 0 is host's VMID */
 
 struct aarch64_machdata {
 	uint64_t vttbr_el2;
@@ -61,19 +60,19 @@ void aarch64_hvc_vmenter(paddr_t);
 void aarch64_hvc_maintain_ipa(uint64_t, uint64_t, uint64_t, uint64_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
-extern int aarch64_el2_initted;	/* nvmm_aarch64_el2.c */
-
-static unsigned int stage2_startlevel;
-static unsigned int stage2_concatenate_num;
-
 const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 	.gprs = {},	/* x0-x31 are all zero */
+	.fprs = {},	/* q0-q31 are all zero */
 	.sprs = {
 		[NVMM_AARCH64_SPR_SCTLR_EL1]	= SCTLR_RES1,
 		[NVMM_AARCH64_SPR_SPSR_EL1]	= SPSR_M_EL1H,
 	},
-	.fprs = {},	/* q0-q31 are all zero */
 };
+
+static unsigned int stage2_startlevel;
+static unsigned int stage2_concatenate_num;
+
+int nvmm_debug;	/* XXX */
 
 static bool
 nvmm_aarch64_ident(void)
