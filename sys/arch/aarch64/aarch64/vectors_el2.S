@@ -44,7 +44,7 @@ RCSID("$NetBSD$")
 	.endif
 .endm
 
-.macro CTASSERT_CONTIGUOUS	p1, p2
+.macro CTASSERT_ADJACENT	p1, p2
 	CTASSERT((\p1) + 8 == (\p2))
 .endm
 
@@ -103,7 +103,7 @@ END(hyp_vectors)
 	stp	x26, x27, [sp, #TF_X26]
 	stp	x28, x29, [sp, #TF_X28]
 
-	CTASSERT_CONTIGUOUS(TF_PC, TF_SPSR)
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
 	mrs	x21, elr_el2
 	mrs	x22, spsr_el2
 	stp	x21, x22, [sp, #TF_PC]
@@ -119,10 +119,10 @@ END(hyp_vectors)
 	 */
 	mov	x8, xzr
 .endif
-	CTASSERT_CONTIGUOUS(TF_X30, TF_SP)
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
 	stp	x30, x8, [sp, #TF_X30]
 
-	CTASSERT_CONTIGUOUS(TF_ESR, TF_FAR)
+	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
 	mrs	x23, esr_el2
 	mrs	x24, far_el2
 	stp	x23, x24, [sp, #TF_ESR]
@@ -176,15 +176,15 @@ ENTRY_NP(el2trap_el2_exit)
 	ldp	x24, x25, [sp, #TF_X24]
 	ldp	x26, x27, [sp, #TF_X26]
 	ldp	x28, x29, [sp, #TF_X28]
-	CTASSERT_CONTIGUOUS(TF_X30, TF_SP)
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
 	ldp	x30, x7, [sp, #TF_X30]
 
-	CTASSERT_CONTIGUOUS(TF_PC, TF_SPSR)
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
 	ldp	x0, x1, [sp, #TF_PC]
 	msr	elr_el2, x0
 	msr	spsr_el2, x1
 
-	CTASSERT_CONTIGUOUS(TF_ESR, TF_FAR)
+	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
 	ldp	x0, x1, [sp, #TF_ESR]
 	msr	esr_el2, x0
 	msr	far_el2, x1
@@ -214,7 +214,7 @@ ENTRY_NP(el2trap_el_low_exit)
 	ldp	x26, x27, [sp, #TF_X26]
 	ldp	x28, x29, [sp, #TF_X28]
 
-	CTASSERT_CONTIGUOUS(TF_PC, TF_SPSR)
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
 	ldp	x0, x1, [sp, #TF_PC]
 	msr	elr_el2, x0
 	msr	spsr_el2, x1
@@ -228,7 +228,7 @@ ENTRY_NP(el2trap_el_low_exit)
 	ldp	x2, x3, [sp, #TF_X2]
 	ldp	x4, x5, [sp, #TF_X4]
 	ldp	x6, x7, [sp, #TF_X6]
-	CTASSERT_CONTIGUOUS(TF_X0, TF_X1)
+	CTASSERT_ADJACENT(TF_X0, TF_X1)
 	CTASSERT(TF_X0 == 0)
 	ldp	x0, x1, [sp], #TF_SIZE
 	isb
