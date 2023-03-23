@@ -344,12 +344,19 @@ void
 db_pte_print(pt_entry_t pte, int level,
     void (*pr)(const char *, ...) __printflike(1, 2))
 {
+	bool stage2 = false;
+
 	if (pte == 0) {
 		pr(" UNUSED\n");
 		return;
 	}
 
 	pr(" %s", (pte & LX_VALID) ? "VALID" : "**INVALID**");
+
+#ifdef lxpde_stage2
+	if (lxpde_stage2(pte))
+		stage2 = true;
+#endif
 
 	if (level == 0 ||
 	    (level == 1 && l1pde_is_table(pte)) ||
@@ -360,11 +367,11 @@ db_pte_print(pt_entry_t pte, int level,
 			pr(" **ILLEGAL TYPE**"); /* L0 doesn't support block */
 		else
 			pr(" L%d-TABLE", level);
-		if (lxpde_stage2(pte))
+		if (stage2)
 			pr(" STAGE2");
 		pr(", PA=%lx", l0pde_pa(pte));
 
-		if (!lxpde_stage2(pte)) {
+		if (!stage2) {
 			if (pte & LX_TBL_NSTABLE)
 				pr(", NSTABLE");
 			if (pte & LX_TBL_APTABLE)
@@ -391,11 +398,11 @@ db_pte_print(pt_entry_t pte, int level,
 			    "L3(4K)-PAGE" : "**ILLEGAL TYPE**");
 			break;
 		}
-		if (lxpde_stage2(pte))
+		if (stage2)
 			pr(" STAGE2");
 		pr(", PA=%lx", l3pte_pa(pte));
 
-		if (lxpde_stage2(pte)) {
+		if (stage2) {
 			if ((pte & LX_S2_BLKPAG_XN) == LX_S2_BLKPAG_XN_XN)
 				pr(", XN");
 			if (pte & LX_S2_BLKPAG_FnXS)
@@ -412,7 +419,7 @@ db_pte_print(pt_entry_t pte, int level,
 		if (pte & LX_BLKPAG_CONTIG)
 			pr(", CONTIG");
 
-		if (!lxpde_stage2(pte))
+		if (!stage2)
 			pr(", %s", (pte & LX_BLKPAG_NG) ? "nG" : "G");
 
 		pr(", %s", (pte & LX_BLKPAG_AF) ?
@@ -434,7 +441,7 @@ db_pte_print(pt_entry_t pte, int level,
 			break;
 		}
 
-		if (lxpde_stage2(pte)) {
+		if (stage2) {
 			switch (pte & LX_S2_BLKPAG_S2AP) {
 			case LX_S2_BLKPAG_S2AP_NA:
 				pr(", NA");

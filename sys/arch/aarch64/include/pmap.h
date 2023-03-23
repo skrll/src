@@ -96,9 +96,6 @@ pmap_md_tlb_asid_max(void)
 #define l0pde_pa(pde)		lxpde_pa(pde)
 #define l0pde_index(v)		(((vaddr_t)(v) & L0_ADDR_BITS) >> L0_SHIFT)
 #define l0pde_valid(pde)	lxpde_valid(pde)
-
-#define lxpde_stage2(pde)	((pde) & LX_BLKPAG_OS_STAGE2)
-#define lxpde_stage1(pde)	(!lxpde_stage2(pde))
 /* l0pte always contains table entries */
 
 #define l1pde_pa(pde)		lxpde_pa(pde)
@@ -351,6 +348,8 @@ struct vm_page_md {
 	} while (/*CONSTCOND*/ 0)
 
 #define LX_BLKPAG_OS_STAGE2		LX_BLKPAG_OS_0
+#define lxpde_stage2(pde)	((pde) & LX_BLKPAG_OS_STAGE2)
+#define lxpde_stage1(pde)	(!lxpde_stage2(pde))
 
 #define PMAP_PTE_OS0	"OS0"
 #define PMAP_PTE_OS1	"OS1"
