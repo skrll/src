@@ -48,14 +48,14 @@ typedef uint64_t pt_entry_t;	/* L3(4k) table entry */
 /*
  * translation table, block, and page descriptors
  */
-#define LX_S1_TBL_NSTABLE	__BIT(63)	/* inherited next level */
-#define LX_S1_TBL_APTABLE	__BITS(62,61)	/* inherited next level */
-#define  LX_S1_TBL_APTABLE_NOEFFECT		__SHIFTIN(0,LX_TBL_APTABLE)
-#define  LX_S1_TBL_APTABLE_EL0_NOACCESS		__SHIFTIN(1,LX_TBL_APTABLE)
-#define  LX_S1_TBL_APTABLE_RO			__SHIFTIN(2,LX_TBL_APTABLE)
-#define  LX_S1_TBL_APTABLE_RO_EL0_NOREAD	__SHIFTIN(3,LX_TBL_APTABLE)
-#define LX_S1_TBL_UXNTABLE	__BIT(60)	/* inherited next level */
-#define LX_S1_TBL_PXNTABLE	__BIT(59)	/* inherited next level */
+#define LX_TBL_NSTABLE	__BIT(63)	/* inherited next level */
+#define LX_TBL_APTABLE	__BITS(62,61)	/* inherited next level */
+#define  LX_TBL_APTABLE_NOEFFECT		__SHIFTIN(0,LX_TBL_APTABLE)
+#define  LX_TBL_APTABLE_EL0_NOACCESS		__SHIFTIN(1,LX_TBL_APTABLE)
+#define  LX_TBL_APTABLE_RO			__SHIFTIN(2,LX_TBL_APTABLE)
+#define  LX_TBL_APTABLE_RO_EL0_NOREAD	__SHIFTIN(3,LX_TBL_APTABLE)
+#define LX_TBL_UXNTABLE	__BIT(60)	/* inherited next level */
+#define LX_TBL_PXNTABLE	__BIT(59)	/* inherited next level */
 #define LX_BLKPAG_OS		__BITS(58, 55)
 #define  LX_BLKPAG_OS_0		__SHIFTIN(1,LX_BLKPAG_OS)
 #define  LX_BLKPAG_OS_1		__SHIFTIN(2,LX_BLKPAG_OS)

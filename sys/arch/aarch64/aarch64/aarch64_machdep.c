@@ -161,9 +161,9 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 	/* add direct mappings of whole memory */
 	const pt_entry_t dmattr =
 	    LX_BLKPAG_ATTR_NORMAL_WB |
-	    LX_S1_BLKPAG_AP_RW |
-	    LX_S1_BLKPAG_PXN |
-	    LX_S1_BLKPAG_UXN;
+	    LX_BLKPAG_AP_RW |
+	    LX_BLKPAG_PXN |
+	    LX_BLKPAG_UXN;
 	for (blk = 0; blk < bootconfig.dramblocks; blk++) {
 		uint64_t start, end;
 

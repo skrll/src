@@ -365,13 +365,13 @@ db_pte_print(pt_entry_t pte, int level,
 		pr(", PA=%lx", l0pde_pa(pte));
 
 		if (!lxpde_stage2(pte)) {
-			if (pte & LX_S1_TBL_NSTABLE)
+			if (pte & LX_TBL_NSTABLE)
 				pr(", NSTABLE");
-			if (pte & LX_S1_TBL_APTABLE)
+			if (pte & LX_TBL_APTABLE)
 				pr(", APTABLE");
-			if (pte & LX_S1_TBL_UXNTABLE)
+			if (pte & LX_TBL_UXNTABLE)
 				pr(", UXNTABLE");
-			if (pte & LX_S1_TBL_PXNTABLE)
+			if (pte & LX_TBL_PXNTABLE)
 				pr(", PXNTABLE");
 		}
 	} else if ((level == 1 && l1pde_is_block(pte)) ||
@@ -405,15 +405,15 @@ db_pte_print(pt_entry_t pte, int level,
 			if (pte & LX_BLKPAG_DBM)
 				pr(", %s", "DBM");
 #endif
-			pr(", %s", (pte & LX_S1_BLKPAG_UXN) ? "UXN" : "UX");
-			pr(", %s", (pte & LX_S1_BLKPAG_PXN) ? "PXN" : "PX");
+			pr(", %s", (pte & LX_BLKPAG_UXN) ? "UXN" : "UX");
+			pr(", %s", (pte & LX_BLKPAG_PXN) ? "PXN" : "PX");
 		}
 
 		if (pte & LX_BLKPAG_CONTIG)
 			pr(", CONTIG");
 
 		if (!lxpde_stage2(pte))
-			pr(", %s", (pte & LX_S1_BLKPAG_NG) ? "nG" : "G");
+			pr(", %s", (pte & LX_BLKPAG_NG) ? "nG" : "G");
 
 		pr(", %s", (pte & LX_BLKPAG_AF) ?
 		    "accessible" :
@@ -477,9 +477,9 @@ db_pte_print(pt_entry_t pte, int level,
 				    __SHIFTOUT(pte, LX_S2_BLKPAG_MEMATTR));
 			}
 		} else {
-			pr(", %s", (pte & LX_S1_BLKPAG_AP_RO) ? "RO" : "RW");
-			pr(", %s", (pte & LX_S1_BLKPAG_APUSER) ? "EL0" : "EL1");
-			pr(", %s", (pte & LX_S1_BLKPAG_NS) ? "NS" : "secure");
+			pr(", %s", (pte & LX_BLKPAG_AP_RO) ? "RO" : "RW");
+			pr(", %s", (pte & LX_BLKPAG_APUSER) ? "EL0" : "EL1");
+			pr(", %s", (pte & LX_BLKPAG_NS) ? "NS" : "secure");
 
 			switch (pte & LX_BLKPAG_ATTR_MASK) {
 			case LX_BLKPAG_ATTR_NORMAL_WB:
@@ -499,7 +499,7 @@ db_pte_print(pt_entry_t pte, int level,
 				break;
 			default:
 				pr(", ATTR(%lu)",
-				    __SHIFTOUT(pte, LX_S1_BLKPAG_ATTR_INDX));
+				    __SHIFTOUT(pte, LX_BLKPAG_ATTR_INDX));
 				break;
 			}
 		}

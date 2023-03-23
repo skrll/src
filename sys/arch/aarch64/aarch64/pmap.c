@@ -1034,7 +1034,7 @@ _pmap_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod,
 	 *  - pte.AF as the reference bits
 	 *  - pte.W as the modified bits
 	 */
-	pte &= ~(LX_BLKPAG_AF | LX_BLKPAG_DBM | LX_S1_BLKPAG_AP);
+	pte &= ~(LX_BLKPAG_AF | LX_BLKPAG_DBM | LX_BLKPAG_AP);
 	if (prot & VM_PROT_WRITE)
 		pte |= LX_BLKPAG_DBM;
 
@@ -1045,7 +1045,7 @@ _pmap_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod,
 		 * it cannot be accessed because there is no AF bit,
 		 * but the AF bit will be added by fixup() or HAFDBS.
 		 */
-		pte |= LX_S1_BLKPAG_AP_RO;
+		pte |= LX_BLKPAG_AP_RO;
 		break;
 	case VM_PROT_READ:
 		/*
@@ -1053,20 +1053,20 @@ _pmap_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod,
 		 * but it may be changed to RW by fixup() or HAFDBS.
 		 */
 		pte |= LX_BLKPAG_AF;
-		pte |= LX_S1_BLKPAG_AP_RO;
+		pte |= LX_BLKPAG_AP_RO;
 		break;
 	case VM_PROT_WRITE:
 	case VM_PROT_READ | VM_PROT_WRITE:
 		/* fully readable and writable */
 		pte |= LX_BLKPAG_AF;
-		pte |= LX_S1_BLKPAG_AP_RW;
+		pte |= LX_BLKPAG_AP_RW;
 		break;
 	}
 
 	/* executable for kernel or user? first set never exec both */
-	pte |= (LX_S1_BLKPAG_UXN | LX_S1_BLKPAG_PXN);
+	pte |= (LX_BLKPAG_UXN | LX_BLKPAG_PXN);
 	/* and either to executable */
-	xn = user ? LX_S1_BLKPAG_UXN : LX_S1_BLKPAG_PXN;
+	xn = user ? LX_BLKPAG_UXN : LX_BLKPAG_PXN;
 	if (prot & VM_PROT_EXECUTE)
 		pte &= ~xn;
 
@@ -1154,7 +1154,7 @@ _pmap_reflect_refmod_in_pp(pt_entry_t pte, struct pmap_page *pp)
 			pp->pp_pv.pv_va |= VM_PROT_WRITE;
 	} else
 #endif
-	if ((pte & LX_S1_BLKPAG_AP) == LX_S1_BLKPAG_AP_RW)
+	if ((pte & LX_BLKPAG_AP) == LX_BLKPAG_AP_RW)
 		pp->pp_pv.pv_va |= VM_PROT_WRITE;
 }
 #endif
@@ -2220,7 +2220,7 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 		attr |= LX_BLKPAG_OS_STAGE2;
 	else
 #endif
-	attr |= (kenter ? 0 : LX_S1_BLKPAG_NG);
+	attr |= (kenter ? 0 : LX_BLKPAG_NG);
 
 	attr = _pmap_pte_adjust_prot(attr, prot, mdattr, user);
 	attr = _pmap_pte_adjust_cacheflags(attr, flags);
@@ -2230,7 +2230,7 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 #endif
 	{
 		if (VM_MAXUSER_ADDRESS > va && !efirt_p)
-			attr |= LX_S1_BLKPAG_APUSER;
+			attr |= LX_BLKPAG_APUSER;
 	}
 
 	if (flags & PMAP_WIRED)
@@ -2759,7 +2759,7 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 			goto done;
 	} else
 #endif
-	if ((pte & LX_BLKPAG_AF) && ((pte & LX_S1_BLKPAG_AP) == LX_S1_BLKPAG_AP_RW))
+	if ((pte & LX_BLKPAG_AF) && ((pte & LX_BLKPAG_AP) == LX_BLKPAG_AP_RW))
 		goto done;
 
 	pmap_pv_lock(pp);
@@ -2793,15 +2793,15 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 	} else
 #endif
 	if ((accessprot & VM_PROT_WRITE) &&
-	    ((pte & LX_S1_BLKPAG_AP) == LX_S1_BLKPAG_AP_RO)) {
+	    ((pte & LX_BLKPAG_AP) == LX_BLKPAG_AP_RO)) {
 		/* pte is not RW. set modified and RW */
 
 		UVMHIST_LOG(pmaphist, "MODIFIED:"
 		    " va=%016lx, pa=%016lx, pte_prot=%08x, accessprot=%08x",
 		    va, pa, pmap_prot, accessprot);
 		pp->pp_pv.pv_va |= VM_PROT_WRITE;	/* set modified */
-		pte &= ~LX_S1_BLKPAG_AP;
-		pte |= LX_S1_BLKPAG_AP_RW;
+		pte &= ~LX_BLKPAG_AP;
+		pte |= LX_BLKPAG_AP_RW;
 
 		PMAP_COUNT(fixup_modified);
 	}
@@ -2914,14 +2914,14 @@ pmap_clear_modify(struct vm_page *pg)
 		} else
 #endif
 		{
-			if ((pte & LX_S1_BLKPAG_AP) == LX_S1_BLKPAG_AP_RO)
+			if ((pte & LX_BLKPAG_AP) == LX_BLKPAG_AP_RO)
 				continue;
 #ifdef ARMV81_HAFDBS
 			modified = true;
 #endif
 			/* clear write permission */
-			pte &= ~LX_S1_BLKPAG_AP;
-			pte |= LX_S1_BLKPAG_AP_RO;
+			pte &= ~LX_BLKPAG_AP;
+			pte |= LX_BLKPAG_AP_RO;
 
 			/* XXX: possible deadlock if using PM_LOCK(). this is racy */
 			if ((pte = atomic_cas_64(ptep, opte, pte)) != opte) {
@@ -3063,11 +3063,11 @@ pmap_is_modified(struct vm_page *pg)
 			if (
 #if NNVMM > 0
 			    (lxpde_stage1(pte) &&
-			    ((pte & LX_S1_BLKPAG_AP) == LX_S1_BLKPAG_AP_RW)) ||
+			    ((pte & LX_BLKPAG_AP) == LX_BLKPAG_AP_RW)) ||
 			    (lxpde_stage2(pte) &&
 			    ((pte & LX_S2_BLKPAG_S2AP) == LX_S2_BLKPAG_S2AP_RW))
 #else
-			    ((pte & LX_S1_BLKPAG_AP) == LX_S1_BLKPAG_AP_RW)
+			    ((pte & LX_BLKPAG_AP) == LX_BLKPAG_AP_RW)
 #endif
 			    ) {
 				pp->pp_pv.pv_va |= VM_PROT_WRITE;

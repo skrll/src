@@ -238,7 +238,7 @@ acpi_md_OsReadable(void *va, UINT32 len)
 
 	for (; sva < eva; sva += PAGE_SIZE) {
 		pte = kvtopte(sva);
-		if ((*pte & (LX_BLKPAG_AF|LX_S1_BLKPAG_AP)) != (LX_BLKPAG_AF|LX_S1_BLKPAG_AP_RO))
+		if ((*pte & (LX_BLKPAG_AF|LX_BLKPAG_AP)) != (LX_BLKPAG_AF|LX_BLKPAG_AP_RO))
 			return FALSE;
 	}
 
@@ -259,7 +259,7 @@ acpi_md_OsWritable(void *va, UINT32 len)
 
 	for (; sva < eva; sva += PAGE_SIZE) {
 		pte = kvtopte(sva);
-		if ((*pte & (LX_BLKPAG_AF|LX_S1_BLKPAG_AP)) != (LX_BLKPAG_AF|LX_S1_BLKPAG_AP_RW))
+		if ((*pte & (LX_BLKPAG_AF|LX_BLKPAG_AP)) != (LX_BLKPAG_AF|LX_BLKPAG_AP_RW))
 			return FALSE;
 	}
 
