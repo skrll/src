@@ -263,11 +263,7 @@ SUBDIR+=	vmt
 .endif
 
 .if ${HAVE_NVMM:Uno} == "yes"
-.if ${MACHINE_CPU} == "aarch64"
-# aarch64 has nvmm but does not support it as a module
-.else
 SUBDIR+=	nvmm
-.endif
 .endif
 
 # Builds on architectures with PCI bus
