@@ -269,14 +269,14 @@ nvmm_aarch64_init(void)
 #ifdef CONSADDR
 	/* XXX: for EL2 uartprintf debugging */
 	const pt_entry_t devattr = LX_BLKPAG_ATTR_DEVICE_MEM |
-	    LX_BLKPAG_AP_RW | LX_BLKPAG_XN | LX_BLKPAG_AP1_RES1;
+	    LX_BLKPAG_AP_RW | LX_BLKPAG_XN | LX_S2_BLKPAG_AP1_RES1;
 	pmapboot_enter_ttbr(CONSADDR, CONSADDR, L2_SIZE, L2_SIZE,
 	    devattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
 #endif
 
 	/* EL2 VA=PA identity mapping */
 	const pt_entry_t memattr = LX_BLKPAG_ATTR_NORMAL_WB |
-	    LX_BLKPAG_AP_RW | LX_BLKPAG_AP1_RES1;
+	    LX_BLKPAG_AP_RW | LX_S2_BLKPAG_AP1_RES1;
 	for (u_int blk = 0; blk < bootconfig.dramblocks; blk++) {
 		uint64_t start, end;
 
