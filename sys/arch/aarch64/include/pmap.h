@@ -414,9 +414,6 @@ vsize_t	pmap_kenter_range(vaddr_t, paddr_t, vsize_t, vm_prot_t, u_int);
 void pmap_db_pmap_print(struct pmap *, void (*)(const char *, ...) __printflike(1, 2));
 void pmap_db_mdpg_print(struct vm_page *, void (*)(const char *, ...) __printflike(1, 2));
 
-/* for NVMM helper function */
-void pmap_append_pdp(struct pmap *, paddr_t);
-
 #endif	/* !PMAP_MI */
 
 static inline void
