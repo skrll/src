@@ -56,7 +56,6 @@ int aarch64_pac_init(int);
 void aarch64_cpu_idle_wfi(void);
 
 int set_cpufuncs(void);
-int aarch64_parange(void);
 int aarch64_setcpufuncs(struct cpu_info *);
 bool aarch64_earlydevice_va_p(void);
 void aarch64_getcacheinfo(struct cpu_info *);
