@@ -33,7 +33,6 @@
 #include "opt_fdt.h"
 #include "opt_kasan.h"
 #include "opt_multiprocessor.h"
-#include "nvmm.h"
 
 #include <aarch64/asm.h>
 #include <aarch64/hypervisor.h>
