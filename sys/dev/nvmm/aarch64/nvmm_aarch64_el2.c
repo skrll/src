@@ -294,12 +294,12 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	case ESR_EC_SP_ALIGNMENT:
 	case ESR_EC_FP_ACCESS:
 	case ESR_EC_FP_TRAP_A64:
-	case ESR_EC_BRKPNT_EL0:
-	case ESR_EC_BRKPNT_EL1:
-	case ESR_EC_SW_STEP_EL0:
-	case ESR_EC_SW_STEP_EL1:
-	case ESR_EC_WTCHPNT_EL0:
-	case ESR_EC_WTCHPNT_EL1:
+	case ESR_EC_BRKPNT_EL_LOW:
+	case ESR_EC_BRKPNT_EL_CUR:
+	case ESR_EC_SW_STEP_EL_LOW:
+	case ESR_EC_SW_STEP_EL_CUR:
+	case ESR_EC_WTCHPNT_EL_LOW:
+	case ESR_EC_WTCHPNT_EL_CUR:
 	case ESR_EC_BKPT_INSN_A64:
 	default:
 		uartprintf("%s:%d: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64") \n",
