@@ -245,6 +245,8 @@ OP1FUNC(op_dc_zva, Rt)
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	gpaddr_t gpa = exit->u.mem.gpa;
+	struct nvmm_mem mem;
+	static uint8_t zerodat[2048] __aligned(128);
 
 	if (Rt == 31) {
 		warnx("%s: dc zva with x31: PC=%016lx", __func__, state->sprs[NVMM_AARCH64_SPR_PC]);
@@ -267,10 +269,18 @@ OP1FUNC(op_dc_zva, Rt)
 		return -1;
 	}
 
-	for (; dcz_size > 0; dcz_size -= 8) {
-		nvmm_assist_mem_write(mach, vcpu, gpa, 0, 8);
-		gpa += 8;
-	}
+	/*
+	 * since the write exceeds 8 bytes, callback is called directly without
+	 * nvmm_assist_mem_write().
+	 */
+	mem.mach = mach;
+	mem.vcpu = vcpu;
+	mem.gpa = gpa;
+	mem.write = true;
+	mem.size = dcz_size;
+	mem.data = zerodat;
+	(*vcpu->cbs.mem)(&mem);
+
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
 	return 0;
