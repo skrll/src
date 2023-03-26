@@ -148,6 +148,11 @@ no_el2_host_mode:
 	mov	x0, sp
 	msr	sp_el1, x0
 #if NNVMM > 0
+	/* nvmm_available = 1 */
+	adrl	x0, _C_LABEL(nvmm_available)
+	mov	x1, #1
+	str	w1, [x0]
+
 	/*
 	 * Set new stackpointer for EL2 trap handlers.
 	 * sp = sp_el2 = &el2stack_bottom - cpuindex * PAGE_SIZE;
