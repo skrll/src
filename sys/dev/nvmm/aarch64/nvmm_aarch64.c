@@ -60,19 +60,49 @@ void aarch64_hvc_vmenter(paddr_t);
 void aarch64_hvc_maintain_ipa(uint64_t, uint64_t, uint64_t, uint64_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
-const struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
+struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 	.gprs = {},	/* x0-x31 are all zero */
 	.fprs = {},	/* q0-q31 are all zero */
 	.sprs = {
 		[NVMM_AARCH64_SPR_SCTLR_EL1]	= SCTLR_RES1,
 		[NVMM_AARCH64_SPR_SPSR_EL1]	= SPSR_M_EL1H,
 	},
+	.tids = {}	/* initted in nvmm_aarch64_init_reset_state() */
 };
+
+int nvmm_available;
+int nvmm_debug;	/* XXX */
 
 static unsigned int stage2_startlevel;
 static unsigned int stage2_concatenate_num;
 
-int nvmm_debug;	/* XXX */
+static void
+nvmm_aarch64_init_reset_state(void)
+{
+	uint64_t val;
+
+	/* XXXXXXXX: For big.LITTLE, the smallest feature must be selected */
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_MVFR0_EL1] = reg_mvfr0_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_MVFR1_EL1] = reg_mvfr1_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_MVFR2_EL1] = reg_mvfr2_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64PFR0_EL1] = reg_id_aa64pfr0_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64PFR1_EL1] = reg_id_aa64pfr1_el1_read();
+
+	/* XXXXXXX: pmu not supported yet */
+	val = reg_id_aa64dfr0_el1_read();
+	val &= ~ID_AA64DFR0_EL1_PMUVER;
+	val |= __SHIFTIN(ID_AA64DFR0_EL1_PMUVER_NONE, ID_AA64DFR0_EL1_PMUVER);
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64DFR0_EL1] = val;
+
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64DFR1_EL1] = reg_id_aa64dfr1_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64AFR0_EL1] = reg_id_aa64afr0_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64AFR1_EL1] = reg_id_aa64afr1_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64ISAR0_EL1] = reg_id_aa64isar0_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64ISAR1_EL1] = reg_id_aa64isar1_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64MMFR0_EL1] = reg_id_aa64mmfr0_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64MMFR1_EL1] = reg_id_aa64mmfr1_el1_read();
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64MMFR2_EL1] = reg_id_aa64mmfr2_el1_read();
+}
 
 static bool
 nvmm_aarch64_ident(void)
@@ -96,7 +126,7 @@ nvmm_aarch64_pagealloc(void)
 }
 
 static void
-nvmm_aarch64_init(void)
+nvmm_aarch64_el2_setup(void)
 {
 	/*
 	 * calculate VTCR_EL2 setting from ID_AA64MMFR0_EL1.PARange
@@ -299,6 +329,16 @@ nvmm_aarch64_init(void)
 }
 
 static void
+nvmm_aarch64_init(void)
+{
+	if (nvmm_available == 0)
+		return;
+
+	nvmm_aarch64_init_reset_state();
+	nvmm_aarch64_el2_setup();
+}
+
+static void
 nvmm_aarch64_fini(void)
 {
 }
@@ -432,7 +472,7 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	 * XXX: struct aarch64_cpudata is accessed by physical address from EL2,
 	 *      and must fit on a single page.
 	 */
-	KASSERT(sizeof(*cpudata) < PAGE_SIZE);
+	CTASSERT(sizeof(*cpudata) < PAGE_SIZE);
 
 	cpudata = (struct aarch64_cpudata *)uvm_km_alloc(kernel_map,
 	    roundup(sizeof(*cpudata), PAGE_SIZE), PAGE_SIZE,
@@ -527,6 +567,9 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 			cpudata->guest.sprs[NVMM_AARCH64_SPR_SPSR_EL1] |= SPSR_M_EL1H;
 		}
 	}
+	if (flags & NVMM_AARCH64_STATE_TIDS) {
+		memcpy(cpudata->guest.tids, state->tids, sizeof(state->tids));
+	}
 	if (flags & NVMM_AARCH64_STATE_FPRS) {
 		memcpy(cpudata->guest.fprs, state->fprs, sizeof(state->fprs));
 	}
@@ -550,6 +593,9 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
 		memcpy(state->sprs, cpudata->guest.sprs, sizeof(state->sprs));
+	}
+	if (flags & NVMM_AARCH64_STATE_TIDS) {
+		memcpy(state->tids, cpudata->guest.tids, sizeof(state->tids));
 	}
 	if (flags & NVMM_AARCH64_STATE_FPRS) {
 		memcpy(state->fprs, cpudata->guest.fprs, sizeof(state->fprs));
@@ -623,7 +669,7 @@ nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t v
 	struct aarch64_machdata *machdata = mach->machdata;
 
 	if (machdata != NULL) {
-		if (nvmm_debug) {
+		if (nvmm_debug & 4) {
 			printf("%s:%s:%d: op=%08lx, ipa=%016lx, va=%016lx\n", cpu_name(curcpu()), __func__, __LINE__, op, ipa, va);
 		}
 		aarch64_hvc_maintain_ipa(machdata->vttbr_el2, op, ipa, va);

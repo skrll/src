@@ -230,6 +230,25 @@ dump_el2_trapframe(struct trapframe *tf)
 	    tf->tf_reg[30],  tf->tf_sp);
 }
 
+static void
+aarch64_guest_backtrace(struct trapframe *tf, struct trapframe *gtf)
+{
+	vaddr_t fp_va;
+	uint64_t *fp_pa;
+
+	fp_va = gtf->tf_reg[29];
+	uartprintf("0x%016lx, fp=%016lx\n", gtf->tf_reg[30], fp_va);
+
+	while (fp_va != 0) {
+		fp_pa = (uint64_t *)aarch64_gva_to_pa(tf, fp_va);
+		if (fp_pa == 0)
+			break;
+
+		uartprintf("%016lx, fp=%016lx\n", fp_pa[1], fp_va);
+		fp_va = fp_pa[0];
+	}
+}
+
 void
 el2sync_el_low(struct trapframe *tf)
 {
@@ -259,6 +278,21 @@ el2sync_el_low(struct trapframe *tf)
 			/* hvc #n from guest */
 			uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
 			dump_el2_trapframe(tf);
+
+			// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: <DEBUG>
+			if ((tf->tf_esr & 0xffff) == 99) {
+				/* analyze guest stacktrace */
+				struct trapframe *gtf_pa = (struct trapframe *)aarch64_gva_to_pa(tf, tf->tf_reg[0]);
+				uartprintf("guest tf(va) %016lx -> (pa)%p\n", tf->tf_reg[0], gtf_pa);
+				dump_el2_trapframe(gtf_pa);
+				uartprintf("guest: esr_el1=%016"PRIxREGISTER"\n", reg_esr_el1_read());
+				uartprintf("guest: far_el1=%016"PRIxREGISTER"\n", reg_far_el1_read());
+				uartprintf("guest: elr_el1=%016"PRIxREGISTER"\n", reg_elr_el1_read());
+				aarch64_guest_backtrace(tf, gtf_pa);	/* XXX: dangerous */
+			}
+			// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: </DEBUG>
+
+
 			aarch64_el2_vmexit_trap(tf);
 		}
 	} else {

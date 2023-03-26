@@ -48,6 +48,23 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 int aarch64_el2_initted;
 
+paddr_t
+aarch64_gva_to_pa(struct trapframe *tf, vaddr_t va)
+{
+	paddr_t pa = 0;
+
+	if (__SHIFTOUT(tf->tf_spsr, SPSR_M) == SPSR_M_EL0T)
+		reg_s12e0r_write(va);
+	else
+		reg_s12e1r_write(va);
+	isb();
+	uint64_t par = reg_par_el1_read();
+	if ((par & PAR_F) == 0) {
+		pa = (par & PAR_PA) + (va & PAR_PA_LOWMASK);
+	}
+	return pa;
+}
+
 void
 aarch64_el2_init(struct trapframe *tf)
 {
@@ -241,6 +258,98 @@ pa_hpfar_far(vaddr_t hpfar, vaddr_t far)
 	    ~PAGE_MASK) | (far & PAGE_MASK);
 }
 
+#define SYSREG_ENC(op0, op1, CRn, CRm, op2)		\
+	(((op0)<<19)|((op1)<<16)|((CRn)<<12)|((CRm)<<8)|((op2)<<5))
+
+struct sysreg_table {
+	uint32_t code;
+	int id;
+	const char name[32];	/* debug. don't use "const char *" because el2 running on PA */
+};
+
+/* must be sorted by code */
+const struct sysreg_table sysreg_tid[] = {
+	/*         op0 op1 CRn CRm op2 ID				*/
+	{ SYSREG_ENC(3, 0,  0,  3, 0), NVMM_AARCH64_TID_MVFR0_EL1,		"MVFR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  3, 1), NVMM_AARCH64_TID_MVFR1_EL1,		"MVFR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  3, 2), NVMM_AARCH64_TID_MVFR2_EL1,		"MVFR2_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  4, 0), NVMM_AARCH64_TID_ID_AA64PFR0_EL1,	"ID_AA64PFR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  4, 1), NVMM_AARCH64_TID_ID_AA64PFR1_EL1,	"ID_AA64PFR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  5, 0), NVMM_AARCH64_TID_ID_AA64DFR0_EL1,	"ID_AA64DFR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  5, 1), NVMM_AARCH64_TID_ID_AA64DFR1_EL1,	"ID_AA64DFR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  5, 4), NVMM_AARCH64_TID_ID_AA64AFR0_EL1,	"ID_AA64AFR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  5, 5), NVMM_AARCH64_TID_ID_AA64AFR1_EL1,	"ID_AA64AFR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  6, 0), NVMM_AARCH64_TID_ID_AA64ISAR0_EL1,	"ID_AA64ISAR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  6, 1), NVMM_AARCH64_TID_ID_AA64ISAR1_EL1,	"ID_AA64ISAR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  7, 0), NVMM_AARCH64_TID_ID_AA64MMFR0_EL1,	"ID_AA64MMFR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  7, 1), NVMM_AARCH64_TID_ID_AA64MMFR1_EL1,	"ID_AA64MMFR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  7, 2), NVMM_AARCH64_TID_ID_AA64MMFR2_EL1,	"ID_AA64MMFR2_EL1" },
+};
+
+static const struct sysreg_table *
+sysreg_bsearch(const struct sysreg_table *table, size_t tablenum, uint32_t code)
+{
+	const struct sysreg_table *base, *p;
+	size_t lim;
+	int32_t cmp;
+
+	base = table;
+	for (lim = tablenum; lim != 0; lim >>= 1) {
+		p = base + (lim >> 1);
+		cmp = code - p->code;
+		if (cmp == 0)
+			return p;
+		if (cmp > 0) {
+			base = p + 1;
+			lim--;
+		}
+	}
+	return NULL;
+}
+
+static int
+inkernel_handle_sysreg(struct trapframe *tf)
+{
+	const uint64_t esr = tf->tf_esr;
+	const uint64_t op0 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP0);
+	const uint64_t op2 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP2);
+	const uint64_t op1 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP1);
+	const uint64_t CRn = __SHIFTOUT(esr, ESR_ISS_SYSREG_CRN);
+	const uint64_t Rt = __SHIFTOUT(esr, ESR_ISS_SYSREG_RT);
+	const uint64_t CRm = __SHIFTOUT(esr, ESR_ISS_SYSREG_CRM);
+	const uint64_t dir = __SHIFTOUT(esr, ESR_ISS_SYSREG_DIRECTION);
+
+	uint32_t code = SYSREG_ENC(op0, op1, CRn, CRm, op2);
+	const struct sysreg_table *tid =
+	    sysreg_bsearch(sysreg_tid, __arraycount(sysreg_tid), code);
+	if (tid == NULL) {
+		uartprintf("%s:%d: unsupported trapped reg: pc=%016lx\n", __func__, __LINE__, tf->tf_pc);
+		return -1;
+	}
+
+	struct aarch64_cpudata *cpudata = (struct aarch64_cpudata *)reg_tpidr_el2_read();
+
+	if (dir == 0) {
+		/* write access */
+		/* XXXXXXXXXXXXXXXXX: read only sysreg write */
+		uartprintf("%s:%d: cannot write SYSREG: %s\n", __func__, __LINE__, tid->name);
+		return -1;
+//		if (Rt == 31)
+//			cpudata->guest.tids[tid->id] = 0;
+//		else
+//			cpudata->guest.tids[tid->id] = tf->tf_reg[Rt];
+
+	} else {
+		/* read access */
+		uartprintf("%s:%d: read sysreg(trapped): %s=%016lx\n", __func__, __LINE__, tid->name, cpudata->guest.tids[tid->id]);
+		if (Rt != 31)
+			tf->tf_reg[Rt] = cpudata->guest.tids[tid->id];
+		tf->tf_pc += 4;
+	}
+
+	return 0;
+}
+
 void
 aarch64_el2_vmexit_trap(struct trapframe *tf)
 {
@@ -249,6 +358,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	const uint64_t esr = tf->tf_esr;
 	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
 	vm_prot_t ftype;
+	bool do_vmexit = true;
 
 	cpudata_pa = (struct aarch64_cpudata *)reg_tpidr_el2_read();
 	exit = &cpudata_pa->exit;	/* exit is PA */
@@ -266,6 +376,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		exit->reason = NVMM_VCPU_EXIT_MEMORY;
 		exit->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
 		exit->u.mem.prot = ftype;
+		__asm __volatile ("clrex");	// XXXXXXXXXXXXX: required?
 		break;
 	case ESR_EC_DATA_ABT_EL_LOW:
 		/* Abort on data load or store */
@@ -278,6 +389,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		exit->reason = NVMM_VCPU_EXIT_MEMORY;
 		exit->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
 		exit->u.mem.prot = ftype;
+		__asm __volatile ("clrex");	// XXXXXXXXXXXXX: required?
 		break;
 	case ESR_EC_INSN_ABT_EL_CUR:
 	case ESR_EC_DATA_ABT_EL_CUR:
@@ -309,15 +421,24 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		break;
 	case ESR_EC_SYS_REG:
 		/* system register trap */
-		if (__SHIFTOUT(esr, ESR_ISS_MCRR_DIRECTION) == 0)
-			exit->reason = NVMM_VCPU_EXIT_MSR;
-		else
-			exit->reason = NVMM_VCPU_EXIT_MRS;
+		if (inkernel_handle_sysreg(tf) == 0) {
+			do_vmexit = false;
+		} else {
+			if (__SHIFTOUT(esr, ESR_ISS_SYSREG_DIRECTION) == 0)
+				exit->reason = NVMM_VCPU_EXIT_MSR;
+			else
+				exit->reason = NVMM_VCPU_EXIT_MRS;
+		}
 		break;
 	case ESR_EC_HVC_A64:
+		exit->reason = NVMM_VCPU_EXIT_HVC;
+		break;
 	case ESR_EC_SMC_A64:
+		exit->reason = NVMM_VCPU_EXIT_SMC;
+		break;
 	case ESR_EC_WFX:
-		exit->reason = NVMM_VCPU_EXIT_HALTED;
+		exit->reason = ((esr & ESR_ISS_WFX_TRAP_INSN) == 0) ?
+		    NVMM_VCPU_EXIT_WFI : NVMM_VCPU_EXIT_WFE;
 		break;
 	}
 
@@ -327,6 +448,8 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		 * read an instruction from PC.
 		 * if instruction abort, it cannot be read.
 		 */
+
+		/* XXXXXXXXXX: use aarch64_gva_to_pa() */
 		uint64_t va = tf->tf_pc;
 		if (__SHIFTOUT(tf->tf_spsr, SPSR_M) == SPSR_M_EL0T)
 			reg_s12e0r_write(va);
@@ -341,8 +464,10 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		}
 	}
 
-	aarch64_vmexit_context(tf, cpudata_pa);
-	reg_tpidr_el2_write(0);
+	if (do_vmexit) {
+		aarch64_vmexit_context(tf, cpudata_pa);
+		reg_tpidr_el2_write(0);
+	}
 }
 
 void
@@ -356,7 +481,7 @@ aarch64_el2_vmenter(struct trapframe *tf)
 		uartprintf("panic: %s: tpidr_el2 is not zero: %016lx\n", __func__, reg_tpidr_el2_read());
 
 	reg_tpidr_el2_write((register_t)cpudata_pa);
-	if (nvmm_debug >= 2)
+	if (nvmm_debug & 1)
 		uartprintf("VMENTER: PC=%016lx\n", cpudata_pa->guest.sprs[NVMM_AARCH64_SPR_PC]);
 
 	/* save host state */
@@ -379,7 +504,7 @@ aarch64_el2_vmenter(struct trapframe *tf)
 //	hcr |= HCR_EL2_TACR;	/* trap EL1 accessing ACTLR_EL1 */
 //	hcr |= HCR_EL2_TIDCP;	/* trap IMPLEMENTATION DEFINED system registers */
 	hcr |= HCR_EL2_TSC;		/* trap SMC */
-//	hcr |= HCR_EL2_TID3;	/* trap ID group3 regs: ID_PFR*_EL1,ID_DFR*_EL1,ID_AFR*_EL1,ID_MMFR*_EL1,ID_ISAR*_EL1,MVFR*_EL1,ID_AA64PFR*_EL1,ID_AA64DFR*_EL1,ID_AA64ISAR*_EL1,ID_AA64MMFR*_EL1,ID_AA64AFR*_EL1 */
+	hcr |= HCR_EL2_TID3;	/* trap ID group3 regs: ID_PFR*_EL1,ID_DFR*_EL1,ID_AFR*_EL1,ID_MMFR*_EL1,ID_ISAR*_EL1,MVFR*_EL1,ID_AA64PFR*_EL1,ID_AA64DFR*_EL1,ID_AA64ISAR*_EL1,ID_AA64MMFR*_EL1,ID_AA64AFR*_EL1 */
 //	hcr |= HCR_EL2_TID2;	/* trap ID group2 regs: CTR_EL0,CCSIDR_EL1,CLIDR_EL1,CSSELR_EL1 */
 //	hcr |= HCR_EL2_TID1;	/* trap ID group1 regs: AIDR_EL1,REVIDR_EL1 */
 //	hcr |= HCR_EL2_TID0;	/* trap ID group0 regs: none (aarch32:FPSID,JIDR) */
@@ -413,6 +538,11 @@ aarch64_el2_vmenter(struct trapframe *tf)
 			hcr |= HCR_EL2_VF;
 			break;
 		}
+	}
+	//XXXXXXXXXXXXXXXXXXXXXXXX DEBUG
+	if (nvmm_debug & 8) {
+		nvmm_debug &= ~8;
+		hcr |= HCR_EL2_VSE;
 	}
 
 	reg_vttbr_el2_write(cpudata_pa->vttbr_el2);
@@ -448,13 +578,13 @@ aarch64_el2_maintain_ipa(struct trapframe *tf)
 	isb();
 
 	if (op & NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL) {
-		if (nvmm_debug >= 2) {
+		if (nvmm_debug & 4) {
 			uartprintf("%s: TLBI VMID=0x%"PRIx64"/ALL\n",
 			    __func__, __SHIFTOUT(reg_vttbr_el2_read(), VTTBR_VIMD));
 		}
 		aarch64_tlbi_by_vmid();
 	} else if (op & NVMM_AARCH64_MAINTAIN_OP_TLBI) {
-		if (nvmm_debug >= 2) {
+		if (nvmm_debug & 4) {
 			uartprintf("%s: TLBI VMID=0x%"PRIx64", IPA=%016"PRIx64"\n",
 			    __func__, __SHIFTOUT(reg_vttbr_el2_read(), VTTBR_VIMD), ipa);
 		}

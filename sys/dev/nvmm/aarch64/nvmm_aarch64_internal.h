@@ -15,7 +15,8 @@ struct aarch64_cpudata {
 char *uartputs(const char *);
 int uartprintf(const char * restrict, ...) __printflike(1, 2);
 
-void dump_el2_trapframe(struct trapframe *tf);
+paddr_t aarch64_gva_to_pa(struct trapframe *, vaddr_t);
+void dump_el2_trapframe(struct trapframe *);
 void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
 void aarch64_el2_vmexit_trap(struct trapframe *tf);
