@@ -25,6 +25,10 @@ include	"arch/riscv/conf/GENERIC.common"
 #options 	EARLYCONS=com, CONSADDR=0x10000000	# qemu virt
 options 	VERBOSE_INIT_RISCV
 
+# These options enable verbose messages for several subsystems.
+# Warning, these may compile large string tables into the kernel!
+#options 	USBVERBOSE	# verbose USB device autoconfig messages
+
 # Diagnostic/debugging support options
 options 	DIAGNOSTIC	# inexpensive kernel consistency checks
 				# XXX to be commented out on release branch
