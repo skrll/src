@@ -237,14 +237,15 @@ aarch64_guest_backtrace(struct trapframe *tf, struct trapframe *gtf)
 	uint64_t *fp_pa;
 
 	fp_va = gtf->tf_reg[29];
-	uartprintf("0x%016lx, fp=%016lx\n", gtf->tf_reg[30], fp_va);
+	uartprintf("trace:\n"
+	    "0x%016lx %016lx fp=%016lx\n", gtf->tf_reg[30], gtf->tf_reg[30], fp_va);
 
 	while (fp_va != 0) {
 		fp_pa = (uint64_t *)aarch64_gva_to_pa(tf, fp_va);
 		if (fp_pa == 0)
 			break;
 
-		uartprintf("%016lx, fp=%016lx\n", fp_pa[1], fp_va);
+		uartprintf("0x%016lx %016lx fp=%016lx\n", fp_pa[1], fp_pa[1], fp_va);
 		fp_va = fp_pa[0];
 	}
 }
@@ -291,7 +292,6 @@ el2sync_el_low(struct trapframe *tf)
 				aarch64_guest_backtrace(tf, gtf_pa);	/* XXX: dangerous */
 			}
 			// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: </DEBUG>
-
 
 			aarch64_el2_vmexit_trap(tf);
 		}
