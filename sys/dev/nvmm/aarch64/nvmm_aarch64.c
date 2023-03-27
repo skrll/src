@@ -428,9 +428,10 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 
 
 	if (nvmm_debug) {
-		printf("%s:%s:%d: pmap pm=%p, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
+		printf("%s:%s:%d: pmap pm=%p, l0table_pa=%016lx, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
 		    cpu_name(curcpu()), __func__, __LINE__,
 		    mach->vm->vm_map.pmap,
+		    pm->pm_l0table_pa,
 		    pm->pm_st2_startlevel,
 		    mach->vm->vm_map.pmap->pm_st2_table,
 		    mach->vm->vm_map.pmap->pm_st2_table_pa,
