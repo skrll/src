@@ -427,7 +427,8 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 	}
 
 
-	if (nvmm_debug) {
+	//XXXXXXXXXXXXXXXXXXXXXXXXXXX
+//	if (nvmm_debug) {
 		printf("%s:%s:%d: pmap pm=%p, l0table_pa=%016lx, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
 		    cpu_name(curcpu()), __func__, __LINE__,
 		    mach->vm->vm_map.pmap,
@@ -436,7 +437,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 		    mach->vm->vm_map.pmap->pm_st2_table,
 		    mach->vm->vm_map.pmap->pm_st2_table_pa,
 		    pm->pm_st2_concatenate_num);
-	}
+//	}
 
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
 	mach->machdata = machdata;
@@ -641,9 +642,9 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	if (__predict_false(vcpu->comm->event_commit)) {
 		vcpu->comm->event_commit = false;
 		cpudata->send_event_type = vcpu->comm->event.type;
-		if (nvmm_debug > 0) {
+//		if (nvmm_debug > 0) {
 			printf("%s:%s:%d: send event: %u\n", cpu_name(curcpu()), __func__, __LINE__, vcpu->comm->event.type);
-		}
+//		}
 	} else {
 		cpudata->send_event_type = 0;
 	}

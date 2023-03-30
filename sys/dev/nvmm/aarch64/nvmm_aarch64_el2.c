@@ -49,11 +49,11 @@ __KERNEL_RCSID(0, "$NetBSD$");
 int aarch64_el2_initted;
 
 paddr_t
-aarch64_gva_to_pa(struct trapframe *tf, vaddr_t va)
+aarch64_gva_to_pa(uint64_t spsr, vaddr_t va)
 {
-	paddr_t pa = 0;
+	paddr_t pa = -1;
 
-	if (__SHIFTOUT(tf->tf_spsr, SPSR_M) == SPSR_M_EL0T)
+	if (__SHIFTOUT(spsr, SPSR_M) == SPSR_M_EL0T)
 		reg_s12e0r_write(va);
 	else
 		reg_s12e1r_write(va);
@@ -264,26 +264,27 @@ pa_hpfar_far(vaddr_t hpfar, vaddr_t far)
 struct sysreg_table {
 	uint32_t code;
 	int id;
+	bool writable;
 	const char name[32];	/* debug. don't use "const char *" because el2 running on PA */
 };
 
 /* must be sorted by code */
 const struct sysreg_table sysreg_tid[] = {
-	/*         op0 op1 CRn CRm op2 ID				*/
-	{ SYSREG_ENC(3, 0,  0,  3, 0), NVMM_AARCH64_TID_MVFR0_EL1,		"MVFR0_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  3, 1), NVMM_AARCH64_TID_MVFR1_EL1,		"MVFR1_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  3, 2), NVMM_AARCH64_TID_MVFR2_EL1,		"MVFR2_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  4, 0), NVMM_AARCH64_TID_ID_AA64PFR0_EL1,	"ID_AA64PFR0_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  4, 1), NVMM_AARCH64_TID_ID_AA64PFR1_EL1,	"ID_AA64PFR1_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  5, 0), NVMM_AARCH64_TID_ID_AA64DFR0_EL1,	"ID_AA64DFR0_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  5, 1), NVMM_AARCH64_TID_ID_AA64DFR1_EL1,	"ID_AA64DFR1_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  5, 4), NVMM_AARCH64_TID_ID_AA64AFR0_EL1,	"ID_AA64AFR0_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  5, 5), NVMM_AARCH64_TID_ID_AA64AFR1_EL1,	"ID_AA64AFR1_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  6, 0), NVMM_AARCH64_TID_ID_AA64ISAR0_EL1,	"ID_AA64ISAR0_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  6, 1), NVMM_AARCH64_TID_ID_AA64ISAR1_EL1,	"ID_AA64ISAR1_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  7, 0), NVMM_AARCH64_TID_ID_AA64MMFR0_EL1,	"ID_AA64MMFR0_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  7, 1), NVMM_AARCH64_TID_ID_AA64MMFR1_EL1,	"ID_AA64MMFR1_EL1" },
-	{ SYSREG_ENC(3, 0,  0,  7, 2), NVMM_AARCH64_TID_ID_AA64MMFR2_EL1,	"ID_AA64MMFR2_EL1" },
+	/*         op0 op1 CRn CRm op2 ID                                   writable?  name             */
+	{ SYSREG_ENC(3, 0,  0,  3, 0), NVMM_AARCH64_TID_MVFR0_EL1,		false, "MVFR0_EL1"	},
+	{ SYSREG_ENC(3, 0,  0,  3, 1), NVMM_AARCH64_TID_MVFR1_EL1,		false, "MVFR1_EL1"	},
+	{ SYSREG_ENC(3, 0,  0,  3, 2), NVMM_AARCH64_TID_MVFR2_EL1,		false, "MVFR2_EL1"	},
+	{ SYSREG_ENC(3, 0,  0,  4, 0), NVMM_AARCH64_TID_ID_AA64PFR0_EL1,	false, "ID_AA64PFR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  4, 1), NVMM_AARCH64_TID_ID_AA64PFR1_EL1,	false, "ID_AA64PFR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  5, 0), NVMM_AARCH64_TID_ID_AA64DFR0_EL1,	false, "ID_AA64DFR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  5, 1), NVMM_AARCH64_TID_ID_AA64DFR1_EL1,	false, "ID_AA64DFR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  5, 4), NVMM_AARCH64_TID_ID_AA64AFR0_EL1,	false, "ID_AA64AFR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  5, 5), NVMM_AARCH64_TID_ID_AA64AFR1_EL1,	false, "ID_AA64AFR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  6, 0), NVMM_AARCH64_TID_ID_AA64ISAR0_EL1,	false, "ID_AA64ISAR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  6, 1), NVMM_AARCH64_TID_ID_AA64ISAR1_EL1,	false, "ID_AA64ISAR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  7, 0), NVMM_AARCH64_TID_ID_AA64MMFR0_EL1,	false, "ID_AA64MMFR0_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  7, 1), NVMM_AARCH64_TID_ID_AA64MMFR1_EL1,	false, "ID_AA64MMFR1_EL1" },
+	{ SYSREG_ENC(3, 0,  0,  7, 2), NVMM_AARCH64_TID_ID_AA64MMFR2_EL1,	false, "ID_AA64MMFR2_EL1" },
 };
 
 static const struct sysreg_table *
@@ -308,7 +309,7 @@ sysreg_bsearch(const struct sysreg_table *table, size_t tablenum, uint32_t code)
 }
 
 static int
-inkernel_handle_sysreg(struct trapframe *tf)
+emul_sysreg_rw(struct trapframe *tf)
 {
 	const uint64_t esr = tf->tf_esr;
 	const uint64_t op0 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP0);
@@ -331,14 +332,17 @@ inkernel_handle_sysreg(struct trapframe *tf)
 
 	if (dir == 0) {
 		/* write access */
-		/* XXXXXXXXXXXXXXXXX: read only sysreg write */
-		uartprintf("%s:%d: cannot write SYSREG: %s\n", __func__, __LINE__, tid->name);
-		return -1;
-//		if (Rt == 31)
-//			cpudata->guest.tids[tid->id] = 0;
-//		else
-//			cpudata->guest.tids[tid->id] = tf->tf_reg[Rt];
-
+		if (tid->writable) {
+			if (Rt == 31) {
+				cpudata->guest.tids[tid->id] = 0;
+			} else {
+				cpudata->guest.tids[tid->id] = tf->tf_reg[Rt];
+			}
+		} else {
+			uartprintf("%s:%d: cannot write SYSREG: %s\n", __func__, __LINE__, tid->name);
+			// XXX: TODO: inject undefined
+			return -1;
+		}
 	} else {
 		/* read access */
 		uartprintf("%s:%d: read sysreg(trapped): %s=%016lx\n", __func__, __LINE__, tid->name, cpudata->guest.tids[tid->id]);
@@ -372,15 +376,17 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		 * Abort on instruction fetch.
 		 * this requires PROT_EXEC and implicit PROT_READ.
 		 */
+		__asm __volatile ("clrex");
 		ftype = VM_PROT_READ | VM_PROT_EXECUTE;
 		exit->reason = NVMM_VCPU_EXIT_MEMORY;
 		exit->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
 		exit->u.mem.prot = ftype;
-		__asm __volatile ("clrex");	// XXXXXXXXXXXXX: required?
 		break;
 	case ESR_EC_DATA_ABT_EL_LOW:
 		/* Abort on data load or store */
+		__asm __volatile ("clrex");
 		if (__SHIFTOUT(esr, ESR_ISS_DATAABORT_CM)) {
+			/* cache maintainance op should be treated as read */
 			ftype = VM_PROT_READ;
 		} else {
 			uint64_t rw = __SHIFTOUT(esr, ESR_ISS_DATAABORT_WnR);
@@ -389,7 +395,6 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		exit->reason = NVMM_VCPU_EXIT_MEMORY;
 		exit->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
 		exit->u.mem.prot = ftype;
-		__asm __volatile ("clrex");	// XXXXXXXXXXXXX: required?
 		break;
 	case ESR_EC_INSN_ABT_EL_CUR:
 	case ESR_EC_DATA_ABT_EL_CUR:
@@ -421,7 +426,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		break;
 	case ESR_EC_SYS_REG:
 		/* system register trap */
-		if (inkernel_handle_sysreg(tf) == 0) {
+		if (emul_sysreg_rw(tf) == 0) {
 			do_vmexit = false;
 		} else {
 			if (__SHIFTOUT(esr, ESR_ISS_SYSREG_DIRECTION) == 0)
@@ -448,20 +453,9 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		 * read an instruction from PC.
 		 * if instruction abort, it cannot be read.
 		 */
-
-		/* XXXXXXXXXX: use aarch64_gva_to_pa() */
-		uint64_t va = tf->tf_pc;
-		if (__SHIFTOUT(tf->tf_spsr, SPSR_M) == SPSR_M_EL0T)
-			reg_s12e0r_write(va);
-		else
-			reg_s12e1r_write(va);
-		isb();
-		uint64_t par = reg_par_el1_read();
-		if ((par & PAR_F) == 0) {
-			uint32_t *pa = (uint32_t *)
-			    ((par & PAR_PA) + (va & PAR_PA_LOWMASK));
+		uint32_t *pa = (uint32_t *)aarch64_gva_to_pa(tf->tf_spsr, tf->tf_pc);
+		if (pa != (void *)-1)
 			exit->insn = le32toh(*pa);
-		}
 	}
 
 	if (do_vmexit) {
@@ -474,6 +468,7 @@ void
 aarch64_el2_vmenter(struct trapframe *tf)
 {
 	struct aarch64_cpudata *cpudata_pa;
+	bool need_cache_flush = false;
 
 	cpudata_pa = (struct aarch64_cpudata *)tf->tf_reg[0];
 
@@ -489,25 +484,29 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	/* load guest state */
 	vcpu_context_load(tf, &cpudata_pa->guest);
 
+	if ((reg_sctlr_el1_read() & SCTLR_M) == 0)
+		need_cache_flush = true;
+
+
 	uint64_t hcr = HCR_EL2_RW;	/* 64bit */
 //	hcr |= HCR_EL2_ID;		/* stage2 IC disable */
 //	hcr |= HCR_EL2_CD;		/* stage2 DC disable */
-//	hcr |= HCR_EL2_TRVM;	/* trap EL1 reads SCTLR_EL1,TTBR0_EL1,TTBR1_EL1,TCR_EL1,ESR_EL1,FAR_EL1,AFSR0_EL1,AFSR1_EL1,MAIR_EL1,AMAIR_EL1,CONTEXTIDR_EL1 */
+//	hcr |= HCR_EL2_TRVM;		/* trap EL1 reads SCTLR_EL1,TTBR0_EL1,TTBR1_EL1,TCR_EL1,ESR_EL1,FAR_EL1,AFSR0_EL1,AFSR1_EL1,MAIR_EL1,AMAIR_EL1,CONTEXTIDR_EL1 */
 //	hcr |= HCR_EL2_HCD;		/* hvc disable (if EL3 is not implemented) */
 //	hcr |= HCR_EL2_TDZ;		/* trap DC ZVA */
 //	hcr |= HCR_EL2_TGE;		/* trap EL0/EL1 general exceptions */
 //	hcr |= HCR_EL2_TVM;		/* trap EL1 writes SCTLR_EL1,TTBR0_EL1,TTBR1_EL1,TCR_EL1,ESR_EL1,FAR_EL1,AFSR0_EL1,AFSR1_EL1,MAIR_EL1,AMAIR_EL1,CONTEXTIDR_EL1 */
-//	hcr |= HCR_EL2_TTLB;	/* trap EL1 TLB op */
+//	hcr |= HCR_EL2_TTLB;		/* trap EL1 TLB op */
 //	hcr |= HCR_EL2_TPU;		/* trap EL0/EL1 cache op: IC IVAU,IC IALLU,IC IALLUIS,DC CVAU */
 //	hcr |= HCR_EL2_TPC;		/* trap EL0/EL1 cache op: DC IVAC,DC CIVAC,DC CVAC */
 //	hcr |= HCR_EL2_TSW;		/* trap EL0/EL1 cache op: DC ISW,DC CSW,DC CISW */
-//	hcr |= HCR_EL2_TACR;	/* trap EL1 accessing ACTLR_EL1 */
-//	hcr |= HCR_EL2_TIDCP;	/* trap IMPLEMENTATION DEFINED system registers */
+//	hcr |= HCR_EL2_TACR;		/* trap EL1 accessing ACTLR_EL1 */
+//	hcr |= HCR_EL2_TIDCP;		/* trap IMPLEMENTATION DEFINED system registers */
 	hcr |= HCR_EL2_TSC;		/* trap SMC */
-	hcr |= HCR_EL2_TID3;	/* trap ID group3 regs: ID_PFR*_EL1,ID_DFR*_EL1,ID_AFR*_EL1,ID_MMFR*_EL1,ID_ISAR*_EL1,MVFR*_EL1,ID_AA64PFR*_EL1,ID_AA64DFR*_EL1,ID_AA64ISAR*_EL1,ID_AA64MMFR*_EL1,ID_AA64AFR*_EL1 */
-//	hcr |= HCR_EL2_TID2;	/* trap ID group2 regs: CTR_EL0,CCSIDR_EL1,CLIDR_EL1,CSSELR_EL1 */
-//	hcr |= HCR_EL2_TID1;	/* trap ID group1 regs: AIDR_EL1,REVIDR_EL1 */
-//	hcr |= HCR_EL2_TID0;	/* trap ID group0 regs: none (aarch32:FPSID,JIDR) */
+	hcr |= HCR_EL2_TID3;		/* trap ID group3 regs: ID_PFR*_EL1,ID_DFR*_EL1,ID_AFR*_EL1,ID_MMFR*_EL1,ID_ISAR*_EL1,MVFR*_EL1,ID_AA64PFR*_EL1,ID_AA64DFR*_EL1,ID_AA64ISAR*_EL1,ID_AA64MMFR*_EL1,ID_AA64AFR*_EL1 */
+//	hcr |= HCR_EL2_TID2;		/* trap ID group2 regs: CTR_EL0,CCSIDR_EL1,CLIDR_EL1,CSSELR_EL1 */
+//	hcr |= HCR_EL2_TID1;		/* trap ID group1 regs: AIDR_EL1,REVIDR_EL1 */
+//	hcr |= HCR_EL2_TID0;		/* trap ID group0 regs: none (aarch32:FPSID,JIDR) */
 	hcr |= HCR_EL2_TWE;		/* trap WFE */
 	hcr |= HCR_EL2_TWI;		/* trap WFI */
 //	hcr |= HCR_EL2_DC;		/* default cacheable */
@@ -517,12 +516,11 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	hcr |= __SHIFTIN(1, HCR_EL2_BSU);	/* upgrade to inner-shareable */
 	hcr |= HCR_EL2_FB;		/* force broadcast TLBI VMALLE1,TLBI VAE1,TLBI ASIDE1,TLBI VAAE1,TLBI VALE1,TLBI VAALE1,IC IALLU */
 #endif
-
 	hcr |= HCR_EL2_AMO;		/* trap SError/AsyncAbort */
 	hcr |= HCR_EL2_IMO;		/* trap Physical IRQ */
 	hcr |= HCR_EL2_FMO;		/* trap Physical FIQ */
 //	hcr |= HCR_EL2_PTW;		/* Protect table walk */
-//	hcr |= HCR_EL2_SWIO;	/* override DC ISW to DC CISW */
+	hcr |= HCR_EL2_SWIO;		/* override DC ISW to DC CISW */
 	hcr |= HCR_EL2_VM;		/* enable Stage2 translation */
 
 
@@ -553,12 +551,16 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	 * XXX: Icache invalidation must be implement in
 	 *      aarch64_el2_maintain_ipa().
 	 */
-	asm("dsb ishst");
-	asm("ic ialluis");
-	asm("tlbi vmalle1is");
-	asm("tlbi vmalls12e1is");
-	asm("dsb ish");
-	asm("isb");
+	if (need_cache_flush) {
+		// want to call aarch64_dcache_wbinv_all()
+		asm("dsb ishst");
+		asm("ic ialluis");
+//		asm("tlbi vmalle1is");		//comment out ok UP
+//		asm("tlbi vmalls12e1is");	//comment out ok UP
+		asm("dsb ish");
+		asm("isb");
+	}
+	__asm __volatile ("clrex");	// XXXXXXXXXXXXX: required?
 }
 
 /* do TLB and CACHE operation with vm's VTTBR_EL2 */

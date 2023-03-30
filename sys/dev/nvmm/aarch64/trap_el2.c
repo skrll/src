@@ -231,7 +231,27 @@ dump_el2_trapframe(struct trapframe *tf)
 }
 
 static void
-aarch64_guest_backtrace(struct trapframe *tf, struct trapframe *gtf)
+aarch64_guest_backtrace_fp(uint64_t spsr, uint64_t fp)
+{
+	vaddr_t fp_va;
+	uint64_t *fp_pa;
+
+	fp_va = fp;
+	uartprintf("trace: fp=%016lx\n", fp_va);
+
+	while (fp_va != 0) {
+		fp_pa = (uint64_t *)aarch64_gva_to_pa(spsr, fp_va);
+		if (fp_pa == 0)
+			break;
+
+		uartprintf("0x%016lx %016lx fp=%016lx\n", fp_pa[1], fp_pa[1], fp_va);
+		fp_va = fp_pa[0];
+	}
+
+}
+
+static void
+aarch64_guest_backtrace_tf(struct trapframe *tf, struct trapframe *gtf)
 {
 	vaddr_t fp_va;
 	uint64_t *fp_pa;
@@ -241,7 +261,7 @@ aarch64_guest_backtrace(struct trapframe *tf, struct trapframe *gtf)
 	    "0x%016lx %016lx fp=%016lx\n", gtf->tf_reg[30], gtf->tf_reg[30], fp_va);
 
 	while (fp_va != 0) {
-		fp_pa = (uint64_t *)aarch64_gva_to_pa(tf, fp_va);
+		fp_pa = (uint64_t *)aarch64_gva_to_pa(tf->tf_spsr, fp_va);
 		if (fp_pa == 0)
 			break;
 
@@ -250,14 +270,21 @@ aarch64_guest_backtrace(struct trapframe *tf, struct trapframe *gtf)
 	}
 }
 
+static void
+dump_guest_regs(struct trapframe *tf)
+{
+	dump_el2_trapframe(tf);
+	uartprintf("esr_el1=%016"PRIxREGISTER", far_el1=%016"PRIxREGISTER"\n", reg_esr_el1_read(), reg_far_el1_read());
+	uartprintf("elr_el1=%016"PRIxREGISTER"\n", reg_elr_el1_read());
+
+	aarch64_guest_backtrace_fp(tf->tf_spsr, tf->tf_reg[29]);
+}
+
 void
 el2sync_el_low(struct trapframe *tf)
 {
 	const uint64_t esr = tf->tf_esr;
 	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
-
-//	XXXXXXXX: cannot use snprintf() because it is in subr_prf.c
-//	uartprintf("%s: %s: pc=%016"PRIx64" sp=%016"PRIx64" esr=%08"PRIx64"\n", __func__, eclass_trapname(eclass), tf->tf_pc, tf->tf_sp, esr);
 
 	if (eclass == ESR_EC_HVC_A64) {
 		if (reg_tpidr_el2_read() == 0) {
@@ -276,20 +303,20 @@ el2sync_el_low(struct trapframe *tf)
 				break;
 			}
 		} else {
-			/* hvc #n from guest */
+			/* XXXXXXXXX: debug: hvc #n from guest. TODO: psci */
 			uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
 			dump_el2_trapframe(tf);
 
 			// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: <DEBUG>
 			if ((tf->tf_esr & 0xffff) == 99) {
 				/* analyze guest stacktrace */
-				struct trapframe *gtf_pa = (struct trapframe *)aarch64_gva_to_pa(tf, tf->tf_reg[0]);
+				struct trapframe *gtf_pa = (struct trapframe *)aarch64_gva_to_pa(tf->tf_spsr, tf->tf_reg[0]);
 				uartprintf("guest tf(va) %016lx -> (pa)%p\n", tf->tf_reg[0], gtf_pa);
 				dump_el2_trapframe(gtf_pa);
 				uartprintf("guest: esr_el1=%016"PRIxREGISTER"\n", reg_esr_el1_read());
 				uartprintf("guest: far_el1=%016"PRIxREGISTER"\n", reg_far_el1_read());
 				uartprintf("guest: elr_el1=%016"PRIxREGISTER"\n", reg_elr_el1_read());
-				aarch64_guest_backtrace(tf, gtf_pa);	/* XXX: dangerous */
+				aarch64_guest_backtrace_tf(tf, gtf_pa);	/* XXX: dangerous */
 			}
 			// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: </DEBUG>
 
@@ -298,6 +325,10 @@ el2sync_el_low(struct trapframe *tf)
 	} else {
 		if (nvmm_debug >= 2)
 			uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
+		// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX DEBUG
+		if (tf->tf_pc == 0x200)
+			aarch64_guest_backtrace_fp(tf->tf_spsr, tf->tf_reg[29]);
+
 		aarch64_el2_vmexit_trap(tf);
 	}
 
@@ -307,7 +338,8 @@ void
 el2irq_el_low(struct trapframe *tf)
 {
 	if (nvmm_debug >= 2)
-		uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
+		uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" ESR_EL1=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr, reg_esr_el1_read());
+
 	aarch64_el2_vmexit_irq(tf);
 }
 
@@ -315,14 +347,17 @@ void
 el2fiq_el_low(struct trapframe *tf)
 {
 	if (nvmm_debug >= 2)
-		uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
+		uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" ESR_EL1=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr, reg_esr_el1_read());
+
 	aarch64_el2_vmexit_irq(tf);
 }
 
 void
 el2error_el_low(struct trapframe *tf)
 {
-	uartprintf("%s: PC=%016"PRIx64" ESR=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr);
+	uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" ESR_EL1=0x%08"PRIx64"\n", __func__, tf->tf_pc, tf->tf_esr, reg_esr_el1_read());
+	dump_guest_regs(tf);
+
 	aarch64_el2_vmexit_trap(tf);
 }
 
