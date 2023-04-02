@@ -30,6 +30,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define DEBUG_DMA
 #define _RISCV_BUS_DMA_PRIVATE
 #define _RISCV_NEED_BUS_DMA_BOUNCE
 
@@ -894,7 +895,7 @@ _bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops, bool flag
 
 	KASSERTMSG((va & PAGE_MASK) == (pa & PAGE_MASK),
 	    "va %#" PRIxVADDR " pa %#" PRIxPADDR, va, pa);
-#if 0
+#if 1
 	printf("sync_segment: va=%#" PRIxVADDR
 	    " pa=%#" PRIxPADDR " len=%#" PRIxVSIZE " ops=%#x\n",
 	    va, pa, len, ops);
@@ -903,6 +904,7 @@ _bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops, bool flag
 	case BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE:
 		STAT_INCR(sync_prereadwrite);
 		cpu_dcache_wbinv_range(va, len);
+printf("%s: calling %p\n", __func__, cpu_sdcache_wbinv_range);
 		cpu_sdcache_wbinv_range(va, pa, len);
 		break;
 
@@ -928,6 +930,7 @@ _bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops, bool flag
 		if (len > 0) {
 			STAT_INCR(sync_preread);
 			cpu_dcache_inv_range(va, len);
+printf("%s: calling %p\n", __func__, cpu_sdcache_inv_range);
 			cpu_sdcache_inv_range(va, pa, len);
 		}
 		if (misalignment) {
@@ -935,6 +938,7 @@ _bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops, bool flag
 			pa += len;
 			STAT_INCR(sync_preread_tail);
 			cpu_dcache_wbinv_range(va, line_size);
+printf("%s: calling %p\n", __func__, cpu_sdcache_wbinv_range);
 			cpu_sdcache_wbinv_range(va, pa, line_size);
 		}
 		break;
@@ -943,6 +947,7 @@ _bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops, bool flag
 	case BUS_DMASYNC_PREWRITE:
 		STAT_INCR(sync_prewrite);
 		cpu_dcache_wb_range(va, len);
+printf("%s: calling %p\n", __func__, cpu_sdcache_wb_range);
 		cpu_sdcache_wb_range(va, pa, len);
 		break;
 
@@ -955,11 +960,13 @@ _bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops, bool flag
 	case BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE:
 		STAT_INCR(sync_postreadwrite);
 		cpu_dcache_inv_range(va, len);
+printf("%s: calling %p\n", __func__, cpu_sdcache_inv_range);
 		cpu_sdcache_inv_range(va, pa, len);
 		break;
 	case BUS_DMASYNC_POSTREAD:
 		STAT_INCR(sync_postread);
 		cpu_dcache_inv_range(va, len);
+printf("%s: calling %p\n", __func__, cpu_sdcache_inv_range);
 		cpu_sdcache_inv_range(va, pa, len);
 		break;
 	}
