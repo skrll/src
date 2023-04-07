@@ -24,7 +24,7 @@ attach	jh71x0usb at fdt with jh71x0_usb
 file	arch/riscv/starfive/jh71x0_usb.c		jh71x0_usb
 
 # JH7100 Pin control
-device	jh7100pinctrl: fdt_gpio, fdt_pinctrl
+device	jh7100pinctrl: fdt_gpio, fdt_pinctrl, gpiobus
 attach	jh7100pinctrl at fdt with jh7100_pinctrl
 file	arch/riscv/starfive/jh7100_pinctrl.c		jh7100_pinctrl
 
