@@ -71,7 +71,7 @@ jh7110pciephy* 	at fdt? pass 3		# StarFive JH7110 PCIe PHY
 # PCIe
 jh7110pcie* 	at fdt?			# StarFive JH7110 PCIe
 
-# Pin control
+# Pin control and GPIO controller
 jh7100pinctrl* 	at fdt? pass 2		# StarFive JH7100 pinctrl driver
 jh7110pinctrl* 	at fdt? pass 2		# StarFive JH7110 pinctrl driver
 sunxigpio* 	at fdt? pass 2		# Allwinner GPIO
