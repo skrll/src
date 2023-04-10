@@ -38,6 +38,17 @@ __KERNEL_RCSID(0, "$NetBSD: jh7100_pinctrl.c,v 1.3 2024/09/18 08:31:50 skrll Exp
 
 #include <dev/fdt/fdtvar.h>
 
+#define JH7100_GPIO_MAX_IRQS 1	// XXXNH
+
+struct jh7100_gpio_irq {
+	int	(*jgi_func)(void *);
+	void	 *jgi_arg;
+	bool	  jgi_mpsafe;
+//	int	  jgi_bank;
+//	int	  jgi_num;
+};
+
+
 struct jh7100_pinctrl_softc {
 	device_t		 sc_dev;
 	bus_space_tag_t		 sc_bst;
@@ -47,6 +58,9 @@ struct jh7100_pinctrl_softc {
 
 	kmutex_t		 sc_lock;
 	u_int			 sc_padctl_gpio;
+
+	void			*sc_ih;
+//	struct jh7100_gpio_jgi	 sc_jgi[JH7100_GPIO_MAX_IRQS];
 };
 
 struct jh7100_pinctrl_gpio_pin {
@@ -55,10 +69,16 @@ struct jh7100_pinctrl_gpio_pin {
 	bool				 pin_actlo;
 };
 
+
 #define GPIORD4(sc, reg)						       \
 	bus_space_read_4((sc)->sc_bst, (sc)->sc_gpio_bsh, (reg))
 #define GPIOWR4(sc, reg, val)						       \
 	bus_space_write_4((sc)->sc_bst, (sc)->sc_gpio_bsh, (reg), (val))
+
+
+#define	GPIO_ENABLE			0x0000
+#define	 GPIO_ENABLE_IRQS		__BIT(0)
+
 
 #define GPIO_DIN(pin)			(0x0048 + (((pin) / 32) * 4))
 
@@ -159,6 +179,273 @@ printf("%s\n", __func__);
 }
 
 
+#if 0
+static int
+jh7100_gpio_intr(void *priv)
+{
+	struct jh7100_pinctrl_softc * const sc = priv;
+
+	int ret = 0;
+
+	while ((bit = ffs32(status)) != 0) {
+		status &= ~__BIT(bit - 1);
+		jgi = &sc->sc_jgi[bit - 1];
+		if (jgi->jgi_func == NULL)
+			continue;
+		if (!jgi->jgi_mpsafe)
+			KERNEL_LOCK(1, curlwp);
+		ret |= jgi->jgi_func(jgi->jgi_arg);
+		if (!jgi->jgi_mpsafe)
+			KERNEL_UNLOCK_ONE(curlwp);
+	}
+
+	return ret;
+}
+
+
+
+
+static void *
+jh7100_intr_enable(struct jh7100_pinctrl_softc *sc,
+    const struct jh7100_pinctrl_pins *pin_def, u_int mode, bool mpsafe,
+    int (*func)(void *), void *arg)
+{
+	uint32_t val;
+	struct jh7100_pinctrl_jgi *jgi;
+
+	if (pin_def->functions[pin_def->jgi_func] == NULL ||
+	    strcmp(pin_def->functions[pin_def->jgi_func], "irq") != 0)
+		return NULL;
+
+	KASSERT(pin_def->jgi_num < SUNXI_GPIO_MAX_EINT);
+
+	mutex_enter(&sc->sc_lock);
+
+	jgi = &sc->sc_jgi[pin_def->jgi_bank][pin_def->jgi_num];
+	if (jgi->jgi_func != NULL) {
+		mutex_exit(&sc->sc_lock);
+		return NULL;	/* in use */
+	}
+
+	/* Set function */
+	if (jh7100_pinctrl_setfunc(sc, pin_def, "irq") != 0) {
+		mutex_exit(&sc->sc_lock);
+		return NULL;
+	}
+
+	jgi->jgi_func = func;
+	jgi->jgi_arg = arg;
+	jgi->jgi_mpsafe = mpsafe;
+	jgi->jgi_bank = pin_def->jgi_bank;
+	jgi->jgi_num = pin_def->jgi_num;
+
+	/* Configure jgi mode */
+	val = GPIO_READ(sc, SUNXI_GPIO_INT_CFG(jgi->jgi_bank, jgi->jgi_num));
+	val &= ~SUNXI_GPIO_INT_MODEMASK(jgi->jgi_num);
+	val |= __SHIFTIN(mode, SUNXI_GPIO_INT_MODEMASK(jgi->jgi_num));
+	GPIO_WRITE(sc, SUNXI_GPIO_INT_CFG(jgi->jgi_bank, jgi->jgi_num), val);
+
+	val = SUNXI_GPIO_INT_DEBOUNCE_CLK_SEL;
+	GPIO_WRITE(sc, SUNXI_GPIO_INT_DEBOUNCE(jgi->jgi_bank), val);
+
+	/* Enable jgi */
+	val = GPIO_READ(sc, SUNXI_GPIO_INT_CTL(jgi->jgi_bank));
+	val |= __BIT(jgi->jgi_num);
+	GPIO_WRITE(sc, SUNXI_GPIO_INT_CTL(jgi->jgi_bank), val);
+
+	mutex_exit(&sc->sc_lock);
+
+	return jgi;
+}
+
+static void
+jh7100_intr_disable(struct jh7100_pinctrl_softc *sc, struct jh7100_pinctrl_jgi *jgi)
+{
+	uint32_t val;
+
+	KASSERT(jgi->jgi_func != NULL);
+
+	mutex_enter(&sc->sc_lock);
+
+	/* Disable jgi */
+	val = GPIO_READ(sc, SUNXI_GPIO_INT_CTL(jgi->jgi_bank));
+	val &= ~__BIT(jgi->jgi_num);
+	GPIO_WRITE(sc, SUNXI_GPIO_INT_CTL(jgi->jgi_bank), val);
+	GPIO_WRITE(sc, SUNXI_GPIO_INT_STATUS(jgi->jgi_bank), __BIT(jgi->jgi_num));
+
+	jgi->jgi_func = NULL;
+	jgi->jgi_arg = NULL;
+	jgi->jgi_mpsafe = false;
+
+	mutex_exit(&sc->sc_lock);
+}
+
+static void *
+jh7100_fdt_intr_establish(device_t dev, u_int *specifier, int ipl, int flags,
+    int (*func)(void *), void *arg, const char *xname)
+{
+	struct jh7100_pinctrl_softc * const sc = device_private(dev);
+	bool mpsafe = (flags & FDT_INTR_MPSAFE) != 0;
+	const struct jh7100_pinctrl_pins *pin_def;
+	u_int mode;
+
+	if (ipl != IPL_VM) {
+		aprint_error_dev(dev, "%s: wrong IPL %d (expected %d)\n",
+		    __func__, ipl, IPL_VM);
+		return NULL;
+	}
+
+	/* 1st cell is the bank */
+	/* 2nd cell is the pin */
+	/* 3rd cell is flags */
+	const u_int port = be32toh(specifier[0]);
+	const u_int pin = be32toh(specifier[1]);
+	const u_int type = be32toh(specifier[2]) & 0xf;
+
+	switch (type) {
+	case FDT_INTR_TYPE_POS_EDGE:
+		mode = SUNXI_GPIO_INT_MODE_POS_EDGE;
+		break;
+	case FDT_INTR_TYPE_NEG_EDGE:
+		mode = SUNXI_GPIO_INT_MODE_NEG_EDGE;
+		break;
+	case FDT_INTR_TYPE_DOUBLE_EDGE:
+		mode = SUNXI_GPIO_INT_MODE_DOUBLE_EDGE;
+		break;
+	case FDT_INTR_TYPE_HIGH_LEVEL:
+		mode = SUNXI_GPIO_INT_MODE_HIGH_LEVEL;
+		break;
+	case FDT_INTR_TYPE_LOW_LEVEL:
+		mode = SUNXI_GPIO_INT_MODE_LOW_LEVEL;
+		break;
+	default:
+		aprint_error_dev(dev, "%s: unsupported irq type 0x%x\n",
+		    __func__, type);
+		return NULL;
+	}
+
+	pin_def = jh7100_pinctrl_lookup(sc, port, pin);
+	if (pin_def == NULL)
+		return NULL;
+
+	return jh7100_intr_enable(sc, pin_def, mode, mpsafe, func, arg);
+}
+
+static void
+jh7100_fdt_intr_disestablish(device_t dev, void *ih)
+{
+	struct jh7100_pinctrl_softc * const sc = device_private(dev);
+	struct jh7100_pinctrl_jgi * const jgi = ih;
+
+	jh7100_intr_disable(sc, jgi);
+}
+
+static bool
+jh7100_fdt_intrstr(device_t dev, u_int *specifier, char *buf, size_t buflen)
+{
+	struct jh7100_pinctrl_softc * const sc = device_private(dev);
+	const struct jh7100_pinctrl_pins *pin_def;
+
+	/* 1st cell is the bank */
+	/* 2nd cell is the pin */
+	/* 3rd cell is flags */
+	if (!specifier)
+		return false;
+	const u_int port = be32toh(specifier[0]);
+	const u_int pin = be32toh(specifier[1]);
+
+	pin_def = jh7100_pinctrl_lookup(sc, port, pin);
+	if (pin_def == NULL)
+		return false;
+
+	snprintf(buf, buflen, "GPIO %s", pin_def->name);
+
+	return true;
+}
+
+static struct fdtbus_interrupt_controller_func jh7100_pinctrl_intrfuncs = {
+	.establish = jh7100_fdt_intr_establish,
+	.disestablish = jh7100_fdt_intr_disestablish,
+	.intrstr = jh7100_fdt_intrstr,
+};
+
+static void *
+jh7100_pinctrl_intr_establish(void *vsc, int pin, int ipl, int irqmode,
+    int (*func)(void *), void *arg)
+{
+	struct jh7100_pinctrl_softc * const sc = vsc;
+	bool mpsafe = (irqmode & GPIO_INTR_MPSAFE) != 0;
+	int type = irqmode & GPIO_INTR_MODE_MASK;
+	const struct jh7100_pinctrl_pins *pin_def;
+	u_int mode;
+
+	switch (type) {
+	case GPIO_INTR_POS_EDGE:
+		mode = SUNXI_GPIO_INT_MODE_POS_EDGE;
+		break;
+	case GPIO_INTR_NEG_EDGE:
+		mode = SUNXI_GPIO_INT_MODE_NEG_EDGE;
+		break;
+	case GPIO_INTR_DOUBLE_EDGE:
+		mode = SUNXI_GPIO_INT_MODE_DOUBLE_EDGE;
+		break;
+	case GPIO_INTR_HIGH_LEVEL:
+		mode = SUNXI_GPIO_INT_MODE_HIGH_LEVEL;
+		break;
+	case GPIO_INTR_LOW_LEVEL:
+		mode = SUNXI_GPIO_INT_MODE_LOW_LEVEL;
+		break;
+	default:
+		aprint_error_dev(sc->sc_dev, "%s: unsupported irq type 0x%x\n",
+				 __func__, type);
+		return NULL;
+	}
+
+	if (pin < 0 || pin >= sc->sc_padconf->npins)
+		return NULL;
+	pin_def = &sc->sc_padconf->pins[pin];
+
+	return jh7100_intr_enable(sc, pin_def, mode, mpsafe, func, arg);
+}
+
+static void
+jh7100_pinctrl_intr_disestablish(void *vsc, void *ih)
+{
+	struct jh7100_pinctrl_softc * const sc = vsc;
+	struct jh7100_pinctrl_jgi * const jgi = ih;
+
+	jh7100_intr_disable(sc, jgi);
+}
+
+static bool
+jh7100_pinctrl_intrstr(void *vsc, int pin, int irqmode, char *buf, size_t buflen)
+{
+	struct jh7100_pinctrl_softc * const sc = vsc;
+	const struct jh7100_pinctrl_pins *pin_def;
+
+	if (pin < 0 || pin >= sc->sc_padconf->npins)
+		return NULL;
+	pin_def = &sc->sc_padconf->pins[pin];
+
+	snprintf(buf, buflen, "GPIO %s", pin_def->name);
+
+	return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+#endif
+
 static int
 jh7100_parse_slew_rate(int phandle)
 {
@@ -169,6 +456,8 @@ jh7100_parse_slew_rate(int phandle)
 
 	return -1;
 }
+
+
 
 static void
 jh7100_pinctrl_pin_properties(struct jh7100_pinctrl_softc *sc, int phandle,
@@ -245,6 +534,8 @@ jh7100_pinctrl_pin_properties(struct jh7100_pinctrl_softc *sc, int phandle,
 		*val  |=  PAD_BIAS_STRONG_PULLUP;
 	}
 }
+
+
 
 static void
 jh7100_pinctrl_set_config_group(struct jh7100_pinctrl_softc *sc, int group)
@@ -363,11 +654,15 @@ static struct fdtbus_pinctrl_controller_func jh7100_pinctrl_funcs = {
 };
 
 
+
+
+
 static void *
 jh7100_pinctrl_gpio_acquire(device_t dev, const void *data, size_t len, int flags)
 {
 	struct jh7100_pinctrl_softc * const sc = device_private(dev);
 
+printf("%s: data %p size %zu flags %x\n", __func__, data, len, flags);
 	if (len != 12)
 		return NULL;
 
@@ -477,6 +772,27 @@ jh7100_pinctrl_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
+	// XXXNH Clocks
+	// XXXNH interrupt-controller
+	// XXXNH interrupts
+#if 0
+	char intrstr[128];
+	if (!fdtbus_intr_str(phandle, 0, intrstr, sizeof(intrstr))) {
+		aprint_error_dev(self, "failed to decode interrupt\n");
+		return;
+	}
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_VM,
+	    FDT_INTR_MPSAFE, jh7100_gpio_intr, sc, device_xname(self));
+	if (sc->sc_ih == NULL) {
+		aprint_error_dev(self, "failed to establish interrupt on %s\n",
+		    intrstr);
+		return;
+	}
+	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
+#endif
+
+
+
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
 
 	aprint_naive("\n");
@@ -519,6 +835,7 @@ jh7100_pinctrl_attach(device_t parent, device_t self, void *aux)
 	fdtbus_register_gpio_controller(sc->sc_dev, sc->sc_phandle,
 	    &jh7100_pinctrl_gpio_funcs);
 
+	// XXXNH groups? new fdtbus_register_pinctrlgroup_config?
 	for (int child = OF_child(phandle); child; child = OF_peer(child)) {
 		fdtbus_register_pinctrl_config(self, child,
 		    &jh7100_pinctrl_funcs);
