@@ -65,6 +65,56 @@ aarch64_gva_to_pa(uint64_t spsr, vaddr_t va)
 	return pa;
 }
 
+paddr_t
+aarch64_gva_to_ipa(uint64_t spsr, vaddr_t va)
+{
+	paddr_t ipa = -1;
+
+	if (__SHIFTOUT(spsr, SPSR_M) == SPSR_M_EL0T)
+		reg_s1e0r_write(va);
+	else
+		reg_s1e1r_write(va);
+	isb();
+	uint64_t par = reg_par_el1_read();
+	if ((par & PAR_F) == 0) {
+		ipa = (par & PAR_PA) + (va & PAR_PA_LOWMASK);
+	}
+	return ipa;
+}
+
+int has_cortex_a57_erratum_834220 = 0;	//XXXXXXXXX
+
+paddr_t
+aarch64_get_fault_ipa(struct trapframe *tf)
+{
+	paddr_t ipa;
+	const uint64_t esr = tf->tf_esr;
+	const uint64_t fsc = __SHIFTOUT(esr, ESR_ISS_DATAABORT_DFSC);
+
+	/* confirm that these fields are common in DATAABORT and INSNABORT */
+	CTASSERT(ESR_ISS_DATAABORT_DFSC  == ESR_ISS_INSNABORT_IFSC);
+	CTASSERT(ESR_ISS_DATAABORT_S1PTW == ESR_ISS_INSNABORT_S1PTW);
+#define FSC_PERM_FAULT(fsc)	\
+	((fsc) >= ESR_ISS_FSC_PERM_FAULT_0 && (fsc) <= ESR_ISS_FSC_PERM_FAULT_3)
+
+	if ((tf->tf_esr & ESR_ISS_DATAABORT_S1PTW) == 0 &&
+	    (has_cortex_a57_erratum_834220 || FSC_PERM_FAULT(fsc))) {
+		ipa = aarch64_gva_to_ipa(tf->tf_spsr, tf->tf_far);
+		/*
+		 * XXX:
+		 * In this case, nvmm_aarch64_maintain_ipa() from pmap(9)
+		 * -> aarch64_tlbi_by_vmid_ipa() doesn't work.
+		 * Doing aarch64_tlbi_by_vmid_ipa(ipa) or
+		 * aarch64_tlbi_by_vmid_ipa(ipa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far))
+		 * here does not work. Do TLBI-all here.
+		 */
+		aarch64_tlbi_by_vmid();
+	} else {
+		ipa = ipa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
+	}
+	return ipa;
+}
+
 void
 aarch64_el2_init(struct trapframe *tf)
 {
@@ -251,13 +301,6 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
 	reg_tpidr_el2_write(0);
 }
 
-static inline paddr_t
-pa_hpfar_far(vaddr_t hpfar, vaddr_t far)
-{
-	return ((__SHIFTOUT(hpfar, HPFAR_EL2_FIPA) << HPFAR_EL2_FIPA_BITSHIFT) &
-	    ~PAGE_MASK) | (far & PAGE_MASK);
-}
-
 #define SYSREG_ENC(op0, op1, CRn, CRm, op2)		\
 	(((op0)<<19)|((op1)<<16)|((CRn)<<12)|((CRm)<<8)|((op2)<<5))
 
@@ -379,7 +422,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		__asm __volatile ("clrex");
 		ftype = VM_PROT_READ | VM_PROT_EXECUTE;
 		exit->reason = NVMM_VCPU_EXIT_MEMORY;
-		exit->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
+		exit->u.mem.gpa = aarch64_get_fault_ipa(tf);
 		exit->u.mem.prot = ftype;
 		break;
 	case ESR_EC_DATA_ABT_EL_LOW:
@@ -393,7 +436,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 			ftype = (rw == 0) ? VM_PROT_READ : VM_PROT_WRITE;
 		}
 		exit->reason = NVMM_VCPU_EXIT_MEMORY;
-		exit->u.mem.gpa = pa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
+		exit->u.mem.gpa = aarch64_get_fault_ipa(tf);
 		exit->u.mem.prot = ftype;
 		break;
 	case ESR_EC_INSN_ABT_EL_CUR:

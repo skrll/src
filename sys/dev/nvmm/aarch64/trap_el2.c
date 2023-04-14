@@ -274,10 +274,14 @@ static void
 dump_guest_regs(struct trapframe *tf)
 {
 	dump_el2_trapframe(tf);
-	uartprintf("esr_el1=%016"PRIxREGISTER", far_el1=%016"PRIxREGISTER"\n", reg_esr_el1_read(), reg_far_el1_read());
-	uartprintf("elr_el1=%016"PRIxREGISTER"\n", reg_elr_el1_read());
-
+	uartprintf("esr_el1  =%016"PRIxREGISTER"\n", reg_esr_el1_read());
+	uartprintf("far_el1  =%016"PRIxREGISTER"\n", reg_far_el1_read());
+	uartprintf("elr_el1  =%016"PRIxREGISTER"\n", reg_elr_el1_read());
+	uartprintf("hpfar_el2=%016"PRIxREGISTER"\n", reg_hpfar_el2_read());
+	uartprintf("far_el2  =%016"PRIxREGISTER"\n", reg_far_el2_read());
+	uartprintf("tf_far   =%016"PRIxREGISTER"\n", tf->tf_far);
 	aarch64_guest_backtrace_fp(tf->tf_spsr, tf->tf_reg[29]);
+	uartprintf("\n");
 }
 
 void
@@ -324,10 +328,40 @@ el2sync_el_low(struct trapframe *tf)
 		}
 	} else {
 		if (nvmm_debug >= 2)
-			uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64" (eclass=0x%"PRIx64")\n", __func__, tf->tf_pc, esr, eclass);
+			uartprintf("%s: PC=%016"PRIx64" ESR_EL2=0x%08"PRIx64"(eclass=0x%"PRIx64") FAR_EL2=%016"PRIx64" IPA=%016"PRIx64" HPFAR=%016"PRIx64"(%016"PRIx64") PA=%016"PRIx64"\n",
+			    __func__, tf->tf_pc, esr, eclass,
+			    tf->tf_far, aarch64_gva_to_ipa(tf->tf_spsr, tf->tf_far),
+			    reg_hpfar_el2_read(), ipa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far), aarch64_gva_to_pa(tf->tf_spsr, tf->tf_far));
+
+#if 0
 		// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX DEBUG
 		if (tf->tf_pc == 0x200)
 			aarch64_guest_backtrace_fp(tf->tf_spsr, tf->tf_reg[29]);
+#endif
+
+#if 0
+		//XXXXXXXXXXXXXXXXXXXXXXXX: HPFAR check DEBUG
+		switch (eclass) {
+		case ESR_EC_DATA_ABT_EL_LOW:
+		case ESR_EC_INSN_ABT_EL_LOW:
+			{
+				paddr_t ipa0 = aarch64_gva_to_ipa(tf->tf_spsr, tf->tf_far);
+				paddr_t ipa1 = ipa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far);
+				if (ipa0 != ipa1) {
+					uartprintf("%s: invalid HPFAR: PC=%016lx ESR_EL2=0x%08lx(eclass=0x%lx) FAR_EL2=%016lx IPA=%016lx HPFAR=%016lx(%016lx) PA=%016lx\n",
+					    __func__, tf->tf_pc, esr, eclass,
+					    tf->tf_far, aarch64_gva_to_ipa(tf->tf_spsr, tf->tf_far),
+					    reg_hpfar_el2_read(), ipa_hpfar_far(reg_hpfar_el2_read(), tf->tf_far),
+					    aarch64_gva_to_pa(tf->tf_spsr, tf->tf_far));
+					uartprintf("truly, ipa=%016lx ?\n", aarch64_get_fault_ipa(tf));
+
+					dump_guest_regs(tf);
+				}
+			}
+			break;
+		}
+#endif
+
 
 		aarch64_el2_vmexit_trap(tf);
 	}

@@ -16,6 +16,15 @@ char *uartputs(const char *);
 int uartprintf(const char * restrict, ...) __printflike(1, 2);
 
 paddr_t aarch64_gva_to_pa(uint64_t, vaddr_t);
+paddr_t aarch64_gva_to_ipa(uint64_t, vaddr_t);
+paddr_t aarch64_get_fault_ipa(struct trapframe *);
+static inline paddr_t
+ipa_hpfar_far(vaddr_t hpfar, vaddr_t far)
+{
+	return ((__SHIFTOUT(hpfar, HPFAR_EL2_FIPA) << HPFAR_EL2_FIPA_BITSHIFT) &
+	    ~PAGE_MASK) | (far & PAGE_MASK);
+}
+
 void dump_el2_trapframe(struct trapframe *);
 void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
