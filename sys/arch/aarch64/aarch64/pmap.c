@@ -963,7 +963,18 @@ _pmap_stage2_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod)
 {
 	vm_prot_t masked;
 
+#if 0
 	masked = prot & refmod;
+#else
+	/*
+	 * XXXXXXXX: nvmm hack
+	 * Basically all nvmm hypvervisor pages are fine with RWX.
+	 * Therefore, even if prot is RO, if pmap_page is RW, it will reduce
+	 * the number of page faults by mapping them with RW in advance.
+	 */
+	masked = (VM_PROT_READ | VM_PROT_WRITE) & refmod;
+	masked |= VM_PROT_EXECUTE;
+#endif
 
 	pte &= ~(LX_BLKPAG_AF | LX_BLKPAG_DBM | LX_S2_BLKPAG_S2AP);
 	if (prot & VM_PROT_WRITE)
