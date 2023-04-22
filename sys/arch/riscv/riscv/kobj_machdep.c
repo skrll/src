@@ -105,10 +105,16 @@ kobj_findhi20(kobj_t ko, uintptr_t relocbase, bool local, const Elf_Rela *lo12,
 				return -1;
 
 			long addend = rela->r_addend;	/* needs to be signed */
+
+			printf("%s: addend %lx -> %lx\n", __func__, addend,
+			    addend - (intptr_t)where);
 			addend -= (intptr_t)where;
 
 			last_hi20.where = where;
 			last_hi20.addend = addend;
+
+			printf("%s: addend %lx -> %lx (sym %lx)\n", __func__,
+			    addend, addend + addr, addr);
 			addend += addr;
 
 			return 0;
@@ -136,6 +142,11 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 	const u_int symidx = ELF_R_SYM(rela->r_info);
 	const Elf_Sym *sym = kobj_symbol(ko, symidx);
 
+	uint64_t dv;
+	uint32_t wv;
+	uint16_t hv;
+	uint8_t  bv;
+
 	/*
 	 * Check that we need to process this relocation in this pass.
 	 * All relocations to local symols can be done in the first pass
@@ -153,6 +164,7 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 	default:
 		/* Don't do other relocations again */
 		if (!local && ELF_ST_BIND(sym->st_info) == STB_LOCAL) {
+			printf("already done\n");
 			return 0;
 		}
 	}
@@ -161,6 +173,7 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 	switch (rtype) {
 	case R_RISCV_NONE:
 	case R_RISCV_RELAX:
+		printf("NONE / RELAX\n");
 		return 0;
 
 	case R_RISCV_BRANCH:
@@ -176,6 +189,7 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 	case R_RISCV_RVC_BRANCH:
 	case R_RISCV_RVC_JUMP:
 	case R_RISCV_32_PCREL:
+		printf("addend %lx -> %lx\n", addend, addend - (intptr_t)where);
 		addend -= (intptr_t)where;		/* A -= P */
 		/* FALLTHROUGH */
 
@@ -209,9 +223,23 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 			 */
 			if (!local)
 				return -1;
+			printf("global symbol in local pass... "
+			    "save for later\n");
 			return 0;
 		}
 
+		printf("Symbol value is %lx\n", addr);
+
+#if 0
+		/*
+		 * addend values are sometimes relative to sections
+		 * (i.e. .rodata) in rela, where in reality they
+		 * are relative to relocbase. Detect this condition.
+		 */
+		if (addr > relocbase && addr <= (relocbase + addend))
+			addr = relocbase + addend;
+		else
+#endif
 		switch (rtype) {
 		case R_RISCV_PCREL_HI20:
 		case R_RISCV_HI20: {
@@ -227,10 +255,12 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 			 */
 			if (!local && last_hi20.local) {
 //				last_hi20.global = false;
+				printf("HI20 already done\n");
 				return 0;
 			}
 			const uint32_t lobits = 12;
 			const uint32_t middle = 1U << (lobits - 1);
+			printf("addend %lx -> %lx\n", addend, addend + middle + addr);
 
 			addend += addr + middle;
 			break;
@@ -238,6 +268,8 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 		case R_RISCV_PCREL_LO12_I:
 		case R_RISCV_PCREL_LO12_S: {
 			if (last_hi20.where != (void *)addr) {
+				printf("XXXNH uh oh %lx vs %p\n", addr,
+				    last_hi20.where);
 				int err = kobj_findhi20(ko, relocbase, local,
 				    rela, (Elf_Addr *)addr);
 				if (err < 0)
@@ -252,12 +284,14 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 			 * it was already processed.
 			 */
 			if (!local && last_hi20.local) {
+				printf("LO12 already done\n");
 				return 0;
 			}
 			addend = addend + (last_hi20.addend & __BITS(11,0));
 			break;
 		    }
 		default:
+			printf("addend %lx -> %lx\n", addend, addend + addr);
 			addend += addr;				/* A += S */
 		}
 		break;
@@ -271,65 +305,108 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 	/* Relocation memory update */
 	switch (rtype) {
 	case R_RISCV_64:	/* word64 S + A */
+		dv = *where;
 		*where = addend;
+		printf("%s: R_RISCV_64 where (%p) %lx -> %lx (%lx)\n", __func__,
+		    where, dv, *where, addend);
 		break;
 
 	case R_RISCV_32:	/* word32 S + A */
 	case R_RISCV_SET32:	/* word32 S + A */
 	case R_RISCV_32_PCREL:	/* word32 S + A - P */
+		wv = *wwhere;
 		*wwhere = addend;
+		printf("%s: R_RISCV_32 where (%p) %x -> %x\n", __func__,
+		    wwhere, wv, *wwhere);
 		break;
 
 	case R_RISCV_SET16:	/* word16 S + A */
+		hv = *hwhere;
 		*hwhere = addend;
+		printf("%s: R_RISCV_SET16 where (%p) %x -> %x\n", __func__,
+		    hwhere, hv, *hwhere);
 		break;
 
 	case R_RISCV_SET8:	/* word8 S + A */
+		bv = *bwhere;
 		*bwhere = addend;
+		printf("%s: R_RISCV_SET8 where (%p) %x -> %x\n", __func__,
+		    bwhere, bv, *bwhere);
 		break;
 
 	case R_RISCV_SET6: {	/* word6 S + A */
 		const uint8_t mask = __BITS(5, 0);
 
+		bv = *bwhere & ~mask;
+		bv |= __SHIFTIN(addend, mask);
 		*bwhere = (*bwhere & ~mask) | __SHIFTIN(addend, mask);
+		printf("%s: R_RISCV_SET6 where (%p) %x -> %x\n", __func__,
+		    bwhere, bv, *bwhere);
 		break;
 	    }
 
 	case R_RISCV_ADD64:	/* word64 V + S + A */
+		dv = *where;
 		*where += addend;
+		printf("%s: R_RISCV_ADD64 where (%p) %lx -> %lx\n", __func__,
+		    where, dv, *where);
 		break;
 
 	case R_RISCV_ADD32:	/* word32 V + S + A */
+		wv = *wwhere;
 		*wwhere += addend;
+		printf("%s: R_RISCV_ADD32 where (%p) %x -> %x\n", __func__,
+		    wwhere, wv, *wwhere);
 		break;
 
 	case R_RISCV_ADD16:	/* word16 V + S + A */
+		hv = *hwhere;
 		*hwhere += addend;
+		printf("%s: R_RISCV_ADD16 where (%p) %x -> %x\n", __func__,
+		    hwhere, hv, *hwhere);
 		break;
 
 	case R_RISCV_ADD8:	/* word8 V + S + A */
+		bv = *bwhere;
 		*bwhere += addend;
+		printf("%s: R_RISCV_ADD8 where (%p) %x -> %x\n", __func__,
+		    bwhere, bv, *bwhere);
 		break;
 
 	case R_RISCV_SUB64:	/* word64 V - S - A */
+		dv = *where;
 		*where -= addend;
+		printf("%s: R_RISCV_SUB64 where (%p) %lx -> %lx\n", __func__,
+		    where, dv, *where);
 		break;
 
 	case R_RISCV_SUB32:	/* word32 V - S - A */
+		wv = *wwhere;
 		*wwhere -= addend;
+		printf("%s: R_RISCV_SUB32 where (%p) %x -> %x\n", __func__,
+		    wwhere, wv, *wwhere);
 		break;
 
 	case R_RISCV_SUB16:	/* word16 V - S - A */
+		hv = *hwhere;
 		*hwhere -= addend;
+		printf("%s: R_RISCV_SUB8 where (%p) %x -> %x\n", __func__,
+		    hwhere, hv, *hwhere);
 		break;
 
 	case R_RISCV_SUB8:	/* word8 V - S - A */
+		bv = *bwhere;
 		*bwhere -= addend;
+		printf("%s: R_RISCV_SUB8 where (%p) %x -> %x\n", __func__,
+		    bwhere, bv, *bwhere);
 		break;
 
 	case R_RISCV_SUB6:	/* word6 V - S - A */
 		// XXXNH
+		bv = *bwhere;
 		*bwhere -= addend;
+		printf("%s: R_RISCV_SUB6 where (%p) %x -> %x\n", __func__,
+		    bwhere, bv, *bwhere);
 		break;
 
 	case R_RISCV_BRANCH: {
@@ -350,7 +427,10 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 		    __SHIFTIN(immD, __BIT(7));
 		const uint32_t mask = __BITS(31, 25) | __BITS(11, 7);
 
+		wv = *wwhere;
 		*wwhere = (*wwhere & ~mask) | addend;
+		printf("%s: R_RISCV_BRANCH where (%p) %x -> %x\n", __func__,
+		    wwhere, wv, *wwhere);
 		break;
 	    }
 
@@ -381,7 +461,15 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 		 * imm[31:12] | ...
 		 */
 		const uint32_t mask = __BITS(31, 12);
+		wv = *wwhere;
 		*wwhere = (addend & mask) | (*wwhere & ~mask);
+
+		printf("%s: %s where (%p) %x -> %x\n", __func__,
+		    rtype == R_RISCV_HI20 ? "R_RISCV_HI20" :
+		    rtype == R_RISCV_PCREL_HI20 ? "R_RISCV_PCREL_HI20" :
+		    "R_RISCV_JAL",
+		    wwhere, wv, *wwhere);
+
 		break;
 	    }
 	case R_RISCV_PCREL_LO12_I:
@@ -391,11 +479,22 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 		 * 31     20 | ...
 		 * imm[11:0] | ...
 		 */
-
+		// XXXNH see _bfd_riscv_relax_pc
+//		const uint32_t lobits = 12;
+//		const uint32_t middle = 1U << (lobits - 1);
+//		const uint32_t mask = __BITS(31, lobits);
+//		const uint32_t high = addend + middle;
+		wv = *wwhere;
 		*wwhere += ((addend) << 20);
+		printf("%s: %s where (%p) %x -> %x\n", __func__,
+		    rtype == R_RISCV_LO12_I ? "R_RISCV_LO12_I" : "R_RISCV_PCREL_LO12_I",
+		    wwhere, wv, *wwhere);
 		break;
 	    }
 	case R_RISCV_PCREL_LO12_S:
+		// XXXNH see _bfd_riscv_relax_pc
+		// XXXNH see ABI document 8.4.9 PC-relative symbols address
+		/* FALLTHROUGH */
 	case R_RISCV_LO12_S: {	/* low12 S-type instructions */
 		/*
 		 * S-type
@@ -410,7 +509,11 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 		addend =
 		    __SHIFTIN(immA, __BITS(31, 25)) |
 		    __SHIFTIN(immB, __BITS(11,  7));
+		wv = *wwhere;
 		*wwhere = (*wwhere & ~mask) | addend;
+		printf("%s: %s where (%p) %x -> %x\n", __func__,
+		    rtype == R_RISCV_LO12_S ? "R_RISCV_LO12_S" : "R_RISCV_PCREL_LO12_S",
+		    wwhere, wv, *wwhere);
 		break;
 	    }
 	case R_RISCV_CALL:
@@ -482,7 +585,11 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 		    __SHIFTIN(immC, __BITS( 6,  5)) |
 		    __SHIFTIN(immD, __BITS( 4,  3)) |
 		    __SHIFTIN(immE, __BIT(2));
+		hv = *hwhere;
 		*hwhere = (*hwhere & ~mask) | addend;
+		printf("%s: %s where (%p) %x -> %x\n", __func__,
+		    "R_RISCV_RVC_BRANCH",
+		    hwhere, hv, *hwhere);
 		break;
 	    }
 
@@ -512,7 +619,11 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 		    __SHIFTIN(immF, __BIT(6)) |
 		    __SHIFTIN(immG, __BITS(5, 3)) |
 		    __SHIFTIN(immH, __BIT(2));
+		hv = *hwhere;
 		*hwhere = (*hwhere & ~mask) | addend;
+		printf("%s: %s where (%p) %x -> %x\n", __func__,
+		    "R_RISCV_RVC_JUMP",
+		    hwhere, hv, *hwhere);
 		break;
 	    }
 
@@ -530,12 +641,16 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data, bool isrela,
 		addend =
 		    __SHIFTIN(immA, __BIT(12)) |
 		    __SHIFTIN(immB, __BITS(6, 2));
+		hv = *hwhere;
 		*hwhere = (*hwhere & ~mask) | addend;
+		printf("%s: %s where (%p) %x -> %x\n", __func__,
+		    "R_RISCV_RVC_JUMP",
+		    hwhere, hv, *hwhere);
 		break;
 	    }
 
 	default:
-		printf("Unexpected relocation type %d\n", rtype);
+		printf("What about relocation type %d???\n", rtype);
 	}
 
 	return 0;
