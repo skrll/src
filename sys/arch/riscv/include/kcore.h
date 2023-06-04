@@ -33,8 +33,12 @@
 #define _RISCV_KCORE_H_
 
 typedef struct cpu_kcore_hdr {
-	u_long kh_satp;
-	u_long kh_misc[7];
+	union {
+		uint64_t kh_misc[8];
+		struct {
+			u_long kh_satp;
+		};
+	};
 	phys_ram_seg_t kh_ramsegs[0];
 } cpu_kcore_hdr_t;
 
