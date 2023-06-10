@@ -143,6 +143,11 @@ void	cpu_pause_others(void);
 void	cpu_resume(cpuid_t);
 void	cpu_resume_others(void);
 void	cpu_debug_dump(void);
+#if 0
+void	cpu_hatch(struct cpu_info *ci);
+void	cpu_trampoline(void);
+
+#endif
 
 extern kcpuset_t *cpus_running;
 extern kcpuset_t *cpus_hatched;
