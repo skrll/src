@@ -43,6 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.5 2026/01/15 18:09:26 skrll Exp $");
 
 #include <riscv/fdt/riscv_fdtvar.h>
 
+//XXXNH Make MI
 bool
 riscv_fdt_cpu_okay(const int node)
 {

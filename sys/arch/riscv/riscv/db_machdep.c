@@ -225,3 +225,58 @@ next_instr_address(db_addr_t pc, bool bdslot_p)
 {
 	return pc + (bdslot_p ? 0 : 4);
 }
+
+#if 0
+#ifdef MULTIPROCESSOR
+
+bool
+ddb_running_on_this_cpu_p(void)
+{
+	return ddb_cpu == cpu_number();
+}
+
+bool
+ddb_running_on_any_cpu_p(void)
+{
+	return ddb_cpu != NOCPU;
+}
+
+void
+db_resume_others(void)
+{
+	u_int cpu_me = cpu_number();
+
+	if (atomic_cas_uint(&ddb_cpu, cpu_me, NOCPU) == cpu_me)
+		cpu_resume_others();
+}
+
+static void
+db_mach_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
+    const char *modif)
+{
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci;
+
+	if (!have_addr) {
+		cpu_debug_dump();
+		return;
+	}
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		if (cpu_index(ci) == addr)
+			break;
+	}
+	if (ci == NULL) {
+		db_printf("CPU %ld not configured\n", (long)addr);
+		return;
+	}
+	if (ci != curcpu()) {
+		if (!cpu_is_paused(cpu_index(ci))) {
+			db_printf("CPU %ld not paused\n", (long)addr);
+			return;
+		}
+		(void)atomic_cas_uint(&ddb_cpu, cpu_number(), cpu_index(ci));
+		db_continue_cmd(0, false, 0, "");
+	}
+}
+#endif	/* MULTIPROCESSOR */
+#endif

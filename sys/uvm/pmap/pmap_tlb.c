@@ -182,14 +182,14 @@ struct pmap_tlb_info pmap_tlb0_info = {
 
 #undef IFCONSTANT
 
-#if defined(MULTIPROCESSOR) && PMAP_TLB_MAX > 1
+#if defined(MULTIPROCESSOR)
+u_int pmap_ntlbs = 1;
+#if PMAP_TLB_MAX > 1
 struct pmap_tlb_info *pmap_tlbs[PMAP_TLB_MAX] = {
 	[0] = &pmap_tlb0_info,
 };
-u_int pmap_ntlbs = 1;
 #endif
 
-#ifdef MULTIPROCESSOR
 __unused static inline bool
 pmap_tlb_intersecting_active_p(pmap_t pm, struct pmap_tlb_info *ti)
 {
