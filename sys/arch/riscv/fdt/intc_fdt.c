@@ -265,6 +265,7 @@ intc_intr_handler(struct trapframe *tf, register_t epc, register_t status,
 	INTRHIST_FUNC(__func__); INTRHIST_CALLED();
 
 	KASSERT(CAUSE_INTERRUPT_P(cause));
+	//KASSERT(csr_sstatus_read() & SR_SIE);
 
 	ci->ci_intr_depth++;
 	ci->ci_data.cpu_nintr++;
@@ -287,6 +288,7 @@ intc_intr_handler(struct trapframe *tf, register_t epc, register_t status,
 		//KASSERT(csr_sstatus_read() & SR_SIE);
 
 		splx(ipl);
+		//KASSERT(csr_sstatus_read() & SR_SIE);
 
 		int source = ffs(pending) - 1;
 		struct intc_irq *irq = sc->sc_irq[source];
@@ -326,6 +328,7 @@ intc_intr_handler(struct trapframe *tf, register_t epc, register_t status,
 		}
 		splhigh();
 	}
+	//KASSERT(csr_sstatus_read() & SR_SIE);
 	ci->ci_intr_depth--;
 	splx(ppl);
 	INTRHIST_LOG("<-- done", 0, 0, 0, 0);
