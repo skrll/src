@@ -169,3 +169,10 @@ tlb_walk(void *ctx, bool (*func)(void *, vaddr_t, tlb_asid_t, pt_entry_t))
 {
 	/* no way to view the TLB */
 }
+
+#if 0
+void    tlb_enter_addr(size_t, const struct tlbmask *);
+void    tlb_read_entry(size_t, struct tlbmask *);
+void    tlb_write_entry(size_t, const struct tlbmask *);
+void    tlb_dump(void (*)(const char *, ...));
+#endif
