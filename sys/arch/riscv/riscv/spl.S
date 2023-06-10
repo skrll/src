@@ -173,6 +173,14 @@ ENTRY_NP(splsched)
 	j	_splraise
 END(splsched)
 
+#if 0
+ENTRY_NP(splddb)
+	li	t1, IPL_DDB
+	INT_L	t0, _C_LABEL(ipl_sie_map) + SZINT * IPL_DDB
+	j	_splraise
+END(splddb)
+#endif
+
 ENTRY_NP(splhigh)
 	li	t1, IPL_HIGH
 	INT_L	t0, _C_LABEL(ipl_sie_map) + SZINT * IPL_HIGH

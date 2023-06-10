@@ -85,6 +85,21 @@ ENTRY_NP(start)
 	li	s0, SR_FS
 	csrc	sstatus, s0		// disable FP
 
+#if 0
+	/*
+	 * atomically swap a non-zero value into hart_boot.  If we see zero
+	 * we won in race to become BP.
+	 */
+	li	s1, 1
+	la	s0, hart_boot
+
+	amoswap.w s0, s1, (s0)
+	bnez	s0, mpentry
+	/*
+	 * The BP only executes from here on.
+	 */
+#endif
+
 	mv	s10, a0			// copy hartid
 	mv	s11, a1			// copy dtb PA
 
