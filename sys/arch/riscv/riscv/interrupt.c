@@ -187,6 +187,20 @@ riscv_ipi_intr(void *arg)
 
 	csr_sip_clear(SIP_SSIP);	/* clean pending interrupt status */
 
+#if 0
+#if NWDOG > 0
+	// Handle WDOG requests ourselves.
+	if (ipi_mask & __BIT(IPI_WDOG)) {
+		softint_schedule(cpu->cpu_wdog_sih);
+		atomic_and_64(&ci->ci_request_ipis, ~__BIT(IPI_WDOG));
+		ipi_mask &= ~__BIT(IPI_WDOG);
+		ci->ci_evcnt_per_ipi[IPI_WDOG].ev_count++;
+		if (__predict_true(ipi_mask == 0))
+			return 1;
+	}
+#endif
+#endif
+
 	unsigned long pending;
 	while ((pending = atomic_swap_ulong(&ci->ci_request_ipis, 0)) != 0) {
 		membar_acquire();

@@ -39,4 +39,15 @@ int	riscv_fdt_cpu_mpstart(void);
 void	riscv_fdt_cpu_hatch_register(void *, void (*)(void *, struct cpu_info *));
 void	riscv_fdt_cpu_hatch(struct cpu_info *);
 
+#if 0
+void	riscvfdt_timer_register(void (*)(void));
+
+void	riscvfdt_irq_set_handler(void (*)(void *));
+void	riscvfdt_irq_handler(void *);
+void	riscvfdt_fiq_set_handler(void (*)(void *));
+void	riscvfdt_fiq_handler(void *);
+
+void	riscvfdt_module_init(void);
+#endif
+
 #endif /* !_RISCV_RISCV_FDTVAR_H */
