@@ -65,13 +65,13 @@ tlb_set_asid(tlb_asid_t asid, pmap_t pm)
 void
 tlb_invalidate_all(void)
 {
-
 	aarch64_tlbi_all();
 }
 
 void
 tlb_invalidate_globals(void)
 {
+	// This shouldn't invalidate all CPUs
 	tlb_invalidate_all();
 }
 
