@@ -1322,7 +1322,7 @@ if (t->_flags != 0)
 		    map->_dm_buftype);
 	}
 
-	/* Drain the write buffer. */
+	/* XXXNH Drain the write buffer. */
 	asm volatile ("fence iorw,iorw" ::: "memory");
 
 	if (!bouncing || (ops & BUS_DMASYNC_POSTREAD) == 0)
