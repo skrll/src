@@ -327,6 +327,22 @@ elf64_hppa_object_p (bfd *abfd)
 	  && i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NONE) /* aka SYSV */
 	return false;
     }
+  else if (strcmp (bfd_get_target (abfd), "elf64-hppa-netbsd") == 0)
+    {
+      /* GCC on hppa-netbsd produces binaries with OSABI=NetBSD,
+	 but the kernel produces corefiles with OSABI=SysV.  */
+      if (i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NETBSD &&
+	  i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NONE) /* aka SYSV */
+	return FALSE;
+    }
+  else if (strcmp (bfd_get_target (abfd), "elf64-hppa-netbsd") == 0)
+    {
+      /* GCC on hppa-netbsd produces binaries with OSABI=NetBSD,
+	 but the kernel produces corefiles with OSABI=SysV.  */
+      if (i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NETBSD
+	  && i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NONE) /* aka SYSV */
+	return FALSE;
+    }
   else
     {
       /* HPUX produces binaries with OSABI=HPUX,
@@ -4046,5 +4062,17 @@ const struct elf_size_info hppa64_elf_size_info =
 #define elf64_bed			elf64_hppa_linux_bed
 #undef elf_backend_special_sections
 #define elf_backend_special_sections	(elf64_hppa_special_sections + 1)
+
+#include "elf64-target.h"
+
+#undef TARGET_BIG_SYM
+#define TARGET_BIG_SYM			hppa_elf64_nbsd_vec
+#undef TARGET_BIG_NAME
+#define TARGET_BIG_NAME			"elf64-hppa-netbsd"
+#undef ELF_OSABI
+#define ELF_OSABI			ELFOSABI_NETBSD
+#undef elf64_bed
+#define elf64_bed			elf64_hppa_netbsd_bed
+#undef elf_backend_special_sections
 
 #include "elf64-target.h"

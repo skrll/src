@@ -1,4 +1,4 @@
-/*	$NetBSD: targparam.h,v 1.9 2021/06/27 08:43:47 rillig Exp $	*/
+/*	$NetBSD$	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -35,19 +35,20 @@
  * Machine-dependent target parameters for lint1.
  */
 #include "schar.h"
-#include "ilp32.h"
+#include "lp64.h"
 
 /*
- * Should be set to LONG if the difference of two pointers is of type long
+ * Should be set to 1 if the difference of two pointers is of type long
  * or the value of sizeof is of type unsigned long.  Note this MUST be
  * kept in sync with the compiler!
  */
+
 #define	PTRDIFF_TSPEC		LONG
 #define	SIZEOF_TSPEC		ULONG
 #define	INTPTR_TSPEC		LONG
 
 #define	FLOAT_SIZE		(4 * CHAR_BIT)
 #define	DOUBLE_SIZE		(8 * CHAR_BIT)
-#define	LDOUBLE_SIZE		(8 * CHAR_BIT)	/* XXX hppa has 128bit quad-word format */
+#define	LDOUBLE_SIZE		(16 * CHAR_BIT)
 
-#define	ENUM_SIZE		32
+#define	ENUM_SIZE		(4 * CHAR_BIT)

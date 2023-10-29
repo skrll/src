@@ -1,18 +1,26 @@
 /*	$NetBSD: elf_machdep.h,v 1.4 2017/11/06 03:47:46 christos Exp $	*/
 
+#ifndef _HPPA_ELF_MACHDEP_H_
+#define _HPPA_ELF_MACHDEP_H_
+
+#ifdef _LP64
+#define	ARCH_ELFSIZE		64	/* MD native binary size */
+#define	KERN_ELFSIZE		64
+#else
+#define	ARCH_ELFSIZE		32	/* MD native binary size */
+#define	KERN_ELFSIZE		32
+#endif
+
 #define	ELF32_MACHDEP_ENDIANNESS	ELFDATA2MSB
 #define	ELF32_MACHDEP_ID_CASES						\
 		case EM_PARISC:						\
 			break;
 
-#define	ELF64_MACHDEP_ENDIANNESS	XXX	/* break compilation */
+#define	ELF64_MACHDEP_ENDIANNESS	ELFDATA2MSB
 #define	ELF64_MACHDEP_ID_CASES						\
 		/* no 64-bit ELF machine types supported */
 
 #define	ELF32_MACHDEP_ID	EM_PARISC
-
-#define	KERN_ELFSIZE		32
-#define ARCH_ELFSIZE		32	/* MD native binary size */
 
 /* hppa relocation types */
 #define R_PARISC_NONE	         0 /* No reloc */
@@ -149,3 +157,5 @@
 #define R_PARISC_TLS_TPREL64	R_PARISC_TPREL64
 
 #define	R_TYPE(name)	__CONCAT(R_PARISC_,name)
+
+#endif /* _HPPA_ELF_MACHDEP_H_ */

@@ -52,6 +52,8 @@ CFLAGS+=	-march=armv8-a+nofp+nosimd
 .elif ${MACHINE_CPU} == "arm"
 CFLAGS+=	-fno-common -fno-unwind-tables
 .elif ${MACHINE_CPU} == "hppa"
+#-mlong-calls
+CFLAGS+=	-mpa-risc-1-1 -msoft-float -mdisable-fpregs -mno-space-regs -mfast-indirect-calls -mportable-runtime
 CFLAGS+=	-mlong-calls -mno-space-regs -mfast-indirect-calls
 .elif ${MACHINE_CPU} == "powerpc"
 CFLAGS+=	${${ACTIVE_CC} == "gcc":? -mlongcall :}
@@ -129,6 +131,14 @@ PROG?=		${KMOD}.kmod
 PROGDEBUG:=      ${PROG}.debug
 .endif  
 
+.if ${MKDEBUG} != "no"
+KMODDEBUG=	mv ${PROG} ${PROG}.gdb && \
+		${STRIP} --strip-debug -o ${PROG} ${PROG}.gdb
+CLEANFILES+=	${PROG}.gdb
+.else
+KMODDEBUG=	true
+.endif
+
 ##### Build rules
 realall:	${PROG} ${PROGDEBUG}
 
@@ -184,6 +194,7 @@ ${PROG}: ${OBJS} ${DPADD} ${KMODSCRIPT}
 	${CC} ${LDFLAGS} -nostdlib -r -Wl,-T,${KMODSCRIPT},-d \
 		-Wl,-Map=${.TARGET}.map \
 		-o ${.TARGET} ${OBJS}
+	${KMODDEBUG}
 .endif
 .if defined(CTFMERGE)
 	${CTFMERGE} ${CTFMFLAGS} -o ${.TARGET} ${OBJS}
@@ -246,7 +257,7 @@ ${_P}:	.MADE					# no build at install
 		${INSTALL_DIR} ${DESTDIR}$$d; \
 	done
 	${INSTALL_FILE} -o ${KMODULEOWN} -g ${KMODULEGRP} -m ${KMODULEMODE} \
-		${.ALLSRC} ${.TARGET}
+		${STRIPFLAG} ${.ALLSRC} ${.TARGET}
 
 kmodinstall::	${_P}
 .PHONY:		kmodinstall

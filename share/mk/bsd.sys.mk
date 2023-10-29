@@ -182,7 +182,9 @@ LINTFLAGS+=	-d ${DESTDIR}
 CPPFLAGS+=	-D_FORTIFY_SOURCE=2
 .   endif
 .   if !defined(COVERITY_TOP_CONFIG)
-COPTS+=	-fstack-protector -Wstack-protector 
+.if ${MACHINE} != "hppa64"
+COPTS+=	-fstack-protector -Wstack-protector
+.endif
 
 # GCC 4.8 on m68k erroneously does not protect functions with
 # variables needing special alignment, see
@@ -197,7 +199,7 @@ COPTS+=	-fstack-protector -Wstack-protector
        ${MACHINE_ARCH} == "vax" || \
        ${MACHINE_CPU} == "m68k" || \
        ${MACHINE_CPU} == "or1k" )
-COPTS+=	-Wno-error=stack-protector 
+COPTS+=	-Wno-error=stack-protector
 .	endif
 
 COPTS+=	${${ACTIVE_CC} == "clang":? --param ssp-buffer-size=1 :}

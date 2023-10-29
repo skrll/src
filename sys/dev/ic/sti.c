@@ -1,6 +1,6 @@
 /*	$NetBSD: sti.c,v 1.47 2025/05/30 19:42:28 tsutsui Exp $	*/
 
-/*	$OpenBSD: sti.c,v 1.61 2009/09/05 14:09:35 miod Exp $	*/
+/*	$OpenBSD: sti.c,v 1.76 2015/04/05 23:25:57 miod Exp $	*/
 
 /*
  * Copyright (c) 2000-2003 Michael Shalayeff
@@ -32,6 +32,7 @@
  *	call sti procs asynchronously;
  *	implement console scroll-back;
  *	X11 support on more models.
+ * http://lxr.free-electrons.com/source/drivers/video/fbdev/stifb.c
  */
 
 #include <sys/cdefs.h>
@@ -96,9 +97,16 @@ struct wsdisplay_emulops sti_emulops = {
 	.erasecols = sti_erasecols,
 	.copyrows = sti_copyrows,
 	.eraserows = sti_eraserows,
-	.allocattr = sti_alloc_attr
+	.allocattr = sti_alloc_attr,
 };
 
+int	sti_alloc_screen(void *, const struct wsscreen_descr *, void **, int *,
+	    int *, long *);
+void	sti_free_screen(void *, void *);
+int	sti_ioctl(void *, void *, u_long, void *, int, struct lwp *);
+paddr_t sti_mmap(void *, void *, off_t, int);
+int	sti_show_screen(void *, void *, int, void (*)(void *, int, int),
+	    void *);
 const struct wsdisplay_accessops sti_accessops = {
 	.ioctl = sti_ioctl,
 	.mmap = sti_mmap,
@@ -114,12 +122,19 @@ enum sti_bmove_funcs {
 
 void	sti_bmove(struct sti_screen *, int, int, int, int, int, int,
 	    enum sti_bmove_funcs);
+#if 0
+int	sti_init(struct sti_screen *, int);
+#define	STI_TEXTMODE	0x01
+#define	STI_CLEARSCR	0x02
+#define	STI_FBMODE	0x04
+#endif
 int	sti_inqcfg(struct sti_screen *, struct sti_inqconfout *);
 int	sti_setcment(struct sti_screen *, u_int, u_char, u_char, u_char);
 
-struct sti_screen *sti_attach_screen(struct sti_softc *, int);
+struct sti_screen *
+	sti_attach_screen(struct sti_softc *, int);
 void	sti_describe_screen(struct sti_softc *, struct sti_screen *);
-
+void	sti_end_attach_screen(struct sti_softc *, struct sti_screen *, int);
 int	sti_fetchfonts(struct sti_screen *, struct sti_inqconfout *, uint32_t,
 	    u_int);
 void	sti_region_setup(struct sti_screen *);
@@ -317,6 +332,8 @@ sti_rom_setup(struct sti_rom *rom, bus_space_tag_t iot, bus_space_tag_t memt,
 		return EINVAL;
 	}
 
+	DPRINTF(("code size %x/%x\n", size, round_page(size)));
+
 	if (!(rom->rom_code = uvm_km_alloc(kernel_map, round_page(size), 0,
 	    UVM_KMF_WIRED))) {
 		aprint_error(": cannot allocate %u bytes for code\n", size);
@@ -468,7 +485,7 @@ sti_region_setup(struct sti_screen *scr)
 		if (bus_space_map(memt, addr, r->length << STI_PGSHIFT,
 		    BUS_SPACE_MAP_LINEAR | (r->cache ?
 		    BUS_SPACE_MAP_CACHEABLE : 0), &rom->regh[regno]) != 0) {
-			rom->regh[regno] = romh;	/* XXX */
+			rom->regh[regno] = romh;	/* XXX */ /* XXXNH */
 			DPRINTF((" - already mapped region\n"));
 		} else {
 			addr = (bus_addr_t)
@@ -645,6 +662,7 @@ sti_screen_setup(struct sti_screen *scr, int flags)
 
 	switch (dd->dd_grid[0]) {
 	case STI_DD_CRX:
+		DPRINTF(("%s: STI_DD_CRX\n", __func__));
 		scr->setupfb = ngle_elk_setupfb;
 		scr->putcmap = ngle_putcmap;
 
@@ -657,6 +675,7 @@ sti_screen_setup(struct sti_screen *scr, int flags)
 		break;
 
 	case STI_DD_TIMBER:
+		DPRINTF(("%s: STI_DD_TIMER\n", __func__));
 		scr->setupfb = ngle_timber_setupfb;
 		scr->putcmap = ngle_putcmap;
 
@@ -666,6 +685,7 @@ sti_screen_setup(struct sti_screen *scr, int flags)
 		break;
 
 	case STI_DD_ARTIST:
+		DPRINTF(("%s: STI_DD_ARTIST\n", __func__));
 		scr->setupfb = ngle_artist_setupfb;
 		scr->putcmap = ngle_putcmap;
 
@@ -675,6 +695,8 @@ sti_screen_setup(struct sti_screen *scr, int flags)
 		break;
 
 	case STI_DD_EG:
+		/* http://lxr.free-electrons.com/source/drivers/video/fbdev/stifb.c#L206 */
+		DPRINTF(("%s: STI_DD_EG\n", __func__));
 		scr->setupfb = ngle_artist_setupfb;
 		scr->putcmap = ngle_putcmap;
 
@@ -724,6 +746,7 @@ sti_screen_setup(struct sti_screen *scr, int flags)
 	case STI_DD_DUAL_CRX:
 	case STI_DD_PINNACLE:
 	default:
+		DPRINTF(("%s: dd_grid[0] %x\n", __func__, dd->dd_grid[0]));
 		scr->setupfb = NULL;
 		scr->putcmap =
 		    rom->scment == NULL ? NULL : ngle_default_putcmap;
@@ -965,6 +988,16 @@ sti_init(struct sti_screen *scr, int mode)
 	memset(&a, 0, sizeof(a));
 
 	a.flags.flags = STI_INITF_WAIT | STI_INITF_PBET | STI_INITF_PBETI;
+#if 0
+	if (mode & STI_TEXTMODE) {
+		a.flags.flags |= STI_INITF_TEXT /* | STI_INITF_PNTS */ |
+		    STI_INITF_ICMT | STI_INITF_CMB;
+		if (mode & STI_CLEARSCR)
+			a.flags.flags |= STI_INITF_CLEAR;
+	} else if (mode & STI_FBMODE) {
+		a.flags.flags |= STI_INITF_NTEXT /* | STI_INITF_PTS */;
+	}
+#else
 	if ((mode & STI_TEXTMODE) != 0) {
 		a.flags.flags |= STI_INITF_TEXT | STI_INITF_CMB |
 		    STI_INITF_PBET | STI_INITF_PBETI | STI_INITF_ICMT;
@@ -987,6 +1020,7 @@ sti_init(struct sti_screen *scr, int mode)
 	}
 	if ((mode & STI_CLEARSCR) != 0)
 		a.flags.flags |= STI_INITF_CLEAR;
+#endif
 
 	a.in.ext_in = &a.ein;
 
@@ -1082,9 +1116,50 @@ sti_setcment(struct sti_screen *scr, u_int i, u_char r, u_char g, u_char b)
 	a.in.value = (r << 16) | (g << 8) | b;
 
 	(*rom->scment)(&a.flags, &a.in, &a.out, &scr->scr_cfg);
+#ifdef STIDEBUG
+	if (a.out.errno)
+		printf("sti_setcment(%d, %u, %u, %u): %d\n",
+		    i, r, g, b, a.out.errno);
+#endif
 
 	return a.out.errno;
 }
+
+#if 0
+void
+nhcomputc(int c)
+{
+	bus_space_tag_t memt = ;
+	bus_space_handle_t ioh = (bus_space_handle_t)0x0xffd05000;
+}
+		if (com_readaheadcount < MAX_READAHEAD
+	     && ISSET(stat = CSR_READ_1(regsp, COM_REG_LSR), LSR_RXRDY)) {
+		int cn_trapped = 0;
+		cin = CSR_READ_1(regsp, COM_REG_RXDATA);
+		stat = CSR_READ_1(regsp, COM_REG_IIR);
+		cn_check_magic(dev, cin, com_cnm_state);
+		com_readahead[com_readaheadcount++] = cin;
+	}
+
+	/* wait for any pending transmission to finish */
+	timo = 150000;
+	while (!ISSET(CSR_READ_1(regsp, COM_REG_LSR), LSR_TXRDY) && --timo)
+		continue;
+
+	CSR_WRITE_1(regsp, COM_REG_TXDATA, c);
+}
+
+
+void
+nhcomputs(char *msg)
+{
+	for (size_t i = 0; ; i++) {
+		if (msg[i] == '\0')
+			break;
+		nhcomputc(msg[i]);
+	}
+}
+#endif
 
 /*
  * wsdisplay accessops
@@ -1099,24 +1174,39 @@ sti_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 	u_int mode, idx, count;
 	int ret;
 
+	//nhcomputs("sti_ioctl\n");
+
+	DPRINTF(("%s: cmd %lx data %p\n", __func__, cmd, data));
 	ret = 0;
 	switch (cmd) {
 	case GCID:
 		*(u_int *)data = rom->rom_dd.dd_grid[0];
 		break;
-
+#ifdef maybe
+	case WSDISPLAYIO_GTYPE:
+		*(u_int *)data = sc->sc_wstype;
+		return 0;
+	case WSDISPLAYIO_GET_BUSID:
+		busid = data;
+		busid->bus_type = WSDISPLAYIO_BUS_SOC;
+		return 0;
+#endif
 	case WSDISPLAYIO_GMODE:
 		*(u_int *)data = scr->scr_wsmode;
 		break;
 
 	case WSDISPLAYIO_SMODE:
+printf("%s: WSDISPLAYIO_SMODE\n", __func__);
+Debugger();
 		mode = *(u_int *)data;
 		switch (mode) {
 		case WSDISPLAYIO_MODE_EMUL:
+printf("%s: WSDISPLAYIO_MODE_EMUL %s:\n", __func__, scr->scr_wsmode != WSDISPLAYIO_MODE_EMUL ? "sti_init" : "");
 			if (scr->scr_wsmode != WSDISPLAYIO_MODE_EMUL)
 				ret = sti_init(scr, STI_TEXTMODE);
 			break;
 		case WSDISPLAYIO_MODE_DUMBFB:
+printf("%s: WSDISPLAYIO_MODE_DUMBFB %s:\n", __func__, scr->scr_wsmode != WSDISPLAYIO_MODE_DUMBFB ? "setupfb" : "");
 			if (scr->scr_wsmode != WSDISPLAYIO_MODE_DUMBFB) {
 				ret = sti_init(scr, 0);
 				if (scr->setupfb != NULL)
@@ -1137,7 +1227,6 @@ sti_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 		if (ret == 0)
 			scr->scr_wsmode = mode;
 		break;
-
 	case WSDISPLAYIO_GTYPE:
 		*(u_int *)data = WSDISPLAY_TYPE_STI;
 		break;
@@ -1154,12 +1243,22 @@ sti_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 		break;
 
 	case WSDISPLAYIO_LINEBYTES:
+		printf("%s: WSDISPLAYIO_LINEBYTES bpp      %d\n", __func__, scr->scr_bpp);
+		printf("%s: WSDISPLAYIO_LINEBYTES fb_width %d\n", __func__, scr->scr_cfg.fb_width);
 		if (scr->scr_bpp > 8)
 			*(u_int *)data = scr->scr_cfg.fb_width * 4;
 		else
 			*(u_int *)data = scr->scr_cfg.fb_width;
 		break;
 
+#if 0
+	case WSDISPLAYIO_GETSUPPORTEDDEPTH:
+		if (scr->scr_bpp > 8)
+			*(u_int *)data = WSDISPLAYIO_DEPTH_24_32;
+		else
+			*(u_int *)data = WSDISPLAYIO_DEPTH_8;
+		break;
+#endif
 	case WSDISPLAYIO_GETCMAP:
 		if (scr->putcmap == NULL || scr->scr_bpp > 8)
 			return ENODEV;
@@ -1201,6 +1300,21 @@ sti_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 		if ((ret = copyin(cmapp->blue, &scr->scr_bcmap[idx], count)))
 			break;
 		ret = scr->putcmap(scr, idx, count);
+#if 0
+		for (int i = idx + count - 1; i >= idx; i--)
+			if ((ret = sti_setcment(scr, i, scr->scr_rcmap[i],
+			    scr->scr_gcmap[i], scr->scr_bcmap[i]))) {
+
+				DPRINTF(("sti_ioctl: "
+				    "sti_setcment(%d, %u, %u, %u): %%d\n", i,
+				    (u_int)scr->scr_rcmap[i],
+				    (u_int)scr->scr_gcmap[i],
+				    (u_int)scr->scr_bcmap[i]));
+
+				ret = EINVAL;
+				break;
+			}
+#endif
 		break;
 
 	case WSDISPLAYIO_SVIDEO:
@@ -1211,9 +1325,11 @@ sti_ioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 	case WSDISPLAYIO_GCURSOR:
 	case WSDISPLAYIO_SCURSOR:
 	default:
+		DPRINTF(("%s: cmd %lx data %p... done ENOTTY\n", __func__, cmd, data));
 		return ENOTTY;	/* not supported yet */
 	}
 
+	DPRINTF(("%s: cmd %lx data %p... done\n", __func__, cmd, data));
 	return ret;
 }
 
@@ -1370,6 +1486,7 @@ sti_putchar(void *v, int row, int col, u_int uc, long attr)
 	fg = WSATTR_UNPACK_FG(attr);
 	bg = WSATTR_UNPACK_BG(attr);
 
+
 	if (scr->scr_romfont != NULL) {
 		/*
 		 * Font is in memory, use unpmv
@@ -1508,6 +1625,8 @@ sti_cnattach(struct sti_rom *rom, struct sti_screen *scr, bus_space_tag_t memt,
 
 	bus_space_unmap(memt, romh, PAGE_SIZE);
 
+
+
 	if ((error = bus_space_map(memt, bases[0], romend, 0, &romh)) != 0)
 		return error;
 
@@ -1554,18 +1673,24 @@ ngle_artist_setupfb(struct sti_screen *scr)
 	bus_space_tag_t memt = rom->memt;
 	bus_space_handle_t memh = rom->regh[2];
 
+printf("%s: memh %lx\n", __func__, memh);
 	ngle_setup_bt458(scr);
 
 	ngle_setup_hw(memt, memh);
+printf("%s: %d\n", __func__, __LINE__);
 	ngle_setup_fb(memt, memh, scr->reg10_value);
+printf("%s: %d\n", __func__, __LINE__);
 
 	ngle_setup_attr_planes(scr);
 
 	ngle_setup_hw(memt, memh);
+printf("%s: %d\n", __func__, __LINE__);
 	bus_space_write_stream_4(memt, memh, NGLE_REG_21,
 	    bus_space_read_stream_4(memt, memh, NGLE_REG_21) | 0x0a000000);
+printf("%s: %d\n", __func__, __LINE__);
 	bus_space_write_stream_4(memt, memh, NGLE_REG_27,
 	    bus_space_read_stream_4(memt, memh, NGLE_REG_27) | 0x00800000);
+printf("%s: done\n", __func__);
 }
 
 void
@@ -1804,11 +1929,13 @@ ngle_setup_hw(bus_space_tag_t memt, bus_space_handle_t memh)
 {
 	uint8_t stat;
 
+printf("%s: %d\n", __func__, __LINE__);
 	do {
 		stat = bus_space_read_1(memt, memh, NGLE_REG_15b0);
 		if (stat == 0)
 			stat = bus_space_read_1(memt, memh, NGLE_REG_15b0);
 	} while (stat != 0);
+printf("%s: done\n", __func__);
 }
 
 void

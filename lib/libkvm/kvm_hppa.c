@@ -99,29 +99,39 @@ _kvm_initvtop(kvm_t *kd)
 int
 _kvm_kvatop(kvm_t *kd, vaddr_t va, paddr_t *pa)
 {
-#if 0
 	cpu_kcore_hdr_t *cpu_kh;
 	u_long page_off;
-	pd_entry_t pde;
+	uint32_t vtop;
+	pt_entry_t pde;
 	pt_entry_t pte;
-	u_long pde_pa, pte_pa;
-#endif
+	u_long vtop_pa, pde_pa, pte_pa;
 
 	if (ISALIVE(kd)) {
 		_kvm_err(kd, 0, "vatop called in live kernel!");
 		return 0;
 	}
 
-	_kvm_syserr(kd, 0, "could not read PTE");
-
-#if 0
 	cpu_kh = kd->cpu_data;
 	page_off = va & PGOFSET;
 
 	/*
+	 * Find and read the space -> page directory table entry.
+	 */
+	vtop_pa = cpu_kh->vtop;		/* space 0 */
+	if (_kvm_pread(kd, kd->pmfd, (void *)&vtop, sizeof(vtop),
+	    _kvm_pa2off(kd, vtop_pa)) != sizeof(vtop)) {
+		_kvm_syserr(kd, 0, "could not read VTOP");
+		goto lose;
+	}
+	if (vtop == 0) {
+		_kvm_err(kd, 0, "invalid translation (invalid VTOP)");
+		goto lose;
+	}
+
+	/*
 	 * Find and read the page directory entry.
 	 */
-	pde_pa = cpu_kh->ptdpaddr + (pdei(va) * sizeof(pd_entry_t));
+	pde_pa = vtop + ((va >> 22) * sizeof(uint32_t));
 	if (_kvm_pread(kd, kd->pmfd, (void *)&pde, sizeof(pde),
 	    _kvm_pa2off(kd, pde_pa)) != sizeof(pde)) {
 		_kvm_syserr(kd, 0, "could not read PDE");
@@ -131,11 +141,11 @@ _kvm_kvatop(kvm_t *kd, vaddr_t va, paddr_t *pa)
 	/*
 	 * Find and read the page table entry.
 	 */
-	if ((pde & PG_V) == 0) {
+	if (pde == 0) {
 		_kvm_err(kd, 0, "invalid translation (invalid PDE)");
 		goto lose;
 	}
-	pte_pa = (pde & PG_FRAME) + (ptei(va) * sizeof(pt_entry_t));
+	pte_pa = pde + (((va >> 12) & 0x3ff) * sizeof(pt_entry_t));
 	if (_kvm_pread(kd, kd->pmfd, (void *) &pte, sizeof(pte),
 	    _kvm_pa2off(kd, pte_pa)) != sizeof(pte)) {
 		_kvm_syserr(kd, 0, "could not read PTE");
@@ -145,15 +155,14 @@ _kvm_kvatop(kvm_t *kd, vaddr_t va, paddr_t *pa)
 	/*
 	 * Validate the PTE and return the physical address.
 	 */
-	if ((pte & PG_V) == 0) {
+	if (PTE_PAGE(pte) == 0) {
 		_kvm_err(kd, 0, "invalid translation (invalid PTE)");
 		goto lose;
 	}
-	*pa = (pte & PG_FRAME) + page_off;
+	*pa = PTE_PAGE(pte) + page_off;
 	return (int)(NBPG - page_off);
 
- lose:
-#endif
+lose:
 	*pa = (u_long)~0L;
 	return 0;
 }
@@ -164,7 +173,6 @@ _kvm_kvatop(kvm_t *kd, vaddr_t va, paddr_t *pa)
 off_t
 _kvm_pa2off(kvm_t *kd, paddr_t pa)
 {
-#if 0
 	cpu_kcore_hdr_t *cpu_kh;
 	phys_ram_seg_t *ramsegs;
 	off_t off;
@@ -184,8 +192,6 @@ _kvm_pa2off(kvm_t *kd, paddr_t pa)
 	}
 
 	return kd->dump_off + off;
-#endif
-	return 0;
 }
 
 /*

@@ -1,6 +1,6 @@
 /*	$NetBSD: stivar.h,v 1.12 2024/12/16 08:56:25 macallan Exp $	*/
 
-/*	$OpenBSD: stivar.h,v 1.24 2009/02/06 22:51:04 miod Exp $	*/
+/*	$OpenBSD: stivar.h,v 1.25 2015/04/05 23:25:57 miod Exp $	*/
 
 /*
  * Copyright (c) 2000-2003 Michael Shalayeff
