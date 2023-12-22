@@ -95,6 +95,7 @@ ld* 		at sdmmc?
 bwfm* 		at sdmmc?		# Broadcom BCM43xxx WiFi Interface
 
 # USB PHY
+jh7110usbphy* 	at fdt?			# StarFive JH7100 usbphy
 sunxiusbphy* 	at fdt?			# Allwinner USB PHY
 
 # USB

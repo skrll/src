@@ -68,3 +68,8 @@ file	arch/riscv/starfive/jh71x0_temp.c		jh71x0_temp
 device	jh7110trng: fdt_reset
 attach	jh7110trng at fdt with jh7110_trng
 file	arch/riscv/starfive/jh7110_trng.c		jh7110_trng
+
+# JH7110 USB PHY
+device	jh7110usbphy
+attach	jh7110usbphy at fdt with jh7110_usbphy
+file	arch/riscv/starfive/jh7110_usbphy.c		jh7110_usbphy
