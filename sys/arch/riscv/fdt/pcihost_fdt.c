@@ -43,12 +43,15 @@ __KERNEL_RCSID(0, "$NetBSD: pcihost_fdt.c,v 1.1 2025/01/01 17:53:07 skrll Exp $"
 
 #include <machine/cpu.h>
 
+//#include <arm/cpufunc.h>
+
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pciconf.h>
 
 #include <dev/fdt/fdtvar.h>
 
+#include <riscv/pci/pci_msi_machdep.h>
 #include <riscv/fdt/pcihost_fdtvar.h>
 
 #define	PCIHOST_DEFAULT_BUS_MIN		0
@@ -98,6 +101,13 @@ static const struct device_compatible_entry compat_data[] = {
 	DEVICE_COMPAT_EOL
 };
 
+#ifdef __HAVE_PCI_MSI_MSIX
+struct pcihost_msi_handler {
+	LIST_ENTRY(pcihost_msi_handler) pmh_next;
+	void *pmh_ih;
+};
+#endif
+
 static int
 pcihost_match(device_t parent, cfdata_t cf, void *aux)
 {
@@ -126,12 +136,19 @@ pcihost_attach(device_t parent, device_t self, void *aux)
 	sc->sc_pci_bst = faa->faa_bst;
 	sc->sc_phandle = faa->faa_phandle;
 	error = bus_space_map(sc->sc_bst, cs_addr, cs_size,
-	    0, &sc->sc_bsh);
+	    0 /* BUS_SPACE_MAP_NONPOSTED */, &sc->sc_bsh);
 	if (error) {
 		aprint_error(": couldn't map registers: %d\n", error);
 		return;
 	}
 	sc->sc_type = of_compatible_lookup(sc->sc_phandle, compat_data)->value;
+
+#ifdef __HAVE_PCI_MSI_MSIX
+	if (sc->sc_type == PCIHOST_ECAM) {
+		sc->sc_pci_flags |= PCI_FLAGS_MSI_OKAY;
+		sc->sc_pci_flags |= PCI_FLAGS_MSIX_OKAY;
+	}
+#endif
 
 	aprint_naive("\n");
 	aprint_normal(": Generic PCI host controller\n");
@@ -167,6 +184,13 @@ pcihost_init2(struct pcihost_softc *sc)
 	 */
 	if (of_getprop_uint32(sc->sc_phandle, "linux,pci-domain", &sc->sc_seg))
 		sc->sc_seg = pcihost_segment++;
+
+#ifdef __HAVE_PCI_MSI_MSIX
+	mutex_init(&sc->sc_msi_handlers_mutex, MUTEX_DEFAULT, IPL_NONE);
+
+	/* Rely on softc being zero initialised. */
+	KASSERT(LIST_EMPTY(&sc->sc_msi_handlers));
+#endif
 
 	if (pcihost_config(sc) != 0)
 		return;
@@ -241,19 +265,23 @@ pcihost_config(struct pcihost_softc *sc)
 	const int chosen = OF_finddevice("/chosen");
 	if (chosen <= 0 || of_getprop_uint32(chosen, "linux,pci-probe-only", &probe_only))
 		probe_only = 0;
+#if 0
 
 	if (sc->sc_pci_ranges != NULL) {
 		ranges = sc->sc_pci_ranges;
 		len = sc->sc_pci_ranges_cells * 4;
 		swap = false;
 	} else {
+#endif
 		ranges = fdtbus_get_prop(sc->sc_phandle, "ranges", &len);
 		if (ranges == NULL) {
 			aprint_error_dev(sc->sc_dev, "missing 'ranges' property\n");
 			return EINVAL;
 		}
 		swap = true;
+#if 0
 	}
+#endif
 	struct pciconf_resources *pcires = pciconf_resource_init();
 
 	/*
@@ -611,6 +639,18 @@ static void
 pcihost_intr_disestablish(void *v, void *vih)
 {
 	struct pcihost_softc *sc = v;
+
+	mutex_enter(&sc->sc_msi_handlers_mutex);
+	struct pcihost_msi_handler *pmh;
+	LIST_FOREACH(pmh, &sc->sc_msi_handlers, pmh_next) {
+		if (pmh->pmh_ih == vih) {
+			LIST_REMOVE(pmh, pmh_next);
+			mutex_exit(&sc->sc_msi_handlers_mutex);
+			kmem_free(pmh, sizeof(*pmh));
+			return;
+		}
+	}
+	mutex_exit(&sc->sc_msi_handlers_mutex);
 
 	fdtbus_intr_disestablish(sc->sc_phandle, vih);
 }

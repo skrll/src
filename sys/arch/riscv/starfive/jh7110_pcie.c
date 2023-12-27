@@ -45,13 +45,30 @@ __KERNEL_RCSID(0, "$NetBSD: jh7110_pcie.c,v 1.2 2025/01/09 10:39:01 skrll Exp $"
 
 #include <riscv/fdt/pcihost_fdtvar.h>
 
+#include <riscv/pci/pci_msi_machdep.h>
+
+struct jh7110_pcie_irq;
+
+struct jh7110_pcie_irqhandler {
+	struct jh7110_pcie_irq	*jpih_irq;
+	int			(*jpih_fn)(void *);
+	void			*jpih_arg;
+	TAILQ_ENTRY(jh7110_pcie_irqhandler)
+				jpih_next;
+};
+
 struct jh7110_pcie_irq {
 	struct jh7110_pcie_softc *
 				jpi_sc;
+	void			*jpi_ih;
 	void			*jpi_arg;
-	int			(*jpi_fn)(void *);
+	int			jpi_refcnt;
+	int			jpi_ipl;
+	int			jpi_irq;
 	int			jpi_mpsafe;
 	char *			jpi_xname;
+
+	TAILQ_HEAD(, jh7110_pcie_irqhandler) jpi_handlers;
 };
 
 struct jh7110_pcie_softc {
@@ -73,11 +90,20 @@ struct jh7110_pcie_softc {
 
 	struct fdtbus_gpio_pin *sc_perst_gpio;
 
+	// phy?
+
 	// # pins
 	struct jh7110_pcie_irq	*sc_irq[PCI_INTERRUPT_PIN_MAX];
 
 	struct evcnt		sc_evcnt_handled[PCI_INTERRUPT_PIN_MAX];
 	struct evcnt		sc_evcnt_unknown[PCI_INTERRUPT_PIN_MAX];
+
+	struct riscv_pci_msi	sc_msi;
+	u_int			sc_msi_start;
+	u_int			sc_nmsi;
+	struct pci_attach_args	**sc_msi_pa;
+	void			**sc_msi_ih;	// XXXNH eh?
+	bus_addr_t		sc_msi_addr;
 };
 
 #define	RD4(sc, reg)							      \
@@ -148,6 +174,8 @@ struct jh7110_pcie_softc {
 #define  PLDA_TRSL_ID_PCIE_CONFIG		1
 
 #define PCIE_FUNC_NUM				4
+
+#define PLDA_MAX_NUM_MSI_IRQS			32
 
 /* system control */
 #define STG_SYSCON_PCIE0_BASE			0x0048
@@ -283,18 +311,30 @@ jh7110_pcie_intx_establish(device_t dev, u_int *specifier, int ipl, int flags,
     int (*func)(void *), void *arg, const char *xname)
 {
 	struct jh7110_pcie_softc * const sc = device_private(dev);
+//	struct pcihost_softc * const phsc = &sc->sc_phsc;
+	uint32_t mask;
+
 	const u_int mpsafe = (flags & FDT_INTR_MPSAFE) ? IST_MPSAFE : 0;
+
 	const u_int pin = be32toh(specifier[0]) - 1;
 
-	KASSERT((RD4(sc, PLDA_IMASK_LOCAL) & (PLDA_IMASK_INT_INTA << pin)) == 0);
+	printf("%s: %s %d\n", __func__, xname, pin);
+
+	/* Mask the interrupt. */
+	mask = RD4(sc, PLDA_IMASK_LOCAL);
+	mask &= ~(PLDA_IMASK_INT_INTA << pin);
+	WR4(sc, PLDA_IMASK_LOCAL, mask);
 
 	struct jh7110_pcie_irq *jpi = sc->sc_irq[pin];
 	if (jpi == NULL) {
 		jpi = kmem_alloc(sizeof(*jpi), KM_SLEEP);
 		jpi->jpi_sc = sc;
-		jpi->jpi_fn = func;
+		jpi->jpi_refcnt = 0;
 		jpi->jpi_arg = arg;
+		jpi->jpi_ipl = ipl;
 		jpi->jpi_mpsafe = mpsafe;
+//		jpi->jpi_irq = jpi;
+		TAILQ_INIT(&jpi->jpi_handlers);
 
 		sc->sc_irq[pin] = jpi;
 
@@ -303,12 +343,46 @@ jh7110_pcie_intx_establish(device_t dev, u_int *specifier, int ipl, int flags,
 		evcnt_attach_dynamic(&sc->sc_evcnt_handled[pin],
 		    EVCNT_TYPE_INTR, NULL, device_xname(dev), jpi->jpi_xname);
 	} else {
-		device_printf(dev, "shared interrupts not supported\n");
-		return NULL;
+		if (jpi->jpi_arg == NULL || arg == NULL) {
+			device_printf(dev,
+			    "cannot share irq with NULL-arg handler\n");
+			return NULL;
+		}
+		if (jpi->jpi_ipl != ipl) {
+			device_printf(dev,
+			    "cannot share irq with different ipl\n");
+			return NULL;
+		}
+		if (jpi->jpi_mpsafe != mpsafe) {
+			device_printf(dev,
+			    "cannot share irq between mpsafe/non-mpsafe\n");
+			return NULL;
+		}
 	}
 
+	struct jh7110_pcie_irqhandler *jpih =
+	    kmem_alloc(sizeof(*jpih), KM_SLEEP);
+	jpih->jpih_irq = jpi;
+	jpih->jpih_fn = func;
+	jpih->jpih_arg = arg;
+
+	jpi->jpi_refcnt++;
+	TAILQ_INSERT_TAIL(&jpi->jpi_handlers, jpih, jpih_next);
+
+	/*
+	 * XXX interrupt_distribute(9) assumes that any interrupt
+	 * handle can be used as an input to the MD interrupt_distribute
+	 * implementationm, so we are forced to return the handle
+	 * we got back from intr_establish().  Upshot is that the
+	 * input to bcm2835_icu_fdt_disestablish() is ambiguous for
+	 * shared IRQs, rendering them un-disestablishable.
+	 */
+
+
 	/* Unmask the interrupt. */
-	SET4(sc, PLDA_IMASK_LOCAL, (PLDA_IMASK_INT_INTA << pin));
+	mask = RD4(sc, PLDA_IMASK_LOCAL);
+	mask |= (PLDA_IMASK_INT_INTA << pin);
+	WR4(sc, PLDA_IMASK_LOCAL, mask);
 
 	return jpi;
 }
@@ -361,15 +435,56 @@ jh7110_pcie_intx_intr(struct jh7110_pcie_softc *sc, uint32_t status)
 		}
 		sc->sc_evcnt_handled[pin].ev_count++;
 
-		if (!jpi->jpi_mpsafe)
-			KERNEL_LOCK(1, NULL);
-		handled |= jpi->jpi_fn(jpi->jpi_arg);
-		if (!jpi->jpi_mpsafe)
-			KERNEL_UNLOCK_ONE(NULL);
+		struct jh7110_pcie_irqhandler *jpih;
+
+		TAILQ_FOREACH(jpih, &jpi->jpi_handlers, jpih_next) {
+			if (!jpi->jpi_mpsafe)
+				KERNEL_LOCK(1, NULL);
+			handled |= jpih->jpih_fn(jpih->jpih_arg);
+			if (!jpi->jpi_mpsafe)
+				KERNEL_UNLOCK_ONE(NULL);
+		}
 	}
 
 	return handled;
 }
+
+#if 0
+
+void
+jh7110_pcie_msi_intr(struct jh7110_pcie_softc *sc)
+{
+	struct jh7110_pcie_msi *sm;
+	uint32_t status;
+	int vec, s;
+
+	status = HREAD4(sc, ISTATUS_MSI);
+	if (status == 0)
+		return;
+	HWRITE4(sc, ISTATUS_MSI, status);
+
+	while (status) {
+		vec = ffs(status) - 1;
+		status &= ~(1U << vec);
+
+		sm = &sc->sc_msi[vec];
+		if (sm->sm_func == NULL)
+			continue;
+
+		if ((sm->sm_flags & IPL_MPSAFE) == 0)
+			KERNEL_LOCK();
+		s = splraise(sm->sm_ipl);
+		if (sm->sm_func(sm->sm_arg))
+			sm->sm_count.ec_count++;
+		splx(s);
+		if ((sm->sm_flags & IPL_MPSAFE) == 0)
+			KERNEL_UNLOCK();
+	}
+}
+
+#endif
+
+
 
 
 static int
@@ -377,18 +492,30 @@ jh7110_pcie_intr(void *v)
 {
 	struct jh7110_pcie_softc * const sc = v;
 	int handled = 0;
+	uint32_t status;
 
-	uint32_t status = RD4(sc, PLDA_ISTATUS_LOCAL);
+	status = RD4(sc, PLDA_ISTATUS_LOCAL);
 	if (status == 0)
 		return 0;
 
 	if (status & PLDA_ISTATUS_INT_INTX)
 		handled |= jh7110_pcie_intx_intr(sc, status);
 
+	/*
+	 * Ack INTx late as they are level-triggered.  Ack MSI early
+	 * as they are edge-triggered.
+	 */
 	WR4(sc, PLDA_ISTATUS_LOCAL, status);
+
+#if 0
+	if (status & PLDA_ISTATUS_INT_MSI)
+		jh7110_pcie_msi_intr(sc);
+#endif
 
 	return handled;
 }
+
+
 
 static struct fdtbus_interrupt_controller_func jh7110_pcie_intxfuncs = {
 	.establish = jh7110_pcie_intx_establish,
@@ -522,6 +649,8 @@ jh7110_pcie_host_init(struct jh7110_pcie_softc *sc)
 	return 0;
 }
 
+
+
 static int
 jh7110_pcie_atr_init(struct jh7110_pcie_softc *sc)
 {
@@ -560,12 +689,22 @@ jh7110_pcie_atr_init(struct jh7110_pcie_softc *sc)
 
 		WR4(sc, PLDA_ATR_AXI4_SLV0_SRC_ADDR_LO(n),
 		    PLDA_ATR_IMPL |
-		    __SHIFTIN(ilog2(size) /* - 1 */, PLDA_ATR_SIZE_MASK) |
+		    __SHIFTIN(ilog2(size) - 1, PLDA_ATR_SIZE_MASK) |
 		    BUS_ADDR_LO32(phyaddr));
 		WR4(sc, PLDA_ATR_AXI4_SLV0_SRC_ADDR_HI(n), BUS_ADDR_HI32(phyaddr));
 		WR4(sc, PLDA_ATR_AXI4_SLV0_TRSL_ADDR_LO(n), BUS_ADDR_LO32(pciaddr));
 		WR4(sc, PLDA_ATR_AXI4_SLV0_TRSL_ADDR_HI(n), BUS_ADDR_HI32(pciaddr));
 		WR4(sc, PLDA_ATR_AXI4_SLV0_TRSL_PARAM(n), PLDA_TRSL_ID_PCIE_RX_TX);
+
+#if 0
+
+	val = readl(bridge_base_addr + ATR0_PCIE_WIN0_SRCADDR_PARAM);
+	val |= (ATR0_PCIE_ATR_SIZE << ATR0_PCIE_ATR_SIZE_SHIFT);
+	writel(val, bridge_base_addr + ATR0_PCIE_WIN0_SRCADDR_PARAM);
+	writel(0, bridge_base_addr + ATR0_PCIE_WIN0_SRC_ADDR);
+#endif
+
+		// ATR0_PCIE_ATR_SIZE linux
 	}
 
 	uint32_t val;
@@ -576,6 +715,252 @@ jh7110_pcie_atr_init(struct jh7110_pcie_softc *sc)
 
 	return 0;
 }
+
+static void
+jh7110_pcie_msi_enable(struct jh7110_pcie_softc *sc, int msi, int count)
+{
+	const struct pci_attach_args *pa = sc->sc_msi_pa[msi];
+	pci_chipset_tag_t pc = pa->pa_pc;
+	pcitag_t tag = pa->pa_tag;
+	pcireg_t ctl;
+	int off;
+
+	if (!pci_get_capability(pc, tag, PCI_CAP_MSI, &off, NULL))
+		panic("%s: device is not MSI-capable", __func__);
+	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
+	ctl &= ~PCI_MSI_CTL_MSI_ENABLE;
+	pci_conf_write(pc, tag, off + PCI_MSI_CTL, ctl);
+
+	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
+	ctl &= ~PCI_MSI_CTL_MME_MASK;
+	ctl |= __SHIFTIN(ilog2(count), PCI_MSI_CTL_MME_MASK);
+	pci_conf_write(pc, tag, off + PCI_MSI_CTL, ctl);
+
+	const uint64_t addr = sc->sc_msi_addr;
+	const uint32_t data = msi;
+
+	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
+	if (ctl & PCI_MSI_CTL_64BIT_ADDR) {
+		pci_conf_write(pc, tag, off + PCI_MSI_MADDR64_LO,
+		    __SHIFTOUT(addr, __BITS(31, 0)));
+		pci_conf_write(pc, tag, off + PCI_MSI_MADDR64_HI,
+		    __SHIFTOUT(addr, __BITS(63, 32)));
+		pci_conf_write(pc, tag, off + PCI_MSI_MDATA64, data);
+	} else {
+		pci_conf_write(pc, tag, off + PCI_MSI_MADDR,
+		    __SHIFTOUT(addr, __BITS(31, 0)));
+		pci_conf_write(pc, tag, off + PCI_MSI_MDATA, data);
+	}
+	ctl |= PCI_MSI_CTL_MSI_ENABLE;
+	pci_conf_write(pc, tag, off + PCI_MSI_CTL, ctl);
+}
+
+static int
+jh7110_pcie_msi_available(struct jh7110_pcie_softc *sc)
+{
+	int msi, n;
+
+	for (n = 0, msi = 0; msi < sc->sc_nmsi; msi++) {
+		if (sc->sc_msi_pa[msi] == NULL) {
+			n++;
+		}
+	}
+
+	return n;
+}
+
+static int
+jh7110_pcie_msi_reserve(struct jh7110_pcie_softc *sc, int count,
+    const struct pci_attach_args *pa)
+{
+	struct pci_attach_args *new_pa;
+	int msi, n;
+
+	for (msi = 0; msi < sc->sc_nmsi; msi += n) {
+		/* Look for first empty slot */
+		if (sc->sc_msi_pa[msi] != NULL) {
+			/* skip the used entry */
+			n = 1;
+			continue;
+		}
+
+		/* Now check that 'count' entries are also empty */
+		for (n = 1; n < count && msi + n < sc->sc_nmsi; n++) {
+			if (sc->sc_msi_pa[msi + n] != NULL) {
+				break;
+			}
+		}
+		/*
+		 * If 'count' empty entries weren't found then the search
+		 * continues.
+		 */
+		if (n != count)
+			continue;
+		for (n = 0; n < count; n++) {
+			new_pa = kmem_alloc(sizeof(*new_pa), KM_SLEEP);
+			memcpy(new_pa, pa, sizeof(*new_pa));
+			sc->sc_msi_pa[msi + n] = new_pa;
+		}
+
+		return msi;
+	}
+
+	return -1;
+}
+
+
+static pci_intr_handle_t *
+jh7110_pcie_msi_alloc(struct riscv_pci_msi *msi, int *count,
+    const struct pci_attach_args *pa, bool exact)
+{
+	struct jh7110_pcie_softc * const sc= msi->msi_priv;
+	pci_intr_handle_t *vectors;
+	int n, off;
+
+
+	if (!pci_get_capability(pa->pa_pc, pa->pa_tag, PCI_CAP_MSI, &off, NULL))
+		return NULL;
+
+	const int avail = jh7110_pcie_msi_available(sc);
+	if (avail == 0)
+		return NULL;
+
+	if (exact && *count > avail)
+		return NULL;
+
+	while (*count > avail) {
+		(*count) >>= 1;
+	}
+	if (*count == 0)
+		return NULL;
+
+	const int msi_base = jh7110_pcie_msi_reserve(sc, *count, pa);
+	if (msi_base == -1)
+		return NULL;
+
+	vectors = kmem_alloc(sizeof(*vectors) * *count, KM_SLEEP);
+	for (n = 0; n < *count; n++) {
+		// XXXNH msino and n (and msi_id?)
+		// we only appear to have one interrupt for MSIs, so msino not
+		// needed?
+		const int msino = msi_base + n;
+		vectors[n] =
+		    RISCV_PCI_INTR_MSI |
+		    __SHIFTIN(msino, RISCV_PCI_INTR_IRQ) |
+		    __SHIFTIN(n, RISCV_PCI_INTR_MSI_VEC) |
+		    __SHIFTIN(msi->msi_id, RISCV_PCI_INTR_FRAME);
+	}
+
+	jh7110_pcie_msi_enable(sc, msi_base, *count);
+
+	return vectors;
+}
+
+
+
+static void
+jh7110_pcie_msi_free(struct jh7110_pcie_softc *sc, int msi)
+{
+	struct pci_attach_args * const pa = sc->sc_msi_pa[msi];
+	sc->sc_msi_pa[msi] = NULL;
+
+	if (pa != NULL) {
+		kmem_free(pa, sizeof(*pa));
+	}
+}
+
+static void
+jh7110_pcie_msi_disable(struct jh7110_pcie_softc *sc, int msi)
+{
+	const struct pci_attach_args * const pa = sc->sc_msi_pa[msi];
+	pci_chipset_tag_t pc = pa->pa_pc;
+	pcitag_t tag = pa->pa_tag;
+	pcireg_t ctl;
+	int off;
+
+	if (!pci_get_capability(pc, tag, PCI_CAP_MSIX, &off, NULL))
+		panic("%s: device is not MSI-X-capable", __func__);
+
+	ctl = pci_conf_read(pc, tag, off + PCI_MSIX_CTL);
+	ctl &= ~PCI_MSIX_CTL_ENABLE;
+	pci_conf_write(pc, tag, off + PCI_MSIX_CTL, ctl);
+}
+
+
+
+static void *
+jh7110_pcie_msi_intr_establish(struct riscv_pci_msi *msi,
+    pci_intr_handle_t ih, int ipl, int (*func)(void *), void *arg,
+    const char *xname)
+{
+	struct jh7110_pcie_softc * const sc = msi->msi_priv;
+
+	const int msino = __SHIFTOUT(ih, RISCV_PCI_INTR_IRQ);
+	const int mpsafe = (ih & RISCV_PCI_INTR_MPSAFE) ? FDT_INTR_MPSAFE : 0;
+
+	KASSERT(sc->sc_msi_ih[msino] == NULL);
+
+
+	sc->sc_msi_ih[msino] = intr_establish_xname(sc->sc_msi_start + msino,
+	    ipl, IST_LEVEL | (mpsafe ? IST_MPSAFE : 0), func, arg, xname);
+
+	return sc->sc_msi_ih[msino];
+}
+
+static void
+jh7110_pcie_msi_intr_release(struct riscv_pci_msi *msi, pci_intr_handle_t *pih,
+    int count)
+{
+	struct jh7110_pcie_softc * const sc = msi->msi_priv;
+	int n;
+
+	for (n = 0; n < count; n++) {
+		const int msino = __SHIFTOUT(pih[n], RISCV_PCI_INTR_IRQ);
+#if 0
+		if (pih[n] & RISCV_PCI_INTR_MSIX)
+			jh7110_pcie_msix_disable(sc, msino);
+#endif
+		if (pih[n] & RISCV_PCI_INTR_MSI)
+			jh7110_pcie_msi_disable(sc, msino);
+		jh7110_pcie_msi_free(sc, msino);
+		if (sc->sc_msi_ih[msino] != NULL) {
+			intr_disestablish(sc->sc_msi_ih[msino]);
+			sc->sc_msi_ih[msino] = NULL;
+		}
+	}
+}
+
+static int
+jh7110_pcie_msi_init(struct jh7110_pcie_softc *sc)
+{
+	struct riscv_pci_msi * const msi = &sc->sc_msi;
+	struct pcihost_softc * const phsc = &sc->sc_phsc;
+
+	sc->sc_msi_start = 0; /* eh? */
+	sc->sc_nmsi = PLDA_MAX_NUM_MSI_IRQS;
+
+	sc->sc_msi_pa = kmem_zalloc(sizeof(*sc->sc_msi_pa) * sc->sc_nmsi,
+	    KM_SLEEP);
+	sc->sc_msi_ih = kmem_zalloc(sizeof(*sc->sc_msi_ih) * sc->sc_nmsi,
+	    KM_SLEEP);
+
+	/* MSI handling. */
+	sc->sc_msi_addr = RD4(sc, PLDA_IMSI_ADDR);
+
+	msi->msi_dev = phsc->sc_dev;
+	msi->msi_priv = sc;
+	msi->msi_alloc = jh7110_pcie_msi_alloc;
+//	msi->msix_alloc = jh7110_pcie_msix_alloc;
+	msi->msi_intr_establish = jh7110_pcie_msi_intr_establish;
+	msi->msi_intr_release = jh7110_pcie_msi_intr_release;
+
+	/* Unmask interrupts. */
+	WR4(sc, PLDA_IMASK_LOCAL, PLDA_IMASK_INT_MSI);
+
+	return riscv_pci_msi_add(msi);
+}
+
+
 
 /* Compat string(s) */
 static const struct device_compatible_entry compat_data[] = {
@@ -687,6 +1072,22 @@ jh7110_pcie_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
+	// Done in pcihost_init2!
+	/* Default bus ranges */
+	phsc->sc_bus_min = 0;
+	phsc->sc_bus_max = 31;
+
+
+	// XXXNH done in pcihost_initX
+	/* Override bus range from DT */
+	const u_int *bus_range = fdtbus_get_prop(phandle, "bus-range", &len);
+	if (len == 2 * sizeof(uint32_t)) {
+		phsc->sc_bus_min = be32dec(&bus_range[0]);
+		phsc->sc_bus_max = be32dec(&bus_range[1]);
+		aprint_verbose_dev(phsc->sc_dev, "DT bus range %d-%d\n",
+		    phsc->sc_bus_min, phsc->sc_bus_max);
+	}
+
 	/* Configure Address Translation. */
 	error = jh7110_pcie_atr_init(sc);
 	if (error) {
@@ -698,6 +1099,7 @@ jh7110_pcie_attach(device_t parent, device_t self, void *aux)
 	WR4(sc, PLDA_ISTATUS_LOCAL, 0xffffffff);
 
 	char intrstr[128];
+
 	if (!fdtbus_intr_str(phandle, 0, intrstr, sizeof(intrstr))) {
 		aprint_error(": failed to decode interrupt\n");
 		return;
@@ -712,6 +1114,7 @@ jh7110_pcie_attach(device_t parent, device_t self, void *aux)
 	}
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
+	// dependant on property's existance
 	fdtbus_register_interrupt_controller(self,
 	    OF_child(phsc->sc_phandle), &jh7110_pcie_intxfuncs);
 
@@ -728,13 +1131,38 @@ jh7110_pcie_attach(device_t parent, device_t self, void *aux)
 	}
 
 	phsc->sc_type = PCIHOST_ECAM;
+
+	if (of_hasprop(phandle, "msi-controller")) {
+                /* Message Based Interrupts */
+
+		error = jh7110_pcie_msi_init(sc);
+		if (!error) {
+//			phsc->sc_pci_flags |= PCI_FLAGS_MSI_OKAY;
+	//		phsc->sc_pci_flags |= PCI_FLAGS_MSIX_OKAY;
+		}
+	}
+
 	pcihost_init(&phsc->sc_pc, phsc);
 
+	// XXXNH are any of these needed? cf. pcihost versions
+	// XXXNH because of sc->sc_cfg_addr
+
+
+//	phsc->sc_pc.pc_attach_hook = pcihost_attach_hook;
 	phsc->sc_pc.pc_bus_maxdevs = jh7110_pcie_bus_maxdevs;
 	phsc->sc_pc.pc_make_tag = jh7110_pcie_make_tag;
 	phsc->sc_pc.pc_decompose_tag = jh7110_pcie_decompose_tag;
+//	phsc->sc_pc.pc_get_segment = pcihost_get_segment;
 	phsc->sc_pc.pc_conf_read = jh7110_pcie_conf_read;
 	phsc->sc_pc.pc_conf_write = jh7110_pcie_conf_write;
+//	phsc->sc_pc.pc_conf_interrupt = pcihost_conf_interrupt;
+
+//	pc->pc_intr_map = pcihost_intr_map;
+//	pc->pc_intr_string = pcihost_intr_string;
+//	pc->pc_intr_evcnt = pcihost_intr_evcnt;
+//	pc->pc_intr_setattr = pcihost_intr_setattr;
+//	pc->pc_intr_establish = pcihost_intr_establish;
+//	pc->pc_intr_disestablish = pcihost_intr_disestablish;
 
 	pcihost_init2(phsc);
 }

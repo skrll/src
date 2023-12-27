@@ -1,0 +1,4 @@
+# $NetBSD$
+
+# PCI MSI/MSI-X support
+file	arch/riscv/pci/pci_msi_machdep.c	pci & __have_pci_msi_msix
