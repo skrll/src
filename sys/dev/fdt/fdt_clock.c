@@ -249,7 +249,8 @@ fdtbus_clock_assign(int phandle)
 				if (error != 0) {
 					aprint_error("clk: failed to set %s parent to %s, error %d\n",
 					    clk->name, clk_parent->name, error);
-				}
+				} else
+					aprint_verbose("clk: set %s parent to %s\n", clk->name, clk_parent->name);
 			} else {
 				aprint_debug("clk: failed to set %s parent (not found)\n", clk->name);
 			}
@@ -262,6 +263,8 @@ fdtbus_clock_assign(int phandle)
 				if (error != 0)
 					aprint_error("clk: failed to set %s rate to %u Hz, error %d\n",
 					    clk->name, rate, error);
+				else
+					aprint_verbose("clk: set %s rate to %u Hz\n", clk->name, rate);
 			}
 		}
 	}
