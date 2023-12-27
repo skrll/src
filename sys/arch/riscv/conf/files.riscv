@@ -98,4 +98,6 @@ include "dev/pci/files.pci"			# PCI device support
 #
 # Machine-dependent drivers
 #
+include "arch/riscv/pci/files.pci"		# MD PCI support code
+
 include "arch/riscv/conf/majors.riscv"
