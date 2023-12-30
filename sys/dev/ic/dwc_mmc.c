@@ -44,6 +44,8 @@ __KERNEL_RCSID(0, "$NetBSD: dwc_mmc.c,v 1.32 2025/12/10 22:14:13 mlelstv Exp $")
 #include <dev/ic/dwc_mmc_reg.h>
 #include <dev/ic/dwc_mmc_var.h>
 
+#define DWC_MMC_DEBUG
+
 #define DWC_MMC_NDESC		64
 
 static int	dwc_mmc_host_reset(sdmmc_chipset_handle_t);
@@ -398,6 +400,8 @@ dwc_mmc_set_clock(struct dwc_mmc_softc *sc, u_int freq)
 	else
 		clk_div = 0;
 
+	aprint_normal_dev(sc->sc_dev, "set clock %u xHz (internal divider %u) parent freq %u xHz divider %u\n", freq, sc->sc_ciu_div, sc->sc_clock_freq / 1000, clk_div);
+
 	MMC_WRITE(sc, DWC_MMC_CLKDIV, clk_div);
 
 	return dwc_mmc_update_clock(sc);
@@ -411,12 +415,23 @@ dwc_mmc_bus_clock(sdmmc_chipset_handle_t sch, int freq)
 
 	MMC_WRITE(sc, DWC_MMC_CLKSRC, 0);
 	MMC_WRITE(sc, DWC_MMC_CLKENA, 0);
+
+	aprint_normal_dev(sc->sc_dev, "bus clock %u kHz (internal divider %u) parent freq %u\n", freq, sc->sc_ciu_div, sc->sc_clock_freq / 1000);
+
 	if (dwc_mmc_update_clock(sc) != 0)
 		return 1;
 
 	if (freq) {
-		if (sc->sc_bus_clock && sc->sc_bus_clock(sc, freq) != 0)
-			return 1;
+
+		if (sc->sc_bus_clock) {
+			aprint_normal_dev(sc->sc_dev, "bus clock method ...\n");
+			if  (sc->sc_bus_clock(sc, freq) != 0) {
+				aprint_normal_dev(sc->sc_dev, "bus clock method failed\n");
+				return 1;
+			} else {
+				aprint_normal_dev(sc->sc_dev, "bus clock method success\n");
+			}
+		}
 
 		if (dwc_mmc_set_clock(sc, freq) != 0)
 			return 1;
@@ -897,8 +912,8 @@ dwc_mmc_intr(void *priv)
 	cmd = sc->sc_curcmd;
 
 #ifdef DWC_MMC_DEBUG
-	device_printf(sc->sc_dev, "mmc intr idst=%08X mint=%08X\n",
-	    idst, mint);
+	device_printf(sc->sc_dev, "mmc intr idst=%08X mint=%08X(%08x)\n",
+	    idst, mint, sc->sc_intr_cardmask);
 #endif
 
 	/* Handle SDIO card interrupt */

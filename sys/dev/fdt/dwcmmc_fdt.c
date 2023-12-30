@@ -247,6 +247,9 @@ dwcmmc_fdt_bus_clock(struct dwc_mmc_softc *sc, int rate)
 		return error;
 	}
 
+printf("%s: ciu %u vs %u\n", __func__, clk_get_rate(esc->sc_clk_ciu), 1000 * rate * ciu_div);
+
+
 	sc->sc_clock_freq = clk_get_rate(esc->sc_clk_ciu);
 
 	aprint_debug_dev(sc->sc_dev, "set clock rate to %u kHz (target %u kHz)\n",
