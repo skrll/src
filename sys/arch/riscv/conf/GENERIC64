@@ -100,7 +100,7 @@ sunxiusbphy* 	at fdt?			# Allwinner USB PHY
 jh71x0usb* 	at fdt?			# StarFive JH71x0 usb
 
 # Ethernet
-#awge* 		at fdt?			# DesignWare Gigabit Ethernet
+awge* 		at fdt?			# DesignWare Gigabit Ethernet
 eqos* 		at fdt?			# DesignWare Ethernet QoS
 
 # MII/PHY support
