@@ -46,6 +46,8 @@ options 	DIAGNOSTIC	# inexpensive kernel consistency checks
 #options 	PMAP_FAULTINFO
 #options 	RISCV_SYSCALL_DEBUG
 #options 	SYSCALL_DEBUG
+makeoptions	SDMMC_DEBUG=1
+options 	SDMMC_DEBUG
 
 
 # Pull in optional local configuration - always at end

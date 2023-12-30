@@ -838,6 +838,7 @@ sdmmc_card_intr(device_t dev)
 {
 	struct sdmmc_softc *sc = device_private(dev);
 
+printf_nolog("%s\n", __func__);
 	if (sc->sc_sct->card_enable_intr == NULL)
 		return;
 
