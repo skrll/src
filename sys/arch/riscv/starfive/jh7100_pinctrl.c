@@ -144,6 +144,21 @@ jh7100_padctl_rmw(struct jh7100_pinctrl_softc * const sc, u_int pad_no,
 	    oreg, reg, regoff);
 }
 
+
+static void
+jh7100_gpio_pin_ctl(void *priv, int pin, int flags)
+{
+	struct jh7100_pinctrl_softc * const sc = priv;
+printf("%s\n", __func__);
+	if (flags & GPIO_PIN_OUTPUT) {
+		GPIOWR4(sc, GPO_DOEN_CFG(pin), GPO_ENABLE);
+        } else {
+
+		GPIOWR4(sc, GPO_DOEN_CFG(pin), GPO_DISABLE);
+	}
+}
+
+
 static int
 jh7100_parse_slew_rate(int phandle)
 {
@@ -369,6 +384,8 @@ jh7100_pinctrl_gpio_acquire(device_t dev, const void *data, size_t len, int flag
 	pin->pin_sc = sc;
 	pin->pin_no = pin_no;
 	pin->pin_actlo = actlo;
+
+	jh7100_gpio_pin_ctl(sc, pin->pin_no, /*pin->pin_ */ flags);
 
 	return pin;
 }
