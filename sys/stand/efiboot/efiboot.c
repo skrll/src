@@ -95,6 +95,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	Print(L"ImageBase         : 0x%" PRIxEFIPTR "\n", efi_li->ImageBase);
 	Print(L"ImageSize         : 0x%" PRIxEFISIZE "\n", efi_li->ImageSize);
 	Print(L"Image file        : %s\n", DevicePathToStr(efi_li->FilePath));
+	Print(L"Boot path         : %s\n", DevicePathToStr(efi_bootdp));
 #endif
 
 #ifdef EFIBOOT_ACPI
