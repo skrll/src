@@ -899,7 +899,7 @@ paddr_t	_bus_dmamem_mmap(bus_dma_tag_t tag, bus_dma_segment_t *segs,
 int	_bus_dmamem_alloc_range(bus_dma_tag_t tag, bus_size_t size,
 	    bus_size_t alignment, bus_size_t boundary,
 	    bus_dma_segment_t *segs, int nsegs, int *rsegs, int flags,
-	    vaddr_t low, vaddr_t high);
+	    paddr_t low, paddr_t high);
 
 extern struct playstation2_bus_dma_tag playstation2_default_bus_dma_tag;
 #endif /* _PLAYSTATION2_BUS_DMA_PRIVATE */

@@ -986,7 +986,7 @@ bwfm*	at pci? dev ? function ?	# Broadcom FullMAC
 dge*	at pci? dev ? function ?	# Intel 82597 10GbE LR
 ep*	at pci? dev ? function ?	# 3Com 3c59x
 epic*	at pci? dev ? function ?	# SMC EPIC/100 Ethernet
-#eqos*	at pci? dev ? function ?	# DesignWare Ethernet QoS
+eqos*	at pci? dev ? function ?	# DesignWare Ethernet QoS
 et*	at pci? dev ? function ?	# Agere/LSI ET1310/ET1301 Gigabit
 ex*	at pci? dev ? function ?	# 3Com 3c90x[BC]
 fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B

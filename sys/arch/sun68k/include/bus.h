@@ -1052,7 +1052,7 @@ paddr_t	_bus_dmamem_mmap(bus_dma_tag_t, bus_dma_segment_t *, int, off_t, int,
 	    int);
 
 int	_bus_dmamem_alloc_range(bus_dma_tag_t, bus_size_t, bus_size_t,
-	    bus_size_t, bus_dma_segment_t *, int, int *, int, vaddr_t, vaddr_t);
+	    bus_size_t, bus_dma_segment_t *, int, int *, int, paddr_t, paddr_t);
 
 vaddr_t	_bus_dma_valloc_skewed(size_t, u_long, u_long, u_long);
 #endif /* _SUN68K_BUS_DMA_PRIVATE */

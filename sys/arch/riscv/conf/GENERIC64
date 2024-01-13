@@ -30,11 +30,11 @@ options 	DIAGNOSTIC	# inexpensive kernel consistency checks
 				# XXX to be commented out on release branch
 options 	DEBUG		# expensive debugging checks/support
 #options 	LOCKDEBUG	# expensive locking checks/support
-#options 	KERNHIST
+options 	KERNHIST
 #options 	KERNHIST_PRINT
-#options 	UVMHIST
+options 	UVMHIST
 #options 	UVMHIST_PRINT
-#options 	PMAPHIST
+options 	PMAPHIST
 #options 	PMAPHIST_PRINT
 #options 	SYSCTL_DEBUG
 #options 	SYSCTL_DEBUG_SETUP

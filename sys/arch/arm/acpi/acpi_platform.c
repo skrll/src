@@ -133,6 +133,7 @@ static struct arm32_dma_range acpi_coherent_ranges[] = {
 static const struct pmap_devmap *
 acpi_platform_devmap(void)
 {
+	// XXXNH SPCR
 	static const struct pmap_devmap devmap[] = {
 		DEVMAP_ENTRY_END
 	};

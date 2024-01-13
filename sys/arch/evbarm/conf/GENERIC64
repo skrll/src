@@ -41,7 +41,7 @@ options 	LOCKDEBUG
 options 	DDB_ONPANIC=1
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	INCLUDE_CONFIG_FILE
-#options 	UVMHIST		# kernhist for uvm/pmap subsystems
+options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
 
@@ -66,6 +66,10 @@ options 	INCLUDE_CONFIG_FILE
 #options 	EARLYCONS=plcom, CONSADDR=0x100002600000
 # LX2K
 #options 	EARLYCONS=plcom, CONSADDR=0x21c0000
+
+
+options 	INSECURE
+
 
 # Hardware management of the Access flag and dirty state (HAFDBS).
 #options 	ARMV81_HAFDBS

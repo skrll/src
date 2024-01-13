@@ -95,11 +95,11 @@ int cnmode = CONMODE;
 
 
 /* boot configuration: */
-vaddr_t physical_start;
-vaddr_t physical_freestart;
-vaddr_t physical_freeend;
-vaddr_t physical_freeend_low;
-vaddr_t physical_end;
+paddr_t physical_start;
+paddr_t physical_freestart;
+paddr_t physical_freeend;
+paddr_t physical_freeend_low;
+paddr_t physical_end;
 u_int free_pages;
 
 paddr_t msgbufphys;

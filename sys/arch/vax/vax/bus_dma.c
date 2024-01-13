@@ -65,7 +65,7 @@ int	_bus_dmamap_load_buffer(bus_dma_tag_t, bus_dmamap_t, void *,
 	    bus_size_t, struct vmspace *, int, vaddr_t *, int *, bool);
 int	_bus_dma_inrange(bus_dma_segment_t *, int, bus_addr_t);
 int	_bus_dmamem_alloc_range(bus_dma_tag_t, bus_size_t, bus_size_t,
-	    bus_size_t, bus_dma_segment_t*, int, int *, int, vaddr_t, vaddr_t);
+	    bus_size_t, bus_dma_segment_t*, int, int *, int, paddr_t, paddr_t);
 
 static size_t
 _bus_dmamap_mapsize(int const nsegments)
@@ -661,7 +661,7 @@ _bus_dma_inrange(bus_dma_segment_t *ranges, int nranges, bus_addr_t curaddr)
 int
 _bus_dmamem_alloc_range(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 	bus_size_t boundary, bus_dma_segment_t *segs, int nsegs, int *rsegs,
-	int flags, vaddr_t low, vaddr_t high)
+	int flags, paddr_t low, paddr_t high)
 {
 	vaddr_t curaddr, lastaddr;
 	struct vm_page *m;

@@ -185,7 +185,7 @@ static int _bus_dmamap_load_busaddr(bus_dma_tag_t, bus_dmamap_t,
 static int	_bus_dmamem_alloc_range(bus_dma_tag_t tag, bus_size_t size,
 	    bus_size_t alignment, bus_size_t boundary,
 	    bus_dma_segment_t *segs, int nsegs, int *rsegs, int flags,
-	    bus_addr_t low, bus_addr_t high);
+	    paddr_t low, paddr_t high);
 
 #define _BUS_DMAMEM_ALLOC_RANGE _bus_dmamem_alloc_range
 
@@ -196,7 +196,7 @@ static int	_bus_dmamem_alloc_range(bus_dma_tag_t tag, bus_size_t size,
 static int
 _bus_dmamem_alloc_range(bus_dma_tag_t t, bus_size_t size,
     bus_size_t alignment, bus_size_t boundary, bus_dma_segment_t *segs,
-    int nsegs, int *rsegs, int flags, bus_addr_t low, bus_addr_t high)
+    int nsegs, int *rsegs, int flags, paddr_t low, paddr_t high)
 {
 	paddr_t curaddr, lastaddr;
 	struct vm_page *m;

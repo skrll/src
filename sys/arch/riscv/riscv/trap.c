@@ -361,6 +361,7 @@ trap_pagefault_fixup(struct trapframe *tf, struct pmap *pmap, register_t cause,
 		npte = opte;
 
 		switch (cause) {
+		// XXXNH is this really correct?
 		case CAUSE_LOAD_PAGE_FAULT:
 			if ((npte & PTE_R) == 0) {
 				npte |= PTE_A;
