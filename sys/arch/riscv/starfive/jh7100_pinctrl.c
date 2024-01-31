@@ -52,7 +52,9 @@ struct jh7100_gpio_irq {
 struct jh7100_pinctrl_softc {
 	device_t		 sc_dev;
 	bus_space_tag_t		 sc_bst;
+	bus_addr_t		 sc_gpio_addr;
 	bus_space_handle_t	 sc_gpio_bsh;
+	bus_addr_t		 sc_padctrl_addr;
 	bus_space_handle_t	 sc_padctl_bsh;
 	int			 sc_phandle;
 
@@ -69,12 +71,28 @@ struct jh7100_pinctrl_gpio_pin {
 	bool				 pin_actlo;
 };
 
+static inline uint32_t
+gpiord4(struct jh7100_pinctrl_softc * const sc, bus_size_t reg)
+{
+	printf("%s:GPIORD4 %#10"PRIxBUSADDR" + %#6"PRIxBUSSIZE "\n", __func__,
+	   (sc)->sc_gpio_addr, reg);
+	return bus_space_read_4((sc)->sc_bst, (sc)->sc_gpio_bsh, (reg));
+}
 
 #define GPIORD4(sc, reg)						       \
-	bus_space_read_4((sc)->sc_bst, (sc)->sc_gpio_bsh, (reg))
-#define GPIOWR4(sc, reg, val)						       \
-	bus_space_write_4((sc)->sc_bst, (sc)->sc_gpio_bsh, (reg), (val))
+	gpiord4(sc, reg)
 
+static inline void
+gpiowr4(struct jh7100_pinctrl_softc * const sc, bus_size_t reg, uint32_t val)
+{
+	printf("%s:GPIOWR4 %#10"PRIxBUSADDR" + %#6"PRIxBUSSIZE " = %#10x\n", __func__,
+	   (sc)->sc_gpio_addr, reg, val);
+
+	bus_space_write_4((sc)->sc_bst, (sc)->sc_gpio_bsh, (reg), (val));
+}
+
+#define GPIOWR4(sc, reg, val)						       \
+	gpiowr4(sc, reg, val)
 
 #define	GPIO_ENABLE			0x0000
 #define	 GPIO_ENABLE_IRQS		__BIT(0)
@@ -94,10 +112,30 @@ struct jh7100_pinctrl_gpio_pin {
 #define  GPI_NONE			0xff
 
 
+static inline uint32_t
+pctlrd4(struct jh7100_pinctrl_softc * const sc, bus_size_t reg)
+{
+	printf("%s:PCTRLRD4 %#10"PRIxVADDR" + %#6"PRIxBUSSIZE "\n", __func__,
+	    (sc)->sc_padctrl_addr, reg);
+	return bus_space_read_4((sc)->sc_bst, (sc)->sc_padctl_bsh, (reg));
+};
+
+
 #define PCTLRD4(sc, reg)						       \
-	bus_space_read_4((sc)->sc_bst, (sc)->sc_padctl_bsh, (reg))
+	pctlrd4(sc, reg)
+
+static inline void
+pctlwr4(struct jh7100_pinctrl_softc * const sc, bus_size_t reg, uint32_t val)
+{
+	printf("%s:PCTRLWR4 %#10"PRIxVADDR" + %#6"PRIxBUSSIZE " = %#10x\n", __func__,
+	   (sc)->sc_padctrl_addr, reg, val);
+
+	bus_space_write_4((sc)->sc_bst, (sc)->sc_padctl_bsh, (reg), (val));
+}
+
+
 #define PCTLWR4(sc, reg, val)						       \
-	bus_space_write_4((sc)->sc_bst, (sc)->sc_padctl_bsh, (reg), (val))
+	pctlwr4(sc, reg, val)
 
 #define PAD_GPIO(pin)			(0x0000 + (((pin) / 2) * 4))
 #define PAD_SHIFT(pin)			((pin % 2) * 16)
@@ -609,7 +647,8 @@ jh7100_pinctrl_set_config_group(struct jh7100_pinctrl_softc *sc, int group)
 			    group, pin_no,
 			    doutval, GPIORD4(sc, GPO_DOUT_CFG(pin_no)),
 			    doenval, GPIORD4(sc, GPO_DOEN_CFG(pin_no)),
-			    din != GPI_NONE ? pin_no + 2 : 0, GPIORD4(sc, GPI_DIN(din)));
+			    din != GPI_NONE ? pin_no + 2 : 0,
+			    din != GPI_NONE ? GPIORD4(sc, GPI_DIN(din)) : 0);
 
 			mutex_enter(&sc->sc_lock);
 			GPIOWR4(sc, GPO_DOUT_CFG(pin_no), doutval);
@@ -766,11 +805,13 @@ jh7100_pinctrl_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": couldn't map gpio registers\n");
 		return;
 	}
+	sc->sc_gpio_addr = addr;
 	if (fdtbus_get_reg_byname(phandle, "padctl", &addr, &size) != 0 ||
 	    bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_padctl_bsh) != 0) {
 		aprint_error(": couldn't map padctl registers\n");
 		return;
 	}
+	sc->sc_padctrl_addr = addr;
 
 	// XXXNH Clocks
 	// XXXNH interrupt-controller
