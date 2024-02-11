@@ -312,6 +312,7 @@ struct bus_space {
 #define	_BUS_DMAMAP_COHERENT	__BIT(16) /* no cache flush necessary on sync */
 #define	_BUS_DMAMAP_IS_BOUNCING	__BIT(17) /* is bouncing current xfer */
 #define	_BUS_DMAMAP_NOALLOC	__BIT(18) /* don't alloc memory from this range */
+#define	_BUS_DMAMAP_XXX		__BIT(19) /* alloc'ed from dma_memory */
 
 /* Forwards needed by prototypes below. */
 struct mbuf;
@@ -338,7 +339,7 @@ struct riscv_bus_dma_segment {
 	/*
 	 * PRIVATE MEMBERS:
 	 */
-	uint32_t	_ds_flags;	/* _BUS_DMAMAP_COHERENT */
+	uint32_t	_ds_flags;	/* _BUS_DMAMAP_{COHERENT,XXX} */
 	paddr_t		_ds_paddr;	/* CPU address */
 };
 typedef struct riscv_bus_dma_segment	bus_dma_segment_t;

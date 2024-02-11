@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.h,v 1.6 2025/02/02 11:04:58 skrll Exp $");
 #include <sys/lwp.h>
 #include <sys/proc.h>
 #include <sys/siginfo.h>
+#include <sys/vmem.h>
 
 static inline paddr_t
 riscv_kern_vtophys(vaddr_t va)
@@ -62,6 +63,7 @@ riscv_kern_phystov(paddr_t pa)
 
 extern	paddr_t physical_start;
 extern	paddr_t physical_end;
+extern	vmem_t *dma_memory;
 
 void	uartputc(int);
 int	uartgetc(void);
