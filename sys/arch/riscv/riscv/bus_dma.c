@@ -46,6 +46,9 @@ __KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.16 2026/02/17 06:49:55 skrll Exp $");
 #include <uvm/uvm.h>
 
 #include <machine/cpufunc.h>
+#include <machine/machdep.h>
+
+//#define DEBUG_DMA
 
 #define BUSDMA_COUNTERS
 #ifdef BUSDMA_COUNTERS
@@ -91,6 +94,12 @@ static struct evcnt bus_dma_sync_postwrite =
 	EVCNT_INITIALIZER(EVCNT_TYPE_MISC, NULL, "busdma", "sync postwrite");
 static struct evcnt bus_dma_inrange_fail =
 	EVCNT_INITIALIZER(EVCNT_TYPE_MISC, NULL, "busdma", "inrange check failed");
+static struct evcnt bus_dma_alloc_inrange_fail =
+	EVCNT_INITIALIZER(EVCNT_TYPE_MISC, NULL, "busdma", "inrange check failed in alloc");
+static struct evcnt bus_dma_map_nomemory =
+	EVCNT_INITIALIZER(EVCNT_TYPE_MISC, NULL, "busdma", "map memory allocation failed");
+static struct evcnt bus_dma_map_uncached =
+	EVCNT_INITIALIZER(EVCNT_TYPE_MISC, NULL, "busdma", "uncached request");
 
 static struct evcnt bus_dma_sync_coherent_prereadwrite =
 	EVCNT_INITIALIZER(EVCNT_TYPE_MISC, NULL, "busdma", "sync coherent prereadwrite");
@@ -126,6 +135,9 @@ EVCNT_ATTACH_STATIC(bus_dma_sync_postread);
 EVCNT_ATTACH_STATIC(bus_dma_sync_postreadwrite);
 EVCNT_ATTACH_STATIC(bus_dma_sync_postwrite);
 EVCNT_ATTACH_STATIC(bus_dma_inrange_fail);
+EVCNT_ATTACH_STATIC(bus_dma_alloc_inrange_fail);
+EVCNT_ATTACH_STATIC(bus_dma_map_nomemory);
+EVCNT_ATTACH_STATIC(bus_dma_map_uncached);
 
 EVCNT_ATTACH_STATIC(bus_dma_sync_coherent_prereadwrite);
 EVCNT_ATTACH_STATIC(bus_dma_sync_coherent_preread);
@@ -153,9 +165,23 @@ _bus_dma_paddr_inrange(struct riscv_dma_range *ranges, int nranges,
 	int i;
 
 	for (i = 0, dr = ranges; i < nranges; i++, dr++) {
+#if 0
+printf("%s: checking %#"PRIxBUSADDR
+    " against %#"PRIxPADDR"-%#"PRIxPADDR, __func__, pa,
+    dr->dr_sysbase,
+    dr->dr_sysbase + dr->dr_len);
+#endif
+
 		if (pa >= dr->dr_sysbase &&
-		    pa < dr->dr_sysbase + dr->dr_len)
+		    pa < dr->dr_sysbase + dr->dr_len) {
+#if 0
+			printf(" - yes\n");
+#endif
 			return dr;
+		}
+#if 0
+		printf("\n");
+#endif
 	}
 
 	return NULL;
@@ -283,6 +309,12 @@ _bus_dmamap_load_paddr(bus_dma_tag_t t, bus_dmamap_t map,
 
 static int _bus_dma_uiomove(void *buf, struct uio *uio, size_t n,
 	    int direction);
+
+#ifdef __HAVE_DMA_DEFAULT
+#ifndef _RISCV_NEED_BUS_DMA_BOUNCE
+#error __HAVE_DMA_DEFAULT requires _RISCV_NEED_BUS_DMA_BOUNCE
+#endif
+#endif
 
 #ifdef _RISCV_NEED_BUS_DMA_BOUNCE
 static int _bus_dma_alloc_bouncebuf(bus_dma_tag_t t, bus_dmamap_t map,
@@ -1341,6 +1373,56 @@ _bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 	    boundary, segs, nsegs, rsegs, flags);
 #endif
 
+
+#ifdef __HAVE_DMA_DEFAULT
+	vmem_t * const vm = dma_memory;
+
+	// XXX stats
+	if (vm == NULL)
+		return EINVAL;
+	if (t->_ranges == NULL)
+		return EINVAL;
+
+#if 0
+     vmem_xalloc(vmem_t *vm, vmem_size_t size, vmem_size_t align,
+         vmem_size_t phase, vmem_size_t nocross, vmem_addr_t minaddr,
+         vmem_addr_t maxaddr, vm_flag_t flags, vmem_addr_t *addrp);
+#endif
+
+	const vmem_size_t sz = round_page(size);
+	vmem_addr_t result;
+
+	error = vmem_xalloc(vm, sz, PAGE_SIZE, 0, round_page(boundary),
+	    VMEM_ADDR_MIN, VMEM_ADDR_MAX, VM_BESTFIT,
+	    &result);
+	// Need to split up into smaller requests if it doesn't fit as one
+	// request.
+	if (error)
+		return error;
+
+//printf("%s: result %#"PRIxBUSADDR"\n", __func__, result);
+	dr = _bus_dma_paddr_inrange(t->_ranges, t->_nranges, result);
+	if (dr == NULL) {
+		STAT_INCR(alloc_inrange_fail);
+		vmem_xfree(vm, result, sz);
+		return EINVAL;
+	}
+
+	segs[0].ds_addr = (result - dr->dr_sysbase) + dr->dr_busbase;
+	segs[0].ds_len = sz;
+	segs[0]._ds_flags = _BUS_DMAMAP_XXX;
+	segs[0]._ds_paddr = result;
+
+printf("%s: returning %#"PRIxBUSADDR" / %#"PRIxPADDR" sz %"PRIxBUSSIZE"\n",
+    __func__, segs[0].ds_addr, segs[0]._ds_paddr, segs[0].ds_len);
+
+	*rsegs = 1;
+
+	return 0;
+#endif
+
+
+
 	if ((dr = t->_ranges) != NULL) {
 		error = ENOMEM;
 		for (i = 0; i < t->_nranges; i++, dr++) {
@@ -1385,8 +1467,16 @@ _bus_dmamem_free(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs)
 	/*
 	 * Build a list of pages to free back to the VM system.
 	 */
+	vmem_t * const vm = dma_memory;
 	TAILQ_INIT(&mlist);
 	for (curseg = 0; curseg < nsegs; curseg++) {
+		if (segs[curseg]._ds_flags & _BUS_DMAMAP_XXX) {
+			const vmem_addr_t ad = segs[curseg]._ds_paddr;
+			const vmem_size_t sz = segs[curseg].ds_len;
+			KASSERT((sz & PAGE_MASK) == 0);
+			vmem_xfree(vm, ad, sz);
+			continue;
+		}
 		for (addr = segs[curseg].ds_addr;
 		    addr < (segs[curseg].ds_addr + segs[curseg].ds_len);
 		    addr += PAGE_SIZE) {
@@ -1394,6 +1484,7 @@ _bus_dmamem_free(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs)
 			TAILQ_INSERT_TAIL(&mlist, m, pageq.queue);
 		}
 	}
+	/* uvm_pglistfree handles empty lists. */
 	uvm_pglistfree(&mlist);
 }
 
@@ -1411,19 +1502,22 @@ _bus_dmamem_map(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs,
 	const uvm_flag_t kmflags = UVM_KMF_VAONLY
 	    | ((flags & BUS_DMA_NOWAIT) != 0 ? UVM_KMF_NOWAIT : 0);
 	vsize_t align = 0;
+	const bool prefetchable = (flags & BUS_DMA_PREFETCHABLE);
 
 #ifdef DEBUG_DMA
 	printf("dmamem_map: t=%p segs=%p nsegs=%#x size=%#zx flags=%#x\n", t,
 	    segs, nsegs, size, flags);
 #endif	/* DEBUG_DMA */
 
+	KASSERT(nsegs > 0);
+	const bool default_dma = segs[0]._ds_flags & _BUS_DMAMAP_XXX;
 #ifdef PMAP_MAP_POOLPAGE
 	/*
 	 * If all of memory is mapped, and we are mapping a single physically
 	 * contiguous area then this area is already mapped.  Let's see if we
 	 * avoid having a separate mapping for it.
 	 */
-	if (nsegs == 1 && (flags & BUS_DMA_PREFETCHABLE) == 0) {
+	if (nsegs == 1 && !prefetchable && !default_dma) {
 		/*
 		 * If this is a non-COHERENT mapping, then the existing kernel
 		 * mapping is already compatible with it.
@@ -1487,40 +1581,67 @@ _bus_dmamem_map(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs,
 		va = uvm_km_alloc(kernel_map, size, 0, kmflags);
 	}
 
-	if (va == 0)
+	if (va == 0) {
+		STAT_INCR(map_nomemory);
 		return ENOMEM;
+	}
 
 	*kvap = (void *)va;
 
 	for (curseg = 0; curseg < nsegs; curseg++) {
-		for (pa = segs[curseg].ds_addr;
-		    pa < (segs[curseg].ds_addr + segs[curseg].ds_len);
+		// XXXNH ds_addr correct for DMA?
+		//XXX is this bug everywhere in this file?
+		for (pa = segs[curseg]._ds_paddr;
+		    pa < (segs[curseg]._ds_paddr + segs[curseg].ds_len);
 		    pa += PAGE_SIZE, va += PAGE_SIZE, size -= PAGE_SIZE) {
+
+			/*
+			 * Assume, to being with, that a coherent mapping
+			 * will required mapping as uncached - this will
+			 * get overridden if the range that the PA is in
+			 * is marked coherent. If no such range exists then
+			 * uncached is the only option left.
+			 */
 			bool uncached = (flags & BUS_DMA_COHERENT);
-			bool prefetchable = (flags & BUS_DMA_PREFETCHABLE);
 #ifdef DEBUG_DMA
 			printf("wiring P%#" PRIxPADDR
-			    " to V%#" PRIxVADDR "\n", pa, va);
+			    " to V%#" PRIxVADDR "%s\n", pa, va,
+			    (segs[curseg]._ds_flags & _BUS_DMAMAP_XXX) != 0 ?
+				" dma default" : "");
 #endif	/* DEBUG_DMA */
 			if (size == 0)
 				panic("_bus_dmamem_map: size botch");
 
-			const struct riscv_dma_range * const dr =
-			    _bus_dma_paddr_inrange(t->_ranges, t->_nranges, pa);
-			/*
-			 * If this dma region is coherent then there is
-			 * no need for an uncached mapping.
-			 */
-			if (dr != NULL
-			    && (dr->dr_flags & _BUS_DMAMAP_COHERENT)) {
-				uncached = false;
+
+			if ((segs[curseg]._ds_flags & _BUS_DMAMAP_XXX) == 0) {
+				const struct riscv_dma_range * const dr =
+				    _bus_dma_paddr_inrange(t->_ranges,
+					t->_nranges, pa);
+				/*
+				* If this dma region is coherent then there is
+				* no need for an uncached mapping.
+				*/
+				if (dr != NULL &&
+				    (dr->dr_flags & _BUS_DMAMAP_COHERENT)) {
+					uncached = false;
+				}
+
+				/*
+				* If there is no coherent dma region, and the
+				* mapping is still marked, then we fail as
+				* there no architected way to mark a mapping as
+				* uncached,
+				*/
+				if (uncached) {
+					STAT_INCR(map_uncached);
+					return EOPNOTSUPP;
+				}
 			}
 
 			u_int pmap_flags = PMAP_WIRED;
+			// XXXNH no
 			if (prefetchable)
 				pmap_flags |= PMAP_WRITE_COMBINE;
-			else if (uncached)
-				pmap_flags |= PMAP_NOCACHE;
 
 			pmap_kenter_pa(va, pa, VM_PROT_READ | VM_PROT_WRITE,
 			    pmap_flags);
@@ -1732,9 +1853,11 @@ _bus_dma_alloc_bouncebuf(bus_dma_tag_t t, bus_dmamap_t map,
 	KASSERT(cookie != NULL);
 
 	cookie->id_bouncebuflen = round_page(size);
+
 	error = _bus_dmamem_alloc(t, cookie->id_bouncebuflen,
 	    PAGE_SIZE, map->_dm_boundary, cookie->id_bouncesegs,
 	    map->_dm_segcnt, &cookie->id_nbouncesegs, flags);
+
 	if (error == 0) {
 		error = _bus_dmamem_map(t, cookie->id_bouncesegs,
 		    cookie->id_nbouncesegs, cookie->id_bouncebuflen,
@@ -1830,12 +1953,12 @@ _bus_dmatag_subregion(bus_dma_tag_t tag, bus_addr_t min_addr,
 		 * otherwise the parent tag is a subset of the new
 		 * range and can continue to be used.
 		 */
-		if (min_addr > dr->dr_sysbase
-		    || max_addr < dr->dr_sysbase + dr->dr_len - 1) {
+		if (min_addr > dr->dr_busbase
+		    || max_addr < dr->dr_busbase + dr->dr_len - 1) {
 			psubset = false;
 		}
-		if (min_addr <= dr->dr_sysbase + dr->dr_len
-		    && max_addr >= dr->dr_sysbase) {
+		if (min_addr <= dr->dr_busbase + dr->dr_len
+		    && max_addr >= dr->dr_busbase) {
 			nranges++;
 		}
 	}
@@ -1870,8 +1993,8 @@ _bus_dmatag_subregion(bus_dma_tag_t tag, bus_addr_t min_addr,
 		struct riscv_dma_range *pdr;
 
 		for (i = 0, pdr = tag->_ranges; i < tag->_nranges; i++, pdr++) {
-			if (min_addr > pdr->dr_sysbase + pdr->dr_len
-			    || max_addr < pdr->dr_sysbase) {
+			if (min_addr > pdr->dr_busbase + pdr->dr_len
+			    || max_addr < pdr->dr_busbase) {
 				/*
 				 * this range doesn't overlap with new limits,
 				 * so skip.
@@ -1886,14 +2009,14 @@ _bus_dmatag_subregion(bus_dma_tag_t tag, bus_addr_t min_addr,
 			 * limits
 			 */
 			dr[0] = pdr[0];
-			if (dr->dr_sysbase < min_addr) {
-				psize_t diff = min_addr - dr->dr_sysbase;
+			if (dr->dr_busbase < min_addr) {
+				psize_t diff = min_addr - dr->dr_busbase;
 				dr->dr_busbase += diff;
 				dr->dr_len -= diff;
 				dr->dr_sysbase += diff;
 			}
-			if (max_addr <= dr->dr_sysbase + dr->dr_len - 1) {
-				dr->dr_len = max_addr + 1 - dr->dr_sysbase;
+			if (max_addr <= dr->dr_busbase + dr->dr_len - 1) {
+				dr->dr_len = max_addr + 1 - dr->dr_busbase;
 			}
 			dr++;
 			nranges--;

@@ -55,6 +55,7 @@ __RCSID("$NetBSD: riscv_machdep.c,v 1.51 2026/07/25 15:49:49 skrll Exp $");
 #include <sys/syscall.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
+#include <sys/vmem.h>
 
 #include <dev/cons.h>
 #ifdef __HAVE_MM_MD_KERNACC
@@ -97,6 +98,8 @@ char *boot_args = NULL;
 
 paddr_t physical_start;
 paddr_t physical_end;
+
+vmem_t *dma_memory = NULL;
 
 static void
 earlyconsputc(dev_t dev, int c)
@@ -536,6 +539,25 @@ cpu_startup(void)
 
 	fdt_setup_rndseed();
 	fdt_setup_efirng();
+
+// DMA
+	const struct fdt_memory * const fm_dma = fdt_dma_memory();
+	if (fm_dma) {
+		dma_memory = vmem_create(
+		    "default dma",
+		    fm_dma->start,
+		    fm_dma->end - fm_dma->start,
+		    PAGE_SIZE, /* quantum */
+		    NULL, /* allocfn */
+		    NULL, /* freefn */
+		    NULL, /* arg */
+		    0, /* qcache_max */
+		    VM_BESTFIT | VM_NOSLEEP,
+		    IPL_NONE);
+printf("%s: start %#"PRIx64 " end %#" PRIx64 "\n", __func__,
+    fm_dma->start, fm_dma->end);
+	}
+
 }
 
 static void
