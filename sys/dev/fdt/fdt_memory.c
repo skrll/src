@@ -47,6 +47,17 @@ struct fdt_memory_range {
 	TAILQ_ENTRY(fdt_memory_range)   mr_list;
 };
 
+
+struct fdt_memory *fdt_dma_memory_ptr = NULL;
+
+struct fdt_memory fdt_dma_memory_store;
+
+const struct fdt_memory *fdt_dma_memory(void)
+{
+	return fdt_dma_memory_ptr;
+};
+
+
 static TAILQ_HEAD(fdt_memory_rangehead, fdt_memory_range) fdt_memory_ranges =
     TAILQ_HEAD_INITIALIZER(fdt_memory_ranges);
 
@@ -119,6 +130,25 @@ fdt_memory_get(uint64_t *pstart, uint64_t *pend)
 		panic("Cannot determine memory size");
 }
 
+#if 0
+static int __init __reserved_mem_check_root(unsigned long node)
+{
+        const __be32 *prop;
+
+        prop = of_get_flat_dt_prop(node, "#size-cells", NULL);
+        if (!prop || be32_to_cpup(prop) != dt_root_size_cells)
+                return -EINVAL;
+
+        prop = of_get_flat_dt_prop(node, "#address-cells", NULL);
+        if (!prop || be32_to_cpup(prop) != dt_root_addr_cells)
+                return -EINVAL;
+
+        prop = of_get_flat_dt_prop(node, "ranges", NULL);
+        if (!prop)
+                return -EINVAL;
+        return 0;
+}
+#endif
 /*
  * Exclude memory ranges from memory config from the device tree
  */
@@ -162,6 +192,8 @@ fdt_memory_remove_reserved(uint64_t min_addr, uint64_t max_addr)
 	 * "no-map" ranges defined in the /reserved-memory node
 	 * must also be excluded.
 	 */
+
+	// __reserved_mem_check_root
 	phandle = OF_finddevice("/reserved-memory");
 	if (phandle != -1) {
 		for (child = OF_child(phandle); child; child = OF_peer(child)) {
@@ -172,6 +204,14 @@ fdt_memory_remove_reserved(uint64_t min_addr, uint64_t max_addr)
 				continue;
 			if (size == 0)
 				continue;
+#ifdef __HAVE_DMA_DEFAULT
+			if (of_hasprop(child, "linux,dma-default")) {
+				struct fdt_memory *fm = &fdt_dma_memory_store;
+				fm->start = addr;
+				fm->end = addr + size;
+				fdt_dma_memory_ptr = fm;
+			}
+#endif
 			fdt_memory_remove_range(addr, size);
 		}
 	}

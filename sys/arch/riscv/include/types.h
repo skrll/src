@@ -91,6 +91,7 @@ typedef __int32_t	__register_t;
 #define	__HAVE_CPU_COUNTER
 #define	__HAVE_CPU_DATA_FIRST
 #define	__HAVE_CPU_LWP_SETPRIVATE
+#define	__HAVE_DMA_DEFAULT
 #if 0
 #define	__HAVE_FAST_SOFTINTS		// Not yet
 #endif
