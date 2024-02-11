@@ -51,4 +51,7 @@ void	fdt_memory_remove_reserved(uint64_t, uint64_t);
 
 void	fdt_memory_foreach(void (*)(const struct fdt_memory *, void *), void *);
 
+const struct fdt_memory *
+	fdt_dma_memory(void);
+
 #endif /* _DEV_FDT_FDT_MEMORY_H_ */
