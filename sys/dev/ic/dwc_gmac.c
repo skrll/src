@@ -50,7 +50,7 @@
 
 __KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.102 2026/06/22 20:26:34 jakllsch Exp $");
 
-/* #define	DWC_GMAC_DEBUG	1 */
+#define	DWC_GMAC_DEBUG	1
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -533,6 +533,10 @@ dwc_gmac_alloc_rx_ring(struct dwc_gmac_softc *sc,
 		bus_dmamap_sync(sc->sc_dmat, data->rd_map, 0,
 		    data->rd_map->dm_mapsize, BUS_DMASYNC_PREREAD);
 		physaddr = data->rd_map->dm_segs[0].ds_addr;
+
+//		KASSERTMSG(physaddr >= 0x80000000, "physaddr %#018" PRIxBUSADDR "lx", physaddr);
+
+//		KASSERT((physaddr & (CACHE_LINE_SIZE - 1)) == 0);
 
 		desc = &sc->sc_rxq.r_desc[i];
 		desc->ddesc_data = htole32(physaddr);
@@ -1082,13 +1086,15 @@ dwc_gmac_queue(struct dwc_gmac_softc *sc, struct mbuf *m0)
 		data = &sc->sc_txq.t_data[sc->sc_txq.t_cur];
 		desc = &sc->sc_txq.t_desc[sc->sc_txq.t_cur];
 
+		bus_addr_t ba = map->dm_segs[i].ds_addr;
+//		KASSERT((ba & (CACHE_LINE_SIZE - 1)) == 0);
 		desc->ddesc_data = htole32(map->dm_segs[i].ds_addr);
 
 #ifdef DWC_GMAC_DEBUG
-		aprint_normal_dev(sc->sc_dev, "enqueuing desc #%d data %08lx "
-		    "len %lu\n", sc->sc_txq.t_cur,
+		aprint_normal_dev(sc->sc_dev, "enqueuing desc #%d data %08lx"
+		    "len %lu ba %" PRIxBUSADDR "\n", sc->sc_txq.t_cur,
 		    (unsigned long)map->dm_segs[i].ds_addr,
-		    (unsigned long)map->dm_segs[i].ds_len);
+		    (unsigned long)map->dm_segs[i].ds_len, ba);
 #endif
 
 		sc->sc_descm->tx_init_flags(desc);
@@ -1337,17 +1343,18 @@ dwc_gmac_rx_intr(struct dwc_gmac_softc *sc)
 			goto skip;
 		}
 		physaddr = data->rd_map->dm_segs[0].ds_addr;
-
 #ifdef DWC_GMAC_DEBUG
 		aprint_normal_dev(sc->sc_dev,
-		    "%s: receiving packet at desc #%d,   using mbuf %p\n",
-		    __func__, i, data->rd_m);
+		    "%s: receiving packet at desc #%d,   using mbuf %p "
+		    "ba %" PRIxBUSADDR "\n",
+		    __func__, i, data->rd_m, physaddr);
 #endif
 		/*
 		 * New mbuf loaded, update RX ring and continue
 		 */
 		m = data->rd_m;
 		data->rd_m = mnew;
+//		KASSERT((physaddr & (CACHE_LINE_SIZE - 1)) == 0);
 		desc->ddesc_data = htole32(physaddr);
 
 		/* finalize mbuf */
@@ -1534,6 +1541,8 @@ dwc_gmac_desc_std_set_len(struct dwc_gmac_dev_dmadesc *desc, int len)
 {
 	uint32_t cntl = le32toh(desc->ddesc_cntl1);
 
+	KASSERT(len < __SHIFTOUT_MASK(DDESC_CNTL_SIZE1MASK));
+
 	desc->ddesc_cntl1 = htole32((cntl & ~DDESC_CNTL_SIZE1MASK) |
 		__SHIFTIN(len, DDESC_CNTL_SIZE1MASK));
 }
@@ -1588,10 +1597,10 @@ static void
 dwc_gmac_desc_enh_set_len(struct dwc_gmac_dev_dmadesc *desc, int len)
 {
 	uint32_t tdes1 = le32toh(desc->ddesc_cntl1);
-	KASSERT(len < __SHIFTOUT_MASK(DDESC_DES1_SIZE1MASK));
+	KASSERT(len < __SHIFTOUT_MASK(DDESC_DESC1_SIZE1MASK));
 
-	desc->ddesc_cntl1 = htole32((tdes1 & ~DDESC_DES1_SIZE1MASK) |
-		__SHIFTIN(len, DDESC_DES1_SIZE1MASK));
+	desc->ddesc_cntl1 = htole32((tdes1 & ~DDESC_DESC1_SIZE1MASK) |
+		__SHIFTIN(len, DDESC_DESC1_SIZE1MASK));
 }
 
 static uint32_t
@@ -1605,6 +1614,16 @@ static void
 dwc_gmac_desc_enh_tx_init_flags(struct dwc_gmac_dev_dmadesc *desc)
 {
 
+#if 0
+	desc_p->txrx_status &= ~(DESC_TXSTS_TXINT | DESC_TXSTS_TXLAST |
+				 DESC_TXSTS_TXFIRST | DESC_TXSTS_TXCRCDIS |
+				 DESC_TXSTS_TXCHECKINSCTRL |
+				 DESC_TXSTS_TXRINGEND | DESC_TXSTS_TXPADDIS);
+
+	desc_p->txrx_status |= DESC_TXSTS_TXCHAIN;
+	desc_p->dmamac_cntl = 0;
+	desc_p->txrx_status &= ~(DESC_TXSTS_MSK | DESC_TXSTS_OWNBYDMA);
+#endif
 	desc->ddesc_status0 = htole32(DDESC_TDES0_TCH);
 	desc->ddesc_cntl1 = 0;
 }
@@ -1792,7 +1811,7 @@ dwc_dump_and_abort(struct dwc_gmac_softc *sc, const char *msg)
 	dwc_gmac_dump_tx_desc(sc);
 	dwc_gmac_dump_rx_desc(sc);
 
-	panic("%s", msg);
+//	panic("%s", msg);
 }
 
 static void dwc_gmac_dump_ffilt(struct dwc_gmac_softc *sc, uint32_t ffilt)

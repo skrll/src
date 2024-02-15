@@ -132,6 +132,27 @@
 #define	AWIN_GMAC_DMA_OPMODE		0x1018
 #define	AWIN_GMAC_DMA_INTENABLE		0x101c
 #define	AWIN_GMAC_DMA_RIWT		0x1024
+
+/* AXI Master Bus Mode */
+//#define DMA_AXI_BUS_MODE        0x00001028
+#define AWIN_GMAC_DMA_AXI_BUSMODE	0x1028
+
+#define GMAC_DMA_AXI_EN_LPI		__BIT(31)
+#define GMAC_DMA_AXI_LPI_XIT_FRM	__BIT(30)
+#define GMAC_DMA_AXI_WR_OSR_LMT		__BITS(23, 20)
+#define GMAC_DMA_AXI_RD_OSR_LMT		__BITS(19, 16)
+#define GMAC_DMA_AXI_1KBBE		__BIT(13)
+#define GMAC_DMA_AXI_AAL		__BIT(12)
+#define GMAC_DMA_AXI_BLEN256		__BIT(7)
+#define GMAC_DMA_AXI_BLEN128		__BIT(6)
+#define GMAC_DMA_AXI_BLEN64		__BIT(5)
+#define GMAC_DMA_AXI_BLEN32		__BIT(4)
+#define GMAC_DMA_AXI_BLEN16		__BIT(3)
+#define GMAC_DMA_AXI_BLEN8		__BIT(2)
+#define GMAC_DMA_AXI_BLEN4		__BIT(1)
+#define GMAC_DMA_AXI_UNDEF		__BIT(0)
+
+
 #define	AWIN_GMAC_DMA_CUR_TX_DESC	0x1048
 #define	AWIN_GMAC_DMA_CUR_RX_DESC	0x104c
 #define	AWIN_GMAC_DMA_CUR_TX_BUFADDR	0x1050
@@ -225,6 +246,8 @@
 #define	GMAC_DMA_INT_TSE		__BIT(1)  /* Transmit stopped */
 #define	GMAC_DMA_INT_TIE		__BIT(0)  /* Transmit interrupt */
 
+//DMA status: 0x670415<EB=0,TPS=0x6,RPS=0x3,NI,ET,OV,TU,TI>
+
 #define	GMAC_DMA_INT_MASK	__BITS(0,16)	  /* all possible intr bits */
 
 #define	GMAC_DMA_FEAT_ENHANCED_DESC	__BIT(24)
@@ -234,11 +257,12 @@
 #define	GMAC_DMA_FEAT_RMON		__BIT(11) /* MMC */
 
 struct dwc_gmac_dev_dmadesc {
-	uint32_t ddesc_status0;		/* Status / TDES0 */
+	uint32_t ddesc_status0;		/* Status / TDES0 / RDES0 */
 /* both: */
 #define	DDESC_STATUS_OWNEDBYDEV		__BIT(31)
+#define DDESC_DES0_OWN			__BIT(31)
 
-/* for RX descriptors */
+/* for RX descriptors - match uboot */
 #define	DDESC_STATUS_DAFILTERFAIL	__BIT(30)
 #define	DDESC_STATUS_FRMLENMSK		__BITS(29,16)
 #define	DDESC_STATUS_RXERROR		__BIT(15)
@@ -279,6 +303,7 @@ struct dwc_gmac_dev_dmadesc {
 #define	DDESC_RXSTS_DAFILTERFAIL	__BIT(30)
 
 	uint32_t ddesc_cntl1;		/* Control / TDES1 */
+/* both: */
 
 /* for TX descriptors */
 #define	DDESC_CNTL_TXINT		__BIT(31)
@@ -298,16 +323,14 @@ struct dwc_gmac_dev_dmadesc {
 #define	DDESC_CNTL_RXINTDIS		__BIT(31)
 #define	DDESC_CNTL_RXRINGEND		__BIT(25)
 #define	DDESC_CNTL_RXCHAIN		__BIT(24)
-
-/* both */
 #define	DDESC_CNTL_SIZE1MASK		__BITS(10,0)
 #define	DDESC_CNTL_SIZE1SHIFT		0
 #define	DDESC_CNTL_SIZE2MASK		__BITS(21,11)
 #define	DDESC_CNTL_SIZE2SHIFT		11
 
 /* For enhanced [RT]x descriptors */
-#define	DDESC_DES1_SIZE2MASK		__BITS(28,16)
-#define	DDESC_DES1_SIZE1MASK		__BITS(12,0)
+#define DDESC_DESC1_SIZE2MASK		__BITS(28,16)
+#define DDESC_DESC1_SIZE1MASK		__BITS(12,0)
 
 /* For enhanced TX descriptors */
 
@@ -319,14 +342,55 @@ struct dwc_gmac_dev_dmadesc {
 #define	DDESC_TDES0_TCH			__BIT(20)
 
 /* For enhanced RX descriptors */
-#define	DDECS_RDES1_RID			__BIT(31)	/* not used */
-#define	DDESC_RDES1_REND		__BIT(15)	/* not used */
-#define	DDESC_RDES1_RCH			__BIT(14)
+#define DDECS_RDES1_RID			__BIT(31)	/* not used */
+#define DDESC_RDES1_REND		__BIT(15)	/* not used */
+#define DDESC_RDES1_RCH			__BIT(14)
 
-#define	DESC_RXCTRL_RXINTDIS            (1 << 31)
-#define	DESC_RXCTRL_RXRINGEND           (1 << 15)
-#define	DESC_RXCTRL_RXCHAIN             (1 << 14)
+
+#define DESC_RXCTRL_RXINTDIS            (1 << 31)
+#define DESC_RXCTRL_RXRINGEND           (1 << 15)
+#define DESC_RXCTRL_RXCHAIN             (1 << 14)
+
+//[  90.5835288] # 14 (80068380): status: 00400320 cntl: 000047ff data: 8017e000 next: 800683c0
 
 	uint32_t ddesc_data;	/* pointer to buffer data */
 	uint32_t ddesc_next;	/* link to next descriptor */
-};
+} __aligned (64);
+
+
+__CTASSERT(sizeof(struct dwc_gmac_dev_dmadesc) == 64);
+
+/* Common to enhanced descriptors */
+
+
+
+#if 0
+
+
+
+config ETH_DESIGNWARE_FIXED_BUFF
+        depends on ETH_DESIGNWARE
+        bool "Fixed memory buffers for Synopsys Designware Ethernet MAC"
+        default y if TARGET_STARFIVE_JH7100
+
+if ETH_DESIGNWARE_FIXED_BUFF
+
+config ETH_DESIGNWARE_FIXED_TX_MAC_DES_BASE
+        hex "Fixed base for fixed_tx_mac_descrtable"
+        default 0x18001000
+
+config ETH_DESIGNWARE_FIXED_RX_MAC_DES_BASE
+        hex "Fixed base for fixed_rx_mac_descrtable"
+        default 0x18002000
+
+config ETH_DESIGNWARE_FIXED_TXBUFF_BASE
+        hex "Fixed base for fixed_txbuffs"
+        default 0x18010000
+
+config ETH_DESIGNWARE_FIXED_RXBUFF_BASE
+        hex "Fixed base for fixed_rxbuffs"
+        default 0x18018000
+
+endif #ETH_DESIGNWARE_FIXED_BUFF
+
+#endif
