@@ -38,12 +38,12 @@
  * around 512k Byte of RAM for mbuf clusters.
  * XXX Maybe fine-tune later, or reconsider unsharing of RX/TX dmamap.
  */
-#define		AWGE_RX_RING_COUNT	256
-#define		AWGE_TX_RING_COUNT	256
+#define		AWGE_RX_RING_COUNT	128
+#define		AWGE_TX_RING_COUNT	128
 #define		AWGE_TOTAL_RING_COUNT	\
 			(AWGE_RX_RING_COUNT + AWGE_TX_RING_COUNT)
 
-#define		AWGE_MAX_PACKET		0x7ff
+#define		AWGE_MAX_PACKET		1600 // 0x7ff
 
 struct dwc_gmac_dev_dmadesc;
 
@@ -103,6 +103,7 @@ struct dwc_gmac_softc {
 	kmutex_t sc_mdio_lock;
 	bus_dmamap_t sc_dma_ring_map;		/* common dma memory for RX */
 	bus_dma_segment_t sc_dma_ring_seg;	/* and TX ring */
+//	struct dwc_gmac_axi_setup sc_axi;
 	struct dwc_gmac_rx_ring sc_rxq;
 	struct dwc_gmac_tx_ring sc_txq;
 	const struct dwc_gmac_desc_methods *sc_descm;
