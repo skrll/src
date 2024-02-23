@@ -364,6 +364,7 @@ struct riscv_dma_range {
  */
 
 struct riscv_bus_dma_tag {
+	unsigned long _flags;
 	/*
 	 * DMA range for this tag.  If the page doesn't fall within
 	 * one of these ranges, an error is returned.  The caller
