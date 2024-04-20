@@ -21,8 +21,6 @@ ARCHSUBDIR= powerpc
 
 .if ${MACHINE_CPU} == "arm"
 SUBDIR= acorn32 cats epoc32 evbarm hpcarm iyonix netwinder shark zaurus
-.elif ${MACHINE_CPU} == "hppa"
-SUBDIR=
 .else
 SUBDIR=	${MACHINE}
 .endif

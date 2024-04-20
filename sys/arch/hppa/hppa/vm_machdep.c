@@ -183,7 +183,6 @@ cpu_lwp_free(struct lwp *l, int proc)
 {
 
 	// Can't sleep here so we need to pool_put in cpu_lwp_free2
-	struct pcb *pcb = lwp_getpcb(l);
 
 	/*
 	 * If this thread was using the FPU, disable the FPU and record

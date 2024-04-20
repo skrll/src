@@ -33,7 +33,11 @@
 
 typedef
 struct cpu_kcore_hdr {
-	int dummy;
-}	cpu_kcore_hdr_t;
+	unsigned long	kh_vtop;
+	unsigned long	kh_nramsegs;
+#if 0
+	phys_ram_seg_t	kh_ramsegs[0];
+#endif
+} cpu_kcore_hdr_t;
 
 #endif /* _HPPA_KCORE_H_ */

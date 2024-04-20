@@ -101,7 +101,7 @@ _kvm_kvatop(kvm_t *kd, vaddr_t va, paddr_t *pa)
 {
 	cpu_kcore_hdr_t *cpu_kh;
 	u_long page_off;
-	uint32_t vtop;
+	u_long vtop;
 	pt_entry_t pde;
 	pt_entry_t pte;
 	u_long vtop_pa, pde_pa, pte_pa;
@@ -117,7 +117,7 @@ _kvm_kvatop(kvm_t *kd, vaddr_t va, paddr_t *pa)
 	/*
 	 * Find and read the space -> page directory table entry.
 	 */
-	vtop_pa = cpu_kh->vtop;		/* space 0 */
+	vtop_pa = cpu_kh->kh_vtop;		/* space 0 */
 	if (_kvm_pread(kd, kd->pmfd, (void *)&vtop, sizeof(vtop),
 	    _kvm_pa2off(kd, vtop_pa)) != sizeof(vtop)) {
 		_kvm_syserr(kd, 0, "could not read VTOP");
@@ -182,7 +182,7 @@ _kvm_pa2off(kvm_t *kd, paddr_t pa)
 	ramsegs = (void *)((char *)(void *)cpu_kh + ALIGN(sizeof *cpu_kh));
 
 	off = 0;
-	for (i = 0; i < cpu_kh->nmemsegs; i++) {
+	for (i = 0; i < cpu_kh->kh_nramsegs; i++) {
 		if (pa >= ramsegs[i].start &&
 		    (pa - ramsegs[i].start) < ramsegs[i].size) {
 			off += (pa - ramsegs[i].start);
