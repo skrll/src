@@ -30,6 +30,8 @@ KLINKFILES+=	x86 i386 xen
 KLINKFILES+=	algor sbmips
 .elif ${MACHINE_CPU} == "aarch64"
 KLINKFILES+=	arm
+.elif ${MACHINE_CPU} == "hppa64"
+KLINKFILES+=	hppa
 .elif defined(XEN_BUILD) || ${KLINK_MACHINE} == "xen"
 KLINKFILES+=	xen
 CLEANFILES+=	xen-ma/machine # xen-ma

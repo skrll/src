@@ -40,6 +40,8 @@
 __RCSID("$NetBSD: inittyp.c,v 1.44 2025/04/10 20:37:48 rillig Exp $");
 #endif
 
+#include <limits.h>
+
 #if IS_LINT1
 #include "lint1.h"
 #else

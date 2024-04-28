@@ -333,7 +333,7 @@ elf64_hppa_object_p (bfd *abfd)
 	 but the kernel produces corefiles with OSABI=SysV.  */
       if (i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NETBSD &&
 	  i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NONE) /* aka SYSV */
-	return FALSE;
+	return false;
     }
   else if (strcmp (bfd_get_target (abfd), "elf64-hppa-netbsd") == 0)
     {
@@ -341,7 +341,7 @@ elf64_hppa_object_p (bfd *abfd)
 	 but the kernel produces corefiles with OSABI=SysV.  */
       if (i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NETBSD
 	  && i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NONE) /* aka SYSV */
-	return FALSE;
+	return false;
     }
   else
     {

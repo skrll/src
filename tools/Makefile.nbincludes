@@ -33,7 +33,7 @@ _SYSINCS=	bootblock.h \
 
 HOST_CPPFLAGS+=	-I${TOOLDIR}/include -I${TOOLDIR}/include/nbinclude
 
-beforedepend: 
+beforedepend:
 	${HOST_INSTALL_DIR} ${TOOLDIR}/include/nbinclude
 	${HOST_INSTALL_DIR} ${TOOLDIR}/include/nbinclude/sys
 	${HOST_INSTALL_DIR} ${TOOLDIR}/include/nbinclude/ufs
