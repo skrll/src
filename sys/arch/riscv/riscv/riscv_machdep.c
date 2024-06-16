@@ -932,8 +932,6 @@ init_riscv(register_t hartid, paddr_t dtb)
 	}
 	if (error)
 		printf("AP startup problems\n");
-
-	VPRINTF("done\n");
 }
 
 
