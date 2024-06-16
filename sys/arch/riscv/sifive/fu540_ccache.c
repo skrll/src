@@ -75,7 +75,7 @@ __KERNEL_RCSID(0, "$NetBSD: fu540_ccache.c,v 1.2 2024/01/14 07:13:15 skrll Exp $
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "sifive,fu540-c000-ccache" },
 	{ .compat = "sifive,fu740-c000-ccache" },
-	{ .compat = "starfive,jh7100-ccache" },		// has broken irq (DATA_UNCORR)
+	{ .compat = "starfive,jh7100-ccache" },
 	{ .compat = "starfive,jh7110-ccache" },
 	{ .compat = "starfive,ccache0" },
 	DEVICE_COMPAT_EOL
@@ -108,16 +108,11 @@ fu540_ccache_cache_wbinv_range(vaddr_t va, paddr_t pa, psize_t len)
 {
 	struct fu540_ccache_softc * const sc = fu540_ccache_sc;
 
-printf("%s: va %" PRIxVADDR " pa %"PRIxPADDR " len %" PRIxPSIZE" ... ", __func__,
-     va, pa, len);
-
 	KASSERT(powerof2(sc->sc_line_size));
 	KASSERT(len != 0);
 
 	const paddr_t spa = rounddown2(pa, sc->sc_line_size);
 	const paddr_t epa = roundup2(pa + len, sc->sc_line_size);
-
-printf("[%" PRIxPADDR ",%" PRIxPADDR ")\n", spa, epa);
 
 	asm volatile ("fence iorw,iorw" ::: "memory");
 
