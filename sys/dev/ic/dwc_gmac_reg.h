@@ -203,8 +203,12 @@
 #define	GMAC_DMA_OP_OSF			__BIT(2)  /* operate on 2nd frame */
 #define	GMAC_DMA_OP_RXSTART		__BIT(1)  /* start RX DMA engine */
 
+#define	GMAC_DMA_INT_GPI		__BIT(28) /* PMT interrupt  */
 #define	GMAC_DMA_INT_MMC		__BIT(27) /* MMC interrupt */
 #define	GMAC_DMA_INT_GLI		__BIT(26) /* PHY interrupt */
+#define	GMAC_DMA_INT_EB			__BITS(25, 23) /* Error bits */
+#define	GMAC_DMA_INT_TPS		__BITS(22, 20) /* Tx Process state */
+#define	GMAC_DMA_INT_RPS		__BITS(19, 17) /* Rx Process State */
 #define	GMAC_DMA_INT_NIE		__BIT(16) /* Normal/Summary */
 #define	GMAC_DMA_INT_AIE		__BIT(15) /* Abnormal/Summary */
 #define	GMAC_DMA_INT_ERE		__BIT(14) /* Early receive */
@@ -254,6 +258,26 @@ struct dwc_gmac_dev_dmadesc {
 #define	DDESC_STATUS_RXCRC		__BIT(1)
 #define	DDESC_STATUS_RXPCE		__BIT(0)
 
+/* For enhanced descriptors */
+/* For enhanced TX descriptors */
+#define	DDESC_TDES0_IC			__BIT(30) /* Tx Int */
+#define	DDESC_TDES0_LS			__BIT(29)
+#define	DDESC_TDES0_FS			__BIT(28)
+#define	DDESC_TDES0_TXCRCDIS		__BIT(27) /* CRC something */
+#define	DDESC_TDES0_TCH			__BIT(20)
+
+#define	DDESC_TDES0_TXPADDIS		__BIT(26)	// not used
+#define	DDESC_TDES0_TXCHECKINSCTRL	__BITS(23, 22)	// not used
+#define	DDESC_TDES0_TXRINGEND		__BIT(21)	// not used
+#define	DDESC_TDES0_MSK			__BITS(16, 0)	// not used
+
+/* For enhanced RX descriptors */
+#define	DDESC_RDES0_FL			__BITS(29,16)
+#define	DDESC_RDES0_ES			__BIT(15)
+#define	DDESC_RDES0_LE			__BIT(12)
+
+#define	DDESC_RXSTS_DAFILTERFAIL	__BIT(30)
+
 	uint32_t ddesc_cntl1;		/* Control / TDES1 */
 
 /* for TX descriptors */
@@ -261,12 +285,10 @@ struct dwc_gmac_dev_dmadesc {
 #define	DDESC_CNTL_TXLAST		__BIT(30)
 #define	DDESC_CNTL_TXFIRST		__BIT(29)
 #define	DDESC_CNTL_TXCHECKINSCTRL	__BITS(27,28)
-
-#define	    DDESC_TXCHECK_DISABLED	0
-#define	    DDESC_TXCHECK_IP		1
-#define	    DDESC_TXCHECK_IP_NO_PSE	2
-#define	    DDESC_TXCHECK_FULL		3
-
+#define	 DDESC_TXCHECK_DISABLED		0
+#define	 DDESC_TXCHECK_IP		1
+#define	 DDESC_TXCHECK_IP_NO_PSE	2
+#define	 DDESC_TXCHECK_FULL		3
 #define	DDESC_CNTL_TXCRCDIS		__BIT(26)
 #define	DDESC_CNTL_TXRINGEND		__BIT(25)
 #define	DDESC_CNTL_TXCHAIN		__BIT(24)
@@ -283,14 +305,7 @@ struct dwc_gmac_dev_dmadesc {
 #define	DDESC_CNTL_SIZE2MASK		__BITS(21,11)
 #define	DDESC_CNTL_SIZE2SHIFT		11
 
-	uint32_t ddesc_data;	/* pointer to buffer data */
-	uint32_t ddesc_next;	/* link to next descriptor */
-};
-
-/* Common to enhanced descriptors */
-
-#define	DDESC_DES0_OWN			__BIT(31)
-
+/* For enhanced [RT]x descriptors */
 #define	DDESC_DES1_SIZE2MASK		__BITS(28,16)
 #define	DDESC_DES1_SIZE1MASK		__BITS(12,0)
 
@@ -304,9 +319,14 @@ struct dwc_gmac_dev_dmadesc {
 #define	DDESC_TDES0_TCH			__BIT(20)
 
 /* For enhanced RX descriptors */
-
-#define	DDESC_RDES0_FL			__BITS(29,16)
-#define	DDESC_RDES0_ES			__BIT(15)
-#define	DDESC_RDES0_LE			__BIT(12)
-
+#define	DDECS_RDES1_RID			__BIT(31)	/* not used */
+#define	DDESC_RDES1_REND		__BIT(15)	/* not used */
 #define	DDESC_RDES1_RCH			__BIT(14)
+
+#define	DESC_RXCTRL_RXINTDIS            (1 << 31)
+#define	DESC_RXCTRL_RXRINGEND           (1 << 15)
+#define	DESC_RXCTRL_RXCHAIN             (1 << 14)
+
+	uint32_t ddesc_data;	/* pointer to buffer data */
+	uint32_t ddesc_next;	/* link to next descriptor */
+};
