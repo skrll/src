@@ -915,10 +915,17 @@ dwc_gmac_init(struct ifnet *ifp)
 	bus_space_write_4(sc->sc_bst, sc->sc_bsh, AWIN_GMAC_DMA_TX_ADDR,
 	    sc->sc_txq.t_physaddr);
 
+	uint32_t tmp = bus_space_read_4(sc->sc_bst, sc->sc_bsh,
+	    AWIN_GMAC_DMA_OPMODE);
+	bus_space_write_4(sc->sc_bst, sc->sc_bsh, AWIN_GMAC_DMA_OPMODE,
+	    tmp | GMAC_DMA_OP_FLUSHTX);
+
+	tmp = bus_space_read_4(sc->sc_bst, sc->sc_bsh, AWIN_GMAC_DMA_OPMODE);
+
 	/*
 	 * Start RX/TX part
 	 */
-	uint32_t opmode = GMAC_DMA_OP_RXSTART | GMAC_DMA_OP_TXSTART;
+	uint32_t opmode = tmp | GMAC_DMA_OP_RXSTART | GMAC_DMA_OP_TXSTART;
 	if ((sc->sc_flags & DWC_GMAC_FORCE_THRESH_DMA_MODE) == 0) {
 		opmode |= GMAC_DMA_OP_RXSTOREFORWARD | GMAC_DMA_OP_TXSTOREFORWARD;
 		opmode |= GMAC_DMA_OP_EFC; /* requires 4KiB+ RX FIFO */
@@ -1581,6 +1588,7 @@ static void
 dwc_gmac_desc_enh_set_len(struct dwc_gmac_dev_dmadesc *desc, int len)
 {
 	uint32_t tdes1 = le32toh(desc->ddesc_cntl1);
+	KASSERT(len < __SHIFTOUT_MASK(DDESC_DES1_SIZE1MASK));
 
 	desc->ddesc_cntl1 = htole32((tdes1 & ~DDESC_DES1_SIZE1MASK) |
 		__SHIFTIN(len, DDESC_DES1_SIZE1MASK));
