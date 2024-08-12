@@ -67,7 +67,7 @@ postfix=false
 [ "${MKPOSTFIX:-yes}" = no ] || postfix=true
 
 src="/usr/src"
-sets="base comp etc games gpufw man manhtml misc modules rescue tests text"
+sets="base comp debug etc games gpufw man manhtml misc modules rescue tests text"
 xsets="xbase xcomp xetc xfont xserver"
 minfree="10%"
 bar="==="
