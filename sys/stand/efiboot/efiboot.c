@@ -124,6 +124,10 @@ efi_cleanup(void)
 	UINT32 descver;
 
 	memmap = LibMemoryMap(&nentries, &mapkey, &descsize, &descver);
+	if (memmap == NULL) {
+		printf("WARNING: LibMemoryMap failed\n");
+		return;
+	}
 
 	status = uefi_call_wrapper(BS->ExitBootServices, 2, IH, mapkey);
 	if (EFI_ERROR(status)) {
