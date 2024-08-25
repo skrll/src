@@ -1566,6 +1566,10 @@ makeoptions	anxdp	"CPPFLAGS.anxdp"+="${CPPFLAGS.drmkms}"
 device	genet: arp, ether, ifnet, mii
 file	dev/ic/bcmgenet.c		genet
 
+# Cadence Gigabit Ethernet Controller
+device	cemac: arp, ether, ifnet, mii
+file	dev/cadence/if_cemac.c		cemac
+
 # VMware Tools driver
 include "dev/vmt/files.vmt"
 
