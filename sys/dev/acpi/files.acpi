@@ -321,6 +321,10 @@ file	dev/acpi/ipmi_acpi.c		ipmi_acpi
 attach	genet at acpinodebus with genet_acpi
 file	dev/acpi/genet_acpi.c		genet_acpi
 
+# Cadence Gigabit Ethernet MAC / Controller
+attach	cemac at acpinodebus with cemac_acpi
+file	dev/acpi/cemac_acpi.c		cemac_acpi
+
 # DesignWare Ethernet Quality-of-Service controller
 attach	eqos at acpinodebus with eqos_acpi
 file	dev/acpi/eqos_acpi.c		eqos_acpi

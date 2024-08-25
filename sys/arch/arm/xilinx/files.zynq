@@ -28,9 +28,7 @@ file	arch/arm/xilinx/zynq7000_uart.c		zynquart
 defflag	opt_zynquart.h				ZYNQUARTCONSOLE
 
 # Gigabit Ethernet Controller
-device	cemac: ether, ifnet, arp, mii, bus_dma_generic
 attach	cemac at fdt
-file	dev/cadence/if_cemac.c			cemac
 file	arch/arm/xilinx/zynq_cemac.c		cemac
 
 # USB controller

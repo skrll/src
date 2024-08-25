@@ -73,6 +73,9 @@ struct cemac_softc {
 	unsigned		cemac_flags;
 #define CEMAC_FLAG_GEM	__BIT(0)
 
+        int                     sc_phy_id;
+
+//	krndsource_t rnd_source;
 	kmutex_t *sc_mcast_lock;	/* m: lock for SIOCADD/DELMULTI */
 	kmutex_t *sc_intr_lock;		/* i: lock for interrupt operations */
 
@@ -91,6 +94,5 @@ struct cemac_softc {
 int cemac_intr(void *);
 
 void cemac_attach_common(struct cemac_softc *);
-
 
 #endif /* _IF_CEMACVAR_H_ */

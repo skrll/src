@@ -116,6 +116,7 @@ static int	cemac_ifinit(struct ifnet *);
 static void	cemac_ifstop(struct ifnet *, int);
 static void	cemac_setaddr(struct ifnet *);
 
+#define	CEMAC_DEBUG 10
 #ifdef	CEMAC_DEBUG
 int cemac_debug = CEMAC_DEBUG;
 #define	DPRINTFN(n, fmt)	if (cemac_debug >= (n)) printf fmt
@@ -329,10 +330,10 @@ cemac_intr(void *arg)
 				    sc->rxq[bi].m_dmamap, 0, MCLBYTES,
 				    BUS_DMASYNC_POSTREAD);
 				bus_dmamap_unload(sc->sc_dmat,
-					sc->rxq[bi].m_dmamap);
+				    sc->rxq[bi].m_dmamap);
 				m_set_rcvif(sc->rxq[bi].m, ifp);
 				sc->rxq[bi].m->m_pkthdr.len =
-					sc->rxq[bi].m->m_len = fl;
+				    sc->rxq[bi].m->m_len = fl;
 				switch (nfo & ETH_RDSC_I_CHKSUM) {
 				case ETH_RDSC_I_CHKSUM_IP:
 					csum = M_CSUM_IPv4;
@@ -386,7 +387,6 @@ cemac_intr(void *arg)
 	if ((irq & (IntSts_RxSQ | IntSts_ECI)) != 0)
 		goto begin;
 #endif
-
 	mutex_exit(sc->sc_intr_lock);
 
 	return 1;
@@ -428,6 +428,8 @@ cemac_init(struct cemac_softc *sc)
 #if 0
 	int mdcdiv = DEFAULT_MDCDIV;
 #endif
+	ASSERT_SLEEPABLE();
+	KASSERT(IFNET_LOCKED(ifp));
 
 	callout_init(&sc->cemac_tick_ch, CALLOUT_MPSAFE);
 	callout_setfunc(&sc->cemac_tick_ch, cemac_tick, sc);
@@ -991,7 +993,6 @@ cemac_ifinit(struct ifnet *ifp)
 	cemac_ifstop(ifp, 0);
 
 	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM)) {
-
 		if (ifp->if_capenable &
 		    (IFCAP_CSUM_IPv4_Tx |
 			IFCAP_CSUM_TCPv4_Tx | IFCAP_CSUM_UDPv4_Tx |
@@ -1019,7 +1020,9 @@ cemac_ifinit(struct ifnet *ifp)
 	CEMAC_WRITE(ETH_CTL, ETH_CTL_TE | ETH_CTL_RE | ETH_CTL_ISR
 	    | ETH_CTL_CSR | ETH_CTL_MPE);
 
+	// mii_lock?
 	mii_mediachg(&sc->sc_mii);
+
 	callout_reset(&sc->cemac_tick_ch, hz, cemac_tick, sc);
 	ifp->if_flags |= IFF_RUNNING;
 
@@ -1033,7 +1036,6 @@ cemac_ifinit(struct ifnet *ifp)
 static void
 cemac_ifstop(struct ifnet *ifp, int disable)
 {
-//	uint32_t u;
 	struct cemac_softc * const sc = ifp->if_softc;
 
 	ASSERT_SLEEPABLE();
@@ -1049,7 +1051,7 @@ cemac_ifstop(struct ifnet *ifp, int disable)
 	sc->sc_stopping = true;
 	mutex_exit(sc->sc_intr_lock);
 
-#if 0
+#if 1
 	CEMAC_WRITE(ETH_CTL, ETH_CTL_MPE);	// disable everything
 	CEMAC_WRITE(ETH_IDR, -1);		// disable interrupts
 //	CEMAC_WRITE(ETH_RBQP, 0);		// clear receive
@@ -1061,13 +1063,14 @@ cemac_ifstop(struct ifnet *ifp, int disable)
 		    ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
 //	CEMAC_WRITE(ETH_TCR, 0);			// send nothing
 //	(void)CEMAC_READ(ETH_ISR);
-	u = CEMAC_READ(ETH_TSR);
+	uint32_t u = CEMAC_READ(ETH_TSR);
 	CEMAC_WRITE(ETH_TSR, (u & (ETH_TSR_UND | ETH_TSR_COMP | ETH_TSR_BNQ
 				  | ETH_TSR_IDLE | ETH_TSR_RLE
 				  | ETH_TSR_COL | ETH_TSR_OVR)));
 	u = CEMAC_READ(ETH_RSR);
 	CEMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR | ETH_RSR_REC | ETH_RSR_BNA)));
 #endif
+
 	callout_halt(&sc->cemac_tick_ch, NULL);
 
 	/* Down the MII. */
@@ -1076,6 +1079,12 @@ cemac_ifstop(struct ifnet *ifp, int disable)
 	ifp->if_flags &= ~IFF_RUNNING;
 	sc->sc_txbusy = false;
 	sc->sc_mii.mii_media_status &= ~IFM_ACTIVE;
+
+	// XXXNH
+	// reset rings
+
+	// XXXNH
+//	sc->sc_mii.mii_media_status &= ~IFM_ACTIVE;
 }
 
 static void
