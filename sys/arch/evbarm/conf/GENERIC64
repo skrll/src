@@ -28,9 +28,17 @@ options 	MULTIPROCESSOR
 
 pseudo-device 	openfirm	# /dev/openfirm
 
-#options 	DIAGNOSTIC	# internal consistency checks
-#options 	DEBUG
-#options 	LOCKDEBUG
+options 	APRINT_DELAY=2000
+options 	DB_MAX_WIDTH=0
+options 	DB_MAX_LINE=0
+options 	DDB_COMMANDONENTER="trace"
+
+options 	MSGBUFSIZE=262144
+
+options 	DIAGNOSTIC	# internal consistency checks
+options 	DEBUG
+options 	LOCKDEBUG
+options 	DDB_ONPANIC=1
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	INCLUDE_CONFIG_FILE
 #options 	UVMHIST		# kernhist for uvm/pmap subsystems
@@ -60,10 +68,10 @@ options 	INCLUDE_CONFIG_FILE
 #options 	EARLYCONS=plcom, CONSADDR=0x21c0000
 
 # Hardware management of the Access flag and dirty state (HAFDBS).
-options 	ARMV81_HAFDBS
+#options 	ARMV81_HAFDBS
 
 # Privileged Access Never (PAN).
-options 	ARMV81_PAN
+#options 	ARMV81_PAN
 
 # Pointer Authentication (PAC).
 #makeoptions 	ARMV83_PAC=1
@@ -529,7 +537,7 @@ options 	WSDISPLAY_SCROLLSUPPORT
 pseudo-device	wsmux
 pseudo-device	wsfont
 options 	FONT_BOLD8x16
-options 	FONT_BOLD16x32
+#options 	FONT_BOLD16x32
 
 # GPU
 #nouveau*	at fdt?			# NVIDIA GPU
