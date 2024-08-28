@@ -109,14 +109,61 @@
 #define	GEM_SA3H	0x009C
 #define	GEM_SA4L	0x0090
 #define	GEM_SA4H	0x0094
+#define	GEM_MID		0x00fc
 #define	GEM_SCOL	0x0138
 #define	GEM_MCOL	0x013C
+#define	GEM_DCFG1	0x0280
 #define	GEM_DCFG2	0x0284
 #define	GEM_DCFG3	0x0288
 #define	GEM_DCFG4	0x028C
 #define	GEM_DCFG5	0x0290
+#define	GEM_DCFG6	0x0294
+#define	GEM_DCFG7	0x0298
+#define	GEM_DCFG8	0x029c
+#define	GEM_DCFG9	0x02a0
+#define	GEM_DCFG10	0x02a4
+#define	GEM_DCFG11	0x02a8
+#define	GEM_DCFG12	0x02ac
+
+#define GEM_ISR(hw_q)		(0x0400 + ((hw_q) << 2))
+#define GEM_TBQP(hw_q)		(0x0440 + ((hw_q) << 2))
+#define GEM_TBQPH(hw_q)		(0x04C8)
+#define GEM_RBQP(hw_q)		(0x0480 + ((hw_q) << 2))
+#define GEM_RBQS(hw_q)		(0x04A0 + ((hw_q) << 2))
+#define GEM_RBQPH(hw_q)		(0x04D4)
+#define GEM_IER(hw_q)		(0x0600 + ((hw_q) << 2))
+#define GEM_IDR(hw_q)		(0x0620 + ((hw_q) << 2))
+#define GEM_IMR(hw_q)		(0x0640 + ((hw_q) << 2))
 
 #define ETH_SIZE	0x1000
+
+#define GEM_DCFG1_BITS							      \
+	"\177\020"		/* New bitmask format */		      \
+	"f\031\002dbwdef\0"	/* bit 25 .. 24 */			      \
+	"b\027irqcor\0"		/* bit 23 */				      \
+	"b\000nopcs\0"		/* bit 0 */				      \
+	"\0"
+
+#define GEM_DCFG2_BITS							      \
+	"\177\020"		/* New bitmask format */		      \
+	"f\032\004txpba\0"	/* bit 26 .. 29 tx_pbuf_addr */		      \
+	"f\026\004rxpba\0"	/* bit 22 .. 25 rx_pbuf_addr */		      \
+	"b\025txpb\0"		/* bit 21 tx_pkt_buffer */		      \
+	"b\024rxpb\0"		/* bit 20 rx_pkt_buffer */		      \
+	"f\000\017jmlen\0"	/* bit 0 .. 15 jumbo max length */	      \
+	"\0"
+
+#define GEM_DCFG3_BITS							      \
+	"\177\020"		/* New bitmask format */		      \
+	"\0"
+
+#define GEM_DCFG4_BITS							      \
+	"\177\020"		/* New bitmask format */		      \
+	"\0"
+
+#define GEM_DCFG5_BITS							      \
+	"\177\020"		/* New bitmask format */		      \
+	"\0"
 
 /* Control Register bits: */
 #define GEM_CTL_ZEROPAUSETX	__BIT(12)
@@ -136,6 +183,18 @@
 
 
 /* Configuration Register bits: */
+#if 0
+#define MACB_RBOF_OFFSET	14 /* Receive buffer offset */
+#define MACB_RBOF_SIZE		2
+#define MACB_RLCE_OFFSET	16 /* Length field error frame discard */
+#define MACB_RLCE_SIZE		1
+#define MACB_DRFCS_OFFSET	17 /* FCS remove */
+#define MACB_DRFCS_SIZE		1
+#define MACB_EFRHD_OFFSET	18
+#define MACB_EFRHD_SIZE		1
+#define MACB_IRXFCS_OFFSET	19
+#define MACB_IRXFCS_SIZE	1
+#endif
 #define	ETH_CFG_RMII	__BIT(13)  /* 1 = enable RMII (Reduce MII) (AT91RM9200 only) */
 #define	ETH_CFG_RTY	__BIT(12)  /* 1 = retry test enabled		*/
 #define	ETH_CFG_CLK	__BITS(11, 10)	/* clock				*/
@@ -149,11 +208,16 @@
 #define	ETH_CFG_MTI	__BIT(6)  /* 1 = enable multicast hash		*/
 #define	ETH_CFG_NBC	__BIT(5)  /* 1 = ignore received broadcasts	*/
 #define	ETH_CFG_CAF	__BIT(4)  /* 1 = receive all valid frames		*/
-#define	ETH_CFG_BR	__BIT(2)
+#define	ETH_CFG_JF	__BIT(3)  /* jframe/reserved */
+#define	ETH_CFG_BR	__BIT(2)  /* 1 = Discard non-VLAN frames */
 #define	ETH_CFG_FD	__BIT(1)  /* 1 = force full duplex		*/
 #define	ETH_CFG_SPD	__BIT(0)  /* 1 = 100 Mbps				*/
 
+
+#define GEM_CFG_FD	__BIT(1)
 #define GEM_CFG_GEN	__BIT(10)
+#define GEM_CFG_PCSSEL	__BIT(11)
+#define GEM_CFG_PAE	__BIT(13)
 #define GEM_CFG_CLK	__BITS(20, 18)
 #define  GEM_CFG_CLK_8		__SHIFTIN(0, GEM_CFG_CLK)
 #define  GEM_CFG_CLK_16		__SHIFTIN(1, GEM_CFG_CLK)
@@ -168,6 +232,7 @@
 #define  GEM_CFG_DBW_64		__SHIFTIN(1, GEM_CFG_DBW)
 #define  GEM_CFG_DBW_128	__SHIFTIN(2, GEM_CFG_DBW)
 #define	GEM_CFG_RXCOEN	__BIT(24)
+#define	GEM_CFG_SGMIIEN	__BIT(27)
 
 /* Status Register bits: */
 #define	ETH_SR_IDLE	__BIT(2)	/* 1 = PHY logic is running		*/
