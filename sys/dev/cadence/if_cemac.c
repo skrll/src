@@ -88,17 +88,90 @@ static int cemac_watchdog_timeout = CEMAC_WATCHDOG_TIMEOUT;
 
 #define DEFAULT_MDCDIV	32
 
+
+#if 0
+
+static const struct macb_config default_gem_config = {
+	.caps = MACB_CAPS_GIGABIT_MODE_AVAILABLE |
+		MACB_CAPS_JUMBO |
+		MACB_CAPS_GEM_HAS_PTP,
+	.dma_burst_length = 16,
+	.clk_init = macb_clk_init,
+	.init = macb_init,
+	.usrio = &macb_default_usrio,
+	.jumbo_max_len = 10240,
+};
+
+static const struct macb_usrio_config macb_default_usrio = {
+	.mii = MACB_BIT(MII),
+	.rmii = MACB_BIT(RMII),
+	.rgmii = GEM_BIT(RGMII),
+	.refclk = MACB_BIT(CLKEN),
+};
+
+
+	macb_pclk: macb_pclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-output-names = "pclk";
+		clock-frequency = <200000000>;
+	};
+	macb_hclk: macb_hclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-output-names = "hclk";
+		clock-frequency = <200000000>;
+	};
+#endif
+
+
+
+
+static uint32_t
+cemac_rd4(const char *fn, unsigned ln, struct cemac_softc *sc,
+    bus_size_t off)
+{
+	uint32_t val = bus_space_read_4(sc->sc_iot, sc->sc_ioh, off);
+	printf("%s:%u: reg %#06lx val %#010x (read)\n", fn, ln, off, val);
+
+	return val;
+}
+
+static void
+cemac_wr4(const char *fn, unsigned ln, struct cemac_softc *sc,
+    bus_size_t off, uint32_t val)
+{
+	printf("%s:%u: reg %#06lx val %#010x (write)\n", fn, ln, off, val);
+	bus_space_write_4(sc->sc_iot, sc->sc_ioh, off, val);
+}
+
 #define CEMAC_READ(x) \
-	bus_space_read_4(sc->sc_iot, sc->sc_ioh, (x))
+	cemac_rd4(__func__, __LINE__, sc, (x))
+
 #define CEMAC_WRITE(x, y) \
-	bus_space_write_4(sc->sc_iot, sc->sc_ioh, (x), (y))
+	cemac_wr4(__func__, __LINE__, sc, (x), (y))
+
+#if 1
 #define CEMAC_GEM_WRITE(x, y)						      \
     do {								      \
-	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM))			      \
+	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM)) {			      \
+		printf("%s: reg %#06x val %#010x (gem)\n", __func__, (GEM_##x), (y)); \
 		bus_space_write_4(sc->sc_iot, sc->sc_ioh, (GEM_##x), (y));    \
-	else								      \
+	} else {								      \
+		printf("%s: reg %#06x val %#010x (eth)\n", __func__, (ETH_##x), (y)); \
 		bus_space_write_4(sc->sc_iot, sc->sc_ioh, (ETH_##x), (y));    \
+	} \
     } while(0)
+#else
+#define CEMAC_GEM_WRITE(x, y)						      \
+    do {								      \
+	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM)) {			      \
+		bus_space_write_4(sc->sc_iot, sc->sc_ioh, (GEM_##x), (y));    \
+	} else {							      \
+		bus_space_write_4(sc->sc_iot, sc->sc_ioh, (ETH_##x), (y));    \
+	} \
+    } while(0)
+#endif
 
 static void	cemac_init(struct cemac_softc *);
 static int	cemac_gctx(struct cemac_softc *);
@@ -116,7 +189,8 @@ static int	cemac_ifinit(struct ifnet *);
 static void	cemac_ifstop(struct ifnet *, int);
 static void	cemac_setaddr(struct ifnet *);
 
-#define	CEMAC_DEBUG 10
+//#define	CEMAC_DEBUG 10
+#undef CEMAC_DEBUG
 #ifdef	CEMAC_DEBUG
 int cemac_debug = CEMAC_DEBUG;
 #define	DPRINTFN(n, fmt)	if (cemac_debug >= (n)) printf fmt
@@ -157,33 +231,80 @@ cemac_handle_reset_work(struct work *work, void *arg)
 void
 cemac_attach_common(struct cemac_softc *sc)
 {
-	uint32_t u;
-
 	aprint_naive("\n");
-	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM))
-		aprint_normal(": Cadence Gigabit Ethernet Controller\n");
-	else
-		aprint_normal(": Cadence Ethernet Controller\n");
+	uint32_t mid = CEMAC_READ(GEM_MID);
+	uint16_t mid_id = __SHIFTOUT(mid, __BITS(31, 16));
+	uint16_t mid_rev = __SHIFTOUT(mid, __BITS(15, 0));
+	if (mid_id >= 0x2) {
+		sc->cemac_flags |= CEMAC_FLAG_GEM;
 
+		// Read DCFG6 for number of queues
+	} else {
+		// 1 queue
+	}
+
+
+	// XXXNH clock enable needs to be done by earlier code?
+
+	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM)) {
+		char buf[128];
+
+		aprint_normal(": Cadence Gigabit Ethernet Controller %x/%x\n",
+		    mid_id, mid_rev);
+
+		snprintb(buf, sizeof(buf), GEM_DCFG1_BITS, CEMAC_READ(GEM_DCFG1));
+		aprint_normal_dev(sc->sc_dev, "DCFG1 %s\n", buf);
+		snprintb(buf, sizeof(buf), GEM_DCFG2_BITS, CEMAC_READ(GEM_DCFG2));
+		aprint_normal_dev(sc->sc_dev, "DCFG2 %s\n", buf);
+		snprintb(buf, sizeof(buf), GEM_DCFG3_BITS, CEMAC_READ(GEM_DCFG3));
+		aprint_normal_dev(sc->sc_dev, "DCFG3 %s\n", buf);
+		snprintb(buf, sizeof(buf), GEM_DCFG4_BITS, CEMAC_READ(GEM_DCFG4));
+		aprint_normal_dev(sc->sc_dev, "DCFG4 %s\n", buf);
+		snprintb(buf, sizeof(buf), GEM_DCFG5_BITS, CEMAC_READ(GEM_DCFG5));
+		aprint_normal_dev(sc->sc_dev, "DCFG5 %s\n", buf);
+	} else
+		aprint_normal(": Cadence Ethernet Controller %x/%x\n",
+		    mid_id, mid_rev);
+
+#if 0
+	// XXXNH not yet?
 	/* configure emac: */
 	CEMAC_WRITE(ETH_CTL, 0);		// disable everything
 	CEMAC_WRITE(ETH_IDR, -1);		// disable interrupts
 	CEMAC_WRITE(ETH_RBQP, 0);		// clear receive
 	CEMAC_WRITE(ETH_TBQP, 0);		// clear transmit
-	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM))
-		CEMAC_WRITE(ETH_CFG,
-		    GEM_CFG_CLK_64 | GEM_CFG_GEN | ETH_CFG_SPD | ETH_CFG_FD);
-	else
+#endif
+	// ETH_CFG_{SPD,FD,GEN} should go in mii
+	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM)) {
+		// gem_mdc_clk_div
+		if (1) {
+			CEMAC_WRITE(ETH_CFG,
+			    GEM_CFG_CLK_96 | GEM_CFG_DBW_128);
+		} else {
+			CEMAC_WRITE(ETH_CFG,
+			    GEM_CFG_CLK_64 | GEM_CFG_GEN | ETH_CFG_SPD | ETH_CFG_FD);
+		}
+	} else {
 		CEMAC_WRITE(ETH_CFG,
 		    ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
+	}
+
+#if 0
+		// XXXNH not yet?
+
 	//CEMAC_WRITE(ETH_TCR, 0);		// send nothing
 	//(void)CEMAC_READ(ETH_ISR);
+	uint32_t u;
+
 	u = CEMAC_READ(ETH_TSR);
 	CEMAC_WRITE(ETH_TSR, (u & (ETH_TSR_UND | ETH_TSR_COMP | ETH_TSR_BNQ
 				  | ETH_TSR_IDLE | ETH_TSR_RLE
 				  | ETH_TSR_COL | ETH_TSR_OVR)));
 	u = CEMAC_READ(ETH_RSR);
 	CEMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR | ETH_RSR_REC | ETH_RSR_BNA)));
+#endif
+
+	CEMAC_WRITE(ETH_CTL, ETH_CTL_MPE);	// Management port enable
 
 	/* Fetch the Ethernet address from property if set. */
 	if (! ether_getaddr(sc->sc_dev, sc->sc_enaddr)) {
@@ -417,6 +538,100 @@ cemac_ifflags_cb(struct ethercom *ec)
 	return ret;
 }
 
+
+
+
+#if 0
+static u32 gem_mdc_clk_div(struct macb *bp)
+{
+	u32 config;
+	unsigned long pclk_hz = clk_get_rate(bp->pclk);
+
+	if (pclk_hz <= 20000000)
+		config = GEM_BF(CLK, GEM_CLK_DIV8);
+	else if (pclk_hz <= 40000000)
+		config = GEM_BF(CLK, GEM_CLK_DIV16);
+	else if (pclk_hz <= 80000000)
+		config = GEM_BF(CLK, GEM_CLK_DIV32);
+	else if (pclk_hz <= 120000000)
+		config = GEM_BF(CLK, GEM_CLK_DIV48);
+	else if (pclk_hz <= 160000000)
+		config = GEM_BF(CLK, GEM_CLK_DIV64);
+//                          200000000
+	else if (pclk_hz <= 240000000)
+		config = GEM_BF(CLK, GEM_CLK_DIV96);
+	else if (pclk_hz <= 320000000)
+		config = GEM_BF(CLK, GEM_CLK_DIV128);
+	else
+		config = GEM_BF(CLK, GEM_CLK_DIV224);
+
+	return config;
+}
+
+static u32 macb_mdc_clk_div(struct macb *bp)
+{
+        u32 config;
+        unsigned long pclk_hz;
+
+        if (macb_is_gem(bp))
+                return gem_mdc_clk_div(bp);
+
+	// XXXNH We're GEM!!!
+
+        pclk_hz = clk_get_rate(bp->pclk);
+        if (pclk_hz      <= 20000000)
+                config = MACB_BF(CLK, MACB_CLK_DIV8);
+        else if (pclk_hz <= 40000000)
+                config = MACB_BF(CLK, MACB_CLK_DIV16);
+        else if (pclk_hz <= 80000000)
+                config = MACB_BF(CLK, MACB_CLK_DIV32);
+        else
+                config = MACB_BF(CLK, MACB_CLK_DIV64);
+
+        return config;
+}
+#endif
+
+
+#define RP1_SYS_RIO0_BASE				0x000e0000
+#define RP1_SYS_RIO1_BASE				0x000e4000
+#define RP1_SYS_RIO2_BASE				0x000e8000
+
+
+#define RP1_RIO_OUT 0x00
+#define RP1_SET_OFFSET 0x2000
+#define RP1_CLR_OFFSET 0x3000
+
+
+
+
+static void
+rp1_pin_write(struct cemac_softc *sc, bus_size_t offset, uint32_t val)
+{
+
+	mutex_enter(sc->sc_intr_lock);
+
+        /*
+         * Issuing 6 pipelined writes to the RC's Slot Control register will stall the
+         * peripheral bus inside 2712 if the link is in L1. This acts as a lightweight
+         * "fence" operation preventing back-to-back writes arriving at RP1 on a wake.
+         */
+	bus_space_write_4(sc->sc_iot, sc->sc_pci, 0xc0, 0); // 1
+	bus_space_write_4(sc->sc_iot, sc->sc_pci, 0xc0, 0); // 2
+	bus_space_write_4(sc->sc_iot, sc->sc_pci, 0xc0, 0); // 3
+	bus_space_write_4(sc->sc_iot, sc->sc_pci, 0xc0, 0); // 4
+	bus_space_write_4(sc->sc_iot, sc->sc_pci, 0xc0, 0); // 5
+	bus_space_write_4(sc->sc_iot, sc->sc_pci, 0xc0, 0); // 6
+
+	bus_space_write_4(sc->sc_iot, sc->sc_rp1, offset, val);
+
+	mutex_exit(sc->sc_intr_lock);
+}
+
+
+
+
+
 static void
 cemac_init(struct cemac_softc *sc)
 {
@@ -428,23 +643,124 @@ cemac_init(struct cemac_softc *sc)
 #if 0
 	int mdcdiv = DEFAULT_MDCDIV;
 #endif
-	ASSERT_SLEEPABLE();
-	KASSERT(IFNET_LOCKED(ifp));
-
 	callout_init(&sc->cemac_tick_ch, CALLOUT_MPSAFE);
 	callout_setfunc(&sc->cemac_tick_ch, cemac_tick, sc);
 
+	sc->sc_intr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NET);
+
+
+//   pin->rio + RP1_RIO_OUT + (value ? RP1_SET_OFFSET : RP1_CLR_OFFSET));
+
+	rp1_pin_write(sc,
+	    RP1_SYS_RIO0_BASE +			/* rio base */
+	    0x4000 +				/* bank 1 rio_offset */
+	    RP1_RIO_OUT +
+	    RP1_SET_OFFSET,
+	    __BIT(32 - 28));
+
+	{
+
+	uint16_t id1;
+	uint16_t id2;
+	cemac_mii_readreg(sc->sc_dev, 1, MII_PHYIDR1, &id1);
+	cemac_mii_readreg(sc->sc_dev, 1, MII_PHYIDR2, &id2);
+
+	KASSERTMSG(id1 == 0x600d && id2 == 0x84a2, "id1/id2 %#06x/%#06x", id1, id2);
+
+	}
+
+
+
+#if 0
+
+
+	.clk_init = macb_clk_init,
+	.init = macb_init,
+
+
+
+static const struct macb_usrio_config macb_default_usrio = {
+	.mii = MACB_BIT(MII),
+	.rmii = MACB_BIT(RMII),
+	.rgmii = GEM_BIT(RGMII),
+	.refclk = MACB_BIT(CLKEN),
+};
+
+
+
+
+
+#endif
+
+	// macb_init...
+#if 0
+	if (!(bp->caps & MACB_CAPS_USRIO_DISABLED)) {
+		val = 0;
+		if (phy_interface_mode_is_rgmii(bp->phy_interface))
+			val = bp->usrio->rgmii;
+		else if (bp->phy_interface == PHY_INTERFACE_MODE_RMII &&
+			 (bp->caps & MACB_CAPS_USRIO_DEFAULT_IS_MII_GMII))
+			val = bp->usrio->rmii;
+		else if (!(bp->caps & MACB_CAPS_USRIO_DEFAULT_IS_MII_GMII))
+			val = bp->usrio->mii;
+
+		if (bp->caps & MACB_CAPS_USRIO_HAS_CLKEN)
+			val |= bp->usrio->refclk;
+
+		macb_or_gem_writel(bp, USRIO, val);
+	}
+
+	/* Set MII management clock divider */
+                config = MACB_BF(CLK, MACB_CLK_DIV64);
+
+	val = macb_mdc_clk_div(bp);
+	val |= macb_dbw(bp);
+	if (bp->phy_interface == PHY_INTERFACE_MODE_SGMII)
+		val |= GEM_BIT(SGMIIEN) | GEM_BIT(PCSSEL);
+	macb_writel(bp, NCFGR, val);
+#endif
+
+
+
+
+
+	// macb_mii_init
+
+
+//	macb_configure_caps
+
 	// ok...
-	CEMAC_WRITE(ETH_CTL, ETH_CTL_MPE);	// disable everything
-	CEMAC_WRITE(ETH_IDR, -1);		// disable interrupts
-	CEMAC_WRITE(ETH_RBQP, 0);		// clear receive
-	CEMAC_WRITE(ETH_TBQP, 0);		// clear transmit
-	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM))
-		CEMAC_WRITE(ETH_CFG,
-		    GEM_CFG_CLK_64 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
-	else
+
+
+	CEMAC_WRITE(ETH_CTL, 0);	// disable everything
+	CEMAC_WRITE(ETH_IDR, -1);	// disable interrupts
+	CEMAC_WRITE(ETH_RBQP, 0);	// clear receive
+	CEMAC_WRITE(ETH_TBQP, 0);	// clear transmit
+
+	// ETH_CFG_{SPD,FD,GEN} should go in mii
+	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM)) {
+		// gem_mdc_clk_div
+		// macb_dbw
+		if (1) {
+			// pclk_hz is 200000000 so gem_mdc_clk_div selects 96
+			CEMAC_WRITE(ETH_CFG,
+			    GEM_CFG_CLK_96 | GEM_CFG_DBW_128);
+		} else {
+			CEMAC_WRITE(ETH_CFG,
+			    GEM_CFG_CLK_64 | GEM_CFG_GEN | ETH_CFG_SPD | ETH_CFG_FD);
+		}
+	} else {
 		CEMAC_WRITE(ETH_CFG,
 		    ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
+	}
+
+	printf("%s: ETH_CFG %#010x\n", __func__, CEMAC_READ(ETH_CFG));
+	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM)) {
+		CEMAC_WRITE(GEM_USER_IO,
+		    __BIT(0) /* GEN_RGMII */
+		);
+	}
+
 	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM)) {
 		CEMAC_WRITE(GEM_DMA_CFG,
 		    __SHIFTIN((MCLBYTES + 63) / 64, GEM_DMA_CFG_RX_BUF_SIZE) |
@@ -478,6 +794,8 @@ cemac_init(struct cemac_softc *sc)
 	CEMAC_GEM_WRITE(SA3H, 0);
 	CEMAC_GEM_WRITE(SA4L, 0);
 	CEMAC_GEM_WRITE(SA4H, 0);
+
+	CEMAC_WRITE(ETH_CTL, ETH_CTL_MPE);      // Management port enable
 
 	char wqname[MAXCOMLEN];
 	snprintf(wqname, sizeof(wqname), "%sReset", device_xname(sc->sc_dev));
@@ -582,7 +900,8 @@ cemac_init(struct cemac_softc *sc)
 		    m->m_ext.ext_buf, MCLBYTES, NULL,
 		    BUS_DMA_WAITOK);
 		if (err) {
-			panic("%s: dmamap_load failed: %i\n", __FUNCTION__, err);
+			panic("%s: dmamap_load failed: %i\n", __FUNCTION__,
+			    err);
 		}
 		sc->RDSC[i].Addr = sc->rxq[i].m_dmamap->dm_segs[0].ds_addr
 		    | (i == (RX_QLEN-1) ? ETH_RDSC_F_WRAP : 0);
@@ -608,10 +927,103 @@ cemac_init(struct cemac_softc *sc)
 	CEMAC_WRITE(ETH_TBQP, (uint32_t)sc->tbqpage_dsaddr);
 
 	sc->sc_mcast_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_SOFTNET);
-	sc->sc_intr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NET);
+//	sc->sc_intr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NET);
 
 	/* Divide HCLK by 32 for MDC clock */
+
+#if 0
+	bp->phylink_sgmii_pcs.ops = &macb_phylink_pcs_ops;
+	bp->phylink_sgmii_pcs.neg_mode = true;
+	bp->phylink_usx_pcs.ops = &macb_phylink_usx_pcs_ops;
+	bp->phylink_usx_pcs.neg_mode = true;
+
+	//XXXNH this is true
+	if (macb_is_gem(bp) && (bp->caps & MACB_CAPS_GIGABIT_MODE_AVAILABLE)) {
+		bp->phylink_config.mac_capabilities |= MAC_1000FD;
+		if (!(bp->caps & MACB_CAPS_NO_GIGABIT_HALF))
+			bp->phylink_config.mac_capabilities |= MAC_1000HD;
+
+		__set_bit(PHY_INTERFACE_MODE_GMII,
+			  bp->phylink_config.supported_interfaces);
+		phy_interface_set_rgmii(bp->phylink_config.supported_interfaces);
+
+		if (bp->caps & MACB_CAPS_PCS)
+			__set_bit(PHY_INTERFACE_MODE_SGMII,
+				  bp->phylink_config.supported_interfaces);
+
+		if (bp->caps & MACB_CAPS_HIGH_SPEED) {
+			__set_bit(PHY_INTERFACE_MODE_10GBASER,
+				  bp->phylink_config.supported_interfaces);
+			bp->phylink_config.mac_capabilities |= MAC_10000FD;
+		}
+	}
+
+
+
+#endif
+
+
+#if 1
+
+//[    2.223449] macb:macb_mdio_read_c22: phy 0x0001 reg 0x0002  = 0x600d
+//[    2.258871] macb:macb_mdio_read_c22: phy 0x0001 reg 0x0003  = 0x84a2
+
+// pin conf?
+// XXXNH !!!
+
+//	phy-reset-gpios = <&rp1_gpio 32 GPIO_ACTIVE_LOW>;
+// XXXNH switch to CLR/SET as active low???
+	printf("%s: gpio reset start\n", __func__);
+	// const struct rp1_iobank_desc rp1_iobanks[RP1_NUM_BANKS] = {
+	// ...
+	// 	{ 28,  6, 0x4000, 0x411c, 0x4124, 0x4000, 0x4004 },
+
+	//[    2.938569] rp1_set_value: write 32 bank 1 rio 00000000a26d316c+0(s/c 2000) offset 0x0004 value 1
+
+
+	rp1_pin_write(sc,
+	    RP1_SYS_RIO0_BASE +			/* rio base */
+	    0x4000 +				/* bank 1 rio_offset*/
+	    RP1_RIO_OUT + RP1_SET_OFFSET,
+	    __BIT(32 - 28));
+
+	DELAY(5 * 1000);
+
+	rp1_pin_write(sc,
+	    RP1_SYS_RIO0_BASE +			/* rio base */
+	    0x4000 +				/* bank 1 rio_offset*/
+	    RP1_RIO_OUT + RP1_CLR_OFFSET,
+	    __BIT(32 - 28));
+printf("%s: gpio reset done\n", __func__);
+	DELAY(5 * 1000);
+
+
+
+
+#endif
+
+
+/*
+ * [    2.223449] macb:macb_mdio_read_c22: phy 0x0001 reg 0x0002  = 0x600d
+ * [    2.229829] macb:hw_readl_native:  readl(0x0008) = 0x00000006
+ * [    2.235595] macb:hw_writel_native: writel(0x0034) = 0x608e0000
+ * [    2.241455] macb:hw_readl_native:  readl(0x0008) = 0x00000002
+ * [    2.247330] macb:hw_readl_native:  readl(0x0008) = 0x00000006
+ * [    2.253103] macb:hw_readl_native:  readl(0x0034) = 0x608e84a2
+ * [    2.258871] macb:macb_mdio_read_c22: phy 0x0001 reg 0x0003  = 0x84a2
+ */
+
+	uint16_t id1;
+	uint16_t id2;
+	cemac_mii_readreg(sc->sc_dev, 1, MII_PHYIDR1, &id1);
+	cemac_mii_readreg(sc->sc_dev, 1, MII_PHYIDR2, &id2);
+
+	KASSERTMSG(id1 == 0x600d && id2 == 0x84a2, "id1/id2 %#06x/%#06x", id1, id2);
+
 	sc->sc_ethercom.ec_mii = mii;
+	// XXXNH 0 vs IFM_MASK
+	ifmedia_init(&mii->mii_media, IFM_IMASK, cemac_mediachange,
+	    cemac_mediastatus);
 	mii->mii_ifp = ifp;
 	mii->mii_readreg = cemac_mii_readreg;
 	mii->mii_writereg = cemac_mii_writereg;
@@ -620,6 +1032,7 @@ cemac_init(struct cemac_softc *sc)
 	    cemac_mediastatus);
 	mii_attach(sc->sc_dev, mii, 0xffffffff, sc->sc_phyno, MII_OFFSET_ANY, 0);
 	ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
+
 
 #if 0
 	// enable / disable interrupts
@@ -682,19 +1095,32 @@ cemac_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 }
 
 
+//XXXNH clause 45?
+
 static int
 cemac_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
 	struct cemac_softc * const sc = device_private(self);
 
+	KASSERTMSG(phy <= __SHIFTOUT_MASK(ETH_MAN_PHYA), "phy %d", phy);
+	KASSERTMSG(reg <= __SHIFTOUT_MASK(ETH_MAN_REGA), "reg %d", phy);
+
+	while (!(CEMAC_READ(ETH_SR) & ETH_SR_IDLE))
+		;
+
 	CEMAC_WRITE(ETH_MAN, (ETH_MAN_HIGH | ETH_MAN_RW_RD
-			     | ((phy << ETH_MAN_PHYA_SHIFT) & ETH_MAN_PHYA)
-			     | ((reg << ETH_MAN_REGA_SHIFT) & ETH_MAN_REGA)
+			     | __SHIFTIN(phy, ETH_MAN_PHYA)
+			     | __SHIFTIN(reg, ETH_MAN_REGA)
 			     | ETH_MAN_CODE_IEEE802_3));
 	while (!(CEMAC_READ(ETH_SR) & ETH_SR_IDLE))
 		;
 
 	*val = CEMAC_READ(ETH_MAN) & ETH_MAN_DATA;
+
+printf("%s: phy %3d reg %#06x val %#010x\n", __func__, phy, reg, *val);
+
+	if (reg == 1)
+		    *val = 0xc0de;
 	return 0;
 }
 
@@ -703,9 +1129,17 @@ cemac_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 {
 	struct cemac_softc * const sc = device_private(self);
 
+	while (!(CEMAC_READ(ETH_SR) & ETH_SR_IDLE))
+		;
+
+	KASSERTMSG(phy <= __SHIFTOUT_MASK(ETH_MAN_PHYA), "phy %d", phy);
+	KASSERTMSG(reg <= __SHIFTOUT_MASK(ETH_MAN_REGA), "reg %d", phy);
+
+printf("%s: phy %3d reg %#06x val = %#010x\n", __func__, phy, reg, val);
+
 	CEMAC_WRITE(ETH_MAN, (ETH_MAN_HIGH | ETH_MAN_RW_WR
-			     | ((phy << ETH_MAN_PHYA_SHIFT) & ETH_MAN_PHYA)
-			     | ((reg << ETH_MAN_REGA_SHIFT) & ETH_MAN_REGA)
+			     | __SHIFTIN(phy, ETH_MAN_PHYA)
+			     | __SHIFTIN(reg, ETH_MAN_REGA)
 			     | ETH_MAN_CODE_IEEE802_3
 			     | (val & ETH_MAN_DATA)));
 	while (!(CEMAC_READ(ETH_SR) & ETH_SR_IDLE))
@@ -1052,15 +1486,16 @@ cemac_ifstop(struct ifnet *ifp, int disable)
 	mutex_exit(sc->sc_intr_lock);
 
 #if 1
-	CEMAC_WRITE(ETH_CTL, ETH_CTL_MPE);	// disable everything
-	CEMAC_WRITE(ETH_IDR, -1);		// disable interrupts
-//	CEMAC_WRITE(ETH_RBQP, 0);		// clear receive
-	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM))
+	CEMAC_WRITE(ETH_CTL, 0);	// disable everything
+	CEMAC_WRITE(ETH_IDR, -1);	// disable interrupts
+//	CEMAC_WRITE(ETH_RBQP, 0);	// clear receive
+	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM)) {
 		CEMAC_WRITE(ETH_CFG,
 		    GEM_CFG_CLK_64 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
-	else
+	} else {
 		CEMAC_WRITE(ETH_CFG,
 		    ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
+	}
 //	CEMAC_WRITE(ETH_TCR, 0);			// send nothing
 //	(void)CEMAC_READ(ETH_ISR);
 	uint32_t u = CEMAC_READ(ETH_TSR);

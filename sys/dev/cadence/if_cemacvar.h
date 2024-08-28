@@ -47,6 +47,8 @@ struct cemac_softc {
 	device_t		sc_dev;
 	bus_space_tag_t		sc_iot;
 	bus_space_handle_t	sc_ioh;
+	bus_space_handle_t	sc_rp1;   // temporary
+	bus_space_handle_t	sc_pci;   // temporary
 	bus_dma_tag_t		sc_dmat;
 	uint8_t			sc_enaddr[ETHER_ADDR_LEN];
 	struct ethercom		sc_ethercom;
