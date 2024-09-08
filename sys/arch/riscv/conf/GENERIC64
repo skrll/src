@@ -56,6 +56,7 @@ fregulator* 	at fdt? pass 4
 # Clock and reset controller
 jh7100clkc* 	at fdt?	pass 2		# StarFive JH7100 clock controller
 jh7110clkc* 	at fdt?	pass 2		# StarFive JH7110 clock controller
+jh7110clkpll* 	at fdt?	pass 1		# StarFive JH7110 PLL clock controller
 sun20id1ccu* 	at fdt? pass 2		# Allwinner D1/D1s CCU
 
 # Security ID EFUSE
