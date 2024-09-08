@@ -415,10 +415,12 @@ static const char *i2srx_lrck_mst_parents[] = {
 };
 
 static struct jh71x0_clkc_clk jh7110_sysclk_clocks[] = {
+//XXXNH now provided by new driver
+#if 0
 	JH71X0CLKC_FIXED_FACTOR(JH7110_SYSCLK_PLL0_OUT,	"pll0_out",	"osc",	 3, 125),
 	JH71X0CLKC_FIXED_FACTOR(JH7110_SYSCLK_PLL1_OUT,	"pll1_out",	"osc",	12, 533),
 	JH71X0CLKC_FIXED_FACTOR(JH7110_SYSCLK_PLL2_OUT,	"pll2_out",	"osc",	 2,  99),
-
+#endif
 	JH71X0CLKC_MUX(JH7110_SYSCLK_CPU_ROOT, "cpu_root", cpu_root_parents),
 	JH71X0CLKC_MUX(JH7110_SYSCLK_GPU_ROOT, "gpu_root", gpu_root_parents),
 	JH71X0CLKC_MUX(JH7110_SYSCLK_BUS_ROOT, "bus_root", bus_root_parents),
