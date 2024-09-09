@@ -38,7 +38,9 @@ options 	BUFQ_PRIOCSCAN
 
 # These options enable verbose messages for several subsystems.
 # Warning, these may compile large string tables into the kernel!
-#options 	USBVERBOSE	# verbose USB device autoconfig messages
+options 	MIIVERBOSE	# verbose PHY autoconfig messages
+options 	PCIVERBOSE	# verbose PCI device autoconfig messages
+options 	USBVERBOSE	# verbose USB device autoconfig messages
 
 #
 # Because gcc omits the frame pointer for any -O level, the line below
