@@ -360,6 +360,7 @@ jh71x0_clkc_fracdiv_set_rate(struct jh71x0_clkc_softc *sc,
 	if (clk_parent == NULL)
 		return ENXIO;
 
+	panic("Implement me");
 #if 0
 	if (jcc_div->jcd_maxdiv == 0)
 		return ENXIO;
