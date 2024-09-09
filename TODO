@@ -1,0 +1,219 @@
+TRNG
+
+(and rnd_attach_source will immediately trigger the jh7110_trng_get callback,
+so you don't need to worry about writing logic yourself to prime the transfer)
+
+But I do suggest you stash bytes_wanted as sc->sc_bytes_wanted,
+and then decrement it and in the interrupt handler and reschedule
+if not enough was returned.
+
+You can test this by setting
+    sysctl -w kern.entropy.gather=1
+or
+    sysctl -w kern.entropy.depletion=1
+
+and then read from /dev/random or something.
+
+skrll (@skrll:netbsd.org): sys/arch/arm/rockchip/rk_v1crypto.c
+has an example of a sysctl (never returns the same data that it puts
+into the entropy pool -- each sample is either returned by sysctl or
+put in the entropy pool, but not both)
+
+
+
+just to make sure it doesn't look obviously wrong, like all zeroes or
+all 0101010101 or something
+
+
+(and different each time)
+(not that these possibilities all have zero probability, but the conditional
+probability of a hardware failure or driver bug given that you see 128 zero
+bits is a lot higher than if you see, say, 85c80bb2aa8a502194097ee0a4df96b4)
+
+
+PCI
+====
+
+- {arm,riscv}_pci_msi_add
+- {arm,riscv}_pci_msi
+
+arch/riscv64/dev/stfrng.c:      return OF_is_compatible(faa->fa_node, "starfive,jh7110-trng");
+
+
+nick@ubuntu:~$ sudo dd if=/dev/mmcblk1 of=/dev/null bs=1M count=1024
+[sudo] password for nick:
+[  103.081272] I/O error, dev mmcblk1, sector 1851800 op 0x0:(READ) flags 0x80700 phys_seg 1 prio class 0
+^C998+0 records in
+997+0 records out
+1045430272 bytes (1.0 GB, 997 MiB) copied, 44.7096 s, 23.4 MB/s
+
+nick@ubuntu:~$
+
+nick@ubuntu:~$ sudo dd if=/dev/nvme0n1 of=/dev/null  bs=1M count=1024
+1024+0 records in
+1024+0 records out
+1073741824 bytes (1.1 GB, 1.0 GiB) copied, 3.83265 s, 280 MB/s
+nick@ubuntu:~$
+
+
+1073741824 bytes transferred in 16.367 secs (65604070 bytes/sec)
+
+
+commit a3fd9ccd2992e33e45c4ee35fb816cb267314f0a
+Author: kettenis <kettenis@openbsd.org>
+Date:   Wed Mar 27 23:10:18 2024 +0000
+
+    The RISC-V architecture specification says that memory read/writes are
+    not ordered with respect to mmio read/writes.  This appears to happen on
+    T-Head C920 cores as I'm seeing interrupts being enabled before the lock
+    is released in mtx_leave() despite program order releasing the lock
+    before enabling interrupts.  This is fixed by adding the necessary fences
+    in more or less the same places where Linux uses them.
+
+commit f7b9cd43a797274db7730233a296bc2893df4f44
+Author: kettenis <kettenis@openbsd.org>
+Date:   Tue Mar 26 22:26:04 2024 +0000
+
+    Implement support for the RISC-V UEFI Boot Protocol.  This provides us
+    the boot hart ID for firmware that doesn't provide it through the device
+    tree such as the EDK2-based firmware for the Sophgo SG2042 SoC.
+
+
+commit 84aa31c6dccc7ce19e85f1b6fd453682af038fa3
+Author: kettenis <kettenis@openbsd.org>
+Date:   Tue Jan 23 19:51:10 2024 +0000
+
+    T-Head implemented a page attribute extension that violates the RISC-V
+    specification.  The default attributes result in memory being uncached
+    which makes the system perform like a slug.  So implement a workaround
+    that is designed to make implementation of the Svpbmt extension that is
+    part of the latest published RISC-V specification.  This gets us a bit
+    further booting OpenBSD on an Allwinner D1 SoC.
+
+commit ff9b32b90760849db29e606a8acc9cdc3fe698ec
+Author: jca <jca@openbsd.org>
+Date:   Sun Sep 24 18:49:29 2023 +0000
+
+    Drop PTE check in pmap_fault_fixup().  Since pmap_enter() doesn't
+    add PTE's for pages that haven't been accessed yet, the check would
+    skip the fixup on such pages and force us to go through uvm_fault()
+    just for the sake of MOD/REF bit emulation.  Since we already check
+    the PTE descriptor, dropping the check should be safe.  Doing so
+    gives us a nice 10% performance gain when building a kernel.
+
+commit d1efa468b4621baf72d8645ae750741c2ca6d85e
+Author: kettenis <kettenis@openbsd.org>
+Date:   Tue Sep 19 19:15:08 2023 +0000
+
+    Instead of adjusting PLL0 to scale the CPU frequency, use the divider
+    of the actual CPU clock.  This prevents one of the GMAC0 clocks changing
+    when we change the CPU frequency, which would break one of the Ethernet
+    ports on the VisionFive 2 v1.2a.
+
+    However, since the firmware configures PLL0 to 1 GHz, we still need to
+    bump it up to 1.5 GHz in order to reach the highest supported CPU clock
+    rates.
+
+commit 615e1349b4971a05c672f46e027d05f5a30f9122
+Author: kettenis <kettenis@openbsd.org>
+Date:   Wed Aug 30 19:07:23 2023 +0000
+
+    Implement a few more clocks related to the GMAC.
+
+commit 5fdc23b642b8bb498cbc5281425ef54440816f6e
+Author: kettenis <kettenis@openbsd.org>
+Date:   Tue Aug 1 18:20:07 2023 +0000
+
+    Add (limited) support for setting PPL0 on JH7110.
+
+
+
+commit 662594acffd618927a206efc360961219178e9d3
+Author: kettenis <kettenis@openbsd.org>
+Date:   Fri Jul 7 08:43:47 2023 +0000
+
+    Add a few more JH7110 clocks.
+
+commit a268c146e7057da52b1d3f23fcff8b342c294e78
+Author: kettenis <kettenis@openbsd.org>
+Date:   Wed Jul 5 11:07:36 2023 +0000
+
+    Implement support for the GPIOs on the JH7110.  Makes it possible to reboot
+    the VisionFive 2 from OpenBSD.
+
+
+https://lupyuen.github.io/articles/plic3#appendix-mmu-caching-for-t-head-c906
+
+
+If we don’t specify MMU Caching for T-Head C906… Is MMU Caching enabled by default?
+
+Nope, we need to explicitly enable MMU Caching ourselves! Otherwise Memory Accesses (Kernel and Apps) will become really slooooow.
+
+According to Linux Kernel, this is how we define the Cache Flags for T-Head C906: bl808_mm_init.c
+
+// T-Head C906 MMU Extensions
+#define MMU_THEAD_SHAREABLE  (1ul << 60)
+#define MMU_THEAD_BUFFERABLE (1ul << 61)
+#define MMU_THEAD_CACHEABLE  (1ul << 62)
+
+// T-Head C906 MMU requires Kernel Memory
+// to be explicitly cached with these flags
+#define MMU_THEAD_PMA_FLAGS \
+  (MMU_THEAD_SHAREABLE | \
+   MMU_THEAD_BUFFERABLE | \
+   MMU_THEAD_CACHEABLE)
+
+Then we cache the Kernel Text, Data and Heap, by passing MMU_THEAD_PMA_FLAGS: bl808_mm_init.c
+
+// Cache the Kernel Text, Data and Page Pool
+map_region(KFLASH_START, KFLASH_START, KFLASH_SIZE,
+  MMU_KTEXT_FLAGS | MMU_THEAD_PMA_FLAGS);
+
+map_region(KSRAM_START, KSRAM_START, KSRAM_SIZE,
+  MMU_KDATA_FLAGS | MMU_THEAD_PMA_FLAGS);
+
+mmu_ln_map_region(2, PGT_L2_VBASE, PGPOOL_START, PGPOOL_START, PGPOOL_SIZE,
+  MMU_KDATA_FLAGS | MMU_THEAD_PMA_FLAGS);
+
+(See the Pull Request for Ox64 and SG2000)
+
+What about User Text and Data? For NuttX Apps?
+
+Yep they need to be explicitly cached too!
+
+This is how we cache the User Text and Data, by setting the Extra MMU Flags: arch/risc-v/src/common/riscv_mmu.h
+
+// T-Head MMU needs Text and Data to be Shareable, Bufferable, Cacheable
+#ifdef CONFIG_ARCH_MMU_EXT_THEAD
+#  define PTE_SEC         (1UL << 59) /* Security */
+#  define PTE_SHARE       (1UL << 60) /* Shareable */
+#  define PTE_BUF         (1UL << 61) /* Bufferable */
+#  define PTE_CACHE       (1UL << 62) /* Cacheable */
+#  define PTE_SO          (1UL << 63) /* Strong Order */
+
+#  define EXT_UTEXT_FLAGS (PTE_SHARE | PTE_BUF | PTE_CACHE)
+#  define EXT_UDATA_FLAGS (PTE_SHARE | PTE_BUF | PTE_CACHE)
+#else
+#  define EXT_UTEXT_FLAGS (0)
+#  define EXT_UDATA_FLAGS (0)
+#endif
+
+// Flags for user FLASH (RX) and user RAM (RW)
+#define MMU_UTEXT_FLAGS (PTE_R | PTE_X | PTE_U | EXT_UTEXT_FLAGS)
+#define MMU_UDATA_FLAGS (PTE_R | PTE_W | PTE_U | EXT_UDATA_FLAGS)
+
+(MMU_UTEXT_FLAGS and MMU_UDATA_FLAGS are used by up_addrenv_create to configure the User Text, Data and Heap)
+
+Then we enable ARCH_MMU_EXT_THEAD for SG2000 and BL808: arch/risc-v/Kconfig
+
+config ARCH_CHIP_SG2000
+	select ARCH_MMU_TYPE_SV39
+	select ARCH_MMU_EXT_THEAD
+	...
+config ARCH_CHIP_BL808
+	select ARCH_MMU_TYPE_SV39
+	select ARCH_MMU_EXT_THEAD
+
+(See the Pull Request for SG2000)
+
+(See the Pull Request for BL808)
