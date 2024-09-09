@@ -55,9 +55,12 @@ jh71x0_clkc_update(struct jh71x0_clkc_softc * const sc,
 {
 	// lock
 	uint32_t val = RD4(sc, jcc->jcc_reg);
+	uint32_t before = val;
 	val &= ~clr;
 	val |=  set;
 	WR4(sc, jcc->jcc_reg, val);
+	aprint_verbose("%s: %04" PRIxBUSADDR " = %#10x(was %#10x) called from %p\n",
+	    __func__, jcc->jcc_reg, val, before, __builtin_return_address(0));
 }
 
 /*
@@ -70,6 +73,7 @@ jh71x0_clkc_fixed_factor_get_parent_rate(struct clk *clk)
 	struct clk *clk_parent = clk_get_parent(clk);
 	if (clk_parent == NULL)
 		return 0;
+aprint_verbose("%s: %u (rate)\n", __func__, clk_get_rate(clk_parent));
 
 	return clk_get_rate(clk_parent);
 }
@@ -87,8 +91,13 @@ jh71x0_clkc_fixed_factor_get_rate(struct jh71x0_clkc_softc *sc,
 	if (rate == 0)
 		return 0;
 
+	uint64_t tmp = rate;
+
 	rate *= jcff->jcff_mult;
 	rate /= jcff->jcff_div;
+
+aprint_verbose("%s: %u (rate) (%"PRIu64") (%"PRIu64" * %u / %u)\n", __func__,
+    (u_int)rate, rate, tmp, jcff->jcff_mult, jcff->jcff_div);
 
 	return rate;
 }
@@ -99,6 +108,8 @@ jh71x0_clkc_fixed_factor_set_parent_rate(struct clk *clk, u_int rate)
 	struct clk *clk_parent = clk_get_parent(clk);
 	if (clk_parent == NULL)
 		return ENXIO;
+
+aprint_verbose("%s: %u (set parent)\n", __func__, rate);
 
 	return clk_set_rate(clk_parent, rate);
 }
@@ -117,6 +128,8 @@ jh71x0_clkc_fixed_factor_set_rate(struct jh71x0_clkc_softc *sc,
 	tmp *= jcff->jcff_div;
 	tmp /= jcff->jcff_mult;
 
+aprint_verbose("%s: %u (set parent)\n", __func__, (u_int)tmp);
+
 	return jh71x0_clkc_fixed_factor_set_parent_rate(clk, tmp);
 }
 
@@ -127,6 +140,8 @@ jh71x0_clkc_fixed_factor_get_parent(struct jh71x0_clkc_softc *sc,
 	KASSERT(jcc->jcc_type == JH71X0CLK_FIXED_FACTOR);
 
 	struct jh71x0_clkc_fixed_factor * const jcff = &jcc->jcc_ffactor;
+
+aprint_verbose("%s: '%s' has parent '%s'\n", __func__, jcc->jcc_clk.name, jcff->jcff_parent);
 
 	return jcff->jcff_parent;
 }
@@ -144,6 +159,8 @@ jh71x0_clkc_mux_set_parent(struct jh71x0_clkc_softc *sc,
 
 	struct jh71x0_clkc_mux * const jcm = &jcc->jcc_mux;
 
+	aprint_verbose("%s: '%s' setting parent to'%s'\n", __func__, jcc->jcc_clk.name, name);
+
 	size_t i;
 	for (i = 0; i < jcm->jcm_nparents; i++) {
 		if (jcm->jcm_parents[i] != NULL &&
@@ -156,8 +173,11 @@ jh71x0_clkc_mux_set_parent(struct jh71x0_clkc_softc *sc,
 	KASSERT(i <= __SHIFTOUT_MASK(JH71X0_CLK_MUX_MASK));
 
 	uint32_t val = RD4(sc, jcc->jcc_reg);
+	uint32_t before = val;
 	val &= ~JH71X0_CLK_MUX_MASK;
 	val |= __SHIFTIN(i, JH71X0_CLK_MUX_MASK);
+	aprint_verbose("%s: %04" PRIxBUSADDR    " = %08x(%08x)\n", __func__,
+		jcc->jcc_reg, val, before);
 	WR4(sc, jcc->jcc_reg, val);
 
 	return 0;
@@ -176,6 +196,8 @@ jh71x0_clkc_mux_get_parent(struct jh71x0_clkc_softc *sc,
 	if (pindex >= jcc->jcc_mux.jcm_nparents)
 		return NULL;
 
+aprint_verbose("%s: '%s' has parent '%s'\n", __func__, jcc->jcc_clk.name, jcc->jcc_mux.jcm_parents[pindex]);
+
 	return jcc->jcc_mux.jcm_parents[pindex];
 }
 
@@ -193,6 +215,8 @@ jh71x0_clkc_gate_enable(struct jh71x0_clkc_softc *sc,
 	jh71x0_clkc_update(sc, jcc,
 	    (enable ? JH71X0_CLK_ENABLE : 0), JH71X0_CLK_ENABLE);
 
+aprint_verbose("%s: '%s' has been %s\n", __func__, jcc->jcc_clk.name, enable ? "enabled" : "disabled");
+
 	return 0;
 }
 
@@ -204,6 +228,7 @@ jh71x0_clkc_gate_get_parent(struct jh71x0_clkc_softc *sc,
 
 	struct jh71x0_clkc_gate *jcc_gate = &jcc->jcc_gate;
 
+aprint_verbose("%s: '%s' has parent '%s'\n", __func__, jcc->jcc_clk.name, jcc_gate->jcg_parent);
 	return jcc_gate->jcg_parent;
 }
 
@@ -224,12 +249,17 @@ jh71x0_clkc_div_get_rate(struct jh71x0_clkc_softc *sc,
 	if (clk_parent == NULL)
 		return 0;
 
+aprint_verbose("\n%s: getting parent '%s' rate of '%s' = ...\n", __func__, clk_parent->name, clk->name);
 	u_int rate = clk_get_rate(clk_parent);
+  aprint_verbose("%s: got     parent '%s' rate of '%s' = %u\n", __func__, clk_parent->name, clk->name, rate);
 	if (rate == 0)
 		return 0;
 
 	uint32_t val = RD4(sc, jcc->jcc_reg);
 	uint32_t div = __SHIFTOUT(val, JH71X0_CLK_DIV_MASK);
+
+aprint_verbose("%s: '%s' %u (rate) val %#08x div %d\n", __func__, clk->name,
+    div != 0 ? rate / div : 0, val, div);
 
 	return rate / div;
 }
@@ -244,20 +274,28 @@ jh71x0_clkc_div_set_rate(struct jh71x0_clkc_softc *sc,
 	struct clk * const clk = &jcc->jcc_clk;
 	struct clk * const clk_parent = clk_get_parent(clk);
 
+aprint_verbose("%s: clk '%s' new_rate %u\n", __func__, clk->name,
+    new_rate);
+
 	if (clk_parent == NULL)
 		return ENXIO;
 
 	if (jcc_div->jcd_maxdiv == 0)
 		return ENXIO;
 
+aprint_verbose("%s: getting parent (%s) rate of %s\n", __func__, clk_parent->name, clk->name);
 	u_int parent_rate = clk_get_rate(clk_parent);
 	if (parent_rate == 0) {
 		return (new_rate == 0) ? 0 : ERANGE;
 	}
+aprint_verbose("%s: got     parent (%p) rate of %p\n", __func__, clk_parent, clk);
 	u_int ratio = howmany(parent_rate, new_rate);
 	u_int div = uimin(ratio, jcc_div->jcd_maxdiv);
 
 	KASSERT(div <= __SHIFTOUT_MASK(JH71X0_CLK_DIV_MASK));
+
+aprint_verbose("%s: clk '%s' new_rate %u %u/%u (ratio of %u:%u)\n",
+    __func__, clk->name, new_rate, div, ratio, parent_rate, new_rate);
 
 	jh71x0_clkc_update(sc, jcc,
 	    __SHIFTIN(div, JH71X0_CLK_DIV_MASK), JH71X0_CLK_DIV_MASK);
@@ -293,8 +331,9 @@ jh71x0_clkc_fracdiv_get_rate(struct jh71x0_clkc_softc *sc,
 	if (clk_parent == NULL)
 		return 0;
 
-
+aprint_verbose("\n%s: getting parent '%s' rate of '%s' = ...\n", __func__, clk_parent->name, clk->name);
 	u_int rate = clk_get_rate(clk_parent);
+  aprint_verbose("%s: got     parent '%s' rate of '%s' = %u\n", __func__, clk_parent->name, clk->name, rate);
 	if (rate == 0)
 		return 0;
 
@@ -302,6 +341,9 @@ jh71x0_clkc_fracdiv_get_rate(struct jh71x0_clkc_softc *sc,
 	unsigned long div100 =
 	    100UL * __SHIFTOUT(val, JH71X0_CLK_INT_MASK) +
 		    __SHIFTOUT(val, JH71X0_CLK_FRAC_MASK);
+
+aprint_verbose("%s: '%s' %lu (rate) val %#08x div100 %lu\n", __func__, clk->name,
+    div100 >= JH71X0_CLK_FRAC_MIN ? 100UL * rate / div100 : 0, val, div100);
 
 	return (div100 >= JH71X0_CLK_FRAC_MIN) ? 100UL * rate / div100 : 0;
 }
@@ -573,6 +615,8 @@ jh71x0_clkc_get_rate(void *priv, struct clk *clk)
 		return 0;
 	}
 
+aprint_verbose("%s: get rate for '%s'\n", __func__, clk->name);
+
 	return clk_get_rate(clk_parent);
 }
 
@@ -582,6 +626,8 @@ jh71x0_clkc_enable(void *priv, struct clk *clk)
 	struct jh71x0_clkc_softc * const sc = priv;
 	struct jh71x0_clkc_clk * const jcc =
 	    container_of(clk, struct jh71x0_clkc_clk, jcc_clk);
+
+aprint_verbose("%s: enabling '%s' (%p/%p)\n", __func__, clk->name, clk, jcc);
 
 	struct clk * const clk_parent = clk_get_parent(clk);
 	if (clk_parent != NULL) {
@@ -617,7 +663,7 @@ jh71x0_clkc_enable(void *priv, struct clk *clk)
 		break;
 
 	default:
-		printf("%s: type %d\n", __func__, jcc->jcc_type);
+		aprint_verbose("%s: type %d\n", __func__, jcc->jcc_type);
 		return ENXIO;
 	}
 	return 0;
@@ -688,6 +734,8 @@ jh71x0_clkc_set_parent(void *priv, struct clk *clk,
 	struct jh71x0_clkc_softc * const sc = priv;
 	struct jh71x0_clkc_clk * const jcc =
 	    container_of(clk, struct jh71x0_clkc_clk, jcc_clk);
+
+aprint_verbose("%s: '%s' (%p/%p)\n", __func__, clk->name, clk, jcc);
 
 	if (jcc->jcc_ops->jcco_setparent == NULL)
 		return EINVAL;
