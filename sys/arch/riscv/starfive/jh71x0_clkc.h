@@ -71,6 +71,8 @@ struct jh71x0_clkc_softc {
 	bus_size_t		sc_reset_status;
 
 	kmutex_t		sc_lock;
+
+	const char *		sc_name;
 };
 
 struct jh71x0_clkc_clk;
@@ -84,6 +86,9 @@ enum jh71x0_clkc_clktype {
 	JH71X0CLK_DIV,
 	JH71X0CLK_FRACDIV,
 	JH71X0CLK_MUX,
+#if 0
+	JH71X0CLK_GATEMUX,
+#endif
 	JH71X0CLK_MUXDIV,
 	JH71X0CLK_INV,
 };
