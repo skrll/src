@@ -630,7 +630,7 @@ jh7100_clkc_attach(device_t parent, device_t self, void *aux)
 
 		struct clk * const clk = &sc->sc_clk[id].jcc_clk;
 
-		aprint_debug_dev(self, "id %zu [%s]: %u Hz\n", id,
+		aprint_debug_dev(self, "\n\nid %zu [%s]: %u Hz\n", id,
 		    clk->name ? clk->name : "<none>", clk_get_rate(clk));
 	}
 
