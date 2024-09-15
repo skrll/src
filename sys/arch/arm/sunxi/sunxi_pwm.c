@@ -55,10 +55,12 @@ __KERNEL_RCSID(1, "$NetBSD: sunxi_pwm.c,v 1.7 2021/01/27 03:10:20 thorpej Exp $"
 #define	 PWM_CH0_ENTIRE_ACT_CYS	__BITS(15,0)
 
 enum sunxi_pwm_type {
-	PWM_A64 = 1,
+	PWM_A20 = 1,
+	PWM_A64,
 };
 
 static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun7i-a20-pwm",	.value = PWM_A20 },
 	{ .compat = "allwinner,sun50i-a64-pwm",	.value = PWM_A64 },
 	DEVICE_COMPAT_EOL
 };

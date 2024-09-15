@@ -53,8 +53,13 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_drm.c,v 1.26 2022/09/25 07:50:23 riastradh Exp
 #include <drm/drm_fourcc.h>
 #include <drm/drm_vblank.h>
 
+#ifdef SOC_SUN8I_V3S
+#define	SUNXI_DRM_MAX_WIDTH	1024
+#define	SUNXI_DRM_MAX_HEIGHT	1024
+#else
 #define	SUNXI_DRM_MAX_WIDTH	3840
 #define	SUNXI_DRM_MAX_HEIGHT	2160
+#endif
 
 /*
  * The DRM headers break trunc_page/round_page macros with a redefinition

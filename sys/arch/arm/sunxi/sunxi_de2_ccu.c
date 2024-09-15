@@ -76,6 +76,19 @@ static struct sunxi_ccu_clk sun8i_h3_de2_ccu_clks[] = {
 	SUNXI_CCU_GATE(DE2_CLK_WB, "wb", "wb-div", 0x00, 2),
 };
 
+static struct sunxi_ccu_clk sun8i_v3s_de2_ccu_clks[] = {
+	SUNXI_CCU_GATE(DE2_CLK_BUS_MIXER0, "bus-mixer0", "bus", 0x04, 0),
+	SUNXI_CCU_GATE(DE2_CLK_BUS_WB, "bus-wb", "bus", 0x04, 2),
+
+	SUNXI_CCU_DIV(DE2_CLK_MIXER0_DIV, "mixer0-div", mod_parents,
+	    0x0c, __BITS(3,0), 0, SUNXI_CCU_DIV_SET_RATE_PARENT),
+	SUNXI_CCU_DIV(DE2_CLK_WB_DIV, "wb-div", mod_parents,
+	    0x0c, __BITS(11,8), 0, SUNXI_CCU_DIV_SET_RATE_PARENT),
+
+	SUNXI_CCU_GATE(DE2_CLK_MIXER0, "mixer0", "mixer0-div", 0x00, 0),
+	SUNXI_CCU_GATE(DE2_CLK_WB, "wb", "wb-div", 0x00, 2),
+};
+
 struct sunxi_de2_ccu_config {
 	struct sunxi_ccu_reset	*resets;
 	u_int			nresets;
@@ -90,6 +103,13 @@ static const struct sunxi_de2_ccu_config sun8i_h3_de2_config = {
 	.nclks = __arraycount(sun8i_h3_de2_ccu_clks),
 };
 
+static const struct sunxi_de2_ccu_config sun8i_v3s_de2_config = {
+	.resets = sun8i_h3_de2_ccu_resets,
+	.nresets = __arraycount(sun8i_h3_de2_ccu_resets),
+	.clks = sun8i_v3s_de2_ccu_clks,
+	.nclks = __arraycount(sun8i_v3s_de2_ccu_clks),
+};
+
 static const struct sunxi_de2_ccu_config sun50i_a64_de2_config = {
 	.resets = sun50i_a64_de2_ccu_resets,
 	.nresets = __arraycount(sun50i_a64_de2_ccu_resets),
@@ -101,7 +121,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "allwinner,sun8i-h3-de2-clk",
 	  .data = &sun8i_h3_de2_config },
 	{ .compat = "allwinner,sun8i-v3s-de2-clk",
-	  .data = &sun8i_h3_de2_config },
+	  .data = &sun8i_v3s_de2_config },
 	{ .compat = "allwinner,sun50i-a64-de2-clk",
 	  .data = &sun50i_a64_de2_config },
 	{ .compat = "allwinner,sun50i-h5-de2-clk",

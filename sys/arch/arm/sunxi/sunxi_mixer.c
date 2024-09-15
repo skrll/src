@@ -53,7 +53,11 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_mixer.c,v 1.19 2022/06/28 05:19:03 skrll Exp $
 #define	MIXER_CURSOR_MAXWIDTH	256
 #define	MIXER_CURSOR_MAXHEIGHT	256
 
+#ifdef SOC_SUN8I_V3S
+#define	SUNXI_MIXER_FREQ	150000000
+#else
 #define	SUNXI_MIXER_FREQ	432000000
+#endif
 
 #define	GLB_BASE		0x00000
 #define	BLD_BASE		0x01000

@@ -1,7 +1,7 @@
 /* $NetBSD: sun8i_v3s_ccu.c,v 1.1 2021/05/05 10:24:04 jmcneill Exp $ */
 
 /*-
- * Copyright (c) 2021 Rui-Xiang Guo
+ * Copyright (c) 2021,2024 Rui-Xiang Guo
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
  * Copyright (c) 2017 Emmanuel Vadot <manu@freebsd.org>
  * All rights reserved.
@@ -59,6 +59,7 @@ __KERNEL_RCSID(1, "$NetBSD: sun8i_v3s_ccu.c,v 1.1 2021/05/05 10:24:04 jmcneill E
 #define	SDMMC0_CLK_REG		0x088
 #define	SDMMC1_CLK_REG		0x08c
 #define	SDMMC2_CLK_REG		0x090
+#define	CE_CLK_REG		0x09c
 #define	SPI_CLK_REG		0x0a0
 #define	USBPHY_CFG_REG		0x0cc
 #define	MBUS_RST_REG		0x0fc
@@ -122,6 +123,8 @@ static const char *ahb2_parents[] = { "ahb1", "pll_periph0" };
 static const char *apb1_parents[] = { "ahb1" };
 static const char *apb2_parents[] = { "losc", "hosc", "pll_periph0" };
 static const char *mod_parents[] = { "hosc", "pll_periph0", "pll_periph1" };
+static const char *ce_parents[] = { "hosc", "pll_periph0" };
+static const char *de_parents[] = { "pll_video", "pll_periph0" };
 static const char *tcon_parents[] = { "pll_video" };
 
 static const struct sunxi_ccu_nkmp_tbl sun8i_v3s_cpu_table[] = {
@@ -302,6 +305,14 @@ static struct sunxi_ccu_clk sun8i_v3s_ccu_clks[] = {
 	SUNXI_CCU_PHASE(V3S_CLK_MMC2_OUTPUT, "mmc2_output", "mmc2",
 	    SDMMC2_CLK_REG, __BITS(10,8)),
 
+	SUNXI_CCU_NM(V3S_CLK_CE, "ce", ce_parents,
+	    CE_CLK_REG,		/* reg */
+	    __BITS(17,16),	/* n */
+	    __BITS(3,0),	/* m */
+	    __BITS(25,24),	/* sel */
+	    __BIT(31),		/* enable */
+	    SUNXI_CCU_NM_POWER_OF_TWO|SUNXI_CCU_NM_ROUND_DOWN),
+
 	SUNXI_CCU_NM(V3S_CLK_SPI, "spi", mod_parents,
 	    SPI_CLK_REG,	/* reg */
 	    __BITS(17,16),	/* n */
@@ -313,6 +324,13 @@ static struct sunxi_ccu_clk sun8i_v3s_ccu_clks[] = {
 	SUNXI_CCU_GATE(V3S_CLK_AC_DIG, "ac_dig", "pll_audio",
 	    AC_DIG_CLK_REG, 31),
 
+	SUNXI_CCU_DIV_GATE(V3S_CLK_DE, "de", de_parents,
+	    DE_CLK_REG,		/* reg */
+	    __BITS(3,0),	/* div */
+	    __BITS(26,24),	/* sel */
+	    __BIT(31),		/* enable */
+	    0),
+
 	SUNXI_CCU_DIV_GATE(V3S_CLK_TCON, "tcon", tcon_parents,
 	    TCON_CLK_REG,	/* reg */
 	    __BITS(3,0),	/* div */
@@ -320,6 +338,8 @@ static struct sunxi_ccu_clk sun8i_v3s_ccu_clks[] = {
 	    __BIT(31),		/* enable */
 	    0),
 
+	SUNXI_CCU_GATE(V3S_CLK_BUS_CE, "bus-ce", "ahb1",
+	    BUS_CLK_GATING_REG0, 5),
 	SUNXI_CCU_GATE(V3S_CLK_BUS_DMA, "bus-dma", "ahb1",
 	    BUS_CLK_GATING_REG0, 6),
 	SUNXI_CCU_GATE(V3S_CLK_BUS_MMC0, "bus-mmc0", "ahb1",
