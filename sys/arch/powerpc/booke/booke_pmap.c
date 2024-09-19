@@ -376,14 +376,14 @@ pmap_copy_page(paddr_t src, paddr_t dst)
 		     src_va += 32, dst_va += 32, i += 32) {
 			register_t tmp;
 			__asm __volatile(
-				"mr	%[tmp],31"	"\n\t"
+				"stw	31,%[tmp]"	"\n\t"
 				"lmw	24,0(%[src])"	"\n\t"
 				"stmw	24,0(%[dst])"	"\n\t"
-				"mr	31,%[tmp]"	"\n\t"
-			    : [tmp] "=&r"(tmp)
+				"lwz	31,%[tmp]"	"\n\t"
+			    : [tmp] "=m"(tmp)
 			    : [src] "b"(src_va), [dst] "b"(dst_va)
 			    : "r24", "r25", "r26", "r27",
-			      "r28", "r29", "r30", "memory");
+			      "r28", "r29", "r30", "r31", "memory");
 		}
 	}
 	pmap_md_unmap_poolpage(src_va, NBPG);
