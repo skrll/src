@@ -20,7 +20,7 @@ options 	PIXIS
 #options 	SYS_CLK=100000000
 #options 	HZ=1000
 #options 	MEMSIZE=0x40000000
-#options 	PMAP_MINIMALTLB
+options 	PMAP_MINIMALTLB
 #makeoptions	KERNLDSCRIPT="${POWERPC}/conf/kern-mb.ldscript"
 
 makeoptions	NEED_BINARY="yes"
