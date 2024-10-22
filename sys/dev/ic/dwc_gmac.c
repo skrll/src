@@ -646,6 +646,7 @@ fail:
 static void
 dwc_gmac_free_dma_rings(struct dwc_gmac_softc *sc)
 {
+// ugh sc_dma_ring_map might not exist
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_dma_ring_map, 0,
 	    sc->sc_dma_ring_map->dm_mapsize, BUS_DMASYNC_POSTWRITE);
 	bus_dmamap_unload(sc->sc_dmat, sc->sc_dma_ring_map);
