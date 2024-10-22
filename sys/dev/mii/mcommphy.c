@@ -293,9 +293,14 @@ mcomm_yt8511_init(struct mcomm_softc *msc)
 
 	PHY_READ(sc, YTPHY_EXT_REG_ADDR, &oldaddr);
 
+	aprint_debug_dev(sc->mii_dev, "%s: Setting register to %#06x "
+	    "(clock gating)\n", __func__, YT8511_CLOCK_GATING_REG);
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, YT8511_CLOCK_GATING_REG);
 
 	PHY_READ(sc, YTPHY_EXT_REG_DATA, &data);
+
+	aprint_debug_dev(sc->mii_dev, "%s: clock gating = %#06x (read)\n",
+	    __func__, data);
 
 	data &= ~YT8511_CLK_25M_SEL;
 	data |= __SHIFTIN(YT8511_CLK_25M_SEL_125M, YT8511_CLK_25M_SEL);
@@ -312,13 +317,23 @@ mcomm_yt8511_init(struct mcomm_softc *msc)
 	}
 	PHY_WRITE(sc, YTPHY_EXT_REG_DATA, data);
 
+	aprint_debug_dev(sc->mii_dev, "%s: clock gating = %#06x (write)\n",
+	    __func__, data);
+
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, YT8511_SLEEP_CONTROL1_REG);
 	PHY_READ(sc, YTPHY_EXT_REG_DATA, &data);
 
+	aprint_debug_dev(sc->mii_dev, "%s: sleep control1 = %#06x (read)\n",
+	    __func__, data);
+
 	data |= YT8511_PLLON_IN_SLP;
+	aprint_debug_dev(sc->mii_dev, "%s: sleep control1 = %#06x (write)\n",
+	    __func__, data);
 
 	PHY_WRITE(sc, YTPHY_EXT_REG_DATA, data);
 
+	aprint_debug_dev(sc->mii_dev, "%s: Setting register to %#06x "
+	    "(old)\n", __func__, oldaddr);
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, oldaddr);
 }
 
@@ -338,6 +353,9 @@ mcomm_yt8521_init(struct mcomm_softc *msc)
 	u_int rx_delay = msc->sc_rx_internal_delay_ps;
 	if (rx_delay <= 15 * 150 && rx_delay % 150 == 0) {
 		rx_delay_val = YT8521_DELAY_PS(rx_delay);
+		aprint_debug_dev(sc->mii_dev,
+		    "%s: rx delay %u -> %u/false\n", __func__,
+		    rx_delay, rx_delay_val);
 	} else {
 		/* It's OK if this underflows */
 		rx_delay -= 1900;
@@ -346,28 +364,50 @@ mcomm_yt8521_init(struct mcomm_softc *msc)
 			rx_delay_val = YT8521_DELAY_PS(rx_delay);
 		} else {
 			rx_delay_val = YT8521_DELAY_PS(YT8521_DELAY_DEFAULT);
+			aprint_debug_dev(sc->mii_dev,
+			    "%s: rx delay %u -> %u/default\n", __func__,
+			    YT8521_DELAY_DEFAULT, rx_delay_val);
 		}
 	}
 
 	u_int tx_delay = msc->sc_tx_internal_delay_ps;
 	if (tx_delay <= 15 * 150 && tx_delay % 150 == 0) {
 		tx_delay_val = YT8521_DELAY_PS(tx_delay);
+		aprint_debug_dev(sc->mii_dev,
+		    "%s: tx delay %u -> %u\n", __func__,
+		    tx_delay, tx_delay_val);
 	} else {
 		tx_delay_val = YT8521_DELAY_PS(YT8521_DELAY_DEFAULT);
+		aprint_debug_dev(sc->mii_dev,
+		    "%s: tx delay %u -> %u/default\n", __func__,
+		    YT8521_DELAY_DEFAULT, rx_delay_val);
 	}
 
+	aprint_debug_dev(sc->mii_dev, "Setting register to %#06x "
+	    "(chip config)\n", YT8521_EXT_CHIP_CONFIG);
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, YT8521_EXT_CHIP_CONFIG);
+
 	PHY_READ(sc, YTPHY_EXT_REG_DATA, &data);
+	aprint_debug_dev(sc->mii_dev, "%s: chip config = %#06x (read)\n",
+	    __func__, data);
 
 	if (rx_delay_en)
 		data |= YT8521_RXC_DLY_EN;
 	else
 		data &= ~YT8521_RXC_DLY_EN;
 
+	aprint_debug_dev(sc->mii_dev, "%s: chip config = %#06x (write)\n",
+	    __func__, data);
+
 	PHY_WRITE(sc, YTPHY_EXT_REG_DATA, data);
 
+	aprint_debug_dev(sc->mii_dev, "%s: Setting register to %#06x "
+	    "(rgmii config1)\n", __func__, YT8521_EXT_RGMII_CONFIG1);
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, YT8521_EXT_RGMII_CONFIG1);
 	PHY_READ(sc, YTPHY_EXT_REG_DATA, &data);
+
+	aprint_debug_dev(sc->mii_dev, "%s: rgmii config1 = %#06x (read)\n",
+	    __func__, data);
 
 	data &= ~(YT8521_RX_DELAY_SEL_MASK | YT8521_GE_TX_DELAY_SEL_MASK);
 	// XXX FE?
@@ -375,9 +415,15 @@ mcomm_yt8521_init(struct mcomm_softc *msc)
 	    __SHIFTIN(rx_delay_val, YT8521_RX_DELAY_SEL_MASK) |
 	    __SHIFTIN(tx_delay_val, YT8521_GE_TX_DELAY_SEL_MASK);
 
+	aprint_debug_dev(sc->mii_dev, "%s: rgmii config1 = %#06x (write)\n",
+	    __func__, data);
+	aprint_debug_dev(sc->mii_dev, "%s: Writing to %#06x %#06x\n", __func__,
+	    YTPHY_EXT_REG_DATA, data);
 	PHY_WRITE(sc, YTPHY_EXT_REG_DATA, data);
 
 	/* Restore address register. */
+	aprint_debug_dev(sc->mii_dev, "%s: Setting register to %#06x "
+	    "(old)\n", __func__, oldaddr);
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, oldaddr);
 }
 
@@ -436,8 +482,13 @@ mcomm_yt8531_init(struct mcomm_softc *msc)
 	/* Save address register. */
 	PHY_READ(sc, YTPHY_EXT_REG_ADDR, &oldaddr);
 
+	aprint_debug_dev(sc->mii_dev, "%s: setting register to %#06x "
+	    "(chip config)\n", __func__, YT8521_EXT_CHIP_CONFIG);
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, YT8521_EXT_CHIP_CONFIG);
 	PHY_READ(sc, YTPHY_EXT_REG_DATA, &data);
+
+	aprint_debug_dev(sc->mii_dev, "%s: chip config = %#06x (read)\n",
+	    __func__, data);
 
 	struct mcomm_ytphy_ds_map *ds_map = NULL;
 	size_t ds_mapsize;
@@ -463,8 +514,18 @@ mcomm_yt8531_init(struct mcomm_softc *msc)
 		u_int rx_data_ds = mcomm_yt8531_ds(msc, ds_map, ds_mapsize,
 		    msc->sc_rx_data_drv_microamp, millivolts);
 
+		aprint_debug_dev(sc->mii_dev, "%s: clk_uA %u data_uA %u\n",
+		    __func__,
+		    msc->sc_rx_clk_drv_microamp, msc->sc_rx_data_drv_microamp);
+		aprint_debug_dev(sc->mii_dev, "%s: clk_ds %u data_ds %u\n",
+		    __func__,
+		    rx_clk_ds, rx_data_ds);
+
 		PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, YT8521_EXT_PAD_DRIVE_STRENGTH);
 		PHY_READ(sc, YTPHY_EXT_REG_DATA, &data);
+
+		aprint_debug_dev(sc->mii_dev, "%s: drive strength = %#06x (read)\n",
+		    __func__, data);
 
 		data &= ~(YT8531_RGMII_RXC_DS_MASK | YT8531_RGMII_RXD_DS_MASK);
 
@@ -477,11 +538,24 @@ mcomm_yt8531_init(struct mcomm_softc *msc)
 		    __SHIFTIN(rx_data_ds_hi, YT8531_RGMII_RXD_DS_HIMASK) |
 		    __SHIFTIN(rx_data_ds_lo, YT8531_RGMII_RXD_DS_LOMASK);
 
+		aprint_debug_dev(sc->mii_dev, "%s: drive strength = %#06x (write)\n",
+		    __func__, data);
+
 		PHY_WRITE(sc, YTPHY_EXT_REG_DATA, data);
+		aprint_debug_dev(sc->mii_dev, "Writing to %#06x %#06x\n",
+		    YTPHY_EXT_REG_DATA, data);
 	}
 
+	aprint_debug_dev(sc->mii_dev, "%s: setting register to %#06x "
+	    "(synce config)\n", __func__, YT8521_EXT_SYNCE_CFG);
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, YT8521_EXT_SYNCE_CFG);
 	PHY_READ(sc, YTPHY_EXT_REG_DATA, &data);
+
+	aprint_debug_dev(sc->mii_dev, "%s: synce = %#06x (read)\n",
+	    __func__, data);
+
+	aprint_debug_dev(sc->mii_dev, "%s: clk out freq %u\n", __func__,
+	    msc->sc_clk_out_frequency_hz);
 
 	switch (msc->sc_clk_out_frequency_hz) {
 	case 0:
@@ -502,8 +576,15 @@ mcomm_yt8531_init(struct mcomm_softc *msc)
 		break;
 	}
 
-	PHY_WRITE(sc, YTPHY_EXT_REG_DATA, data);
+	aprint_debug_dev(sc->mii_dev, "%s: synce = %#06x (write)\n",
+	    __func__, data);
 
+	PHY_WRITE(sc, YTPHY_EXT_REG_DATA, data);
+	aprint_debug_dev(sc->mii_dev, "%s: writing to %#06x %#06x\n", __func__,
+	    YTPHY_EXT_REG_DATA, data);
+
+	aprint_debug_dev(sc->mii_dev, "%s: setting register to %#06x "
+	    "(old)\n", __func__, oldaddr);
 	/* Restore address register. */
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, oldaddr);
 }
@@ -620,17 +701,28 @@ ytphy_yt8521_update(struct mcomm_softc *msc)
 	/* Save address register. */
 	PHY_READ(sc, YTPHY_EXT_REG_ADDR, &oldaddr);
 
+	aprint_debug_dev(sc->mii_dev, "%s: setting register to %#06x "
+	    "(rgmii config1)\n", __func__, YT8521_EXT_RGMII_CONFIG1);
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, YT8521_EXT_RGMII_CONFIG1);
 	PHY_READ(sc, YTPHY_EXT_REG_DATA, &data);
 
+	aprint_debug_dev(sc->mii_dev, "%s: rgmii config1 = %#06x (read)\n",
+	    __func__, data);
 	if (tx_clk_inv)
 		data |= YT8521_TX_CLK_SEL_INV;
 	else
 		data &= ~YT8521_TX_CLK_SEL_INV;
 
+	aprint_debug_dev(sc->mii_dev, "%s: rgmii config1 = %#06x (write)\n",
+	    __func__, data);
+
 	PHY_WRITE(sc, YTPHY_EXT_REG_DATA, data);
 
+	aprint_debug_dev(sc->mii_dev, "%s: rgmii config1 = %#06x\n", __func__,
+	    data);
 	/* Restore address register. */
+	aprint_debug_dev(sc->mii_dev, "%s: setting register to %#06x "
+	    "(old)\n", __func__, oldaddr);
 	PHY_WRITE(sc, YTPHY_EXT_REG_ADDR, oldaddr);
 }
 
