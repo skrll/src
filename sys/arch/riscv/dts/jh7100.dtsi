@@ -85,11 +85,11 @@
 
 
 &sdio0 {
+/*	clock-frequency = <100000000>; */
 	max-frequency = <10000000>;
 };
 
-
 &sdio1 {
+/*	clock-frequency = <100000000>; */
 	max-frequency = <50000000>;
 };
-
