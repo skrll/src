@@ -62,7 +62,7 @@ sun20id1ccu* 	at fdt? pass 2		# Allwinner D1/D1s CCU
 sunxisid* 	at fdt? pass 4		# Allwinner SID
 
 # DMA
-sun6idma* 	at fdt? pass 4		# Allwinner DMA controller (sun6i)
+sun6idma* 	at fdt? pass 3		# Allwinner DMA controller (sun6i)
 
 # PCIe PHY
 jh7110pciephy* 	at fdt? pass 3		# StarFive JH7110 PCIe PHY
