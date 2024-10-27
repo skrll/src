@@ -43,9 +43,17 @@ struct jh7110_pciephy_softc {
 	bus_space_tag_t		sc_bst;
 	bus_space_handle_t	sc_bsh;
 	int			sc_phandle;
+
+	struct syscon *		sc_sys_syscon;
+	bus_size_t		sc_phy_connect;
+
+	struct syscon *		sc_stg_syscon;
+	bus_size_t		sc_stg_pcie_mode;
+	bus_size_t		sc_stg_pcie_usb;
 };
 
 /* Register definitions */
+
 #define PCIE_KVCO_LEVEL			0x28
 #define  PCEI_PHY_KVCO_FINE_TUNE_LEVEL	0x91
 
@@ -54,10 +62,37 @@ struct jh7110_pciephy_softc {
 #define PCIE_KVCO_TUNE_SIGNAL		0x80
 #define	 PCIE_KVO_FINE_TUNE_SIGNALS	0x0c
 
-#define RD4(sc, reg)							      \
+#define USB_PDRSTN_SPLIT		__BIT(17)
+
+#define PCIE_PHY_MODE			__BIT(20)
+#define PCIE_PHY_MODE_MASK		__BITS(21, 20)
+#define PCIE_USB3_BUS_WIDTH_MASK	__BITS(3, 2)
+#define PCIE_USB3_PHY_ENABLE		__BIT(4)
+#define PCIE_USB3_BUS_WIDTH		__BIT(3)
+
+
+#if 0
+#define PCIE_USB3_PHY_ENABLE		__BIT(4)
+#define PHY_KVCO_FINE_TUNE_SIGNALS	0xc
+
+#define USB_PDRSTN_SPLIT		__BIT(17)
+
+#define PCIE_PHY_MODE			__BIT(20)
+#define PCIE_PHY_MODE_MASK		__BITS(21, 20)
+#define PCIE_USB3_BUS_WIDTH_MASK	__BITS(3, 2)
+#define PCIE_USB3_BUS_WIDTH		__BIT(3)
+#define PCIE_USB3_RATE_MASK		__BITS(6, 5)
+#define PCIE_USB3_RX_STANDBY_MASK	__BIT(7)
+#define PCIE_USB3_PHY_ENABLE		__BIT(4)
+#endif
+
+#define RD4(sc, reg)							       \
 	bus_space_read_4((sc)->sc_bst, (sc)->sc_bsh, (reg))
-#define WR4(sc, reg, val)						      \
+#define WR4(sc, reg, val)						       \
 	bus_space_write_4((sc)->sc_bst, (sc)->sc_bsh, (reg), (val))
+#define CLR4(sc, reg, mask)						       \
+	WR4((sc), (reg), RD4((sc), (reg)) & ~(mask))
+
 
 static void *
 jh7110pciephy_acquire(device_t dev, const void *data, size_t len)
@@ -80,6 +115,33 @@ jh7110pciephy_release(device_t dev, void *data)
 static int
 jh7110pciephy_enable(device_t dev, void *priv, bool enable)
 {
+	struct jh7110_pciephy_softc * const sc = device_private(dev);
+	uint32_t val;
+
+	syscon_lock(sc->sc_stg_syscon);
+
+	val = syscon_read_4(sc->sc_stg_syscon, sc->sc_stg_pcie_mode);
+	val &= ~PCIE_PHY_MODE_MASK;
+	syscon_write_4(sc->sc_stg_syscon, sc->sc_stg_pcie_mode, val);
+
+	val = syscon_read_4(sc->sc_stg_syscon, sc->sc_stg_pcie_usb);
+	val &= ~(PCIE_USB3_BUS_WIDTH_MASK | PCIE_USB3_PHY_ENABLE);
+	val |= PCIE_USB3_BUS_WIDTH;
+	syscon_write_4(sc->sc_stg_syscon, sc->sc_stg_pcie_usb, val);
+
+	syscon_unlock(sc->sc_stg_syscon);
+
+	syscon_lock(sc->sc_sys_syscon);
+
+	val = syscon_read_4(sc->sc_sys_syscon, sc->sc_phy_connect);
+	val &= ~USB_PDRSTN_SPLIT;
+	syscon_write_4(sc->sc_sys_syscon, sc->sc_phy_connect, val);
+
+	syscon_unlock(sc->sc_sys_syscon);
+
+	val = RD4(sc, PCIE_USB3_PHY_PLL_CTL);
+	val &= ~PCIE_USB3_PHY_ENABLE;
+	WR4(sc, PCIE_USB3_PHY_PLL_CTL, val);
 
 	return 0;
 }
@@ -125,6 +187,48 @@ jh7110_pciephy_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": couldn't map %#" PRIxBUSADDR ": %d", addr,
 		    error);
 		return;
+	}
+
+	int len;
+	const char *sys_syscon = "starfive,sys-syscon";
+	const u_int *sys_syscon_data =
+	    fdtbus_get_prop(phandle, sys_syscon, &len);
+	if (sys_syscon_data != NULL) {
+		if (len != 2 * sizeof(uint32_t)) {
+			aprint_error(": %s has wrong length (%d)\n",
+			    sys_syscon, len);
+			return;
+		}
+		const int sys_syscon_phandle =
+		    fdtbus_get_phandle_from_native(be32dec(&sys_syscon_data[0]));
+		sc->sc_sys_syscon = fdtbus_syscon_lookup(sys_syscon_phandle);
+		if (sc->sc_sys_syscon == NULL) {
+			aprint_error(": couldn't get sys-syscon\n");
+			return;
+		}
+		sc->sc_phy_connect = be32dec(&sys_syscon_data[1]);
+	}
+
+	const char *stg_syscon = "starfive,stg-syscon";
+	const u_int *stg_syscon_data =
+	    fdtbus_get_prop(phandle, stg_syscon, &len);
+	if (stg_syscon_data != NULL) {
+		if (len != 3 * sizeof(uint32_t)) {
+			aprint_error(": %s has wrong length (%d)\n",
+			    stg_syscon, len);
+			return;
+		}
+		const int stg_syscon_phandle =
+		    fdtbus_get_phandle_from_native(be32dec(&stg_syscon_data[0]));
+
+		sc->sc_stg_syscon = fdtbus_syscon_lookup(stg_syscon_phandle);
+		if (sc->sc_stg_syscon == NULL) {
+			aprint_error(": couldn't get stg-syscon\n");
+			return;
+		}
+
+		sc->sc_stg_pcie_mode = be32dec(&sys_syscon_data[1]);
+		sc->sc_stg_pcie_usb = be32dec(&sys_syscon_data[2]);
 	}
 
 	sc->sc_dev = self;
