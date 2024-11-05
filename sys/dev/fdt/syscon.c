@@ -83,6 +83,7 @@ syscon_generic_read_4(void *priv, bus_size_t reg)
 	struct syscon_softc * const sc = priv;
 
 	KASSERT(mutex_owned(&sc->sc_lock));
+// XXXNH add checks to reg?
 
 	return bus_space_read_4(sc->sc_bst, sc->sc_bsh, reg);
 }
@@ -93,6 +94,7 @@ syscon_generic_write_4(void *priv, bus_size_t reg, uint32_t val)
 	struct syscon_softc * const sc = priv;
 
 	KASSERT(mutex_owned(&sc->sc_lock));
+// XXXNH add checks to reg?
 
 	bus_space_write_4(sc->sc_bst, sc->sc_bsh, reg, val);
 }
@@ -132,6 +134,7 @@ syscon_attach(device_t parent, device_t self, void *aux)
 	sc->sc_syscon.unlock = syscon_generic_unlock;
 	sc->sc_syscon.read_4 = syscon_generic_read_4;
 	sc->sc_syscon.write_4 = syscon_generic_write_4;
+// add size
 
 	aprint_naive("\n");
 	aprint_normal(": System Controller Registers\n");
