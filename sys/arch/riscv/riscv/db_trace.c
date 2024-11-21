@@ -170,6 +170,12 @@ db_stack_trace_print(db_expr_t addr, bool have_addr, db_expr_t count,
 		}
 	}
 
+#if 0
+	pr("trace_lwp: %s\n", trace_lwp ? "true" : "false");
+	pr("trace_thread: %s\n", trace_thread ? "true" : "false");
+	pr("trace_user: %s\n", trace_user ? "true" : "false");
+#endif
+
 #if defined(_KERNEL)
 	if (!have_addr) {
 		if (trace_lwp) {
@@ -202,8 +208,8 @@ db_stack_trace_print(db_expr_t addr, bool have_addr, db_expr_t count,
 #endif
 
 	if (trace_lwp) {
-		proc_t p;
 		struct lwp l;
+		proc_t p;
 
 		db_read_bytes(addr, sizeof(l), (char *)&l);
 		db_read_bytes((db_addr_t)l.l_proc, sizeof(p), (char *)&p);
