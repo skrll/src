@@ -952,10 +952,14 @@ mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 	extern char __kernel_text[];
 	extern char _end[];
 	extern char __data_start[];
+//	extern char __rodata_start[];
 
 	const vaddr_t kernstart = trunc_page((vaddr_t)__kernel_text);
 	const vaddr_t kernend = round_page((vaddr_t)_end);
+//	const paddr_t kernstart_phys = KERN_VTOPHYS(kernstart);
 	const vaddr_t data_start = (vaddr_t)__data_start;
+//	const vaddr_t rodata_start = (vaddr_t)__rodata_start;
+//	const vsize_t rosize = kernend - rodata_start;
 
 	const vaddr_t va = (vaddr_t)ptr;
 
@@ -966,7 +970,14 @@ mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 			return EFAULT;
 		}
 	} else if (IN_DIRECTMAP_P(va)) {
+//		paddr_t pa = RISCV_KVA_TO_PA(va);
 		*handled = true;
+#if 0
+		if (IN_RANGE_(pa, kernstart_phys, kernstart_phys + rosize) &&
+			    (prot & VM_PROT_WRITE)) {
+				return EFAULT;
+		}
+#endif
 	}
 
 	return 0;
