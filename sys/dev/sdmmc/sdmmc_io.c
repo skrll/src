@@ -700,7 +700,7 @@ sdmmc_io_send_op_cond(struct sdmmc_softc *sc, u_int32_t ocr, u_int32_t *ocrp)
 	int error;
 	int retry;
 
-	DPRINTF(("sdmmc_io_send_op_cond: ocr = %#x\n", ocr));
+	DPRINTF(("%s: sdmmc_io_send_op_cond: ocr = %#x\n", SDMMCDEVNAME(sc), ocr));
 
 	/* Don't lock */
 
@@ -727,7 +727,7 @@ sdmmc_io_send_op_cond(struct sdmmc_softc *sc, u_int32_t ocr, u_int32_t *ocrp)
 	if (error == 0 && ocrp != NULL)
 		*ocrp = MMC_R4(cmd.c_resp);
 
-	DPRINTF(("sdmmc_io_send_op_cond: error = %d\n", error));
+	DPRINTF(("%s: sdmmc_io_send_op_cond: error = %d\n", SDMMCDEVNAME(sc), error));
 
 	return error;
 }
