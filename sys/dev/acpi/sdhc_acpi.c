@@ -53,6 +53,15 @@ static UINT8 sdhc_acpi_rockchip_dsm_uuid[ACPI_UUID_LENGTH] = {
 #define	ROCKCHIP_DSM_REV			0
 #define	ROCKCHIP_DSM_FUNC_SET_CARD_CLOCK	1
 
+#if 0
+    If (Arg0 == ToUUID ("f6c13ea5-65cd-461f-ab7a-29f7e8d5bd61")) {
+
+static const guid_t intel_dsm_guid =
+        GUID_INIT(0xF6C13EA5, 0x65CD, 0x461F,
+                  0xAB, 0x7A, 0x29, 0xF7, 0xE8, 0xD5, 0xBD, 0x61);
+#endif
+
+
 #define _COMPONENT	ACPI_RESOURCE_COMPONENT
 ACPI_MODULE_NAME	("sdhc_acpi")
 
@@ -81,6 +90,46 @@ static void	sdhc_acpi_intel_emmc_hw_reset(struct sdhc_softc *,
 
 static int	sdhc_acpi_rockchip_bus_clock(struct sdhc_softc *,
 		    int);
+
+
+
+    //
+    // Broadcom STB SDHCI controllers (Arasan IP)
+    //
+    // There are 2 notable quirks with these controllers:
+    // 1) Broken 1.8v signaling switch: instead it's changed via an external
+    //    regulator. Thankfully, Intel Bay Trail had the same issue, so we
+    //    can pretend to be one of their affected HCs and reuse the _DSM
+    //    workaround.
+    //
+    // 2) Capability claims hardware retuning is supported, but it causes issues.
+    //    Windows will crash when switching to SDR50/SDR104. Linux does not appear
+    //    to care, but we still override the "sdhci-caps-mask" property just in case.
+    //
+    // Supposedly there's a 32-bit bus access limitation too (inherited from BCM283x),
+    // but no issues have actually been observed under stress test in both Windows
+    // and Linux. Chances are this was fixed in the production BCM2712C0 stepping.
+    //
+    // We provide two compatibility modes:
+    // 1) BRCMSTB _HID + Bay Trail _CID:
+    //    - Windows binds to "VEN_8086&DEV_0F14" and has DDR50 with _DSM working.
+    //      SDR104/50 modes can be enabled by a sdbus driver override.
+    //
+    //    - Linux recognizes "80860F16" but treats the controller as plain SDHCI and
+    //      no _DSM, we limit the speed to HS via "sdhci-caps-mask".
+    //
+    //    - FreeBSD binds to "80860F16" but does not implement the _DSM nor the _DSD
+    //      for caps override, fortunately it just falls back to HS.
+    //
+    // 2) Full Bay Trail _HID: this enables Linux to see the device as proper Bay Trail
+    //    and use the _DSM. DDR50 is also enabled by relaxing the caps mask.
+    //
+    // The "Limit UHS-I" option is enabled by default in case OSes are not aware of
+    // the broken retuning (i.e. Windows does not parse _DSD). It disables SDR104/50
+    // since these modes depend on tuning.
+    //
+    // These will be patched in by the platform driver.
+
 
 static const struct sdhc_acpi_slot {
 	const char *hid;
@@ -194,6 +243,19 @@ sdhc_acpi_attach(device_t parent, device_t self, void *opaque)
 	if (slot->type == SLOT_TYPE_EMMC)
 		sc->sc.sc_vendor_hw_reset = sdhc_acpi_intel_emmc_hw_reset;
 
+
+
+	rv = acpi_dsm_query(sc->sc_handle, sdhc_acpi_rockchip_dsm_uuid,
+	    ROCKCHIP_DSM_REV, &funcs);
+	if (ACPI_SUCCESS(rv) &&
+	    ISSET(funcs, __BIT(ROCKCHIP_DSM_FUNC_SET_CARD_CLOCK))) {
+		sc->sc.sc_vendor_bus_clock = sdhc_acpi_rockchip_bus_clock;
+	}
+
+	//         If (Arg0 == ToUUID ("f6c13ea5-65cd-461f-ab7a-29f7e8d5bd61")) {
+
+
+
 	rv = acpi_dsm_query(sc->sc_handle, sdhc_acpi_rockchip_dsm_uuid,
 	    ROCKCHIP_DSM_REV, &funcs);
 	if (ACPI_SUCCESS(rv) &&
@@ -267,6 +329,8 @@ sdhc_acpi_attach(device_t parent, device_t self, void *opaque)
 	/* Capability overrides */
 	caps = caps_mask = 0;
 	acpi_dsd_integer(aa->aa_node->ad_handle, "sdhci-caps-mask", &caps_mask);
+
+printf("%s:%d caps_mask %lx", __func__, __LINE__, caps_mask);
 	acpi_dsd_integer(aa->aa_node->ad_handle, "sdhci-caps", &caps);
 	if (caps || caps_mask) {
 		sc->sc.sc_caps = bus_space_read_4(sc->sc_memt, sc->sc_memh,
