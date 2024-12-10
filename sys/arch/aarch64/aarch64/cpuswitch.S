@@ -148,6 +148,12 @@ ENTRY_NP(cpu_switchto)
 	str	x1, [x3, #CI_CURLWP]	/* switch curlwp to new lwp */
 	dmb	ish			/* store-before-load */
 
+	// maybe not this dsb
+        dsb     ishst
+
+        tlbi    vmalle1
+        dsb     nsh
+
 	ENABLE_INTERRUPT
 
 	/*
@@ -234,6 +240,14 @@ ENTRY_NP(cpu_switchto_softint)
 
 	mov	x5, #CPACR_FPEN_NONE
 	msr	cpacr_el1, x5		/* cpacr_el1 = CPACR_FPEN_NONE */
+
+
+	// maybe not this dsb
+        dsb     ishst
+
+        tlbi    vmalle1
+        dsb     nsh
+
 	isb
 
 #ifdef ARMV83_PAC
