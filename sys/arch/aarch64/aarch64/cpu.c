@@ -112,6 +112,8 @@ cpu_attach(device_t dv, cpuid_t id)
 	if (unit == 0) {
 		ci = curcpu();
 		ci->ci_cpuid = id;
+
+		ci->ci_kfpu_spl = -1;
 	} else {
 #ifdef MULTIPROCESSOR
 		if ((boothowto & RB_MD1) != 0) {
@@ -122,8 +124,6 @@ cpu_attach(device_t dv, cpuid_t id)
 
 		KASSERT(unit < MAXCPUS);
 		ci = &cpu_info_store[unit];
-
-		ci->ci_cpl = IPL_HIGH;
 		ci->ci_cpuid = id;
 		/* ci_id is stored by own cpus when hatching */
 
@@ -146,8 +146,6 @@ cpu_attach(device_t dv, cpuid_t id)
 
 	ci->ci_dev = dv;
 	device_set_private(dv, ci);
-
-	ci->ci_kfpu_spl = -1;
 
 	arm_cpu_do_topology(ci);	// XXXNH move this after mi_cpu_attach
 	cpu_identify(dv, ci);
@@ -768,6 +766,9 @@ cpu_hatch(struct cpu_info *ci)
 {
 	KASSERT(curcpu() == ci);
 	KASSERT((reg_tcr_el1_read() & TCR_EPD0) != 0);
+
+	ci->ci_cpl = IPL_HIGH;
+	ci->ci_kfpu_spl = -1;
 
 #ifdef DDB
 	db_machdep_cpu_init();

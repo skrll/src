@@ -337,36 +337,38 @@ dump_switchframe(struct trapframe *tf, void (*pr)(const char *, ...))
 static void
 show_cpuinfo(struct cpu_info *ci)
 {
-	struct cpu_info cpuinfobuf;
+	struct cpu_info *cpuinfobuf = ci;
 	u_int cpuidx;
 	int i;
 
-	db_read_bytes((db_addr_t)ci, sizeof(cpuinfobuf), (char *)&cpuinfobuf);
+//	db_read_bytes((db_addr_t)ci, sizeof(cpuinfobuf), (char *)cpuinfobuf);
 
-	cpuidx = cpu_index(&cpuinfobuf);
-	db_printf("cpu_info=%p, cpu_name=%s\n", ci, cpuinfobuf.ci_cpuname);
+	cpuidx = cpu_index(cpuinfobuf);
+	db_printf("cpu_info=%p, cpu_name=%s\n", ci, cpuinfobuf->ci_cpuname);
 	db_printf("%p cpu[%u].ci_cpuid         = 0x%lx\n",
-	    &ci->ci_cpuid, cpuidx, cpuinfobuf.ci_cpuid);
+	    &ci->ci_cpuid, cpuidx, cpuinfobuf->ci_cpuid);
 	db_printf("%p cpu[%u].ci_curlwp        = %p\n",
-	    &ci->ci_curlwp, cpuidx, cpuinfobuf.ci_curlwp);
+	    &ci->ci_curlwp, cpuidx, cpuinfobuf->ci_curlwp);
 	db_printf("%p cpu[%u].ci_onproc        = %p\n",
-	    &ci->ci_onproc, cpuidx, cpuinfobuf.ci_onproc);
+	    &ci->ci_onproc, cpuidx, cpuinfobuf->ci_onproc);
 	for (i = 0; i < SOFTINT_COUNT; i++) {
 		db_printf("%p cpu[%u].ci_softlwps[%d]   = %p\n",
-		    &ci->ci_softlwps[i], cpuidx, i, cpuinfobuf.ci_softlwps[i]);
+		    &ci->ci_softlwps[i], cpuidx, i, cpuinfobuf->ci_softlwps[i]);
 	}
+#if 0
 	db_printf("%p cpu[%u].ci_lastintr      = %" PRIu64 "\n",
-	    &ci->ci_lastintr, cpuidx, cpuinfobuf.ci_lastintr);
+	    &ci->ci_lastintr, cpuidx, cpuinfobuf->ci_lastintr);
 	db_printf("%p cpu[%u].ci_want_resched  = %d\n",
-	    &ci->ci_want_resched, cpuidx, cpuinfobuf.ci_want_resched);
+	    &ci->ci_want_resched, cpuidx, cpuinfobuf->ci_want_resched);
 	db_printf("%p cpu[%u].ci_cpl           = %d\n",
-	    &ci->ci_cpl, cpuidx, cpuinfobuf.ci_cpl);
+	    &ci->ci_cpl, cpuidx, cpuinfobuf->ci_cpl);
 	db_printf("%p cpu[%u].ci_softints      = 0x%08x\n",
-	    &ci->ci_softints, cpuidx, cpuinfobuf.ci_softints);
+	    &ci->ci_softints, cpuidx, cpuinfobuf->ci_softints);
 	db_printf("%p cpu[%u].ci_intr_depth    = %u\n",
-	    &ci->ci_intr_depth, cpuidx, cpuinfobuf.ci_intr_depth);
+	    &ci->ci_intr_depth, cpuidx, cpuinfobuf->ci_intr_depth);
 	db_printf("%p cpu[%u].ci_biglock_count = %u\n",
-	    &ci->ci_biglock_count, cpuidx, cpuinfobuf.ci_biglock_count);
+	    &ci->ci_biglock_count, cpuidx, cpuinfobuf->ci_biglock_count);
+#endif
 }
 
 void

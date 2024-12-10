@@ -52,12 +52,19 @@ __KERNEL_RCSID(0, "$NetBSD: pmapboot.c,v 1.20 2024/12/14 07:43:09 skrll Exp $");
 
 #include <arm/cpufunc.h>
 
-#define OPTIMIZE_TLB_CONTIG
+//#define OPTIMIZE_TLB_CONTIG
 
 static void
 pmapboot_protect_entry(pt_entry_t *pte, vm_prot_t clrprot)
 {
 	extern uint64_t pmap_attr_gp;
+
+	CTASSERT(((VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE) & __BIT(3)) == 0);
+
+	if (clrprot & __BIT(3)) {
+		*pte &= ~LX_BLKPAG_SH;
+		*pte |= __SHIFTIN(LX_BLKPAG_SH_NS, LX_BLKPAG_SH);
+	}
 
 	if (clrprot & VM_PROT_READ)
 		*pte &= ~LX_BLKPAG_AF;

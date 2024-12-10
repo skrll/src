@@ -46,6 +46,7 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.71 2025/09/06 21:02:39 thorpej
 #include <sys/bus.h>
 #include <sys/core.h>
 #include <sys/conf.h>
+#include <sys/cpu.h>
 #include <sys/kauth.h>
 #include <sys/kcore.h>
 #include <sys/module.h>
@@ -175,13 +176,17 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 		    end - start, dmattr, printf);
 	}
 
+	VPRINTF("%s:%d\n", __func__, __LINE__);
 	/* Disable translation table walks using TTBR0 */
 	uint64_t tcr = reg_tcr_el1_read();
 	reg_tcr_el1_write(tcr | TCR_EPD0);
 	isb();
 
+	VPRINTF("%s:%d\n", __func__, __LINE__);
+	// aarch64_tlbi_all does a dsb ishst
 	aarch64_tlbi_all();
 
+	VPRINTF("%s:%d\n", __func__, __LINE__);
 	/*
 	 * at this point, whole kernel image is mapped as "rwx".
 	 * permission should be changed to:
@@ -190,13 +195,39 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 	 *    rodata   rwx => r--
 	 *    data     rwx => rw-  (.bss included)
 	 *
-	 * kernel image has mapped by L2 block. (2Mbyte)
 	 */
 	pmapboot_protect(L2_TRUNC_BLOCK(kernstart),
 	    L2_TRUNC_BLOCK(data_start), VM_PROT_WRITE);
+	VPRINTF("%s:%d\n", __func__, __LINE__);
 	pmapboot_protect(L2_ROUND_BLOCK(rodata_start),
 	    L2_ROUND_BLOCK(kernend), VM_PROT_EXECUTE);
 
+	VPRINTF("%s:%d\n", __func__, __LINE__);
+
+
+	// XXXNH mark the first page of each cpu_info_store
+	// entry as NS
+
+
+#ifdef MULTIPROCESSOR
+#define NCPUINFO        MAXCPUS
+#else
+#define NCPUINFO        1
+#endif /* MULTIPROCESSOR */
+
+	VPRINTF("%s:%d\n", __func__, __LINE__);
+
+	for (size_t i = 0; i < NCPUINFO; i++) {
+		vaddr_t civa = (vaddr_t)&cpu_info_store[i];
+
+		VPRINTF("%s: ci[%zu] @ %"PRIxVADDR"\n", __func__, i, civa);
+
+		pmapboot_protect(civa, civa + PAGE_SIZE, __BIT(3));
+	}
+
+	VPRINTF("%s:%d\n", __func__, __LINE__);
+
+	// aarch64_tlbi_all does a dsb ishst
 	aarch64_tlbi_all();
 
 	VPRINTF("%s: kernel phys start %lx end %lx+%lx\n", __func__,

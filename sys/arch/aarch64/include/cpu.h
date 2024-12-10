@@ -115,9 +115,35 @@ struct aarch64_low_power_idle {
 };
 
 struct cpu_info {
-	struct cpu_data ci_data;
+	/*
+	 * Totally CPU-private.
+	 */
+
+	int ci_cpl;		/* current processor level (spl) */
+	volatile int ci_hwpl;	/* current hardware priority */
+
+	int ci_mtx_oldspl;
+	int ci_mtx_count;
+
+	volatile u_int ci_softints;
+	volatile u_int ci_intr_depth;
+	volatile uint32_t ci_blocked_pics;
+	volatile uint32_t ci_pending_pics;
+	volatile uint32_t ci_pending_ipls;
+
+	uint64_t ci_lastintr;
+
+	int ci_kfpu_spl;
+
+	/* ASID of current pmap */
+	tlb_asid_t ci_pmap_asid_cur;
+
+
+	// align to next page
+	struct cpu_data ci_data __aligned(PAGE_SIZE);
 	device_t ci_dev;
 	cpuid_t ci_cpuid;
+
 
 	/*
 	 * the following are in their own cache line, as they are stored to
@@ -138,29 +164,12 @@ struct cpu_info {
 	 */
 	struct lwp *ci_softlwps[SOFTINT_COUNT] __aligned(COHERENCY_UNIT);
 
-	uint64_t ci_lastintr;
-
-	int ci_mtx_oldspl;
-	int ci_mtx_count;
-
-	int ci_cpl;		/* current processor level (spl) */
-	volatile int ci_hwpl;	/* current hardware priority */
-	volatile u_int ci_softints;
-	volatile u_int ci_intr_depth;
-	volatile uint32_t ci_blocked_pics;
-	volatile uint32_t ci_pending_pics;
-	volatile uint32_t ci_pending_ipls;
-
-	int ci_kfpu_spl;
 
 #if defined(PMAP_MI)
         struct pmap_tlb_info *ci_tlb_info;
         struct pmap *ci_pmap_lastuser;
         struct pmap *ci_pmap_cur;
 #endif
-
-	/* ASID of current pmap */
-	tlb_asid_t ci_pmap_asid_cur;
 
 	/* event counters */
 	struct evcnt ci_vfp_use;
@@ -201,7 +210,8 @@ struct cpu_info {
 #if defined(GPROF) && defined(MULTIPROCESSOR)
 	struct gmonparam *ci_gmon;	/* MI per-cpu GPROF */
 #endif
-} __aligned(COHERENCY_UNIT);
+
+} __aligned(PAGE_SIZE);
 
 #ifdef _KERNEL
 static inline __always_inline struct lwp * __attribute__ ((const))
@@ -253,6 +263,8 @@ cpu_dosoftints_ci(struct cpu_info *ci)
 {
 #if defined(__HAVE_FAST_SOFTINTS) && !defined(__HAVE_PIC_FAST_SOFTINTS)
 	void dosoftints(void);
+
+	KASSERT(ci == curcpu());
 
 	if (ci->ci_intr_depth == 0 && (ci->ci_softints >> ci->ci_cpl) > 0) {
 		dosoftints();

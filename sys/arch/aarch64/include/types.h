@@ -100,7 +100,7 @@ typedef __uint64_t __register_t;
 #define __HAVE_BUS_SPACE_8
 #define __HAVE_COMMON___TLS_GET_ADDR
 #define __HAVE_CPU_COUNTER
-#define __HAVE_CPU_DATA_FIRST
+//#define __HAVE_CPU_DATA_FIRST
 #define __HAVE_FAST_SOFTINTS
 #define __HAVE_MINIMAL_EMUL
 #define __HAVE_MM_MD_DIRECT_MAPPED_PHYS
