@@ -482,8 +482,9 @@ mp_vstart:
 	msr	tcr_el1, x0
 	isb
 
-	tlbi	vmalle1is
-	dsb	ish
+	// just local
+	tlbi	vmalle1
+	dsb	nsh
 	isb
 
 	/* set exception vector */
