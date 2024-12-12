@@ -29,6 +29,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+extern int nhdebug;
+
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
@@ -50,6 +52,7 @@ __KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.41 2025/01/28 21:20:45 jmcneill Exp 
 #include <arm/pic/picvar.h>
 #include <arm/cortex/gicv3_its.h>
 
+#define ITS_DEBUG
 #ifdef ITS_DEBUG
 #define DPRINTF(x)	printf x
 #else
@@ -450,7 +453,10 @@ gicv3_its_device_map(struct gicv3_its *its, uint32_t devid, u_int count)
 	dev = kmem_alloc(sizeof(*dev), KM_SLEEP);
 	dev->dev_id = devid;
 	dev->dev_size = itt_size;
+
+nhdebug = 1;
 	gicv3_dma_alloc(its->its_gic, &dev->dev_itt, itt_size, GITS_ITT_ALIGN);
+nhdebug = 0;
 	LIST_INSERT_HEAD(&its->its_devices, dev, dev_list);
 
 	if (its->its_cmd_flush) {
@@ -585,6 +591,7 @@ gicv3_its_msi_alloc(struct arm_pci_msi *msi, int *count,
 
 	const uint64_t typer = gits_read_8(its, GITS_TYPER);
 	const u_int id_bits = __SHIFTOUT(typer, GITS_TYPER_ID_bits) + 1;
+// XXXNH 1 <<
 	if (*count == 0 || *count > (1 << id_bits))
 		return NULL;
 
@@ -648,6 +655,7 @@ gicv3_its_msix_alloc(struct arm_pci_msi *msi, u_int *table_indexes, int *count,
 
 	const uint64_t typer = gits_read_8(its, GITS_TYPER);
 	const u_int id_bits = __SHIFTOUT(typer, GITS_TYPER_ID_bits) + 1;
+// XXXNH 1 <<
 	if (*count == 0 || *count > (1 << id_bits))
 		return NULL;
 
@@ -751,12 +759,17 @@ gicv3_its_msi_intr_release(struct arm_pci_msi *msi, pci_intr_handle_t *pih,
 	}
 }
 
+
 static void
 gicv3_its_command_init(struct gicv3_softc *sc, struct gicv3_its *its)
 {
 	uint64_t cbaser, tmp;
 
+nhdebug = 1;
+
 	gicv3_dma_alloc(sc, &its->its_cmd, GITS_COMMANDS_SIZE, GITS_COMMANDS_ALIGN);
+nhdebug = 0;
+
 	if (its->its_cmd_flush) {
 		cpu_dcache_wb_range((vaddr_t)its->its_cmd.base, GITS_COMMANDS_SIZE);
 	}
@@ -867,6 +880,8 @@ gicv3_its_table_init(struct gicv3_softc *sc, struct gicv3_its *its)
 		}
 		table_align = page_size;
 
+DPRINTF(("ITS: #%u page_size = %x\n", tab, page_size));
+DPRINTF(("ITS: #%u type      = %lx\n", tab, __SHIFTOUT(baser, GITS_BASER_Type)));
 		switch (__SHIFTOUT(baser, GITS_BASER_Type)) {
 		case GITS_Type_Devices:
 			/*
@@ -917,7 +932,9 @@ gicv3_its_table_init(struct gicv3_softc *sc, struct gicv3_its *its)
 		if (table_size == 0)
 			continue;
 
+nhdebug = 1;
 		gicv3_dma_alloc(sc, &its->its_tab[tab], table_size, table_align);
+nhdebug = 0;
 		if (its->its_cmd_flush) {
 			cpu_dcache_wb_range((vaddr_t)its->its_tab[tab].base, table_size);
 		}

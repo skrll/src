@@ -545,6 +545,12 @@ default_tag:
 		dmat->_ranges[0].dr_busbase = 0;
 		dmat->_ranges[0].dr_len = dma_mask;
 		dmat->_ranges[0].dr_flags = flags;
+
+		aprint_debug_dev(sc->sc_dev,
+		    "%s: DMA all memory%s\n",
+		    acpi_name(ad->ad_handle),
+		    flags ? " (coherent)" : "");
+
 		return;
 	}
 
