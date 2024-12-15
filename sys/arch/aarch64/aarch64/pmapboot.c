@@ -159,6 +159,8 @@ pmapboot_protect(vaddr_t sva, vaddr_t eva, vm_prot_t clrprot)
  * it supports only maximum 7 argument, and only '%d', '%x', and '%s' formats.
  */
 
+//#define PMAPBOOT_DEBUG
+
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(fmt, args...)	\
 	while (pr != NULL) { pr(fmt, ## args); break; }
@@ -449,7 +451,7 @@ pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
 		}
 	}
 
-	dsb(ish);
+	dsb(ishst);
 
 	if (nskip != 0)
 		panic("%s: overlapping/incompatible mappings (%d)", __func__, nskip);
@@ -535,7 +537,6 @@ pmapboot_enter_range(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
 		pa += mapsize;
 		left -= mapsize;
 	}
-
 	if ((left & L3_ADDR_BITS) != 0) {
 		nblocks = left / L3_SIZE;
 		mapsize = nblocks * L3_SIZE;
@@ -546,4 +547,5 @@ pmapboot_enter_range(vaddr_t va, paddr_t pa, psize_t size, pt_entry_t attr,
 		pa += mapsize;
 		left -= mapsize;
 	}
+	VPRINTF("Done\n");
 }

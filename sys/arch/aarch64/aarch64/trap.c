@@ -536,6 +536,7 @@ cpu_irq(struct trapframe *tf)
 	daif_enable(DAIF_D|DAIF_A);
 
 	/* run hard interrupt handlers */
+	KASSERT(ci == curcpu());
 	ci->ci_intr_depth++;
 	ARM_IRQ_HANDLER(tf);
 	ci->ci_intr_depth--;

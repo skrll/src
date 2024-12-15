@@ -197,9 +197,6 @@ lwp_system_fpu_p(struct lwp *l)
 void
 fpu_kern_enter(void)
 {
-	struct cpu_info *ci;
-	int s;
-
 	if (lwp_system_fpu_p(curlwp) && !cpu_intr_p()) {
 		KASSERT(!cpu_softintr_p());
 		return;
@@ -212,8 +209,8 @@ fpu_kern_enter(void)
 	 * in interrupts, we can't let interrupts interfere with the
 	 * fpu state in use since there's nowhere for them to save it.
 	 */
-	s = splvm();
-	ci = curcpu();
+	const int s = splvm();
+	struct cpu_info * const ci = curcpu();
 #if 0
 	/*
 	 * Can't assert this because if the caller holds a spin lock at
@@ -239,15 +236,12 @@ fpu_kern_enter(void)
 void
 fpu_kern_leave(void)
 {
-	struct cpu_info *ci;
-	int s;
-
 	if (lwp_system_fpu_p(curlwp) && !cpu_intr_p()) {
 		KASSERT(!cpu_softintr_p());
 		return;
 	}
 
-	ci = curcpu();
+	struct cpu_info * const ci = curcpu();
 
 #if 0
 	/*
@@ -273,7 +267,7 @@ fpu_kern_leave(void)
 	reg_cpacr_el1_write(CPACR_FPEN_NONE);
 	isb();
 
-	s = ci->ci_kfpu_spl;
+	const int s = ci->ci_kfpu_spl;
 	ci->ci_kfpu_spl = -1;
 	splx(s);
 }

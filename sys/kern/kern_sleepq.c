@@ -261,7 +261,7 @@ sleepq_enqueue(sleepq_t *sq, wchan_t wchan, const char *wmesg, syncobj_t *sobj,
 	lwp_t *l = curlwp;
 
 	KASSERT(lwp_locked(l, NULL));
-	KASSERT(l->l_stat == LSONPROC);
+	KASSERTMSG(l->l_stat == LSONPROC, "l %p ci %p l->l_stat %d", l, curcpu(), l->l_stat);
 	KASSERT(l->l_wchan == NULL);
 	KASSERT(l->l_sleepq == NULL);
 	KASSERT((l->l_flag & LW_SINTR) == 0);

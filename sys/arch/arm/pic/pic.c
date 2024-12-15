@@ -251,6 +251,7 @@ pic_handle_intr(void *arg)
 void
 pic_mark_pending_source(struct pic_softc *pic, struct intrsource *is)
 {
+	// KASSERT DAIF.I = 1?
 	const uint32_t ipl_mask = __BIT(is->is_ipl);
 	struct cpu_info * const ci = curcpu();
 
@@ -486,6 +487,8 @@ pic_deliver_irqs(struct cpu_info *ci, struct pic_softc *pic, int ipl,
 static void
 pic_list_unblock_irqs(struct cpu_info *ci)
 {
+	// ASSERT ci == curpcu();
+	// DAIF.I = 1
 	uint32_t blocked_pics = ci->ci_blocked_pics;
 
 	ci->ci_blocked_pics = 0;

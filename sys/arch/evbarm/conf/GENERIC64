@@ -38,8 +38,8 @@ options 	INCLUDE_CONFIG_FILE
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
 
 # Heartbeat checks
-options 	HEARTBEAT
-options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
+#options 	HEARTBEAT
+#options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
 
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
 #options 	EARLYCONS=bcm2837, CONSADDR=0x3f215040
@@ -56,6 +56,8 @@ options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
 #options 	EARLYCONS=plcom, CONSADDR=0x09000000
 # Ampere Altra/Altra Max
 #options 	EARLYCONS=plcom, CONSADDR=0x100002600000
+# LX2K
+#options 	EARLYCONS=plcom, CONSADDR=0x21c0000
 
 # Hardware management of the Access flag and dirty state (HAFDBS).
 options 	ARMV81_HAFDBS

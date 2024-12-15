@@ -115,6 +115,7 @@ void
 dosoftints(void)
 {
 	struct cpu_info * const ci = curcpu();
+	// Clearly curcpu();
 	const int opl = ci->ci_cpl;
 	const uint32_t softiplmask = SOFTIPLMASK(opl);
 	int s;

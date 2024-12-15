@@ -870,7 +870,7 @@ mi_switch(lwp_t *l)
 	}
 
 	KASSERT(l == curlwp);
-	KASSERT(l->l_stat == LSONPROC || (l->l_flag & LW_IDLE) != 0); 
+	KASSERT(l->l_stat == LSONPROC || (l->l_flag & LW_IDLE) != 0);
 
 	SYSCALL_TIME_WAKEUP(l);
 	LOCKDEBUG_BARRIER(NULL, 1);

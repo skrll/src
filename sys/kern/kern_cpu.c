@@ -163,6 +163,8 @@ mi_cpu_attach(struct cpu_info *ci)
 		return error;
 	}
 
+// 
+
 	if (ci == curcpu())
 		ci->ci_onproc = curlwp;
 	else

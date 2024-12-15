@@ -636,6 +636,8 @@ gicv3_lpi_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 	gicr_write_4(sc, ci->ci_gic_redist, GICR_CTLR, ctlr);
 	dsb(sy);
 
+//XXXNH too early?
+
 	/* Setup ITS if present */
 	LIST_FOREACH(cb, &sc->sc_lpi_callbacks, list)
 		cb->cpu_init(cb->priv, ci);

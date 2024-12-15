@@ -487,13 +487,12 @@ db_switch_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *m
 static void
 show_cpuinfo(struct cpu_info *kci)
 {
-	struct cpu_info cpuinfobuf;
 	cpuid_t cpuid;
 	int i;
 
-	db_read_bytes((db_addr_t)kci, sizeof(cpuinfobuf), (char *)&cpuinfobuf);
+//	db_read_bytes((db_addr_t)kci, sizeof(cpuinfobuf), (char *)&cpuinfobuf);
 
-	struct cpu_info *ci = &cpuinfobuf;
+	struct cpu_info *ci = kci;
 	cpuid = ci->ci_cpuid;
 	db_printf("cpu_info=%p, cpu_name=%s\n", kci, ci->ci_cpuname);
 	db_printf("%p cpu[%lu].ci_cpuid        = %lu\n",

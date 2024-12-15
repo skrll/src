@@ -316,6 +316,7 @@ softint_trigger(uintptr_t machdep)
 void
 armgic_irq_handler(void *tf)
 {
+	// ASSERT that DAIF.I = 1
 	struct cpu_info * const ci = curcpu();
 	struct armgic_softc * const sc = &armgic_softc;
 	const int old_ipl = ci->ci_cpl;
