@@ -143,13 +143,15 @@ cemac_wr4(const char *fn, unsigned ln, struct cemac_softc *sc,
 {
 	printf("%s:%u: reg %#06lx val %#010x (write)\n", fn, ln, off, val);
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh, off, val);
+	printf("%s:%u: reg %#06lx val %#010x (write) read back %#010x\n", fn, ln, off, val,
+	    bus_space_read_4(sc->sc_iot, sc->sc_ioh, off));
 }
 
 #define CEMAC_READ(x) \
-	cemac_rd4(__func__, __LINE__, sc, (x))
+    cemac_rd4(__func__, __LINE__, sc, (x))
 
 #define CEMAC_WRITE(x, y) \
-	cemac_wr4(__func__, __LINE__, sc, (x), (y))
+    cemac_wr4(__func__, __LINE__, sc, (x), (y))
 
 #if 1
 #define CEMAC_GEM_WRITE(x, y)						      \
@@ -593,17 +595,23 @@ static u32 macb_mdc_clk_div(struct macb *bp)
 #endif
 
 
-#define RP1_SYS_RIO0_BASE				0x000e0000
-#define RP1_SYS_RIO1_BASE				0x000e4000
-#define RP1_SYS_RIO2_BASE				0x000e8000
-
+#define RP1_SYS_GPIO_BASE				0x000d0000
+#define RP1_SYS_RIO_BASE				0x000e0000
 
 #define RP1_RIO_OUT 0x00
 #define RP1_SET_OFFSET 0x2000
 #define RP1_CLR_OFFSET 0x3000
 
+#define RP1_SYS_PADS_BASE				0x000f0000
 
 
+
+static uint32_t
+rp1_pin_read(struct cemac_softc *sc, bus_size_t offset)
+{
+
+	return bus_space_read_4(sc->sc_iot, sc->sc_rp1, offset);
+}
 
 static void
 rp1_pin_write(struct cemac_softc *sc, bus_size_t offset, uint32_t val)
@@ -622,14 +630,52 @@ rp1_pin_write(struct cemac_softc *sc, bus_size_t offset, uint32_t val)
 	bus_space_write_4(sc->sc_iot, sc->sc_pci, 0xc0, 0); // 4
 	bus_space_write_4(sc->sc_iot, sc->sc_pci, 0xc0, 0); // 5
 	bus_space_write_4(sc->sc_iot, sc->sc_pci, 0xc0, 0); // 6
+	asm volatile("dsb sy" ::: "memory");
 
 	bus_space_write_4(sc->sc_iot, sc->sc_rp1, offset, val);
+
+	asm volatile("dsb sy" ::: "memory");
+
+printf("%s: wrote %#010x to offset %#06lx (read back %#010x)\n", __func__, val, offset,
+    bus_space_read_4(sc->sc_iot, sc->sc_rp1, offset));
 
 	mutex_exit(sc->sc_intr_lock);
 }
 
 
+#define RP1_GPIO_STATUS			0x0000
+#define RP1_GPIO_CTRL			0x0004
 
+
+#define RP1_FSEL_GPIO			0x05
+
+#define RP1_PAD_IN_ENABLE_MASK		__BIT(6)
+#define RP1_PAD_OUT_DISABLE_MASK	__BIT(7)
+
+CTASSERT(RP1_PAD_IN_ENABLE_MASK == 0x00000040);
+CTASSERT(RP1_PAD_OUT_DISABLE_MASK == 0x00000080);
+
+#define RP1_GPIO_CTRL_FUNCSEL_MASK	__BITS(4,0)
+#define RP1_GPIO_CTRL_OUTOVER_MASK	__BITS(13, 12)
+#define RP1_GPIO_CTRL_OEOVER_MASK	__BITS(15, 14)
+#define RP1_GPIO_CTRL_INOVER_MASK	__BITS(17, 16)
+CTASSERT(RP1_GPIO_CTRL_FUNCSEL_MASK == 0x0000001f);
+CTASSERT(RP1_GPIO_CTRL_OUTOVER_MASK == 0x00003000);
+CTASSERT(RP1_GPIO_CTRL_OEOVER_MASK  == 0x0000c000);
+CTASSERT(RP1_GPIO_CTRL_INOVER_MASK  == 0x00030000);
+
+#define RP1_OUTOVER_PERI		0
+#define RP1_OUTOVER_INVPERI		1
+#define RP1_OUTOVER_LOW			2
+#define RP1_OUTOVER_HIGH		3
+
+#define RP1_OEOVER_PERI			0
+#define RP1_OEOVER_INVPERI		1
+#define RP1_OEOVER_DISABLE		2
+#define RP1_OEOVER_ENABLE		3
+
+
+#define RP1_FSEL_GPIO			0x05
 
 
 static void
@@ -649,8 +695,76 @@ cemac_init(struct cemac_softc *sc)
 	sc->sc_intr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NET);
 
 
-//   pin->rio + RP1_RIO_OUT + (value ? RP1_SET_OFFSET : RP1_CLR_OFFSET));
+	// pin bank/offset 1/4 gpio +4020 inte +411c ints +4124 rio +4000 pad +4014 dummy +c0
 
+//
+//	RP1_GPIO_CTRL
+	uint32_t ctl;
+	ctl = rp1_pin_read(sc, RP1_SYS_PADS_BASE + 0x4014);
+
+	//rp1_input_enable(pin, 1);
+
+//	ctl &= ~RP1_PAD_IN_ENABLE_MASK;
+	ctl |= RP1_PAD_IN_ENABLE_MASK;
+
+//	rp1_output_enable(pin, 1);
+	ctl &= ~RP1_PAD_OUT_DISABLE_MASK;
+
+	// set
+	rp1_pin_write(sc, RP1_SYS_PADS_BASE + 0x4014, ctl);
+
+
+
+
+
+	ctl = rp1_pin_read(sc, RP1_SYS_GPIO_BASE + 0x4020 + RP1_GPIO_CTRL);
+
+//	FLD_SET(ctrl, RP1_GPIO_CTRL_OUTOVER, RP1_OUTOVER_PERI);
+	ctl &= ~RP1_GPIO_CTRL_OUTOVER_MASK;
+	ctl |= __SHIFTIN(RP1_OUTOVER_PERI, RP1_GPIO_CTRL_OUTOVER_MASK);
+
+//	FLD_SET(ctrl, RP1_GPIO_CTRL_OEOVER, RP1_OEOVER_PERI);
+	ctl &= ~RP1_GPIO_CTRL_OEOVER_MASK;
+	ctl |= __SHIFTIN(RP1_OEOVER_PERI, RP1_GPIO_CTRL_OEOVER_MASK);
+
+
+//	FLD_SET(ctrl, RP1_GPIO_CTRL_FUNCSEL, fsel);
+	ctl &= ~RP1_GPIO_CTRL_FUNCSEL_MASK;
+	ctl |= __SHIFTIN(RP1_FSEL_GPIO, RP1_GPIO_CTRL_FUNCSEL_MASK);
+
+	rp1_pin_write(sc, RP1_SYS_GPIO_BASE + 0x4020 + RP1_GPIO_CTRL, ctl);
+
+
+
+
+
+
+
+
+	printf("%s: gpio reset starting %ld/%ld\n", __func__, reg_cntpct_el0_read(), reg_cntvct_el0_read());
+
+	rp1_pin_write(sc,
+	    RP1_SYS_RIO_BASE +			/* rio base */
+	    0x4000 +				/* bank 1 rio_offset*/
+	    RP1_RIO_OUT + RP1_CLR_OFFSET,
+	    __BIT(32 - 28));
+
+	DELAY(20 * 1000);
+
+	rp1_pin_write(sc,
+	    RP1_SYS_RIO_BASE +			/* rio base */
+	    0x4000 +				/* bank 1 rio_offset*/
+	    RP1_RIO_OUT + RP1_SET_OFFSET,
+	    __BIT(32 - 28));
+	DELAY(20 * 1000);
+
+	printf("%s: gpio reset done %ld/%ld\n", __func__, reg_cntpct_el0_read(), reg_cntvct_el0_read());
+
+
+
+
+//   pin->rio + RP1_RIO_OUT + (value ? RP1_SET_OFFSET : RP1_CLR_OFFSET));
+#if 0
 	rp1_pin_write(sc,
 	    RP1_SYS_RIO0_BASE +			/* rio base */
 	    0x4000 +				/* bank 1 rio_offset */
@@ -658,6 +772,10 @@ cemac_init(struct cemac_softc *sc)
 	    RP1_SET_OFFSET,
 	    __BIT(32 - 28));
 
+
+
+	delay(20000);
+#endif
 	{
 
 	uint16_t id1;
@@ -979,23 +1097,6 @@ static const struct macb_usrio_config macb_default_usrio = {
 	// 	{ 28,  6, 0x4000, 0x411c, 0x4124, 0x4000, 0x4004 },
 
 	//[    2.938569] rp1_set_value: write 32 bank 1 rio 00000000a26d316c+0(s/c 2000) offset 0x0004 value 1
-
-
-	rp1_pin_write(sc,
-	    RP1_SYS_RIO0_BASE +			/* rio base */
-	    0x4000 +				/* bank 1 rio_offset*/
-	    RP1_RIO_OUT + RP1_SET_OFFSET,
-	    __BIT(32 - 28));
-
-	DELAY(5 * 1000);
-
-	rp1_pin_write(sc,
-	    RP1_SYS_RIO0_BASE +			/* rio base */
-	    0x4000 +				/* bank 1 rio_offset*/
-	    RP1_RIO_OUT + RP1_CLR_OFFSET,
-	    __BIT(32 - 28));
-printf("%s: gpio reset done\n", __func__);
-	DELAY(5 * 1000);
 
 
 
