@@ -63,6 +63,115 @@ cemac_acpi_match(device_t parent, cfdata_t cf, void *aux)
 	return acpi_compatible_match(aa, compat_data);
 }
 
+
+#define RP1_SYSINFO_BASE				0x00000000
+
+#define RP1_CLOCKS_MAIN_BASE				0x00018000
+
+#define RP1_BUSFABRIC_MONITOR_BASE			0x000c0000
+
+#define RP1_SYS_RIO0_BASE				0x000e0000
+#define RP1_SYS_RIO1_BASE				0x000e4000
+#define RP1_SYS_RIO2_BASE				0x000e8000
+
+#define RP1_ETH_BASE					0x00100000
+
+
+
+
+#define FC0_REF_KHZ			0x0021c
+#define FC0_MIN_KHZ			0x00220
+#define FC0_MAX_KHZ			0x00224
+#define FC0_DELAY			0x00228
+#define FC0_INTERVAL			0x0022c
+#define FC0_SRC				0x00230
+#define FC0_STATUS			0x00234
+#define FC0_RESULT			0x00238
+#define FC_SIZE				0x20
+#define FC_COUNT			8
+#define FC_NUM(idx, off)		((idx) * 32 + (off))
+
+#define FC0_STATUS_DONE			__BIT(4)
+#define FC0_STATUS_RUNNING		__BIT(8)
+
+
+#define FC_TIMEOUT_NS			100000000
+
+// 100000000 NS
+// 100000 US
+// 100 MS
+
+#define clockman_read(sc, off) \
+    bus_space_read_4((sc)->sc_iot, (sc)->sc_rp1, RP1_CLOCKS_MAIN_BASE + off)
+
+
+#define clockman_write(sc, off, val) \
+    bus_space_write_4((sc)->sc_iot, (sc)->sc_rp1, RP1_CLOCKS_MAIN_BASE + (off), val)
+
+
+static unsigned long
+clockman_measure_clock(struct cemac_softc *sc, unsigned int fc0_src)
+{
+	struct cemac_softc *clockman = sc;
+	unsigned long fc0_ref_rate = 50000;
+	unsigned long result;
+//	ktime_t timeout;
+	unsigned int fc_idx, fc_offset, fc_src;
+	unsigned int i;
+
+	fc_idx = fc0_src / 32;
+	fc_src = fc0_src % 32;
+
+	/* fc_src == 0 is invalid. */
+	if (!fc_src || fc_idx >= FC_COUNT)
+		return 0;
+
+	fc_offset = fc_idx * FC_SIZE;
+
+	/* Ensure the frequency counter is idle. */
+//	timeout = ktime_add_ns(ktime_get(), FC_TIMEOUT_NS);
+	i = 0;
+	while (clockman_read(clockman, fc_offset + FC0_STATUS) & FC0_STATUS_RUNNING) {
+		if (i > 100) {
+			printf("%s: running timeout\n", __func__);
+			return 0;
+		}
+		delay(1000);
+	}
+
+//	spin_lock(&clockman->regs_lock);
+	clockman_write(clockman, fc_offset + FC0_REF_KHZ, fc0_ref_rate);
+	clockman_write(clockman, fc_offset + FC0_MIN_KHZ, 0);
+	clockman_write(clockman, fc_offset + FC0_MAX_KHZ, 0x1ffffff);
+	clockman_write(clockman, fc_offset + FC0_INTERVAL, 8);
+	clockman_write(clockman, fc_offset + FC0_DELAY, 7);
+	clockman_write(clockman, fc_offset + FC0_SRC, fc_src);
+//	spin_unlock(&clockman->regs_lock);
+
+	/* Ensure the frequency counter is idle. */
+//	timeout = ktime_add_ns(ktime_get(), FC_TIMEOUT_NS);
+	i = 0;
+	while (!(clockman_read(clockman, fc_offset + FC0_STATUS) & FC0_STATUS_DONE)) {
+		if (i > 100) {
+			printf("%s: done timeout\n", __func__);
+			return 0;
+		}
+		delay(1000);
+	}
+
+	result = clockman_read(clockman, fc_offset + FC0_RESULT);
+
+	/* Disable FC0 */
+//	spin_lock(&clockman->regs_lock);
+	clockman_write(clockman, fc_offset + FC0_SRC, 0);
+//	spin_unlock(&clockman->regs_lock);
+
+	return result;
+}
+
+
+
+
 static void
 cemac_acpi_attach(device_t parent, device_t self, void *aux)
 {
@@ -111,31 +220,18 @@ printf("%s: base  %#018lx\n", __func__, mem->ar_base);
 //1f00100000
 // vs 0x400e0000 in PDF
 
-#define RP1_SYSINFO_BASE				0x00000000
-
-#define RP1_CLOCKS_MAIN_BASE				0x00018000
-
-#define RP1_BUSFABRIC_MONITOR_BASE			0x000c0000
-
-#define RP1_SYS_RIO0_BASE				0x000e0000
-#define RP1_SYS_RIO1_BASE				0x000e4000
-#define RP1_SYS_RIO2_BASE				0x000e8000
-
-#define RP1_ETH_BASE					0x00100000
-
-
 	mem2 = acpi_res_mem(&res, 1);
 	if (mem2 == NULL) {
 		aprint_error_dev(self, "couldn't find mem2 resource\n");
 	} else {
-printf("%s: rp1 %#018lx\n", __func__, mem2->ar_base);
+printf("%s: rp1   %#018lx\n", __func__, mem2->ar_base);
 		error = bus_space_map(sc->sc_iot,
 		    mem2->ar_base, mem2->ar_length, 0, &sc->sc_rp1);
 		if (error) {
 			aprint_error_dev(self, "couldn't map GPIO RIO registers\n");
 			goto done;
 		}
-printf("%s: pci %#018lx\n", __func__, 0x1000120000);
+printf("%s: pci   %#018lx\n", __func__, 0x1000120000);
 		error = bus_space_map(sc->sc_iot, 0x1000120000, 0x9310, 0, &sc->sc_pci);
 		if (error) {
 			aprint_error_dev(self, "couldn't map PCI registers\n");
@@ -176,6 +272,10 @@ printf("%s: pci %#018lx\n", __func__, 0x1000120000);
 
 #define CLK_CTRL_ENABLE			__BIT(11)
 
+#define CLK_SYS_CTRL			0x00014
+#define CLK_SYS_DIV_INT			0x00018
+#define CLK_SYS_SEL			0x00020
+
 #define CLK_ETH_CTRL			0x00064
 #define CLK_ETH_DIV_INT			0x00068
 #define CLK_ETH_SEL			0x00070
@@ -197,6 +297,29 @@ printf("%s: pci %#018lx\n", __func__, 0x1000120000);
 
 	printf("%s: ETH_TSU_CTL %#010x after \n", __func__,
 	    bus_space_read_4(sc->sc_iot, sc->sc_rp1, RP1_CLOCKS_MAIN_BASE + CLK_ETH_TSU_CTRL));
+
+
+
+	val = bus_space_read_4(sc->sc_iot, sc->sc_rp1, RP1_CLOCKS_MAIN_BASE + CLK_SYS_CTRL);
+	printf("%s: SYS_CTRL %#010x before\n", __func__, val);
+
+	bus_space_write_4(sc->sc_iot, sc->sc_rp1, RP1_CLOCKS_MAIN_BASE + CLK_SYS_CTRL, val | CLK_CTRL_ENABLE);
+
+	printf("%s: SYS_CTRL %#010x after \n", __func__,
+	    bus_space_read_4(sc->sc_iot, sc->sc_rp1, RP1_CLOCKS_MAIN_BASE + CLK_SYS_CTRL));
+
+
+
+
+	unsigned long chz;
+
+	chz = clockman_measure_clock(sc, FC_NUM(4, 6));	// RP1_CLK_ETH
+	printf("%s: ETH Hz     %ld\n", __func__, chz);
+
+	chz = clockman_measure_clock(sc, FC_NUM(5, 7));
+	printf("%s: ETH_TSU Hz %ld\n", __func__, chz);
+
+
 #if 0
 
 
