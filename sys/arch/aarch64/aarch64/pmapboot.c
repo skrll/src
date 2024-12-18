@@ -63,7 +63,7 @@ pmapboot_protect_entry(pt_entry_t *pte, vm_prot_t clrprot)
 
 	if (clrprot & __BIT(3)) {
 		*pte &= ~LX_BLKPAG_SH;
-		*pte |= __SHIFTIN(LX_BLKPAG_SH_NS, LX_BLKPAG_SH);
+		*pte |= LX_BLKPAG_SH_NS;
 	}
 
 	if (clrprot & VM_PROT_READ)

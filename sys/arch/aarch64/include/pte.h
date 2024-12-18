@@ -40,7 +40,7 @@ typedef uint64_t pd_entry_t;	/* L0(512G) / L1(1G) / L2(2M) table entry */
 #ifndef __BSD_PTENTRY_T__
 #define __BSD_PTENTRY_T__
 typedef uint64_t pt_entry_t;	/* L3(4k) table entry */
-#define PRIxPTE         PRIx64
+#define PRIxPTE		PRIx64
 #endif /* __BSD_PTENTRY_T__ */
 
 #endif /* _LOCORE */
