@@ -1418,6 +1418,7 @@ typedef uint8_t pci_intr_line_t;
 #define PCI_BRIDGE_EXPROMADDR_REG	0x38
 
 #define PCI_BRIDGE_CONTROL_REG		0x3c /* Upper 16 bit */
+//XXXNH are the PCI_BRIDGE_CONTROL_PERE __BIT values off by 16?
 #define	  PCI_BRIDGE_CONTROL		__BITS(16, 31)
 #define   PCI_BRIDGE_CONTROL_PERE		__BIT(16)
 #define   PCI_BRIDGE_CONTROL_SERR		__BIT(17)
