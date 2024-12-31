@@ -192,9 +192,9 @@ bcm2838pcie_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	// bst = faa->faa_bst;
 	extern struct bus_space arm_generic_bs_tag;
-	bst = &arm_generic_bs_tag;
+	KASSERT(faa->faa_bst == &arm_generic_bs_tag);
+	bst = faa->faa_bst;
 
 	if (bus_space_map(faa->faa_bst, addr, size, 0, &bsh)) {
 		aprint_error_dev(sc->sc_dev, ": unable to map device\n");
