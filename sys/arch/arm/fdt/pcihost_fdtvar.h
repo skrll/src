@@ -84,9 +84,11 @@ struct pcihost_softc {
 	struct pcih_bus_space	sc_mem;
 
 	int			sc_pci_flags;
-
+#if 0
+// XXXNH doesn't look used (anymore?)
 	const u_int		*sc_pci_ranges;
 	u_int			sc_pci_ranges_cells;
+#endif
 
 	kmutex_t 		sc_msi_handlers_mutex;
 	LIST_HEAD(, pcihost_msi_handler)
