@@ -1636,12 +1636,14 @@ static void
 bt_dump(const bt_t *bt, void (*pr)(const char *, ...))
 {
 
-	(*pr)("\t%p: %" PRIu64 ", %" PRIu64 ", %d(%s)\n",
+	(*pr)("\t%p: %" PRIx64 ", %" PRIx64 ", %d(%s)\n",
 	    bt, (uint64_t)bt->bt_start, (uint64_t)bt->bt_size,
 	    bt->bt_type, bt_type_string(bt->bt_type));
 }
 
-static void
+void
+vmem_dump(const vmem_t *vm , void (*pr)(const char *, ...) __printflike(1, 2));
+void
 vmem_dump(const vmem_t *vm , void (*pr)(const char *, ...) __printflike(1, 2))
 {
 	const bt_t *bt;
