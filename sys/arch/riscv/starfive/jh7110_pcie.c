@@ -244,9 +244,35 @@ jh7110_pcie_decompose_tag(void *v, pcitag_t tag,
 }
 
 static bool
+jh7110_pcie_conf_hide(struct jh7110_pcie_softc *sc,
+    int bus, int dev, int fn, int offset)
+{
+
+	// Not sure why this is useful
+#if 0
+	if (bus == 0 && dev == 0 &&
+	    (offset == PCI_BAR(0) || offset == PCI_BAR(1)))
+		return true;
+#endif
+
+	return false;
+}
+
+static bool
 jh7110_pcie_conf_ok(struct jh7110_pcie_softc *sc,
     int bus, int dev, int fn, int offset)
 {
+
+#if 0
+        /*
+         * Single device limitation.
+         * PCIe controller contain HW issue that secondary bus of
+         * host bridge emumerate duplicate devices.
+         * Only can access device 0 in secondary bus.
+         */
+        if (PCI_BUS(bdf) == plda->sec_busno && PCI_DEV(bdf) > 0)
+                return false;
+#endif
 
 	/* Only one device on root port and the first subordinate port. */
 	if (bus < 2 && dev < 1)
@@ -267,6 +293,11 @@ jh7110_pcie_conf_read(void *v, pcitag_t tag, int offset)
 	KASSERT(offset < PCI_EXTCONF_SIZE);
 
 	jh7110_pcie_decompose_tag(phsc, tag, &bus, &dev, &fn);
+	if (jh7110_pcie_conf_hide(sc, bus, dev, fn, offset)) {
+		printf("%s:  XXX hide! %d:%d:%d offset %x\n", __func__,
+		    bus, dev, fn, offset);
+		return 0;
+	}
 
 	if (!jh7110_pcie_conf_ok(sc, bus, dev, fn, offset))
 		return 0xffffffff;
@@ -292,6 +323,10 @@ jh7110_pcie_conf_write(void *v, pcitag_t tag, int offset, pcireg_t data)
 	KASSERT(offset < PCI_EXTCONF_SIZE);
 
 	jh7110_pcie_decompose_tag(phsc, tag, &bus, &dev, &fn);
+
+	if (jh7110_pcie_conf_hide(sc, bus, dev, fn, offset)) {
+		return;
+	}
 
 	if (!jh7110_pcie_conf_ok(sc, bus, dev, fn, offset))
 		return;
