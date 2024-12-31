@@ -729,7 +729,7 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 			pi->prefetch = 0;
 			if (pci_conf_debug) {
 				print_tag(pb->pc, tag);
-				printf("Register 0x%x, I/O size 0x%" PRIx64 "\n",
+				printf("Register 0x%x, I/O size %" PRIu64 "\n",
 				    br, pi->size);
 			}
 			pb->niowin++;
@@ -753,7 +753,7 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 			default:
 				print_tag(pb->pc, tag);
 				printf("reserved mapping type 0x%x\n",
-				    PCI_MAPREG_MEM_TYPE(mask));
+					PCI_MAPREG_MEM_TYPE(mask));
 				continue;
 			}
 
@@ -769,11 +769,11 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 			} else {
 				if (pci_conf_debug) {
 					print_tag(pb->pc, tag);
-					printf("MEM%d BAR 0x%x has size %#" PRIx64 "\n",
+					printf("MEM%d BAR 0x%x has size %#lx\n",
 					    PCI_MAPREG_MEM_TYPE(mask) ==
 						PCI_MAPREG_MEM_TYPE_64BIT ?
 						64 : 32,
-					    br, size);
+					    br, (unsigned long)size);
 				}
 			}
 
@@ -790,8 +790,8 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 			pm->prefetch = PCI_MAPREG_MEM_PREFETCHABLE(mask);
 			if (pci_conf_debug) {
 				print_tag(pb->pc, tag);
-				printf("Register 0x%x, memory size %#"
-				    PRIx64 "\n", br, pm->size);
+				printf("Register 0x%x, memory size %"
+				    PRIu64 "\n", br, pm->size);
 			}
 			pb->nmemwin++;
 			if (pm->prefetch) {
@@ -827,8 +827,8 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 			pm->prefetch = 0;
 			if (pci_conf_debug) {
 				print_tag(pb->pc, tag);
-				printf("Expansion ROM memory size %#"
-				    PRIx64 "\n", pm->size);
+				printf("Expansion ROM memory size %"
+				    PRIu64 "\n", pm->size);
 			}
 			pb->nmemwin++;
 			if (pm->prefetch) {
@@ -933,8 +933,8 @@ setup_iowins(pciconf_bus_t *pb)
 		    pi->align, false);
 		if (~pi->address == 0) {
 			print_tag(pd->pc, pd->tag);
-			printf("Failed to allocate PCI I/O space (%#"
-			    PRIx64 " req)\n", pi->size);
+			printf("Failed to allocate PCI I/O space (%"
+			    PRIu64 " req)\n", pi->size);
 			return -1;
 		}
 		if (pd->ppb && pi->reg == 0) {
@@ -957,7 +957,7 @@ setup_iowins(pciconf_bus_t *pb)
 write_ioaddr:
 		if (pci_conf_debug) {
 			print_tag(pd->pc, pd->tag);
-			printf("Putting %#" PRIx64 " I/O bytes @ %#" PRIx64
+			printf("Putting %" PRIu64 " I/O bytes @ %#" PRIx64
 			    " (reg %x)\n", pi->size, pi->address, pi->reg);
 		}
 		pci_conf_write(pd->pc, pd->tag, pi->reg,
@@ -1019,9 +1019,9 @@ setup_memwins(pciconf_bus_t *pb)
 		if (~pm->address == 0) {
 			print_tag(pd->pc, pd->tag);
 			printf(
-			   "Failed to allocate PCI memory space (%#" PRIx64
-			   " req, prefetch=%d ok64=%s)\n", pm->size,
-			   pm->prefetch, ok64 ? "yes" : "no");
+			   "Failed to allocate PCI memory space (%" PRIu64
+			   " req, prefetch=%d ok64=%d)\n", pm->size,
+			   pm->prefetch, (int)ok64);
 			return -1;
 		}
 		if (pd->ppb && pm->reg == 0) {
@@ -1049,7 +1049,7 @@ setup_memwins(pciconf_bus_t *pb)
 			if (pci_conf_debug) {
 				print_tag(pd->pc, pd->tag);
 				printf(
-				    "Putting %#" PRIx64 " MEM bytes @ %#"
+				    "Putting %" PRIu64 " MEM bytes @ %#"
 				    PRIx64 " (reg %x)\n", pm->size,
 				    pm->address, pm->reg);
 			}
@@ -1087,7 +1087,7 @@ setup_memwins(pciconf_bus_t *pb)
 			if (pci_conf_debug) {
 				print_tag(pd->pc, pd->tag);
 				printf(
-				    "Putting %#" PRIx64 " ROM bytes @ %#"
+				    "Putting %" PRIu64 " ROM bytes @ %#"
 				    PRIx64 " (reg %x)\n", pm->size,
 				    pm->address, pm->reg);
 			}
