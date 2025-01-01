@@ -43,13 +43,9 @@ __KERNEL_RCSID(0, "$NetBSD: pcihost_fdt.c,v 1.1 2026/09/20 11:00:34 skrll Exp $"
 
 #include <machine/cpu.h>
 
-//#include <arm/cpufunc.h>
-
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pciconf.h>
-
-#include <riscv/pci/pci_msi_machdep.h>
 
 #include <dev/fdt/fdtvar.h>
 #include <dev/fdt/pcihost_fdtvar.h>

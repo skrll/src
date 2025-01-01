@@ -27,6 +27,8 @@ __KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.26 2026/09/20 11:00:32 skrll Exp $
 #include <sys/kmem.h>
 #include <sys/systm.h>
 
+#include <machine/intr.h>
+
 #include <dev/pci/pcidevs.h>
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
@@ -36,7 +38,6 @@ __KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.26 2026/09/20 11:00:32 skrll Exp $
 #include <dev/fdt/pcihost_fdtvar.h>
 #include <dev/fdt/syscon.h>
 
-#include <machine/intr.h>
 #include <arm/cpufunc.h>
 
 #define SETREG(m, v)			((m)<<16|__SHIFTIN((v), (m)))
