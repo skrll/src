@@ -38,17 +38,16 @@ __KERNEL_RCSID(0, "$NetBSD: pci_msi_machdep.c,v 1.9 2020/02/13 06:28:25 skrll Ex
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 
-#include <riscv/pci/pci_msi_machdep.h>
 
-static SIMPLEQ_HEAD(, riscv_pci_msi) riscv_pci_msi_list =
+static SIMPLEQ_HEAD(, md_pci_msi) riscv_pci_msi_list =
     SIMPLEQ_HEAD_INITIALIZER(riscv_pci_msi_list);
 
-static struct riscv_pci_msi *
+static struct md_pci_msi *
 riscv_pci_msi_find_frame(pci_intr_handle_t ih)
 {
-	struct riscv_pci_msi *msip;
+	struct md_pci_msi *msip;
 
-	const int id = __SHIFTOUT(ih, RISCV_PCI_INTR_FRAME);
+	const int id = __SHIFTOUT(ih, MD_PCI_INTR_FRAME);
 
 	SIMPLEQ_FOREACH(msip, &riscv_pci_msi_list, msi_link)
 		if (id == msip->msi_id)
@@ -57,10 +56,10 @@ riscv_pci_msi_find_frame(pci_intr_handle_t ih)
 	return NULL;
 }
 
-static struct riscv_pci_msi *
+static struct md_pci_msi *
 riscv_pci_msi_lookup(const struct pci_attach_args *pa)
 {
-	struct riscv_pci_msi *msip;
+	struct md_pci_msi *msip;
 	int b, d, f;
 
 	pci_decompose_tag(pa->pa_pc, pa->pa_tag, &b, &d, &f);
@@ -79,7 +78,7 @@ riscv_pci_msi_alloc_common(pci_intr_handle_t **ihps, int *count,
     const struct pci_attach_args *pa, bool exact)
 {
 	pci_intr_handle_t *vectors;
-	struct riscv_pci_msi *msi;
+	struct md_pci_msi *msi;
 
 	if ((pa->pa_flags & PCI_FLAGS_MSI_OKAY) == 0)
 		return ENODEV;
@@ -102,7 +101,7 @@ riscv_pci_msix_alloc_common(pci_intr_handle_t **ihps, u_int *table_indexes,
     int *count, const struct pci_attach_args *pa, bool exact)
 {
 	pci_intr_handle_t *vectors;
-	struct riscv_pci_msi *msi;
+	struct md_pci_msi *msi;
 
 	if ((pa->pa_flags & PCI_FLAGS_MSIX_OKAY) == 0)
 		return ENODEV;
@@ -125,7 +124,7 @@ riscv_pci_msix_alloc_common(pci_intr_handle_t **ihps, u_int *table_indexes,
  */
 
 int
-riscv_pci_msi_add(struct riscv_pci_msi *msi)
+md_pci_msi_add(struct md_pci_msi *msi)
 {
 	// XXXNH locking?
 	SIMPLEQ_INSERT_TAIL(&riscv_pci_msi_list, msi, msi_link);
@@ -134,10 +133,10 @@ riscv_pci_msi_add(struct riscv_pci_msi *msi)
 }
 
 void *
-riscv_pci_msi_intr_establish(pci_chipset_tag_t pc, pci_intr_handle_t pih,
+md_pci_msi_intr_establish(pci_chipset_tag_t pc, pci_intr_handle_t pih,
     int ipl, int (*func)(void *), void *arg, const char *xname)
 {
-	struct riscv_pci_msi *msi;
+	struct md_pci_msi *msi;
 
 	msi = riscv_pci_msi_find_frame(pih);
 	if (msi == NULL)
@@ -256,12 +255,12 @@ pci_intr_alloc(const struct pci_attach_args *pa, pci_intr_handle_t **ihps, int *
 void
 pci_intr_release(pci_chipset_tag_t pc, pci_intr_handle_t *pih, int count)
 {
-	struct riscv_pci_msi *msi = NULL;
+	struct md_pci_msi *msi = NULL;
 
 	if (pih == NULL || count == 0)
 		return;
 
-	if ((pih[0] & (RISCV_PCI_INTR_MSIX|RISCV_PCI_INTR_MSI)) != 0) {
+	if ((pih[0] & (MD_PCI_INTR_MSIX|MD_PCI_INTR_MSI)) != 0) {
 		msi = riscv_pci_msi_find_frame(pih[0]);
 		KASSERT(msi != NULL);
 		msi->msi_intr_release(msi, pih, count);
@@ -273,10 +272,10 @@ pci_intr_release(pci_chipset_tag_t pc, pci_intr_handle_t *pih, int count)
 pci_intr_type_t
 pci_intr_type(pci_chipset_tag_t pc, pci_intr_handle_t ih)
 {
-	if (ih & RISCV_PCI_INTR_MSIX)
+	if (ih & MD_PCI_INTR_MSIX)
 		return PCI_INTR_TYPE_MSIX;
 
-	if (ih & RISCV_PCI_INTR_MSI)
+	if (ih & MD_PCI_INTR_MSI)
 		return PCI_INTR_TYPE_MSI;
 
 	return PCI_INTR_TYPE_INTX;
