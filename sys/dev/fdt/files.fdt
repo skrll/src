@@ -152,6 +152,11 @@ device	syscon: fdt, fdt_syscon
 attach	syscon at fdt
 file	dev/fdt/syscon.c			syscon
 
+# Generic PCI host controller
+device	pcihost: pcibus
+attach	pcihost at fdt with pcihost_fdt
+file	dev//fdt/pcihost_fdt.c			pcihost_fdt
+
 device	pinctrl: fdt_pinctrl
 attach	pinctrl at fdt with pinctrl_single
 file	dev/fdt/pinctrl_single.c		pinctrl_single

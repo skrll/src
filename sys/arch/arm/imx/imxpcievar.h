@@ -43,7 +43,7 @@ struct imxpcie_softc {
 	paddr_t sc_root_addr;
 	size_t sc_root_size;
 
-	struct arm32_pci_chipset sc_pc;
+	struct md_pci_chipset sc_pc;
 
 	TAILQ_HEAD(, imxpcie_ih) sc_intrs;
 

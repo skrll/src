@@ -26,6 +26,8 @@
  * SUCH DAMAGE.
  */
 
+#include <machine/pci_machdep.h>
+
 /* Physical address format bit definitions */
 #define	PHYS_HI_RELO			__BIT(31)
 #define	PHYS_HI_PREFETCH		__BIT(30)
@@ -78,8 +80,7 @@ struct pcihost_softc {
 	u_int			sc_bus_min;
 	u_int			sc_bus_max;
 
-	struct riscv_pci_chipset
-				sc_pc;
+	struct md_pci_chipset	sc_pc;
 
 	struct pcih_bus_space	sc_io;
 	struct pcih_bus_space	sc_mem;

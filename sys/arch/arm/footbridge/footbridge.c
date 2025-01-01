@@ -83,7 +83,7 @@ extern void footbridge_create_mem_bs_tag(bus_space_tag_t t, void *cookie);
 struct bus_space footbridge_csr_tag;
 struct bus_space footbridge_pci_io_bs_tag;
 struct bus_space footbridge_pci_mem_bs_tag;
-extern struct arm32_pci_chipset footbridge_pci_chipset;
+extern struct md_pci_chipset footbridge_pci_chipset;
 extern struct arm32_bus_dma_tag footbridge_pci_bus_dma_tag;
 extern struct arm32_dma_range footbridge_dma_ranges[1];
 

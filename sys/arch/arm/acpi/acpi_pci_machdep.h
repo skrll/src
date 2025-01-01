@@ -32,10 +32,10 @@
 #ifndef _ARM_ACPI_PCI_MACHDEP_H
 #define _ARM_ACPI_PCI_MACHDEP_H
 
-extern struct arm32_pci_chipset arm_acpi_pci_chipset;
+extern struct md_pci_chipset arm_acpi_pci_chipset;
 
 struct acpi_pci_context {
-	struct arm32_pci_chipset ap_pc;
+	struct md_pci_chipset ap_pc;
 	device_t ap_dev;
 	u_int ap_seg;
 	int ap_bus;

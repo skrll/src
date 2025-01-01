@@ -75,7 +75,7 @@ void		*footbridge_pci_intr_establish(void *, pci_intr_handle_t,
 void		footbridge_pci_intr_disestablish(void *, void *);
 const struct evcnt *footbridge_pci_intr_evcnt(void *, pci_intr_handle_t);
 
-struct arm32_pci_chipset footbridge_pci_chipset = {
+struct md_pci_chipset footbridge_pci_chipset = {
 #ifdef netwinder
 	.pc_attach_hook = netwinder_pci_attach_hook,
 #else

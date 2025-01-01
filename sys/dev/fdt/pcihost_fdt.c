@@ -1,4 +1,4 @@
-/* $NetBSD: pcihost_fdt.c,v 1.33 2024/01/12 11:24:48 skrll Exp $ */
+/* $NetBSD: pcihost_fdt.c,v 1.1 2025/01/01 17:53:07 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pcihost_fdt.c,v 1.33 2024/01/12 11:24:48 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pcihost_fdt.c,v 1.1 2025/01/01 17:53:07 skrll Exp $");
 
 #include <sys/param.h>
 
@@ -43,21 +43,17 @@ __KERNEL_RCSID(0, "$NetBSD: pcihost_fdt.c,v 1.33 2024/01/12 11:24:48 skrll Exp $
 
 #include <machine/cpu.h>
 
-#include <arm/cpufunc.h>
-
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pciconf.h>
 
 #include <dev/fdt/fdtvar.h>
-
-#include <arm/pci/pci_msi_machdep.h>
-#include <arm/fdt/pcihost_fdtvar.h>
+#include <dev/fdt/pcihost_fdtvar.h>
 
 #define	PCIHOST_DEFAULT_BUS_MIN		0
 #define	PCIHOST_DEFAULT_BUS_MAX		255
 
-#define	PCIHOST_CACHELINE_SIZE		arm_dcache_align
+#define	PCIHOST_CACHELINE_SIZE		MD_PCI_CACHELINE_SIZE
 
 int pcihost_segment = 0;
 
@@ -101,11 +97,12 @@ static const struct device_compatible_entry compat_data[] = {
 	DEVICE_COMPAT_EOL
 };
 
+#ifdef __HAVE_PCI_MSI_MSIX
 struct pcihost_msi_handler {
 	LIST_ENTRY(pcihost_msi_handler) pmh_next;
 	void *pmh_ih;
 };
-
+#endif
 
 static int
 pcihost_match(device_t parent, cfdata_t cf, void *aux)
@@ -135,7 +132,7 @@ pcihost_attach(device_t parent, device_t self, void *aux)
 	sc->sc_pci_bst = faa->faa_bst;
 	sc->sc_phandle = faa->faa_phandle;
 	error = bus_space_map(sc->sc_bst, cs_addr, cs_size,
-	    BUS_SPACE_MAP_NONPOSTED, &sc->sc_bsh);
+	    MD_PCI_CONFIG_MAP_FLAGS, &sc->sc_bsh);
 	if (error) {
 		aprint_error(": couldn't map registers: %d\n", error);
 		return;
@@ -184,7 +181,12 @@ pcihost_init2(struct pcihost_softc *sc)
 	if (of_getprop_uint32(sc->sc_phandle, "linux,pci-domain", &sc->sc_seg))
 		sc->sc_seg = pcihost_segment++;
 
+#ifdef __HAVE_PCI_MSI_MSIX
 	mutex_init(&sc->sc_msi_handlers_mutex, MUTEX_DEFAULT, IPL_NONE);
+
+	/* Rely on softc being zero initialised. */
+	KASSERT(LIST_EMPTY(&sc->sc_msi_handlers));
+#endif
 
 	if (pcihost_config(sc) != 0)
 		return;
@@ -253,25 +255,29 @@ pcihost_config(struct pcihost_softc *sc)
 	pmbs->bst.bs_map = pcihost_bus_space_map;
 
 	/*
-	 * If this flag is set, skip configuration of the PCI bus and use existing config.
+	 * If this flag is set, skip configuration of the PCI bus and use
+	 * existing config.
 	 */
 	const int chosen = OF_finddevice("/chosen");
 	if (chosen <= 0 || of_getprop_uint32(chosen, "linux,pci-probe-only", &probe_only))
 		probe_only = 0;
+#if 0
 
 	if (sc->sc_pci_ranges != NULL) {
 		ranges = sc->sc_pci_ranges;
 		len = sc->sc_pci_ranges_cells * 4;
 		swap = false;
 	} else {
+#endif
 		ranges = fdtbus_get_prop(sc->sc_phandle, "ranges", &len);
 		if (ranges == NULL) {
 			aprint_error_dev(sc->sc_dev, "missing 'ranges' property\n");
 			return EINVAL;
 		}
 		swap = true;
+#if 0
 	}
-
+#endif
 	struct pciconf_resources *pcires = pciconf_resource_init();
 
 	/*
@@ -307,7 +313,7 @@ pcihost_config(struct pcihost_softc *sc)
 			pibs->ranges[pibs->nranges].size = size;
 			++pibs->nranges;
 			aprint_verbose_dev(sc->sc_dev,
-			    "IO: 0x%" PRIx64 "+0x%" PRIx64 "@0x%" PRIx64 "\n",
+			    "IO: 0x%016" PRIx64 " + 0x%016" PRIx64 " @ 0x%016" PRIx64 "\n",
 			    bus_phys, size, cpu_phys);
 			/*
 			 * Reserve a PC-like legacy IO ports range, perhaps
@@ -338,12 +344,12 @@ pcihost_config(struct pcihost_softc *sc)
 			    __SHIFTOUT(phys_hi, PHYS_HI_SPACE) == PHYS_HI_SPACE_MEM64) {
 				type = PCICONF_RESOURCE_PREFETCHABLE_MEM;
 				aprint_verbose_dev(sc->sc_dev,
-				    "MMIO (%d-bit prefetchable): 0x%" PRIx64 "+0x%" PRIx64 "@0x%" PRIx64 "\n",
+				    "MMIO (%d-bit prefetchable)    : 0x%016" PRIx64 " + 0x%016" PRIx64 " @ 0x%016" PRIx64 "\n",
 				    is64 ? 64 : 32, bus_phys, size, cpu_phys);
 			} else {
 				type = PCICONF_RESOURCE_MEM;
 				aprint_verbose_dev(sc->sc_dev,
-				    "MMIO (%d-bit non-prefetchable): 0x%" PRIx64 "+0x%" PRIx64 "@0x%" PRIx64 "\n",
+				    "MMIO (%d-bit non-prefetchable): 0x%016" PRIx64 " + 0x%016" PRIx64 " @ 0x%016" PRIx64 "\n",
 				    is64 ? 64 : 32, bus_phys, size, cpu_phys);
 			}
 			error = pciconf_resource_add(pcires, type, bus_phys,
@@ -364,7 +370,6 @@ pcihost_config(struct pcihost_softc *sc)
 	}
 
 	pciconf_resource_fini(pcires);
-
 	if (error) {
 		aprint_error_dev(sc->sc_dev, "configuration failed: %d\n", error);
 		return error;
@@ -565,18 +570,18 @@ pcihost_find_intr(struct pcihost_softc *sc, pci_intr_handle_t ih, int *pihandle)
 static const char *
 pcihost_intr_string(void *v, pci_intr_handle_t ih, char *buf, size_t len)
 {
-	const int irq = __SHIFTOUT(ih, ARM_PCI_INTR_IRQ);
-	const int vec = __SHIFTOUT(ih, ARM_PCI_INTR_MSI_VEC);
+	const int irq = __SHIFTOUT(ih, MD_PCI_INTR_IRQ);
+	const int vec = __SHIFTOUT(ih, MD_PCI_INTR_MSI_VEC);
 	struct pcihost_softc *sc = v;
 	const u_int *specifier;
 	int ihandle;
 
-	if (ih & ARM_PCI_INTR_MSIX) {
+	if (ih & MD_PCI_INTR_MSIX) {
 		snprintf(buf, len, "irq %d (MSI-X vec %d)", irq, vec);
-	} else if (ih & ARM_PCI_INTR_MSI) {
+	} else if (ih & MD_PCI_INTR_MSI) {
 		snprintf(buf, len, "irq %d (MSI vec %d)", irq, vec);
 	} else {
-		specifier = pcihost_find_intr(sc, ih & ARM_PCI_INTR_IRQ, &ihandle);
+		specifier = pcihost_find_intr(sc, ih & MD_PCI_INTR_IRQ, &ihandle);
 		if (specifier == NULL)
 			return NULL;
 
@@ -599,9 +604,9 @@ pcihost_intr_setattr(void *v, pci_intr_handle_t *ih, int attr, uint64_t data)
 	switch (attr) {
 	case PCI_INTR_MPSAFE:
 		if (data)
-			*ih |= ARM_PCI_INTR_MPSAFE;
+			*ih |= MD_PCI_INTR_MPSAFE;
 		else
-			*ih &= ~ARM_PCI_INTR_MPSAFE;
+			*ih &= ~MD_PCI_INTR_MPSAFE;
 		return 0;
 	default:
 		return ENODEV;
@@ -613,12 +618,13 @@ pcihost_intr_establish(void *v, pci_intr_handle_t pih, int ipl,
     int (*callback)(void *), void *arg, const char *xname)
 {
 	struct pcihost_softc *sc = v;
-	const int flags = (pih & ARM_PCI_INTR_MPSAFE) ? FDT_INTR_MPSAFE : 0;
+	const int flags = (pih & MD_PCI_INTR_MPSAFE) ? FDT_INTR_MPSAFE : 0;
 	const u_int *specifier;
 	int ihandle;
 
-	if ((pih & (ARM_PCI_INTR_MSI | ARM_PCI_INTR_MSIX)) != 0) {
-		void *ih = arm_pci_msi_intr_establish(&sc->sc_pc, pih, ipl,
+#ifdef __HAVE_PCI_MSI_MSIX
+	if ((pih & (MD_PCI_INTR_MSI | MD_PCI_INTR_MSIX)) != 0) {
+		void *ih = md_pci_msi_intr_establish(&sc->sc_pc, pih, ipl,
 		    callback, arg, xname);
 
 		if (ih) {
@@ -631,8 +637,9 @@ pcihost_intr_establish(void *v, pci_intr_handle_t pih, int ipl,
 		}
 		return ih;
 	}
+#endif
 
-	specifier = pcihost_find_intr(sc, pih & ARM_PCI_INTR_IRQ, &ihandle);
+	specifier = pcihost_find_intr(sc, pih & MD_PCI_INTR_IRQ, &ihandle);
 	if (specifier == NULL)
 		return NULL;
 
@@ -645,6 +652,7 @@ pcihost_intr_disestablish(void *v, void *vih)
 {
 	struct pcihost_softc *sc = v;
 
+#ifdef __HAVE_PCI_MSI_MSIX
 	mutex_enter(&sc->sc_msi_handlers_mutex);
 	struct pcihost_msi_handler *pmh;
 	LIST_FOREACH(pmh, &sc->sc_msi_handlers, pmh_next) {
@@ -656,6 +664,7 @@ pcihost_intr_disestablish(void *v, void *vih)
 		}
 	}
 	mutex_exit(&sc->sc_msi_handlers_mutex);
+#endif
 
 	fdtbus_intr_disestablish(sc->sc_phandle, vih);
 }
@@ -667,8 +676,7 @@ pcihost_bus_space_map(void *t, bus_addr_t bpa, bus_size_t size, int flag,
 	struct pcih_bus_space * const pbs = t;
 
 	if ((pbs->flags & PCI_FLAGS_IO_OKAY) != 0) {
-		/* Force strongly ordered mapping for all I/O space */
-		flag = BUS_SPACE_MAP_NONPOSTED;
+		flag = MD_PCI_IO_MAP_FLAGS;
 	}
 
 	for (size_t i = 0; i < pbs->nranges; i++) {

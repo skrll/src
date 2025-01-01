@@ -538,7 +538,7 @@ marvell_device_register(device_t dev, void *aux)
 	if (device_is_a(dev, "gtpci")) {
 		extern struct bus_space
 		    orion_pci_io_bs_tag, orion_pci_mem_bs_tag;
-		extern struct arm32_pci_chipset arm32_gtpci_chipset;
+		extern struct md_pci_chipset arm32_gtpci_chipset;
 
 		prop_data_t io_bs_tag, mem_bs_tag, pc;
 		prop_array_t int2gpp;
@@ -571,7 +571,7 @@ marvell_device_register(device_t dev, void *aux)
 		prop_object_release(mem_bs_tag);
 
 		pc = prop_data_create_data_nocopy(&arm32_gtpci_chipset,
-		    sizeof(struct arm32_pci_chipset));
+		    sizeof(struct md_pci_chipset));
 		KASSERT(pc != NULL);
 		prop_dictionary_set(dict, "pci-chipset", pc);
 		prop_object_release(pc);

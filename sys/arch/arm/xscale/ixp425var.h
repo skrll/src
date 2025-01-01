@@ -77,7 +77,7 @@ struct ixp425_softc {
 	struct bus_space sc_pci_iot;
 	struct bus_space sc_pci_memt;
 	struct arm32_bus_dma_tag ia_pci_dmat;
-	struct arm32_pci_chipset ia_pci_chipset;
+	struct md_pci_chipset ia_pci_chipset;
 	vaddr_t sc_pci_va;
 
 	/* DMA window info for PCI DMA. */

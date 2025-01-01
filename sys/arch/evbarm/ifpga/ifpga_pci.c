@@ -100,7 +100,7 @@ void		*ifpga_pci_intr_establish (void *, pci_intr_handle_t, int,
 		    int (*)(void *), void *, const char *);
 void		ifpga_pci_intr_disestablish (void *, void *);
 
-struct arm32_pci_chipset ifpga_pci_chipset = {
+struct md_pci_chipset ifpga_pci_chipset = {
 	.pc_attach_hook = ifpga_pci_attach_hook,
 	.pc_bus_maxdevs = ifpga_pci_bus_maxdevs,
 	.pc_make_tag = ifpga_pci_make_tag,

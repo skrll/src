@@ -34,7 +34,6 @@
 
 #include <dev/pci/pcivar.h>
 
-#include <arm/pci/pci_msi_machdep.h>
 #include <arm/cortex/gic_reg.h>
 #include <arm/cortex/gicv3.h>
 
@@ -107,7 +106,7 @@ struct gicv3_its {
 
 	bool			its_cmd_flush;
 
-	struct arm_pci_msi	its_msi;
+	struct md_pci_msi	its_msi;
 
 	kmutex_t		*its_lock;
 };

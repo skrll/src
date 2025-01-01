@@ -37,15 +37,14 @@ __KERNEL_RCSID(0, "$NetBSD: jh7110_pcie.c,v 1.2 2025/01/09 10:39:01 skrll Exp $"
 #include <sys/bitops.h>
 #include <sys/kmem.h>
 
-#include <dev/fdt/fdtvar.h>
-#include <dev/fdt/syscon.h>
-
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pciconf.h>
 
-#include <riscv/fdt/pcihost_fdtvar.h>
+#include <dev/fdt/fdtvar.h>
+#include <dev/fdt/pcihost_fdtvar.h>
+#include <dev/fdt/syscon.h>
 
-#include <riscv/pci/pci_msi_machdep.h>
+//#include <riscv/pci/pci_msi_machdep.h>
 
 struct jh7110_pcie_irq;
 
@@ -98,7 +97,7 @@ struct jh7110_pcie_softc {
 	struct evcnt		sc_evcnt_handled[PCI_INTERRUPT_PIN_MAX];
 	struct evcnt		sc_evcnt_unknown[PCI_INTERRUPT_PIN_MAX];
 
-	struct riscv_pci_msi	sc_msi;
+	struct md_pci_msi	sc_msi;
 	u_int			sc_msi_start;
 	u_int			sc_nmsi;
 	struct pci_attach_args	**sc_msi_pa;
@@ -845,7 +844,7 @@ jh7110_pcie_msi_reserve(struct jh7110_pcie_softc *sc, int count,
 
 
 static pci_intr_handle_t *
-jh7110_pcie_msi_alloc(struct riscv_pci_msi *msi, int *count,
+jh7110_pcie_msi_alloc(struct md_pci_msi *msi, int *count,
     const struct pci_attach_args *pa, bool exact)
 {
 	struct jh7110_pcie_softc * const sc= msi->msi_priv;
@@ -880,10 +879,10 @@ jh7110_pcie_msi_alloc(struct riscv_pci_msi *msi, int *count,
 		// needed?
 		const int msino = msi_base + n;
 		vectors[n] =
-		    RISCV_PCI_INTR_MSI |
-		    __SHIFTIN(msino, RISCV_PCI_INTR_IRQ) |
-		    __SHIFTIN(n, RISCV_PCI_INTR_MSI_VEC) |
-		    __SHIFTIN(msi->msi_id, RISCV_PCI_INTR_FRAME);
+		    MD_PCI_INTR_MSI |
+		    __SHIFTIN(msino, MD_PCI_INTR_IRQ) |
+		    __SHIFTIN(n, MD_PCI_INTR_MSI_VEC) |
+		    __SHIFTIN(msi->msi_id, MD_PCI_INTR_FRAME);
 	}
 
 	jh7110_pcie_msi_enable(sc, msi_base, *count);
@@ -924,14 +923,14 @@ jh7110_pcie_msi_disable(struct jh7110_pcie_softc *sc, int msi)
 
 
 static void *
-jh7110_pcie_msi_intr_establish(struct riscv_pci_msi *msi,
+jh7110_pcie_msi_intr_establish(struct md_pci_msi *msi,
     pci_intr_handle_t ih, int ipl, int (*func)(void *), void *arg,
     const char *xname)
 {
 	struct jh7110_pcie_softc * const sc = msi->msi_priv;
 
-	const int msino = __SHIFTOUT(ih, RISCV_PCI_INTR_IRQ);
-	const int mpsafe = (ih & RISCV_PCI_INTR_MPSAFE) ? FDT_INTR_MPSAFE : 0;
+	const int msino = __SHIFTOUT(ih, MD_PCI_INTR_IRQ);
+	const int mpsafe = (ih & MD_PCI_INTR_MPSAFE) ? FDT_INTR_MPSAFE : 0;
 
 	KASSERT(sc->sc_msi_ih[msino] == NULL);
 
@@ -943,19 +942,19 @@ jh7110_pcie_msi_intr_establish(struct riscv_pci_msi *msi,
 }
 
 static void
-jh7110_pcie_msi_intr_release(struct riscv_pci_msi *msi, pci_intr_handle_t *pih,
+jh7110_pcie_msi_intr_release(struct md_pci_msi *msi, pci_intr_handle_t *pih,
     int count)
 {
 	struct jh7110_pcie_softc * const sc = msi->msi_priv;
 	int n;
 
 	for (n = 0; n < count; n++) {
-		const int msino = __SHIFTOUT(pih[n], RISCV_PCI_INTR_IRQ);
+		const int msino = __SHIFTOUT(pih[n], MD_PCI_INTR_IRQ);
 #if 0
-		if (pih[n] & RISCV_PCI_INTR_MSIX)
+		if (pih[n] & MD_PCI_INTR_MSIX)
 			jh7110_pcie_msix_disable(sc, msino);
 #endif
-		if (pih[n] & RISCV_PCI_INTR_MSI)
+		if (pih[n] & MD_PCI_INTR_MSI)
 			jh7110_pcie_msi_disable(sc, msino);
 		jh7110_pcie_msi_free(sc, msino);
 		if (sc->sc_msi_ih[msino] != NULL) {
@@ -968,7 +967,7 @@ jh7110_pcie_msi_intr_release(struct riscv_pci_msi *msi, pci_intr_handle_t *pih,
 static int
 jh7110_pcie_msi_init(struct jh7110_pcie_softc *sc)
 {
-	struct riscv_pci_msi * const msi = &sc->sc_msi;
+	struct md_pci_msi * const msi = &sc->sc_msi;
 	struct pcihost_softc * const phsc = &sc->sc_phsc;
 
 	sc->sc_msi_start = 0; /* eh? */
@@ -992,7 +991,7 @@ jh7110_pcie_msi_init(struct jh7110_pcie_softc *sc)
 	/* Unmask interrupts. */
 	WR4(sc, PLDA_IMASK_LOCAL, PLDA_IMASK_INT_MSI);
 
-	return riscv_pci_msi_add(msi);
+	return md_pci_msi_add(msi);
 }
 
 
