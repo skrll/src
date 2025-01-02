@@ -128,6 +128,29 @@ dwiic_fdt_attach(device_t parent, device_t self, void *aux)
 		goto failed_intr;
 	}
 
+#if 0
+	clock-frequency = <100000>;
+	i2c-sda-hold-time-ns = <300>;
+	i2c-sda-falling-time-ns = <510>;
+	i2c-scl-falling-time-ns = <510>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c6_pins>;
+	status = "okay";
+
+#endif
+#if 0
+if (sc->ss_hcnt == 0)
+//                sc->ss_hcnt = dwiic_read(sc, DW_IC_SS_SCL_HCNT);
+        if (sc->ss_lcnt == 0)
+//                sc->ss_lcnt = dwiic_read(sc, DW_IC_SS_SCL_LCNT);
+        if (sc->fs_hcnt == 0)
+//                sc->fs_hcnt = dwiic_read(sc, DW_IC_FS_SCL_HCNT);
+        if (sc->fs_lcnt == 0)
+//                sc->fs_lcnt = dwiic_read(sc, DW_IC_FS_SCL_LCNT);
+        if (sc->sda_hold_time == 0)
+//                sc->sda_hold_time = dwiic_read(sc, DW_IC_SDA_HOLD);
+#endif
+
 	if (!dwiic_attach(&sc->sc_dwiic))
 		goto failed_attach;
 

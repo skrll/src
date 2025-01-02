@@ -176,12 +176,49 @@ auich*		at pci? dev ? function ?	# Intel AC'97 Audio (QEMU)
 eap*		at pci? dev ? function ?	# Ensoniq AudioPCI (QEMU)
 
 # I2C controllers
+#options 	I2C_MAX_ADDR=0xfff
+#appleiic* 	at fdt?			# Apple I2C
+#bsciic* 	at fdt?			# Broadcom BCM283x Serial Control
+#bsciic* 	at acpi?
 dwiic* 		at fdt?			# Designware I2C
+#dwiic* 		at acpi?
+#imxi2c* 	at fdt? pass 4		# IMX I2C
+#nxpiic* 	at acpi?		# NXP Layerscape I2C
+#qcomiic* 	at acpi?		# Qualcomm I2C
+#rkiic* 		at fdt? pass 4		# Rockchip I2C
+#sunxirsb* 	at fdt?	pass 4		# Allwinner RSB
+#sunxitwi* 	at fdt?			# Allwinner TWI
+#tegrai2c* 	at fdt? pass 4		# NVIDIA Tegra I2C
+#sniiic* 	at fdt?			# Socionext SC2A11 I2C
+#sniiic* 	at acpi?
+iicmux* 	at fdt? pass 5		# I2C mux virtual controllers
 iic* 		at i2cbus?
 
 # I2C devices
+titemp* 	at iic?
+seeprom*	at iic?
+spdmem* 	at iic?			# memory module SPD EEPROM decoder
+as3722pmic* 	at iic?
+as3722reg* 	at as3722pmic?
 #axppmic* 	at iic?			# X-Powers AXP Power Management IC
 #axpreg* 	at axppmic?
+cwfg* 		at iic?			# CellWise CW2015 Fuel Gauge IC
+dsrtc* 		at iic?			# Dallas Semiconductor RTCs
+es8316ac* 	at iic?			# Everest Semi ES8316 Audio CODEC
+fan53555reg* 	at iic?			# FAN53555 / SY82x regulator
+max77620pmic* 	at iic?
+pcaiicmux* 	at iic?			# PCA954x / PCA984x I2C switch / mux
+pcf8563rtc* 	at iic?			# PCF8563 RTC
+rkpmic* 	at iic?			# Rockchip Power Management IC
+rkreg* 		at rkpmic?
+tcagpio* 	at iic?
+
+# I2C HID devices
+ihidev* 	at iic?
+ims* 		at ihidev? reportid ?
+wsmouse* 	at ims? mux 0
+ikbd* 		at ihidev? reportid ?
+wskbd* 		at ikbd? mux 1
 
 # Virtio devices
 virtio* 	at fdt?			# Virtio MMIO device
