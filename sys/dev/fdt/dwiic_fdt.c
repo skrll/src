@@ -129,15 +129,21 @@ dwiic_fdt_attach(device_t parent, device_t self, void *aux)
 	}
 
 #if 0
-	clock-frequency = <100000>;
-	i2c-sda-hold-time-ns = <300>;
-	i2c-sda-falling-time-ns = <510>;
-	i2c-scl-falling-time-ns = <510>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&i2c6_pins>;
-	status = "okay";
+#define GET_PROP(s, v) \
+	i
 
+	uint32_t val;
+	if (of_getprop_uint32(phandle, "clock-frequency", &val) == 0) {
+		prop_dictionary_set_uint32(dict,
+		    "motorcomm,rx-clk-drv-microamp", val);
+	}
+
+	GET_PROP("clock-frequency", &sc->sc_clockfreq);
+	GET_PROP("i2c-sda-hold-time-ns", &sc->sc_sda_hold_time);
+	GET_PROP("i2c-sda-falling-time-ns", &sc->sc_sda_fallingtime);
+	GET_PROP("i2c-scl-falling-time-ns", &sc->sc_scl_fallingtime);
 #endif
+
 #if 0
 if (sc->ss_hcnt == 0)
 //                sc->ss_hcnt = dwiic_read(sc, DW_IC_SS_SCL_HCNT);
@@ -147,8 +153,6 @@ if (sc->ss_hcnt == 0)
 //                sc->fs_hcnt = dwiic_read(sc, DW_IC_FS_SCL_HCNT);
         if (sc->fs_lcnt == 0)
 //                sc->fs_lcnt = dwiic_read(sc, DW_IC_FS_SCL_LCNT);
-        if (sc->sda_hold_time == 0)
-//                sc->sda_hold_time = dwiic_read(sc, DW_IC_SDA_HOLD);
 #endif
 
 	if (!dwiic_attach(&sc->sc_dwiic))
