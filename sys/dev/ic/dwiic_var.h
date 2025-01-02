@@ -54,6 +54,7 @@ struct dwiic_softc {
 	kcondvar_t		sc_int_stopwait;
 
 	uint32_t		master_cfg;
+	// XXXNH?
 	uint16_t		ss_hcnt, ss_lcnt, fs_hcnt, fs_lcnt;
 	uint32_t		sda_hold_time;
 	int			tx_fifo_depth;
