@@ -888,6 +888,10 @@ acpi_res_parse_memrange(device_t dev, void *context, uint64_t low,
 		res->ar_nmemrange++;
 		return;
 	}
+	aprint_debug_dev(dev, "ACPI: Memory range resource %d: %lx - %lx (%lx/%lx)\n",
+	    res->ar_nmemrange,
+            low, high,
+	    length, align);
 
 	ar->ar_index = res->ar_nmemrange++;
 	ar->ar_low = low;
