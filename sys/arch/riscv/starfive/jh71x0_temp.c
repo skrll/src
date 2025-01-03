@@ -175,6 +175,8 @@ jh71x0_temp_attach(device_t parent, device_t self, void *aux)
 	/* Initialize sensor data. */
 	sc->sc_sensor.units = ENVSYS_STEMP;
 	sc->sc_sensor.state = ENVSYS_SINVALID;
+	// XXXNH check
+//	sc->sc_sensor.flags = ENVSYS_FMONLIMITS | ENVSYS_FHAS_ENTROPY;
 	(void)strlcpy(sc->sc_sensor.desc, device_xname(self),
 	    sizeof(sc->sc_sensor.desc));
 	if (sysmon_envsys_sensor_attach(sc->sc_sme, &sc->sc_sensor)) {
@@ -186,6 +188,8 @@ jh71x0_temp_attach(device_t parent, device_t self, void *aux)
 	sc->sc_sme->sme_name = device_xname(self);
 	sc->sc_sme->sme_cookie = sc;
 	sc->sc_sme->sme_refresh = jh71x0_temp_refresh;
+//	sc->sc_sme->sme_get_limits = lmtemptbl[i].lmtemp_getlim;
+//	sc->sc_sme->sme_set_limits = lmtemptbl[i].lmtemp_setlim;
 
 	if (sysmon_envsys_register(sc->sc_sme)) {
 		aprint_error_dev(self, "unable to register with sysmon\n");
