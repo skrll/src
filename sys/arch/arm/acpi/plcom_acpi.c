@@ -81,6 +81,9 @@ plcom_acpi_attach(device_t parent, device_t self, void *aux)
 	struct acpi_attach_args *aa = aux;
 	struct acpi_resources res;
 	struct acpi_mem *mem;
+	struct acpi_memrange *memrange;
+	bus_addr_t base;
+	bus_size_t len;
 	struct acpi_irq *irq;
 	ACPI_STATUS rv;
 	void *ih;
@@ -93,9 +96,17 @@ plcom_acpi_attach(device_t parent, device_t self, void *aux)
 		return;
 
 	mem = acpi_res_mem(&res, 0);
-	if (mem == NULL) {
-		aprint_error(": couldn't find mem resource\n");
-		goto done;
+	if (mem != NULL) {
+		base = mem->ar_base;
+		len = mem->ar_length;
+	} else {
+		memrange = acpi_res_memrange(&res, 0);
+		if (memrange == NULL) {
+			aprint_error(": couldn't find mem resource\n");
+			goto done;
+		}
+		base = memrange->ar_low;
+		len = memrange->ar_length;
 	}
 
 	irq = acpi_res_irq(&res, 0);
@@ -121,7 +132,7 @@ plcom_acpi_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_pi.pi_iot = aa->aa_memt;
 	sc->sc_pi.pi_iobase = mem->ar_base;
-	if (bus_space_map(aa->aa_memt, mem->ar_base, mem->ar_length, 0, &sc->sc_pi.pi_ioh) != 0) {
+	if (bus_space_map(aa->aa_memt, base, len, 0, &sc->sc_pi.pi_ioh) != 0) {
 		aprint_error(": couldn't map registers\n");
 		goto done;
 	}
