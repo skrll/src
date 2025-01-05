@@ -150,7 +150,7 @@ struct i80312_softc {
 	struct bus_space sc_pci_iot;
 	struct bus_space sc_pci_memt;
 	struct arm32_bus_dma_tag sc_pci_dmat;
-	struct arm32_pci_chipset sc_pci_chipset;
+	struct md_pci_chipset sc_pci_chipset;
 
 	/* DMA window info for PCI DMA. */
 	struct arm32_dma_range sc_pci_dma_range;

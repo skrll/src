@@ -88,7 +88,7 @@ struct tegra_pcie_softc {
 	int			sc_phandle;
 	enum tegra_pcie_type	sc_type;
 
-	struct arm32_pci_chipset sc_pc;
+	struct md_pci_chipset sc_pc;
 
 	void			*sc_ih;
 

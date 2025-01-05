@@ -80,7 +80,7 @@ int ifpga_uart_clk = IFPGA_UART_CLK;
 
 #if NPCI > 0
 /* PCI handles */
-extern struct arm32_pci_chipset ifpga_pci_chipset;
+extern struct md_pci_chipset ifpga_pci_chipset;
 extern struct arm32_bus_dma_tag ifpga_pci_bus_dma_tag;
 
 static struct bus_space ifpga_pci_io_tag;

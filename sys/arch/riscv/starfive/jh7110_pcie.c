@@ -37,13 +37,12 @@ __KERNEL_RCSID(0, "$NetBSD: jh7110_pcie.c,v 1.2 2025/01/09 10:39:01 skrll Exp $"
 #include <sys/bitops.h>
 #include <sys/kmem.h>
 
-#include <dev/fdt/fdtvar.h>
-#include <dev/fdt/syscon.h>
-
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pciconf.h>
 
-#include <riscv/fdt/pcihost_fdtvar.h>
+#include <dev/fdt/fdtvar.h>
+#include <dev/fdt/pcihost_fdtvar.h>
+#include <dev/fdt/syscon.h>
 
 struct jh7110_pcie_irq {
 	struct jh7110_pcie_softc *

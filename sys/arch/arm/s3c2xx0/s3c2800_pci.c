@@ -195,7 +195,7 @@ CFATTACH_DECL_NEW(sspci, sizeof(struct sspci_softc), sspci_match, sspci_attach,
     NULL, NULL);
 
 
-struct arm32_pci_chipset sspci_chipset = {
+struct md_pci_chipset sspci_chipset = {
 	.pc_attach_hook = s3c2800_pci_attach_hook,
 	.pc_bus_maxdevs = s3c2800_pci_bus_maxdevs,
 	.pc_make_tag = s3c2800_pci_make_tag,

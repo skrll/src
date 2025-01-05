@@ -48,7 +48,7 @@ struct ixp12x0_softc {
 
 	/* DMA, and PCI chipset */
         struct arm32_bus_dma_tag ia_pci_dmat;
-        struct arm32_pci_chipset ia_pci_chipset;
+        struct md_pci_chipset ia_pci_chipset;
 
 	/* DMA window info for PCI DMA. */
 	struct arm32_dma_range ia_pci_dma_range;

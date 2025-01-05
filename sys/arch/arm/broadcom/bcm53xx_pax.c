@@ -87,7 +87,7 @@ struct bcmpax_softc {
 	bool sc_linkup;
 	int sc_pba_flags;
 	uint32_t sc_intrgen;
-	struct arm32_pci_chipset sc_pc;
+	struct md_pci_chipset sc_pc;
 	struct bcmpax_ihqh sc_intrs;
 	void *sc_ih[6];
 	int sc_port;

@@ -17,8 +17,3 @@ file	arch/riscv/fdt/clint_fdt.c		clint_fdt
 device	intc: fdt
 attach	intc at fdt with intc_fdt
 file	arch/riscv/fdt/intc_fdt.c		intc_fdt
-
-# Generic PCI host controller
-device	pcihost: pcibus
-attach	pcihost at fdt with pcihost_fdt
-file	arch/riscv/fdt/pcihost_fdt.c		pcihost_fdt
