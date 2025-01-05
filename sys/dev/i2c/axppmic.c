@@ -266,7 +266,33 @@ static const struct axppmic_ctrl axp809_ctrls[] = {
 		0x12, __BIT(1), 0x1a, __BITS(4,0)),
 	AXP_CTRL("eldo3", 700, 3300, 100,
 		0x12, __BIT(2), 0x1b, __BITS(4,0)),
-	AXP_CTRL2_RANGE("dldo1", 700, 4000, 100, 26, 3400, 200, 4,
+
+
+//	AXP_DESC_RANGES(AXP809, DLDO1, "dldo1", "dldoin",
+//			axp803_dldo2_ranges, AXP803_DLDO2_NUM_VOLTAGES,
+//			AXP22X_DLDO1_V_OUT, AXP22X_DLDO1_V_OUT_MASK,
+//			AXP22X_PWR_OUT_CTRL2, AXP22X_PWR_OUT_DLDO1_MASK),
+//
+/* AXP806's CLDO2 and AXP809's DLDO1 share the same range */
+//static const struct linear_range axp803_dldo2_ranges[] = {
+//	REGULATOR_LINEAR_RANGE(700000,
+//			       AXP803_DLDO2_700mV_START, // 0
+//			       AXP803_DLDO2_700mV_END,   // 26
+//			       100000),
+//                  700000 + (26 + 1) * 100000 = 3400000 !!!
+//	REGULATOR_LINEAR_RANGE(3400000,
+//			       AXP803_DLDO2_3400mV_START, // 0x1b 27
+//			       AXP803_DLDO2_3400mV_END,   // 4
+//			       200000),
+//};
+//
+
+// range0 / 1000, ?, range3 / 1000, steps
+//
+
+	AXP_CTRL2_RANGE("dldo1",
+			700, 4000, 100, 26,
+		       3400, 200, 4,
 		0x12, __BIT(3), 0x15, __BITS(4,0)),
 	AXP_CTRL("dldo2", 700, 3300, 100,
 		0x12, __BIT(4), 0x16, __BITS(4,0)),
@@ -304,9 +330,35 @@ static const struct axppmic_ctrl axp813_ctrls[] = {
 		0x13, __BIT(3), 0x1d, __BITS(3,0)),
 	AXP_CTRL("dcdc1", 1600, 3400, 100,
 		0x10, __BIT(0), 0x20, __BITS(4,0)),
+	// XXXNH looks wrong?!?
 	AXP_CTRL2("dcdc2", 500, 1300, 10, 70, 20, 5,
 		0x10, __BIT(1), 0x21, __BITS(6,0)),
-	AXP_CTRL2("dcdc3", 500, 1300, 10, 70, 20, 5,
+
+#if 0
+static const struct linear_range axp803_dcdc234_ranges[] = {
+	REGULATOR_LINEAR_RANGE(500000,
+			       AXP803_DCDC234_500mV_START, // 0
+			       AXP803_DCDC234_500mV_END,   // 70
+			       10000),
+			       // 500000 + (70 + 1) * 10000 = 1210000
+	REGULATOR_LINEAR_RANGE(1220000,
+			       AXP803_DCDC234_1220mV_START, // 71
+			       AXP803_DCDC234_1220mV_END,   // +4
+			       20000),
+			       // 1220000 + (4 + 1) *  20000
+
+	AXP_DESC_RANGES(AXP813, DCDC2, "dcdc2", "vin2",
+			axp803_dcdc234_ranges, AXP803_DCDC234_NUM_VOLTAGES,
+
+
+			AXP803_DCDC2_V_OUT, AXP803_DCDC2_V_OUT_MASK,
+			AXP22X_PWR_OUT_CTRL1, AXP803_PWR_OUT_DCDC2_MASK),
+#endif
+
+
+	AXP_CTRL2("dcdc3",
+		  500, 1300, 10,
+		   70, 20, 5,
 		0x10, __BIT(2), 0x22, __BITS(6,0)),
 	AXP_CTRL2("dcdc4", 500, 1300, 10, 70, 20, 5,
 		0x10, __BIT(3), 0x23, __BITS(6,0)),
@@ -323,6 +375,11 @@ static const struct axppmic_ctrl axp813_ctrls[] = {
 	AXP_CTRL("aldo3", 700, 3300, 100,
 		0x13, __BIT(7), 0x2a, __BITS(4,0)),
 };
+
+
+
+
+
 
 static const struct axppmic_ctrl axp15060_ctrls[] = {
 	AXP_CTRL( "dcdc1",  1500, 3400, 100,
@@ -343,11 +400,26 @@ static const struct axppmic_ctrl axp15060_ctrls[] = {
 			500, 1540, 70, 10, 1220, 16 , 20,
 			0x16, __BITS(6, 0),
 			0x10, __BIT(3)),
+
+#if 0
+static const struct linear_range axp15060_dcdc5_ranges[] = {
+	REGULATOR_LINEAR_RANGE(800000,
+			       AXP15060_DCDC5_800mV_START,
+			       AXP15060_DCDC5_800mV_END,
+			       10000),
+	REGULATOR_LINEAR_RANGE(1140000,
+			       AXP15060_DCDC5_1140mV_START,
+			       AXP15060_DCDC5_1140mV_END,
+			       20000),
+};
+
+#endif
 	// DCDC5: 0.8~1.12V, 10mV/step, 1.14~1.84V, 20mV/step, IMAX=2.5A, DVM
 	AXP_CTRL2_RANGE("dcdc5",
 			800, 1840,
 			32, 10,
 			1140, 35, 20,
+//			axp15060_dcdc5_ranges, AXP15060_DCDC5_NUM_VOLTAGES,
 			0x17, __BITS(6, 0),
 			0x10, __BIT(4)),
 	AXP_CTRL("dcdc6", 500, 3400, 100,
@@ -399,6 +471,18 @@ static const struct axppmic_ctrl axp15060_ctrls[] = {
 		 0x2e, __BITS(3, 0),
 		 0x12, __BIT(6)),
 };
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 struct axppmic_irq {
@@ -566,6 +650,24 @@ static const struct axppmic_config axp15060_config = {
 	.name = "AXP15060",
 	.controls = axp15060_ctrls,
 	.ncontrols = __arraycount(axp15060_ctrls),
+#if 0
+	.gpio_compat = "x-powers,axp813-gpio",
+	.gpio_npins = 2,
+	.irq_regs = 6,
+	.has_battery = true,
+	.has_fuel_gauge = true,
+	.batsense_step = 1100,
+	.charge_step = 1000,
+	.discharge_step = 1000,
+	.maxcap_step = 1456,
+	.coulomb_step = 1456,
+	.poklirq = AXPPMIC_IRQ(5, __BIT(3)),
+	.acinirq = AXPPMIC_IRQ(1, __BITS(6,5)),
+	.vbusirq = AXPPMIC_IRQ(1, __BITS(3,2)),
+	.battirq = AXPPMIC_IRQ(2, __BITS(7,6)),
+	.chargeirq = AXPPMIC_IRQ(2, __BITS(3,2)),
+	.chargestirq = AXPPMIC_IRQ(4, __BITS(1,0)),
+#endif
 };
 
 static const struct device_compatible_entry compat_data[] = {
