@@ -29,6 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+// XXXNH beagle-v
 /*
  * Texas Instruments TPS65217 Power Management IC driver.
  * TODO: battery, sequencer, pgood

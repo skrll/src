@@ -29,6 +29,8 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: tda19988.c,v 1.9 2025/09/17 13:42:43 thorpej Exp $");
 
+//[   1.0000000] tda998x (nxp,tda998x) at iic0 addr 0x70 not configured
+// beagle-v
 /*
 * NXP TDA19988 HDMI encoder
 */
