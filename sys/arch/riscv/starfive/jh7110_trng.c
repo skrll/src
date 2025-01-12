@@ -163,11 +163,25 @@ jh7110_trng_irqdisable(struct jh7110_trng_softc *sc)
 	WR4(sc, JH7110_TRNG_IENABLE, 0);
 }
 
+//printf("%s: called %zu\n", __func__, bytes_wanted);
+//int retries = 0;
+
+#if 0
+works with
+[   1.0000000] jh7110_trng_get: stat 0x08000308 istat 0x00000002
+[   1.0000000] jh7110_trng_get: stat 0x48000308 istat 0x00000002
+[   1.0000000] jh7110_trng_get: stat 0x48000308 istat 0x00000003
+[   1.0000000] jh7110_trng_get: bytes wanted 0
+//kern.entropy.depletion
+#endif
+
+
 static void
 jh7110_trng_probe(struct jh7110_trng_softc *sc, uint32_t istat)
 {
 	KASSERT(mutex_owned(&sc->sc_lock));
 
+printf("%s: istat 0x%08x wanted %zu\n", __func__, istat, sc->sc_bytes_wanted);
 	if (sc->sc_bytes_wanted != 0) {
 		uint32_t data[8];
 		const uint32_t stat = RD4(sc, JH7110_TRNG_STAT);
@@ -193,6 +207,9 @@ jh7110_trng_probe(struct jh7110_trng_softc *sc, uint32_t istat)
 				sc->sc_bytes_wanted -=
 				    MIN(sc->sc_bytes_wanted, sizeof(data));
 
+printf("%s: read data (%zu) wanted %zu\n", __func__,
+    sizeof(data), sc->sc_bytes_wanted);
+
 				if (sc->sc_bytes_wanted == 0)
 					jh7110_trng_irqdisable(sc);
 			}
@@ -215,6 +232,9 @@ jh7110_trng_get(size_t bytes_wanted, void *arg)
 
 	mutex_enter(&sc->sc_lock);
 	sc->sc_bytes_wanted += bytes_wanted;
+
+printf("%s: bytes_wanted: %zu (+%zu)\n", __func__,
+    sc->sc_bytes_wanted, bytes_wanted);
 
 	jh7110_trng_irqenable(sc);
 
