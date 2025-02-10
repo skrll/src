@@ -32,6 +32,8 @@
 #ifndef _RISCV_MACHDEP_H_
 #define _RISCV_MACHDEP_H_
 
+#include "opt_kernhist.h"
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: machdep.h,v 1.6 2025/02/02 11:04:58 skrll Exp $");
 
@@ -78,6 +80,38 @@ void	riscv_timer_init(void);
 int	riscv_timer_intr(void *arg);
 
 void    pt_dump(void (*)(const char *, ...));
+
+#ifdef KERNHIST
+
+#include <sys/kernhist.h>
+
+extern int intrdebug;
+
+KERNHIST_DECL(intrhist);
+
+#define INTRHIST_FUNC(F)		KERNHIST_FUNC(F)
+
+#define INTRHIST_CALLED()		do {			\
+	if ((intrdebug) != 0) {				\
+		KERNHIST_CALLED(intrhist);			\
+	}							\
+} while (0)
+#define INTRHIST_LOG(FMT,A,B,C,D)	do {			\
+	if ((intrdebug) != 0) {				\
+		KERNHIST_LOG(intrhist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define INTRHIST_CALLARGS(FMT,A,B,C,D) do {			\
+	if ((intrdebug) != 0) {				\
+		KERNHIST_CALLARGS(intrhist,FMT,A,B,C,D);	\
+	}							\
+} while (0)
+#else
+#define INTRHIST_FUNC(F)
+#define INTRHIST_LOG(FMT,A,B,C,D)
+#define INTRHIST_CALLED()
+#define INTRHIST_CALLARGS(FMT,A,B,C,D)
+#endif
 
 
 #endif	/* _RISCV_MACHDEP_H_ */
