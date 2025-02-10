@@ -2423,8 +2423,7 @@ comintr(void *arg)
 	}
 
 	/* DesignWare APB UART BUSY interrupt */
-	if (sc->sc_type == COM_TYPE_DW_APB &&
-	    (iir & IIR_BUSY) == IIR_BUSY) {
+	if (sc->sc_type == COM_TYPE_DW_APB && (iir & IIR_BUSY) == IIR_BUSY) {
 		if (ISSET(sc->sc_hwflags, COM_HW_CONSOLE)) {
 			(void)CSR_READ_1(regsp, COM_REG_USR);
 		} else if ((CSR_READ_1(regsp, COM_REG_USR) & 0x1) != 0) {

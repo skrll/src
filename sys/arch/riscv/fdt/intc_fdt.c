@@ -254,19 +254,33 @@ intc_intr_handler(struct trapframe *tf, register_t epc, register_t status,
 {
 	const int ppl = splhigh();
 	struct cpu_info * const ci = curcpu();
+	struct intc_fdt_softc * const sc = intc_getsc(ci);
 	unsigned long pending;
 	int ipl;
 
-	KASSERT(CAUSE_INTERRUPT_P(cause));
+	INTRHIST_FUNC(__func__); INTRHIST_CALLED();
 
-	struct intc_fdt_softc * const sc = intc_getsc(ci);
+	KASSERT(CAUSE_INTERRUPT_P(cause));
 
 	ci->ci_intr_depth++;
 	ci->ci_data.cpu_nintr++;
 
+	INTRHIST_LOG("ci %#jx depth %#ju", (uintptr_t)ci,
+	    ci->ci_intr_depth, 0, 0);
+
 	while (ppl < (ipl = splintr(&pending))) {
 		if (pending == 0)
 			continue;
+
+		INTRHIST_LOG("ppl %jd pending %jx ipl %jd",
+		    ppl, pending, ipl, 0);
+
+#if 0
+		KASSERTMSG(ipl == IPL_VM    && (pending & ~(IRQ_SUPERVISOR_EXTERNAL) == 0), "ipl %d pending %#x", ipl, pending);
+		KASSERTMSG(ipl == IPL_SCHED && (pending & ~(IRQ_SUPERVISOR_EXTERNAL|IRQ_SUPERVISOR_TIMER) == 0), "ipl %d pending %#x", ipl, pending);
+		KASSERTMSG(ipl == IPL_HIGH  && (pending & ~(IRQ_SUPERVISOR_EXTERNAL|) == 0), "ipl %d pending %#x", ipl, pending);
+#endif
+		//KASSERT(csr_sstatus_read() & SR_SIE);
 
 		splx(ipl);
 
@@ -295,6 +309,9 @@ intc_intr_handler(struct trapframe *tf, register_t epc, register_t status,
 			TAILQ_FOREACH(iih, &irq->intr_handlers, ih_next) {
 				int handled =
 				    iih->ih_fn(iih->ih_arg ? iih->ih_arg : &cf);
+				INTRHIST_LOG("called %p(%p) handled %jd",
+				    (uintptr_t)iih->ih_fn, (uintptr_t)iih->ih_arg,
+				    handled, 0);
 				if (handled)
 					break;
 			}
@@ -307,6 +324,8 @@ intc_intr_handler(struct trapframe *tf, register_t epc, register_t status,
 	}
 	ci->ci_intr_depth--;
 	splx(ppl);
+	INTRHIST_LOG("<-- done", 0, 0, 0, 0);
+	//KASSERT(csr_sstatus_read() & SR_SIE);
 }
 
 
