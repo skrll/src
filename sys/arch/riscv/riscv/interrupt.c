@@ -30,6 +30,7 @@
  */
 
 #include "opt_multiprocessor.h"
+#include "opt_kernhist.h"
 
 #include <sys/cdefs.h>
 
@@ -41,12 +42,35 @@ __RCSID("$NetBSD: interrupt.c,v 1.3 2024/11/19 08:28:01 skrll Exp $");
 #include <sys/bus.h>
 #include <sys/cpu.h>
 #include <sys/kernel.h>
+#include <sys/kernhist.h>
+#include <sys/once.h>
 
 #include <machine/locore.h>
 #include <machine/machdep.h>
 #include <machine/sbi.h>
 
 #include <riscv/dev/plicvar.h>
+
+#ifdef KERNHIST
+
+#ifndef INTRHIST_SIZE
+#define INTRHIST_SIZE 2000
+#endif
+
+KERNHIST_DEFINE(intrhist);
+
+int intrdebug = 1;
+
+static int
+intrhist_init(void)
+{
+
+	KERNHIST_INIT(intrhist, INTRHIST_SIZE);
+
+	return 0;
+}
+#endif
+
 
 
 static void
@@ -98,6 +122,11 @@ void
 riscv_intr_set_handler(void (*intr_handler)(struct trapframe *, register_t,
     register_t, register_t))
 {
+#ifdef KERNHIST
+	static ONCE_DECL(intr_once);
+
+	RUN_ONCE(&intr_once, intrhist_init);
+#endif
 	KASSERT(_riscv_intr_handler == riscv_intr_default_handler ||
 		_riscv_intr_handler == intr_handler);
 	_riscv_intr_handler = intr_handler;
@@ -108,6 +137,10 @@ void
 cpu_intr(struct trapframe *tf, register_t epc, register_t status,
     register_t cause)
 {
+	INTRHIST_FUNC(__func__);
+	INTRHIST_CALLARGS("tf %#jx epc %#jx status %#jx cause %#jx",
+	    (uintptr_t)tf, epc, status, cause);
+
 	_riscv_intr_handler(tf, epc, status, cause);
 }
 
@@ -144,6 +177,9 @@ __CTASSERT(NIPIS < 16);
 int
 riscv_ipi_intr(void *arg)
 {
+	INTRHIST_FUNC(__func__);
+	INTRHIST_CALLARGS("args %#jx", arg, 0, 0, 0);
+
 	struct cpu_info * const ci = curcpu();
 	membar_acquire();
 
