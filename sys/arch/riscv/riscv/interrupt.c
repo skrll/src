@@ -54,7 +54,7 @@ __RCSID("$NetBSD: interrupt.c,v 1.3 2024/11/19 08:28:01 skrll Exp $");
 #ifdef KERNHIST
 
 #ifndef INTRHIST_SIZE
-#define INTRHIST_SIZE 2000
+#define INTRHIST_SIZE 200000
 #endif
 
 KERNHIST_DEFINE(intrhist);
@@ -142,6 +142,8 @@ cpu_intr(struct trapframe *tf, register_t epc, register_t status,
 	    (uintptr_t)tf, epc, status, cause);
 
 	_riscv_intr_handler(tf, epc, status, cause);
+
+	INTRHIST_LOG("<-- done", 0, 0, 0, 0);
 }
 
 
@@ -194,6 +196,8 @@ riscv_ipi_intr(void *arg)
 
 		atomic_and_ulong(&ci->ci_active_ipis, pending);
 	}
+
+	INTRHIST_LOG("<-- done", 0, 0, 0, 0);
 
 	return 1;
 }
