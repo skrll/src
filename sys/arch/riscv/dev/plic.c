@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: plic.c,v 1.5 2024/03/24 08:34:20 skrll Exp $");
 #include <sys/cpu.h>
 #include <sys/kmem.h>
 
+#include <riscv/machdep.h>
 #include <riscv/sysreg.h>
 #include <riscv/dev/plicreg.h>
 #include <riscv/dev/plicvar.h>
@@ -124,7 +125,12 @@ plic_intr(void *arg)
 	uint32_t pending;
 	int rv = 0;
 
+	INTRHIST_FUNC(__func__); INTRHIST_CALLED();
+
 	while ((pending = PLIC_READ(sc, claim_addr)) > 0) {
+		INTRHIST_LOG("sc %#jx hartid %ju pending %jd/%jx", (uintptr_t)sc,
+		    hartid, pending, pending);
+
 		struct plic_intrhand *ih = &sc->sc_intr[pending];
 
 		sc->sc_intrevs[pending].ev_count++;
@@ -141,6 +147,8 @@ plic_intr(void *arg)
 
 		PLIC_WRITE(sc, complete_addr, pending);
 	}
+
+	INTRHIST_LOG("<-- done (%jx)", rv, 0, 0, 0);
 
 	return rv;
 }
