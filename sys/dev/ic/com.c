@@ -127,6 +127,9 @@ __KERNEL_RCSID(0, "$NetBSD: com.c,v 1.390 2025/11/25 13:23:28 brad Exp $");
 
 #include <sys/bus.h>
 
+#include <machine/machdep.h>
+
+
 #include <ddb/db_active.h>
 
 #include <dev/ic/comreg.h>
@@ -2387,6 +2390,8 @@ comintr(void *arg)
 	u_int cc;
 	u_char lsr, iir;
 
+	INTRHIST_FUNC(__func__); INTRHIST_CALLED();
+
 	if (COM_ISALIVE(sc) == 0)
 		return (0);
 
@@ -2400,9 +2405,10 @@ comintr(void *arg)
 		return (0);
 	}
 
+	INTRHIST_LOG("iir %jx sc->sc_ier %#jx", iir, sc->sc_ier, 0, 0);
+
 	/* Handle ns16750-specific busy interrupt. */
-	if (sc->sc_type == COM_TYPE_16750 &&
-	    (iir & IIR_BUSY) == IIR_BUSY) {
+	if (sc->sc_type == COM_TYPE_16750 && (iir & IIR_BUSY) == IIR_BUSY) {
 		for (int timeout = 10000;
 		     (CSR_READ_1(regsp, COM_REG_USR) & 0x1) != 0; timeout--) {
 			if (CSR_HAS_ERROR(regsp)) {
@@ -2424,6 +2430,7 @@ comintr(void *arg)
 
 	/* DesignWare APB UART BUSY interrupt */
 	if (sc->sc_type == COM_TYPE_DW_APB && (iir & IIR_BUSY) == IIR_BUSY) {
+
 		if (ISSET(sc->sc_hwflags, COM_HW_CONSOLE)) {
 			(void)CSR_READ_1(regsp, COM_REG_USR);
 		} else if ((CSR_READ_1(regsp, COM_REG_USR) & 0x1) != 0) {
@@ -2480,6 +2487,7 @@ again:	do {
 		}
 
 		lsr = CSR_READ_1(regsp, COM_REG_LSR);
+		INTRHIST_LOG("lsr %jx", lsr, 0, 0, 0);
 		if (ISSET(lsr, LSR_BI)) {
 			int cn_trapped = 0; /* see above: cn_trap() */
 
@@ -2664,6 +2672,7 @@ do_tx:
 			if (ISSET(sc->sc_ier, IER_ETXRDY)) {
 				CLR(sc->sc_ier, IER_ETXRDY);
 				CSR_WRITE_1(regsp, COM_REG_IER, sc->sc_ier);
+				INTRHIST_LOG("sc->sc_ier %jx", sc->sc_ier, 0, 0, 0);
 			}
 			if (sc->sc_tx_busy) {
 				sc->sc_tx_busy = 0;
@@ -2672,8 +2681,10 @@ do_tx:
 		}
 	}
 
-	if (!ISSET((iir = CSR_READ_1(regsp, COM_REG_IIR)), IIR_NOPEND))
+	if (!ISSET((iir = CSR_READ_1(regsp, COM_REG_IIR)), IIR_NOPEND)) {
+		INTRHIST_LOG("iir %jx (again)", iir, 0, 0, 0);
 		goto again;
+	}
 
 	com_mutex_exit(sc);
 
@@ -2692,6 +2703,8 @@ do_tx:
 #ifdef RND_COM
 	rnd_add_uint32(&sc->rnd_source, iir | lsr);
 #endif
+
+	INTRHIST_LOG("<-- done", 0, 0, 0, 0);
 
 	return (1);
 }

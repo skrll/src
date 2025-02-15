@@ -724,6 +724,7 @@ softint_trigger(uintptr_t machdep)
 		    RESCHED_IDLE | RESCHED_UPREEMPT);
 	} else {
 		atomic_or_uint(&ci->ci_want_resched, RESCHED_UPREEMPT);
+		// XXXNH
 		if (cpu_intr_p()) {
 			cpu_signotify(l);
 		}
