@@ -175,6 +175,7 @@ plic_disable(struct plic_softc *sc, u_int hartid, u_int irq)
 
 	uint32_t reg = PLIC_READ(sc, addr);
 	reg &= ~mask;
+
 	PLIC_WRITE(sc, addr, reg);
 }
 
@@ -224,6 +225,7 @@ plic_attach_common(struct plic_softc *sc, bus_addr_t addr, bus_size_t size)
 
 	struct cpu_info *ci;
 	CPU_INFO_ITERATOR cii;
+	//XXXNH?!?
 	/* Set priority thresholds for all interrupts to 0 (not masked). */
 	for (CPU_INFO_FOREACH(cii, ci)) {
 		plic_set_threshold(sc, ci->ci_cpuid, 0);

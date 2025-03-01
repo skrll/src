@@ -51,6 +51,7 @@ struct jh7110_pcie_irq {
 	void			*jpi_arg;
 	int			(*jpi_fn)(void *);
 	int			jpi_mpsafe;
+	char *			jpi_xname;
 };
 
 struct jh7110_pcie_softc {
@@ -74,6 +75,9 @@ struct jh7110_pcie_softc {
 
 	// # pins
 	struct jh7110_pcie_irq	*sc_irq[PCI_INTERRUPT_PIN_MAX];
+
+	struct evcnt		sc_evcnt_handled[PCI_INTERRUPT_PIN_MAX];
+	struct evcnt		sc_evcnt_unknown[PCI_INTERRUPT_PIN_MAX];
 };
 
 #define	RD4(sc, reg)							      \
@@ -293,6 +297,11 @@ jh7110_pcie_intx_establish(device_t dev, u_int *specifier, int ipl, int flags,
 		jpi->jpi_mpsafe = mpsafe;
 
 		sc->sc_irq[pin] = jpi;
+
+		jpi->jpi_xname = kmem_strdup(xname, KM_SLEEP);
+
+		evcnt_attach_dynamic(&sc->sc_evcnt_handled[pin],
+		    EVCNT_TYPE_INTR, NULL, device_xname(dev), jpi->jpi_xname);
 	} else {
 		device_printf(dev, "shared interrupts not supported\n");
 		return NULL;
@@ -310,10 +319,15 @@ jh7110_pcie_intx_disestablish(device_t dev, void *ih)
 {
 	struct jh7110_pcie_softc * const sc = device_private(dev);
 	struct pcihost_softc * const phsc = &sc->sc_phsc;
+	struct jh7110_pcie_irq *jpi = ih;
 
 	device_printf(dev, "%s\n", __func__);
 
+	// ???
 	fdtbus_intr_disestablish(phsc->sc_phandle, ih);
+
+	kmem_strfree(jpi->jpi_xname);
+	kmem_free(jpi, sizeof(*jpi));
 }
 
 static bool
@@ -341,8 +355,11 @@ jh7110_pcie_intx_intr(struct jh7110_pcie_softc *sc, uint32_t status)
 
 		struct jh7110_pcie_irq *jpi = sc->sc_irq[pin];
 
-		if (jpi == NULL)
+		if (jpi == NULL) {
+			sc->sc_evcnt_unknown[pin].ev_count++;
 			continue;
+		}
+		sc->sc_evcnt_handled[pin].ev_count++;
 
 		if (!jpi->jpi_mpsafe)
 			KERNEL_LOCK(1, NULL);
@@ -697,6 +714,18 @@ jh7110_pcie_attach(device_t parent, device_t self, void *aux)
 
 	fdtbus_register_interrupt_controller(self,
 	    OF_child(phsc->sc_phandle), &jh7110_pcie_intxfuncs);
+
+	for (size_t pin = 0; pin < __arraycount(sc->sc_evcnt_unknown); pin++) {
+		const char *pname[] = {
+		    "pin A",
+		    "pin B",
+		    "pin C",
+		    "pin D"
+		};
+		evcnt_attach_dynamic(&sc->sc_evcnt_unknown[pin],
+		    EVCNT_TYPE_INTR, NULL, device_xname(phsc->sc_dev),
+		    pname[pin]);
+	}
 
 	phsc->sc_type = PCIHOST_ECAM;
 	pcihost_init(&phsc->sc_pc, phsc);
