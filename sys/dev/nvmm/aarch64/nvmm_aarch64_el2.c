@@ -132,13 +132,14 @@ aarch64_el2_init(struct trapframe *tf)
 	 * Enable *EL2* MMU (VA=PA).
 	 * Not a stage2 translation for EL0/1.
 	 *
-	 * If EL2 is not run with MMU enable, cache does not work on EL2
+	 * If EL2 is not run with MMU enabled, cache does not work on EL2
 	 * or exclusive load/store cannot be used.
 	 *
 	 * if the MMU is already enabled, do nothing
 	 */
 	if (reg_sctlr_el2_read() & SCTLR_M) {
-		uartprintf("%s:%d: MMU is already enabled?!\n", __func__, __LINE__);
+		uartprintf("%s:%d: MMU is already enabled?!\n",
+		    __func__, __LINE__);
 		return;
 	}
 
@@ -167,11 +168,11 @@ aarch64_el2_init(struct trapframe *tf)
 	reg_ttbr0_el2_write(tf->tf_reg[0]);
 	isb();
 
-	/* enable Icache, Dcache, MMU! */
 	aarch64_tlbi_all_el2();
 
+	/* enable Icache, Dcache, MMU! */
 	reg_sctlr_el2_write(reg_sctlr_el2_read() |
-	     SCTLR_I | SCTLR_C |SCTLR_M);
+	     SCTLR_I | SCTLR_C | SCTLR_M);
 	isb();
 }
 
@@ -250,6 +251,36 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 		reg_sp_el0_write(state->sprs[NVMM_AARCH64_SPR_SP_EL0]);
 		reg_sp_el1_write(state->gprs[NVMM_AARCH64_GPR_X31]);
 	}
+
+	// XXXNH
+	// PMU regs
+	// physical timer regs - always virtualise?
+	// virtual timer reg
+	// mdccint_el1
+	// OSDLR_El1
+	// OSLAR_EL1
+	// PMSELR_EL0
+	// VTCR_EL2???
+
+	// VHE:
+	// AMAIR_EL12
+	// CNTKCTL_EL12
+	// CNTV_CVAL_EL12
+	// CONTEXTIDR_EL12
+	// CPACR_EL12
+	// ELR_EL12
+	// ESR_EL12
+	// FAR_EL12
+	// MAIR_EL12
+	// SCTRL_EL12
+	// SPSR_EL12
+	// TCR_EL12
+	// TTBR0_EL12
+	// TTBR0_EL12
+	// VBAR_EL12
+	// VTTBR_EL2
+	// AFSR[012]_EL12
+	// PAUTH: AP*KEY*_EL1
 
 	reg_tpidrro_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0]);
 	reg_tpidr_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0]);
