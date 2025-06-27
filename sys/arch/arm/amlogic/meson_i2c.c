@@ -40,28 +40,30 @@ __KERNEL_RCSID(1, "$NetBSD: meson_i2c.c,v 1.5 2025/09/16 11:55:16 thorpej Exp $"
 #include <sys/kmem.h>
 #include <sys/mutex.h>
 #include <sys/condvar.h>
+
 #include <dev/i2c/i2cvar.h>
+
 #include <dev/fdt/fdtvar.h>
 
-#define MESONI2C_CTRL_REG		0x00
-#define MESONI2C_CTRL_START		__BIT(0)
-#define MESONI2C_CTRL_ACK_IGNORE	__BIT(1)
-#define MESONI2C_CTRL_STATUS		__BIT(2)
-#define MESONI2C_CTRL_ERROR		__BIT(3)
+#define MESONI2C_CTRL_REG			0x00
+#define MESONI2C_CTRL_START				__BIT(0)
+#define MESONI2C_CTRL_ACK_IGNORE		__BIT(1)
+#define MESONI2C_CTRL_STATUS			__BIT(2)
+#define MESONI2C_CTRL_ERROR				__BIT(3)
 #define MESONI2C_CTRL_READ_DATA_SHIFT	8
 #define MESONI2C_CTRL_READ_DATA_MASK	__BITS(11, MESONI2C_CTRL_READ_DATA_SHIFT)
-#define MESONI2C_CTRL_CLKDIV_SHIFT	12
-#define MESONI2C_CTRL_CLKDIV_MASK	__BITS(21, MESONI2C_CTRL_CLKDIV_SHIFT)
+#define MESONI2C_CTRL_CLKDIV_SHIFT		12
+#define MESONI2C_CTRL_CLKDIV_MASK		__BITS(21, MESONI2C_CTRL_CLKDIV_SHIFT)
 #define MESONI2C_CTRL_CLKDIVEXT_SHIFT	28
 #define MESONI2C_CTRL_CLKDIVEXT_MASK	__BITS(29, MESONI2C_CTRL_CLKDIVEXT_SHIFT)
 
 #define MESONI2C_SLAVE_ADDR_REG		0x04
-#define MESONI2C_SLAVE_ADDR_MASK	__BITS(7, 0)
+#define MESONI2C_SLAVE_ADDR_MASK		__BITS(7, 0)
 #define MESONI2C_SLAVE_SDA_FILTER_MASK	__BITS(10, 8)
 #define MESONI2C_SLAVE_SCL_FILTER_MASK	__BITS(13, 11)
 #define MESONI2C_SLAVE_SCL_LOW_SHIFT	16
-#define MESONI2C_SLAVE_SCL_LOW_MASK	__BITS(27, MESONI2C_SLAVE_SCL_LOW_SHIFT)
-#define MESONI2C_SLAVE_SCL_LOW_EN	__BIT(28)
+#define MESONI2C_SLAVE_SCL_LOW_MASK		__BITS(27, MESONI2C_SLAVE_SCL_LOW_SHIFT)
+#define MESONI2C_SLAVE_SCL_LOW_EN		__BIT(28)
 
 #define MESONI2C_TOKEN_LIST_REG0	0x08
 #define MESONI2C_TOKEN_LIST_REG1	0x0c
@@ -70,18 +72,18 @@ __KERNEL_RCSID(1, "$NetBSD: meson_i2c.c,v 1.5 2025/09/16 11:55:16 thorpej Exp $"
 #define MESONI2C_TOKEN_RDATA_REG0	0x18
 #define MESONI2C_TOKEN_RDATA_REG1	0x1c
 
-#define MESONI2C_TOKEN_BITS		4
-#define MESONI2C_TOKEN_MASK		((1 << MESONI2C_TOKEN_BITS) - 1)
+#define MESONI2C_TOKEN_BITS			4
+#define MESONI2C_TOKEN_MASK			((1 << MESONI2C_TOKEN_BITS) - 1)
 #define MESONI2C_TOKEN_REG_HALF		(32 / MESONI2C_TOKEN_BITS)
 #define MESONI2C_TOKEN_REG_FULL		(64 / MESONI2C_TOKEN_BITS)
 
-#define MESONI2C_DATA_BITS		8
-#define MESONI2C_DATA_MASK		((1 << MESONI2C_DATA_BITS) - 1)
+#define MESONI2C_DATA_BITS			8
+#define MESONI2C_DATA_MASK			((1 << MESONI2C_DATA_BITS) - 1)
 #define MESONI2C_DATA_REG_HALF		(32 / MESONI2C_DATA_BITS)
 #define MESONI2C_DATA_REG_FULL		(64 / MESONI2C_DATA_BITS)
 
-#define I2C_TIMEOUT_MS			1000
-#define FILTER_DELAY			15
+#define I2C_TIMEOUT_MS		500
+#define FILTER_DELAY		15
 
 enum mesoni2c_token {
 	TOKEN_END = 0,
@@ -100,30 +102,30 @@ enum mesoni2c_type {
 };
 
 struct mesoni2c_softc {
-	device_t		sc_dev;
-	bus_space_tag_t		sc_bst;
-	bus_space_handle_t	sc_bsh;
-	struct clk		*sc_clk;
-	u_int			sc_clkfreq;
-	struct i2c_controller	sc_ic;
-	kcondvar_t		sc_cv;
-	kmutex_t		sc_mtx;
-	void			*sc_ih;
+	device_t		dev;
+	bus_space_tag_t		bst;
+	bus_space_handle_t	bsh;
+	struct clk		*clk;
+	u_int			clkfreq;
+	struct i2c_controller	ic;
+	kcondvar_t		cv;
+	kmutex_t		mtx;
+	void			*ih;
 
-	u_int			sc_token_index;
-	u_int			sc_wdata_index;
-	u_int			sc_rdata_index;
+	u_int	token_index;
+	u_int	wdata_index;
+	u_int	rdata_index;
 
-	const uint8_t		*sc_cmdbuf;
-	size_t			sc_cmdlen;
-	uint8_t			*sc_databuf;
-	size_t			sc_datalen;
-	i2c_op_t		sc_op;
+	const uint8_t *cmdbuf;
+	size_t cmdlen;
+	uint8_t *databuf;
+	size_t datalen;
+	i2c_op_t op;
 
-	size_t			sc_curlen;
-	i2c_op_t		sc_curop;
-	int			sc_sendingCmd;
-	int			sc_error;
+	size_t curlen;
+	i2c_op_t curop;
+	int sendingCmd;
+	int error;
 };
 
 static void mesoni2c_set_mask(struct mesoni2c_softc *sc, bus_size_t reg, uint32_t mask, uint32_t value);
@@ -140,7 +142,7 @@ static void mesoni2c_set_clock_div_gxbb_axg(struct mesoni2c_softc *sc);
 static int mesoni2c_match(device_t parent, cfdata_t cf, void *aux);
 static void mesoni2c_attach(device_t parent, device_t self, void *aux);
 
-CFATTACH_DECL_NEW(meson_i2c, sizeof(struct mesoni2c_softc),
+CFATTACH_DECL_NEW(mesoniic, sizeof(struct mesoni2c_softc),
     mesoni2c_match, mesoni2c_attach, NULL, NULL);
 
 static const struct device_compatible_entry compat_data[] = {
@@ -151,10 +153,10 @@ static const struct device_compatible_entry compat_data[] = {
 };
 
 #define	RD4(sc, reg)		\
-	bus_space_read_4((sc)->sc_bst, (sc)->sc_bsh, (reg))
+	bus_space_read_4((sc)->bst, (sc)->bsh, (reg))
 
 #define	WR4(sc, reg, val)	\
-	bus_space_write_4((sc)->sc_bst, (sc)->sc_bsh, (reg), (val))
+	bus_space_write_4((sc)->bst, (sc)->bsh, (reg), (val))
 
 static void
 mesoni2c_set_mask(struct mesoni2c_softc *sc, bus_size_t reg, uint32_t mask,
