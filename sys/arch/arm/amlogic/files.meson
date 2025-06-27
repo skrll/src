@@ -52,6 +52,13 @@ device	mesonuart
 attach	mesonuart at fdt with meson_uart
 file	arch/arm/amlogic/meson_uart.c		meson_uart
 
+# BEGIN_MESONI2C_MOD ---------------------------------------------------
+# I2C
+device	mesoniic: i2cbus, i2cexec
+attach	mesoniic at fdt
+file	arch/arm/amlogic/meson_i2c.c
+# END_MESONI2C_MOD -----------------------------------------------------
+
 # Framebuffer console
 device	mesonfb: genfb, wsemuldisplaydev
 attach	mesonfb at fdt with meson_genfb
