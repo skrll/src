@@ -33,8 +33,10 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "opt_console.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
+
 #include <sys/kmem.h>
+#include <sys/sysctl.h>
+#include <sys/systm.h>
 #include <sys/xcall.h>
 
 #include <uvm/uvm.h>
@@ -71,7 +73,36 @@ struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 };
 
 int nvmm_available;
+
 int nvmm_debug;	/* XXX */
+
+SYSCTL_SETUP(sysctl_machdep_nvmm_setup, "sysctl machdep.nvmm setup")
+{
+	int err;
+	const struct sysctlnode *rnode;
+	const struct sysctlnode *cnode;
+
+	err = sysctl_createv(clog, 0, NULL, &rnode,
+	    CTLFLAG_PERMANENT, CTLTYPE_NODE, "nvmm",
+	    SYSCTL_DESCR("nvmm global controls"),
+	    NULL, 0, NULL, 0, CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+	if (err)
+		goto fail;
+
+	/* control debugging printfs */
+	err = sysctl_createv(clog, 0, &rnode, &cnode,
+	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE, CTLTYPE_INT,
+	    "debug", SYSCTL_DESCR("Enable debugging output"),
+	    NULL, 0, &nvmm_debug, sizeof(nvmm_debug), CTL_CREATE, CTL_EOL);
+	if (err)
+		goto fail;
+
+	return;
+fail:
+	aprint_error("%s: sysctl_createv failed (err = %d)\n", __func__, err);
+}
+
 
 static unsigned int stage2_startlevel;
 static unsigned int stage2_concatenate_num;
