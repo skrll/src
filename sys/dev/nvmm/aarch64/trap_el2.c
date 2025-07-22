@@ -64,7 +64,7 @@ struct nvmm_aarch64_state;
  *
  * uartprintf() supports only 'x', 'u', 'd' and 's' formats and padding.
  * Any modifiers ('h','l','k','t','z','q') are ignored, and '\n' will be
- * replaced to '\r\n' by internally.
+ * replaced to '\r\n' internally.
  */
 int
 uartprintf(const char * restrict fmt, ...)
