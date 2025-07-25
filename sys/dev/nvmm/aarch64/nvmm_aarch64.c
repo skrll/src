@@ -680,6 +680,9 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		cpudata->send_event_type = 0;
 	}
 
+	// XXXNH where's the loop?
+	// INVALID 
+
 	kpreempt_disable();
 
 	aarch64_dcache_wb_all();	// XXX: currently, it is unstable without this...
