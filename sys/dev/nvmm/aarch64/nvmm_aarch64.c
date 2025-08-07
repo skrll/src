@@ -680,13 +680,40 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		cpudata->send_event_type = 0;
 	}
 
-	// XXXNH where's the loop?
-	// INVALID 
+#if 0
+	// XXX avoid this by pinning threads to pCPUs?
+	struct cpu_info *ci = curcpu();
+	int hcpu = cpu_number();
+
+	if (vcpu->hcpu_last != hcpu) {
+		vmx_vmwrite(VMCS_HOST_TR_SELECTOR, ci->ci_tss_sel);
+		vmx_vmwrite(VMCS_HOST_TR_BASE, (uint64_t)ci->ci_tss);
+		vmx_vmwrite(VMCS_HOST_GDTR_BASE, (uint64_t)ci->ci_gdt);
+		vmx_vmwrite(VMCS_HOST_GS_BASE, rdmsr(MSR_GSBASE));
+		cpudata->gtsc_want_update = true;
+		vcpu->hcpu_last = hcpu;
+	}
+#endif
+
+	// INVALID
 
 	kpreempt_disable();
 
-	aarch64_dcache_wb_all();	// XXX: currently, it is unstable without this...
-	aarch64_hvc_vmenter(cpudata->cpudata_pa);
+	while (true) {
+
+		aarch64_dcache_wb_all();	// XXX: currently, it is unstable without this...
+		aarch64_hvc_vmenter(cpudata->cpudata_pa);
+
+// XXXNH exit to here?
+
+		if (nvmm_return_needed(vcpu, exit)) {
+			break;
+		}
+
+		if (exit->reason != NVMM_VCPU_EXIT_NONE) {
+			break;
+		}
+	}
 
 	kpreempt_enable();
 

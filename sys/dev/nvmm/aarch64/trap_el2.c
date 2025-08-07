@@ -290,6 +290,7 @@ el2sync_el_low(struct trapframe *tf)
 	const uint64_t esr = tf->tf_esr;
 	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
 
+	// any EL1 can do this?? on, TPIDR_EL2 == 0 only?
 	if (eclass == ESR_EC_HVC_A64) {
 		if (reg_tpidr_el2_read() == 0) {
 			/* hvc #n from host */

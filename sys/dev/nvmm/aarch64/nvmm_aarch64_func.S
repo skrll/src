@@ -40,19 +40,19 @@ RCSID("$NetBSD$")
  * called from EL1
  */
 ENTRY_NP(aarch64_hvc_init)
-	hvc	#0
+	hvc	#0		// XXXNH use symbol, and 0x4e, 0x56, 0x4d, 0x4d top 32-bits
 	ret
 END(aarch64_hvc_init)
 
 /* aarch64_hvc_vmenter(x0:cpudata_pa) */
 ENTRY_NP(aarch64_hvc_vmenter)
-	hvc	#1
+	hvc	#1		// XXXNH use symbol, and 0x4e, 0x56, 0x4d, 0x4d top 32-bit
 	ret
 END(aarch64_hvc_vmenter)
 
 /* aarch64_hvc_maintain_ipa(x0:cpudata_pa, x1:op, x2:va) */
 ENTRY_NP(aarch64_hvc_maintain_ipa)
-	hvc	#0x100
+	hvc	#0x100		// XXXNH use symbol, and 0x4e, 0x56, 0x4d, 0x4d top 32-bits
 	ret
 END(aarch64_hvc_vmenter)
 

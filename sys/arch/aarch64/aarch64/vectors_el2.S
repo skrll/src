@@ -110,7 +110,7 @@ END(hyp_vectors)
 	/* x22 = spsr */
 
 .if \el == 2
-	/* sp was already growed, x8 = sp + TF_SIZE = original sp */
+	/* sp was already grown, x8 = sp + TF_SIZE = original sp */
 	add	x8, sp, #TF_SIZE
 .else
 	/*
@@ -120,7 +120,7 @@ END(hyp_vectors)
 	mov	x8, xzr
 .endif
 	CTASSERT_ADJACENT(TF_X30, TF_SP)
-	stp	x30, x8, [sp, #TF_X30]
+	stp	lr, x8, [sp, #TF_X30]
 
 	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
 	mrs	x23, esr_el2
@@ -128,9 +128,9 @@ END(hyp_vectors)
 	stp	x23, x24, [sp, #TF_ESR]
 
 .if \el == 2
-	adr	x30, el2trap_el2_exit		/* return address */
+	adr	lr, el2trap_el2_exit		/* return address */
 .else
-	adr	x30, el2trap_el_low_exit	/* return address */
+	adr	lr, el2trap_el_low_exit		/* return address */
 .endif
 	mov	x0, sp				/* argument = tf */
 	b	\func
@@ -196,7 +196,7 @@ ENTRY_NP(el2trap_el2_exit)
 	mov	x6, sp
 	mov	sp, x7
 	ldp	x6, x7, [x6, #TF_X6]
-	isb
+	isb	// XXXNH not needed it ERET is context switch event. SCTLR_EL2.EOS=1
 	ERET
 END(el2trap_el2_exit)
 
@@ -231,7 +231,7 @@ ENTRY_NP(el2trap_el_low_exit)
 	CTASSERT_ADJACENT(TF_X0, TF_X1)
 	CTASSERT(TF_X0 == 0)
 	ldp	x0, x1, [sp], #TF_SIZE
-	isb
+	isb	// XXXNH not needed it ERET is context switch event. SCTLR_EL2.EOS=1
 	ERET
 END(el2trap_el_low_exit)
 
