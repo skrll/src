@@ -38,8 +38,8 @@ pseudo-device 	openfirm	# /dev/openfirm
 #options 	PMAP_DEBUG
 
 # Heartbeat checks
-options 	HEARTBEAT
-options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
+#options 	HEARTBEAT
+#options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
 
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
 #options 	EARLYCONS=bcm2837, CONSADDR=0x3f215040
