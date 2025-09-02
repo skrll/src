@@ -1164,6 +1164,10 @@ pvscsi_process_cmp_ring(struct pvscsi_softc *sc)
 	s = sc->rings_state;
 	ring_dma = &sc->cmp_ring_dma;
 	ring = sc->cmp_ring;
+	/*
+	 * No need to sync cmp_num_entries_log2. It's stable after
+	 * PVSCSI_CMD_SETUP_RINGS.
+	 */
 	mask = MASK(s->cmp_num_entries_log2);
 
 	for (;;) {
@@ -1259,6 +1263,10 @@ pvscsi_process_msg_ring(struct pvscsi_softc *sc)
 	s = sc->rings_state;
 	ring_dma = &sc->msg_ring_dma;
 	ring = sc->msg_ring;
+	/*
+	 * No need to sync msg_num_entries_log2. It's stable after
+	 * PVSCSI_CMD_SETUP_RINGS.
+	 */
 	mask = MASK(s->msg_num_entries_log2);
 
 	for (;;) {
@@ -1376,6 +1384,10 @@ pvscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	s = sc->rings_state;
 
 	hcb = NULL;
+	/*
+	 * No need to sync req_num_entries_log2. It's stable after
+	 * PVSCSI_CMD_SETUP_RINGS.
+	 */
 	req_num_entries_log2 = s->req_num_entries_log2;
 
 	/* Protect against multiple senders */
