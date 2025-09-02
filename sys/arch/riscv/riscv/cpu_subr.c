@@ -445,5 +445,5 @@ paravirt_membar_sync(void)
 	 * that is potentially on another physical CPU even if we
 	 * observe only one virtual CPU as the guest.
 	 */
-	__asm volatile("fence	rw,rw");
+	asm volatile("fence w, r" ::: "memory");
 }
