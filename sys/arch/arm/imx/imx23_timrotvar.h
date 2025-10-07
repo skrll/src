@@ -42,12 +42,12 @@ void	imx23timrot_cpu_initclocks(void);
 
 /* Allocated for each timer instance. */
 struct timrot_softc {
-		device_t sc_dev;
-		bus_space_tag_t sc_iot;
-		bus_space_handle_t sc_hdl;
-		int8_t sc_irq;
-		int (*irq_handler)(void *);
-		int freq;
+	device_t sc_dev;
+	bus_space_tag_t sc_iot;
+	bus_space_handle_t sc_hdl;
+	int8_t sc_irq;
+	int (*irq_handler)(void *);
+	int freq;
 };
 
 int imx23timrot_systimer_init(struct timrot_softc*, bus_space_tag_t, int8_t);

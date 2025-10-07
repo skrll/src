@@ -29,59 +29,60 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define _INTR_PRIVATE
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD$");
+
+#include <sys/param.h>
+
 #include <sys/device.h>
 
 #include <dev/fdt/fdtvar.h>
 
-#include <arm/fdt/arm_fdtvar.h>
 #include <arm/imx/imx23var.h>
-#include <arm/imx/imx23_icollvar.h>
+#include <arm/imx/imx23_timrotvar.h>
+#include <arm/fdt/arm_fdtvar.h>
 
-static int imx23icoll_fdt_match(device_t, cfdata_t, void *);
-static void imx23icoll_fdt_attach(device_t, device_t, void *);
+static int imx23timrot_fdt_match(device_t, cfdata_t, void *);
+static void imx23timrot_fdt_attach(device_t, device_t, void *);
 
-static void *	imx23icoll_fdt_establish(device_t, u_int *, int, int,
-			 		int (*)(void *), void *, const char *);
-static void	imx23icoll_fdt_disestablish(device_t, void *);
-static bool	imx23icoll_fdt_intrstr(device_t, u_int *, char *, size_t);
-
-struct imx23icoll_fdt_softc {
-		struct icoll_softc sc_icoll;
+struct imx23timrot_fdt_softc {
+	struct timrot_softc systimer_sc;
+	struct timrot_softc stattimer_sc;
 };
 
-CFATTACH_DECL_NEW(imx23icoll_fdt, sizeof(struct imx23icoll_fdt_softc),
-		  imx23icoll_fdt_match, imx23icoll_fdt_attach, NULL, NULL);
-
-struct fdtbus_interrupt_controller_func imx23icoll_fdt_funcs = {
-	.establish = imx23icoll_fdt_establish,
-	.disestablish = imx23icoll_fdt_disestablish,
-	.intrstr = imx23icoll_fdt_intrstr
-};
+CFATTACH_DECL_NEW(imx23timrot_fdt, sizeof(struct imx23timrot_fdt_softc),
+		  imx23timrot_fdt_match, imx23timrot_fdt_attach, NULL, NULL);
 
 static const struct device_compatible_entry compat_data[] = {
-	{ .compat = "fsl,imx23-icoll" },
-	{ .compat = "fsl,icoll" },
+	{ .compat = "fsl,imx23-timrot" },
+	{ .compat = "fsl,timrot" },
 	DEVICE_COMPAT_EOL
 };
 
 static int
-imx23icoll_fdt_match(device_t parent, cfdata_t cf, void *aux)
+imx23timrot_fdt_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
 	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
+/*
+ * The original non-FDT timrot driver instantiates one timrot device per timer.
+ * Unfortunately, the device tree from linux specifies just one timrot device
+ * for all timers. This driver therefore attaches "two" timrot devices from one.
+ */
 static void
-imx23icoll_fdt_attach(device_t parent, device_t self, void *aux)
+imx23timrot_fdt_attach(device_t parent, device_t self, void *aux)
 {
-	struct imx23icoll_fdt_softc * const sc = device_private(self);
+	struct imx23timrot_fdt_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
+	char intrstr[128];
 
 	/*
-	 * Initialize icoll controller
+	 * The actual memory mapping is done inside the
+	 * timrot_[sys|stat]timer_init functions.
 	 */
 	bus_addr_t addr;
 	bus_size_t size;
@@ -89,30 +90,47 @@ imx23icoll_fdt_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": couldn't get register address\n");
 		return;
 	}
-	if (bus_space_map(faa->faa_bst, addr, size, 0, &sc->sc_icoll.sc_hdl)) {
-		aprint_error(": couldn't map registers\n");
+
+	/* Use -1 as irq because we establish interrupts ourselves */
+	imx23timrot_systimer_init(&sc->systimer_sc, faa->faa_bst, -1);
+	imx23timrot_stattimer_init(&sc->stattimer_sc, faa->faa_bst, -1);
+
+
+	/* System Timer Interrupt*/
+	if (!fdtbus_intr_str(phandle, 0, intrstr, sizeof(intrstr))) {
+		aprint_error(": failed to decode interrupt\n");
 		return;
 	}
-
-	imx23icoll_init(&sc->sc_icoll, self, faa->faa_bst);
-
-	/*
-	 * Register fdt interrupt controller
-	 */
-	int error = fdtbus_register_interrupt_controller(self, phandle,
-							 &imx23icoll_fdt_funcs);
-	if (error) {
-		aprint_error(
-		    "imx23icoll_fdt: couldn't register with fdtbus: %d\n",
-		    error);
+	void *ih = fdtbus_intr_establish_xname(phandle, 0, IPL_CLOCK, 0,
+					       imx23timrot_systimer_irq, NULL,
+					       device_xname(self));
+	if (ih == NULL) {
+		aprint_error_dev(self,
+		    "couldn't install systimer interrupt handler\n");
 		return;
 	}
+	aprint_normal_dev(self, ": systimer on %s", intrstr);
+
+	/* Stat Timer Interrupt*/
+	if (!fdtbus_intr_str(phandle, 1, intrstr, sizeof(intrstr))) {
+		aprint_error(": failed to decode interrupt\n");
+		return;
+	}
+	ih = fdtbus_intr_establish_xname(phandle, 1, IPL_CLOCK, 0,
+					 imx23timrot_stattimer_irq, NULL,
+					 device_xname(self));
+	if (ih == NULL) {
+		aprint_error_dev(self,
+		    "couldn't install stattimer interrupt handler\n");
+		return;
+	}
+	aprint_normal_dev(self, ": stattimer on %s\n", intrstr);
 
 	aprint_naive("\n");
 	aprint_normal("\n");
 
 	struct apb_attach_args apbaa = {
-		.aa_name = "imx23icoll",
+		.aa_name = "imx23timrot",
 		.aa_iot = faa->faa_bst,
 		.aa_dmat = faa->faa_dmat,
 		.aa_addr = addr,
@@ -122,32 +140,5 @@ imx23icoll_fdt_attach(device_t parent, device_t self, void *aux)
 
 	config_found(self, &apbaa, NULL, CFARGS_NONE);
 
-	arm_fdt_irq_set_handler((void (*)(void *))imx23_intr_dispatch);
-}
-
-static bool
-imx23icoll_fdt_intrstr(device_t dev, u_int *specifier, char *buf, size_t buflen)
-{
-	const u_int irq = be32toh(*specifier);
-
-	snprintf(buf, buflen, "icoll irq %d", irq);
-
-	return true;
-}
-
-static void *
-imx23icoll_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
-			 int (*func)(void *), void *arg, const char *xname)
-{
-	const u_int irq = be32toh(*specifier);
-	const u_int mpsafe = (flags & FDT_INTR_MPSAFE) ? IST_MPSAFE : 0;
-
-	return intr_establish_xname(irq, ipl, IST_LEVEL | mpsafe, func, arg,
-				    xname);
-}
-
-static void
-imx23icoll_fdt_disestablish(device_t dev, void *ih)
-{
-	intr_disestablish(ih);
+	arm_fdt_timer_register(imx23timrot_cpu_initclocks);
 }

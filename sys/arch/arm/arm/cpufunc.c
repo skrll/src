@@ -3586,14 +3586,11 @@ cpu_earlydevice_va_p(void)
 		return false;
 
 	/* Don't access cpu_ttb unless the mmu is enabled */
-#ifdef CPU_PRE_ARMV6
 	const bool cpul1pt_p =
-	    ((armreg_ttbr_read() & -L1_TABLE_SIZE) == cpu_ttb);
-#else
-	const bool cpul1pt_p =
-	    ((armreg_ttbr_read() & -L1_TABLE_SIZE) == cpu_ttb) ||
-	    ((armreg_ttbr1_read() & -L1_TABLE_SIZE) == cpu_ttb);
+#if defined(__ARM_ARCH_6)
+	    ((armreg_ttbr1_read() & -L1_TABLE_SIZE) == cpu_ttb) ||
 #endif
+	    ((armreg_ttbr_read() & -L1_TABLE_SIZE) == cpu_ttb);
 
 	return cpul1pt_p;
 }

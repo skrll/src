@@ -39,9 +39,9 @@
 #include <arm/pic/picvar.h>
 
 struct icoll_softc {
-		struct pic_softc sc_pic;
-		bus_space_tag_t sc_iot;
-		bus_space_handle_t sc_hdl;
+	struct pic_softc sc_pic;
+	bus_space_tag_t sc_iot;
+	bus_space_handle_t sc_hdl;
 };
 
 /*

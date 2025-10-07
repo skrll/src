@@ -4,6 +4,9 @@
 #
 
 include "arch/arm/pic/files.pic"
+include "arch/arm/cortex/files.cortex"
+
+include "arch/evbarm/conf/files.fdt"
 
 file	arch/arm/arm32/arm32_boot.c
 file	arch/arm/arm32/arm32_kvminit.c
@@ -15,9 +18,6 @@ file	arch/arm/arm/bus_space_a4x.S
 
 # Add other board files here
 include "arch/arm/imx/files.imx23"
-
-# fdt support
-include "arch/evbarm/conf/files.fdt_armv5"
 
 #
 # Stack-less Just-In-Time compiler

@@ -35,6 +35,9 @@ device	imx23icoll: pic, pic_splfuncs
 attach	imx23icoll at apbh
 file	arch/arm/imx/imx23_icoll.c	imx23icoll
 
+attach	imx23icoll at fdt with imx23icoll_fdt
+file	arch/arm/imx/imx23icoll_fdt.c	imx23icoll
+
 # Synchronous Serial Port (for SD/MMC)
 device	ssp: sdmmcbus
 attach	ssp at apbh
@@ -53,6 +56,10 @@ file	arch/arm/imx/imx23_plcom.c	imx23plcom
 device	imx23timrot: apbx
 attach	imx23timrot at apbx
 file	arch/arm/imx/imx23_timrot.c	imx23timrot
+
+attach	imx23timrot at fdt with imx23timrot_fdt: fdt_clock
+file	arch/arm/imx/imx23timrot_fdt.c	imx23timrot_fdt
+
 
 # APB{H,X} DMA
 device	apbdma

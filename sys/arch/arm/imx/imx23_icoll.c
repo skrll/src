@@ -31,6 +31,11 @@
 
 #define _INTR_PRIVATE
 
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD$");
+
+#include <sys/param.h>
+
 #include <sys/bus.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
@@ -38,10 +43,12 @@
 #include <sys/systm.h>
 
 #include <arm/cpufunc.h>
+
+#include <arm/pic/picvar.h>
+
 #include <arm/imx/imx23_icollreg.h>
 #include <arm/imx/imx23_icollvar.h>
 #include <arm/imx/imx23var.h>
-#include <arm/pic/picvar.h>
 
 #define ICOLL_SOFT_RST_LOOP 455		/* At least 1 us ... */
 #define ICOLL_READ(sc, reg)						\

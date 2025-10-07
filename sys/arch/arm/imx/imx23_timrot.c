@@ -29,6 +29,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <sys/param.h>
+
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/errno.h>
