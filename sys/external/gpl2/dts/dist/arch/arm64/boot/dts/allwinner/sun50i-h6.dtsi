@@ -17,23 +17,6 @@
 	#address-cells = <1>;
 	#size-cells = <1>;
 
-	cpu0_opp_table: opp_table0 {
-		compatible = "operating-points-v2";
-		opp-shared;
-
-		opp-888000000 {
-			opp-hz = /bits/ 64 <888000000>;
-			opp-microvolt = <880000>;
-			clock-latency-ns = <244144>; /* 8 32k periods */
-		};
-
-		opp-1008000000 {
-			opp-hz = /bits/ 64 <1008000000>;
-			opp-microvolt = <940000>;
-			clock-latency-ns = <244144>; /* 8 32k periods */
-		};
-	};
-
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
