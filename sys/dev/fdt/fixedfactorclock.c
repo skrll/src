@@ -120,8 +120,8 @@ fixedfactorclock_attach(device_t parent, device_t self, void *aux)
 	clk_attach(&sc->sc_clk.base);
 
 	aprint_naive("\n");
-	aprint_normal(": x%u /%u fixed-factor clock\n",
-	    sc->sc_clk.mult, sc->sc_clk.div);
+	aprint_normal(": x%u /%u fixed-factor clock (%s)\n",
+	    sc->sc_clk.mult, sc->sc_clk.div, name);
 
 	fdtbus_register_clock_controller(self, phandle,
 	    &fixedfactorclock_fdt_funcs);

@@ -51,6 +51,7 @@ static void ti_com_attach(device_t, device_t, void *);
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "ti,am3352-uart" },
 	{ .compat = "ti,omap3-uart" },
+	{ .compat = "ti,omap4-uart" },
 	DEVICE_COMPAT_EOL
 };
 

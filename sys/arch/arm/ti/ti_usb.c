@@ -76,6 +76,11 @@ static const struct device_compatible_entry compat_data[] = {
 	DEVICE_COMPAT_EOL
 };
 
+static const struct device_compatible_entry board_compat_data[] = {
+	{ .compat = "ti,omap4-panda" },
+	DEVICE_COMPAT_EOL
+};
+
 #define	TI_USB_NPORTS	3
 
 enum {
@@ -215,7 +220,10 @@ ti_usb_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal(": OMAP HS USB Host\n");
 
-	ti_usb_init(sc);
+	const struct device_compatible_entry *dce =
+	    of_compatible_lookup(OF_finddevice("/"), board_compat_data);
+	if (dce == NULL)
+		ti_usb_init(sc);
 
 	fdt_add_bus(self, phandle, faa);
 }
