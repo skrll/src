@@ -137,21 +137,29 @@ acpipchb_attach(device_t parent, device_t self, void *aux)
 	 */
 	if (ACPI_SUCCESS(acpi_pcidev_pciroot_bus(sc->sc_handle, &bus_start))) {
 		sc->sc_bus = bus_start;
+		aprint_debug_dev(" BUS %d\n", sc->sc_dev, sc->sc_bus);
 	} else {
 		rv = acpi_eval_integer(sc->sc_handle, "_BBN", &sc->sc_bus);
 		if (ACPI_FAILURE(rv)) {
 			sc->sc_bus = 0;
+		} else {
+			aprint_debug_dev(" BUS %d\n", sc->sc_dev, sc->sc_bus);
 		}
 	}
 
 	if (ACPI_FAILURE(acpi_eval_integer(sc->sc_handle, "_SEG", &seg))) {
 		seg = 0;
+	} else {
+		aprint_debug_dev(" SEG %d\n", sc->sc_dev, seg);
 	}
 
 	if (ACPI_FAILURE(acpi_dsd_integer(sc->sc_handle, "linux,pcie-nomsi",
 	    &nomsi))) {
 		nomsi = 0;
+	} else {
+		aprint_debug_dev(" no msi %d\n", sc->sc_dev, nomsi);
 	}
+
 	if (get_bootconf_option(boot_args, "nopcimsi",
 				BOOTOPT_TYPE_BOOLEAN, &val) && val) {
 		nomsi = 1;

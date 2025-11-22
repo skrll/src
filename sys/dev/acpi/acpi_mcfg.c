@@ -799,11 +799,13 @@ acpimcfg_configure_bus(device_t self, pci_chipset_tag_t pc, ACPI_HANDLE handle,
 
 	if (mapcfgspace) {
 		seg = acpimcfg_get_segment(pc, bus);
-		aprint_debug_dev(acpi_sc->sc_dev, "MCFG: Bus=%d, Seg=%p\n",
-		    bus, seg);
 		if (seg == NULL) {
+			aprint_debug_dev(acpi_sc->sc_dev, "MCFG: mapcfg and no segment\n");
 			return ENOENT;
 		}
+		aprint_debug_dev(acpi_sc->sc_dev, "MCFG: Bus=%d, Seg=%p\n",
+		    bus, seg);
+
 		endbus = seg->ms_bus_end;
 
 		/*

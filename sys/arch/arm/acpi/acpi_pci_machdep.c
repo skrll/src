@@ -100,6 +100,9 @@ struct acpi_pci_intr {
 static TAILQ_HEAD(, acpi_pci_intr) acpi_pci_intrs =
     TAILQ_HEAD_INITIALIZER(acpi_pci_intrs);
 
+
+// XXXNH thunderx
+
 static const struct acpi_pci_quirk acpi_pci_mcfg_quirks[] = {
 	/* OEM ID	OEM Table ID	Revision	Seg	Func */
 	{ "AMAZON",	"GRAVITON",	0,		-1,	acpi_pci_graviton_init },
