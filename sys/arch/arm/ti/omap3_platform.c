@@ -63,6 +63,8 @@ __KERNEL_RCSID(0, "$NetBSD: omap3_platform.c,v 1.9 2025/09/06 21:02:41 thorpej E
 #include <arm/cortex/pl310_var.h>
 #include <arm/cortex/scu_reg.h>
 
+#include <arm/ti/smc.h>
+
 #define	OMAP3_L4_CORE_VBASE	KERNEL_IO_VBASE
 #define	OMAP3_L4_CORE_PBASE	0x48000000
 #define	OMAP3_L4_CORE_SIZE	0x00100000
@@ -254,6 +256,14 @@ omap3_platform_uart_freq(void)
 	return 48000000U;
 }
 
+#if NARML2CC > 0
+static void
+omap4_enable_ll2c(bool enable)
+{
+	omap_smc(enable ? 1 : 0, OMAP4_CMD_L2X0_CTRL);
+}
+#endif
+
 static void
 omap4_platform_bootstrap(void)
 {
@@ -275,7 +285,8 @@ omap4_platform_bootstrap(void)
 	bus_space_tag_t bst = &arm_generic_bs_tag;
 	const bus_space_handle_t pl310_bsh = OMAP4_PL310_BASE
 	    + OMAP4_L4_PER_VBASE - OMAP4_L4_PER_PBASE;
-	arml2cc_init(bst, pl310_bsh, 0);
+	arml2cc_get_cacheinfo(bst, pl310_bsh, 0);
+	arml2cc_set_enable_func(omap4_enable_ll2c);
 #endif
 	arm_fdt_cpu_bootstrap();
 }

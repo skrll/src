@@ -217,8 +217,8 @@ ti_prcm_attach(struct ti_prcm_softc *sc)
 	for (i = 0; i < sc->sc_nclks; i++)
 		sc->sc_clks[i].base.domain = &sc->sc_clkdom;
 
-	KASSERT(prcm_softc == NULL);
-	prcm_softc = sc;
+	if (prcm_softc == NULL)
+		prcm_softc = sc;
 
 	return 0;
 }

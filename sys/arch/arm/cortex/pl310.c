@@ -38,29 +38,16 @@ __KERNEL_RCSID(0, "$NetBSD: pl310.c,v 1.22 2025/11/28 08:27:08 skrll Exp $");
 #include <sys/device.h>
 #include <sys/atomic.h>
 
-#include <dev/fdt/fdtvar.h>
-
 #include <arm/locore.h>
 
 #include <arm/cortex/mpcore_var.h>
 #include <arm/cortex/pl310_reg.h>
 #include <arm/cortex/pl310_var.h>
 
-#include <arm/ti/smc.h>
-
 static int arml2cc_match(device_t, cfdata_t, void *);
 static void arml2cc_attach(device_t, device_t, void *);
 
 #define	L2CC_SIZE	0x1000
-
-enum arml2cc_smc {
-	SMC_OMAP = 1,
-};
-
-static const struct device_compatible_entry compat_data[] = {
-	{ .compat = "ti,omap4",	.value = SMC_OMAP },
-	DEVICE_COMPAT_EOL
-};
 
 struct arml2cc_softc {
 	device_t sc_dev;
@@ -72,8 +59,9 @@ struct arml2cc_softc {
 	struct evcnt sc_ev_wb;
 	struct evcnt sc_ev_wbinv;
 	bool sc_enabled;
-	enum arml2cc_smc sc_smc;
 };
+
+void (*arml2cc_enable_func)(bool);
 
 __CTASSERT(offsetof(struct arml2cc_softc, sc_ev_inv.ev_count) % 8 == 0);
 __CTASSERT(offsetof(struct arml2cc_softc, sc_ev_wb.ev_count) % 8 == 0);
@@ -161,10 +149,6 @@ arml2cc_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_memt = mpcaa->mpcaa_memt;
 	sc->sc_waymask = __BIT(arm_scache.dcache_ways) - 1;
-	const struct device_compatible_entry *dce =
-	    of_compatible_lookup(OF_finddevice("/"), compat_data);
-	if (dce != NULL)
-		sc->sc_smc = dce->value;
 
 	evcnt_attach_dynamic(&sc->sc_ev_inv, EVCNT_TYPE_MISC, NULL,
 	    xname, "L2 inv requests");
@@ -258,13 +242,10 @@ arml2cc_disable(struct arml2cc_softc *sc)
 	arml2cc_cache_way_op(sc, L2C_CLEAN_INV_WAY, sc->sc_waymask);
 	arml2cc_cache_sync(sc);
 
-	switch (sc->sc_smc) {
-	case SMC_OMAP:
-		omap_smc(0, OMAP4_CMD_L2X0_CTRL);
-		break;
-	default:
+	if (arml2cc_enable_func)
+		arml2cc_enable_func(false);
+	else
 		arml2cc_write_4(sc, L2C_CTL, 0);	// turn it off
-	}
 
 	mutex_spin_exit(&sc->sc_lock);
 }
@@ -277,15 +258,18 @@ arml2cc_enable(struct arml2cc_softc *sc)
 	arml2cc_cache_way_op(sc, L2C_INV_WAY, sc->sc_waymask);
 	arml2cc_cache_sync(sc);
 
-	switch (sc->sc_smc) {
-	case SMC_OMAP:
-		omap_smc(1, OMAP4_CMD_L2X0_CTRL);
-		break;
-	default:
+	if (arml2cc_enable_func)
+		arml2cc_enable_func(true);
+	else
 		arml2cc_write_4(sc, L2C_CTL, 1);	// turn it on
-	}
 
 	mutex_spin_exit(&sc->sc_lock);
+}
+
+void
+arml2cc_set_enable_func(void (*func)(bool))
+{
+	arml2cc_enable_func = func;
 }
 
 void

@@ -34,4 +34,6 @@
 #include <sys/bus.h>
 
 void	arml2cc_get_cacheinfo(bus_space_tag_t, bus_space_handle_t, bus_size_t);
+void	arml2cc_set_enable_func(void (*)(bool));
+
 #endif /* !_ARM_CORTEX_PL310_VAR_H_ */
