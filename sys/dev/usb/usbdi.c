@@ -44,6 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.255 2025/10/11 12:54:40 skrll Exp $");
 
 #include <sys/bus.h>
 #include <sys/cpu.h>
+#include <ddb/db_active.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
@@ -58,8 +59,6 @@ __KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.255 2025/10/11 12:54:40 skrll Exp $");
 #include <dev/usb/usb_quirks.h>
 #include <dev/usb/usb_sdt.h>
 #include <dev/usb/usbhist.h>
-
-#include <ddb/db_active.h>
 
 /* UTF-8 encoding stuff */
 #include <fs/unicode.h>
@@ -1368,41 +1367,58 @@ usbd_dopoll(struct usbd_interface *iface)
 
 /*
  * This is for keyboard driver as well, which only operates in polling
- * mode from the ask root, etc., prompt and from DDB.
+ * mode from the ask root, etc., prompt, and from DDB.
  */
 void
 usbd_set_polling(struct usbd_device *dev, int on)
 {
 
-	if (!db_active)
-		mutex_enter(dev->ud_bus->ub_lock);
-
 	/*
-	 * We call softint routine on polling transitions, so
-	 * that completed/failed transfers have their callbacks
-	 * called. In-progress transfers started before transition
-	 * remain flying, and their completion after transition
-	 * must be taken into account.
+	 * If polling is being enabled outside of DDB then we're safe to take
+	 * the lock.
 	 *
-	 * The softint routine is called after enabling polling
-	 * and before disabling it, so that holding sc->sc_lock
-	 * is not required. DDB needs this because it cannot wait
-	 * to acquire sc->sc_lock from a suspended thread.
+	 * If polling is being enabled by DDB then fail if the lock is held.
+	 * DDB must have suspended a CPU that was running a thread which holds
+	 * the lock. The status of the USB controller and its data structures
+	 * must not be changed in this case. That is, it's not safe to enter
+	 * polling.
 	 */
+
+	if (!db_active) {
+		mutex_enter(dev->ud_bus->ub_lock);
+	} else {
+		if (mutex_owned(dev->ud_bus->ub_lock)) {
+			db_set_polling_error();
+			return;
+		}
+	}
 	if (on) {
+		/*
+		 * Enabling polling.  If we're enabling for the first time,
+		 * call the softint routine on transition with polling marked
+		 * as enabled, and the lock held in the non-DDB case.
+		 *
+		 * Once polling is enabled, we must not hold the lock when we
+		 * call the softint routine.
+		 */
 		KASSERT(dev->ud_bus->ub_usepolling < __type_max(char));
 		dev->ud_bus->ub_usepolling++;
 		if (dev->ud_bus->ub_usepolling == 1)
 			dev->ud_bus->ub_methods->ubm_softint(dev->ud_bus);
 	} else {
+		/*
+		 * Disabling polling.  If we're disabling polling for
+		 * the last time, then call the softint routine with polling
+		 * marked as enabled, and the lock held in the non-DDB case.
+		 */
 		KASSERT(dev->ud_bus->ub_usepolling > 0);
 		if (dev->ud_bus->ub_usepolling == 1)
 			dev->ud_bus->ub_methods->ubm_softint(dev->ud_bus);
 		dev->ud_bus->ub_usepolling--;
 	}
-
-	if (!db_active)
+	if (!db_active) {
 		mutex_exit(dev->ud_bus->ub_lock);
+	}
 }
 
 

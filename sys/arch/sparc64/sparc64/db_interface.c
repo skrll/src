@@ -96,6 +96,7 @@ void ddb_restore_state(void);
 bool ddb_running_on_this_cpu(void);
 
 int	db_active = 0;
+int	db_set_poling_errors;
 
 extern char *trap_type[];
 

@@ -236,7 +236,8 @@ const struct db_variable db_regs[] = {
 };
 
 const struct db_variable * const db_eregs = db_regs + __arraycount(db_regs);
-int db_active;
+int db_active = 0;
+int db_set_polling_errors;
 
 
 void
@@ -1215,7 +1216,12 @@ kdb_trap(int type, struct trapframe *tf)
 
 		const int s = splhigh();
 		db_active++;
+		db_set_polling_errors = 0;
 		cnpollc(true);
+		if (db_set_polling_errors != 0) {
+			printf("Failed to set polling\n");
+			break;
+		}
 		db_trap(type, 0/*code*/);
 		cnpollc(false);
 		db_active--;

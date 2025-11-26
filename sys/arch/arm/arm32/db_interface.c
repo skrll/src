@@ -75,6 +75,7 @@ u_int db_fetch_reg(int, db_regs_t *);
 int db_trapper(u_int, u_int, trapframe_t *, int);
 
 int	db_active = 0;
+int	db_set_polling_errors;
 db_regs_t ddb_regs;	/* register state */
 db_regs_t *ddb_regp;
 
@@ -163,6 +164,13 @@ kdb_trap(int type, db_regs_t *regs)
 		ddb_regs = *regs;
 
 		atomic_inc_32(&db_active);
+		db_set_polling_errors = 0;
+		cnpollc(true);
+		if (db_set_polling_errors != 0) {
+			printf("Failed to set polling\n");
+			break;
+		}
+
 		cnpollc(true);
 		db_trap(type, 0/*code*/);
 		cnpollc(false);

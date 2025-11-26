@@ -53,6 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.36 2022/10/26 23:38:08 riastradh 
 #endif
 
 int	db_active = 0;
+int	db_set_polling_errors;
 db_regs_t	ddb_regs;
 
 #ifdef _KERNEL

@@ -37,8 +37,11 @@
 
 #if defined DDB || defined _KMEMUSER
 extern int db_active;
+extern int db_set_polling_errors;
+static inline void db_set_polling_error(void) { db_set_polling_errors++; }
 #else
 static const int db_active __unused = 0;
+static inline void db_set_polling_error(void) { }
 #endif
 
 #endif	/* _DDB_DB_ACTIVE_H_ */

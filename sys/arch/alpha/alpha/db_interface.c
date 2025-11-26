@@ -86,6 +86,7 @@ extern int trap_types;
 #endif
 
 int	db_active = 0;
+int	db_set_polling_errors;
 
 db_regs_t *ddb_regp;
 

@@ -72,6 +72,7 @@ extern const char *const trap_type[];
 extern int trap_types;
 
 int	db_active = 0;
+int	db_set_polling_errors;
 #ifdef MULTIPROCESSOR
 /* ddb_regs defined as a macro */
 db_regs_t *ddb_regp = NULL;
@@ -247,7 +248,13 @@ kdb_trap(int type, int code, db_regs_t *regs)
 
 	s = splhigh();
 	db_active++;
+	db_set_polling_errors = 0;
 	cnpollc(true);
+	if (db_set_polling_errors != 0) {
+		printf("Failed to set polling\n");
+		return 0;
+	}
+
 	db_trap(type, code);
 	cnpollc(false);
 	db_active--;

@@ -410,7 +410,7 @@ cnputc(int c)
 }
 
 void
-cnpollc(int on)
+cnpollc(bool on)
 {
 	static int refcount = 0;
 

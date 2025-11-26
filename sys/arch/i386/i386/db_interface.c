@@ -73,6 +73,7 @@ extern const char *const trap_type[];
 extern int trap_types;
 
 int	db_active = 0;
+int	db_set_polling_errors;
 #ifdef MULTIPROCESSOR
 /* ddb_regs defined as a macro */
 db_regs_t *ddb_regp = NULL;

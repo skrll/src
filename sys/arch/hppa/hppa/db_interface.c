@@ -58,6 +58,7 @@ extern const char *trap_type[];
 extern int trap_types;
 
 int db_active = 0;
+int db_set_polling_errors;
 
 void
 cpu_Debugger(void)

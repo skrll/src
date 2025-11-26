@@ -108,6 +108,7 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.10 2022/10/26 23:38:08 riastradh 
 #include <ia64/disasm/disasm.h>
 
 int	db_active = 0;
+int	db_set_polling_errors;
 
 db_regs_t *ddb_regp;
 

@@ -76,6 +76,7 @@ db_regs_t ddb_regs;
 void	kdbprinttrap(int, int);
 
 int	db_active = 0;
+int	db_set_polling_errors;
 
 static	int splsave; /* IPL before entering debugger */
 

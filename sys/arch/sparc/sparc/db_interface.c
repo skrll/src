@@ -135,6 +135,7 @@ cpu_Debugger(void)
 #if defined(DDB) || defined(_KMEMUSER)
 
 int	db_active = 0;
+int	db_set_polling_errors;
 
 #ifdef _KERNEL
 void kdb_kbd_trap(struct trapframe *);

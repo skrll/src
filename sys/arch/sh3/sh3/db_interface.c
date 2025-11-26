@@ -123,7 +123,8 @@ const struct db_command db_machine_command_table[] = {
 	{ DDB_END_CMD },
 };
 
-int db_active;
+int db_active = 0;
+int db_set_polling_errors;
 
 
 static void

@@ -68,6 +68,7 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.6 2024/11/25 22:04:14 skrll Exp $
 volatile u_int ddb_cpu = NOCPU;
 
 int		db_active = 0;
+int		db_set_polling_errors;
 
 #ifdef _KERNEL
 db_regs_t	ddb_regs;
