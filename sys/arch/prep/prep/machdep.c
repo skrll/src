@@ -273,9 +273,9 @@ halt_sys:
                 printf("\n");
                 printf("The operating system has halted.\n");
                 printf("Please press any key to reboot.\n\n");
-                cnpollc(1);	/* for proper keyboard command handling */
+                cnpollc(true);	/* for proper keyboard command handling */
                 cngetc();
-                cnpollc(0);
+                cnpollc(false);
 	}
 
 	printf("rebooting...\n\n");
@@ -397,7 +397,7 @@ setup_ivr(PPC_DEVICE *dev)
 			continue;
 		/* otherwise we have a memory packet */
 		addr = le64dec(&pa->PPCData[4]) & ~(PAGE_SIZE-1);
-		prep_intr_reg_off = le64dec(&pa->PPCData[4]) & (PAGE_SIZE-1); 
+		prep_intr_reg_off = le64dec(&pa->PPCData[4]) & (PAGE_SIZE-1);
 		prep_intr_reg = (vaddr_t)mapiodev(addr, PAGE_SIZE, false);
 		if (!prep_intr_reg)
 			panic("startup: no room for interrupt register");
@@ -406,7 +406,7 @@ setup_ivr(PPC_DEVICE *dev)
 }
 
 /*
- * There are a few things that need setting up early on in the prep 
+ * There are a few things that need setting up early on in the prep
  * architecture.  Foremost of these is the MPIC (if present) and the
  * l2 cache controller.  This is a cut-down version of pnpbus_search()
  * that looks for specific devices, and sets them up accordingly.

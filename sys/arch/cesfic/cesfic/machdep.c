@@ -101,7 +101,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.75 2025/11/30 20:09:18 thorpej Exp $")
 /* the following is used externally (sysctl_hw) */
 char machine[] = MACHINE;		/* CPU "architecture" */
 
-/* Our exported CPU info; we can have only one. */  
+/* Our exported CPU info; we can have only one. */
 struct cpu_info cpu_info_store;
 
 struct vm_map *phys_map = NULL;
@@ -164,7 +164,7 @@ void fic_init(void)
 int
 zs_check_kgdb(struct zs_chanstate *cs, int dev)
 {
-	
+
 	if((boothowto & RB_KDB) && (dev == makedev(10, 0)))
 		return (1);
 	return (0);
@@ -325,9 +325,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 		printf("\n");
 	}
 #endif
@@ -335,9 +335,9 @@ cpu_reboot(int howto, char *bootstr)
 	/* Finally, halt/reboot the system. */
 	if (howto & RB_HALT) {
 		printf("System halted.  Hit any key to reboot.\n\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");
@@ -560,7 +560,7 @@ nmihand(struct frame frame)
 /*
  * cpu_exec_aout_makecmds():
  *	CPU-dependent a.out format hook for execve().
- * 
+ *
  * Determine of the given exec package refers to something which we
  * understand and, if so, set up the vmcmds for it.
  *

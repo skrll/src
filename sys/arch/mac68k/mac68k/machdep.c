@@ -212,7 +212,7 @@ static long iomem_ex_storage[EXTENT_FIXED_STORAGE_SIZE(8) / sizeof(long)];
 struct extent *iomem_ex;
 int iomem_malloc_safe;
 
-/* Our exported CPU info; we can have only one. */  
+/* Our exported CPU info; we can have only one. */
 struct cpu_info cpu_info_store;
 
 static void	identifycpu(void);
@@ -507,9 +507,9 @@ cpu_reboot(int howto, char *bootstr)
 		printf("\n");
 		printf("The operating system has halted.\n");
 		printf("Please press any key to reboot.\n\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	/* Map the last physical page VA = PA for doboot() */
@@ -1471,7 +1471,7 @@ static romvec_t romvecs[] =
 		(void *)0x0,		/* PB ADB interrupt */
 		(void *)0x40ab2f84,	/* ADBBase + 130 interrupt; whatzit? */
 		(void *)0x40a0a360,	/* CountADBs */
-		(void *)0x40a0a37a,	/* GetIndADB */	
+		(void *)0x40a0a37a,	/* GetIndADB */
 		(void *)0x40a0a3a6,	/* GetADBInfo */
 		(void *)0x40a0a3ac,	/* SetADBInfo */
 		(void *)0x40a0a752,	/* ADBReInit */

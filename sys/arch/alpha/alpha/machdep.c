@@ -1111,9 +1111,9 @@ haltsys:
 
 #ifdef BOOTKEY
 	printf("hit any key to %s...\n", howto & RB_HALT ? "halt" : "reboot");
-	cnpollc(1);	/* for proper keyboard command handling */
+	cnpollc(true);	/* for proper keyboard command handling */
 	cngetc();
-	cnpollc(0);
+	cnpollc(false);
 	printf("\n");
 #endif
 

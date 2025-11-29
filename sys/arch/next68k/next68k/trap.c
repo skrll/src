@@ -312,9 +312,9 @@ trap(struct frame *fp, int type, unsigned code, unsigned v)
 #ifdef DEBUG
 			/* XXX should be a machine-dependent hook */
 			printf("(press a key)\n");
-			cnpollc(1);
+			cnpollc(true);
 			(void)cngetc();
-			cnpollc(0);
+			cnpollc(false);
 #endif
 		}
 		regdump((struct trapframe *)fp, 128);

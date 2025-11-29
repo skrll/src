@@ -427,9 +427,9 @@ dumpsys(void)
 
 #if defined(DDB) || defined(PANICWAIT)
 	printf("Do you want to dump memory? [y]");
-	cnpollc(1);
+	cnpollc(true);
 	i = cngetc();
-	cnpollc(0);
+	cnpollc(false);
 	cnputc(i);
 	switch (i) {
 	case 'n':

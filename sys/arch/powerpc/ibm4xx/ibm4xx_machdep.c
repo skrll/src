@@ -189,9 +189,9 @@ cpu_reboot(int howto, char *what)
 		printf("The operating system has halted.\n"
 		    "Press any key to reboot.\n\n");
 
-		cnpollc(1);
+		cnpollc(true);
 		cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n\n");

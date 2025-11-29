@@ -612,7 +612,7 @@ rmixl_physaddr_init(void)
 	/*
 	 * grab regions per DRAM BARs
 	 */
-	for (u_int i=0; i < RMIXL_SBC_DRAM_NBARS; i++) { 
+	for (u_int i=0; i < RMIXL_SBC_DRAM_NBARS; i++) {
 		r = RMIXL_IOREG_READ(RMIXL_SBC_DRAM_BAR(i));
 		if ((r & RMIXL_DRAM_BAR_STATUS) == 0)
 			continue;	/* not enabled */
@@ -880,7 +880,7 @@ rmixl_get_wakeup_info(struct rmixl_config *rcp)
 	__asm__ volatile(
 		".set push"				"\n"
 		".set noreorder"			"\n"
-		".set mips64"				"\n" 
+		".set mips64"				"\n"
 		"dmfc0	%0, $22, 7"			"\n"
 		".set pop"				"\n"
 			: "=r"(scratch_7));
@@ -1022,9 +1022,9 @@ haltsys:
 		printf("\n");
 		printf("The operating system has halted.\n");
 		printf("Please press any key to reboot.\n\n");
-		cnpollc(1);	/* For proper keyboard command handling */
+		cnpollc(true);	/* For proper keyboard command handling */
 		cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n\n");

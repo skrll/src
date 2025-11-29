@@ -1601,7 +1601,7 @@ int
 fdformat(dev_t dev, struct ne7_fd_formb *finfo, struct lwp *l)
 {
 	int rv = 0;
-	struct fd_softc *fd = 
+	struct fd_softc *fd =
 	    device_lookup_private(&fd_cd, FDUNIT(dev));
 	struct fd_type *type = fd->sc_type;
 	struct buf *bp;
@@ -1650,7 +1650,7 @@ fd_mountroot_hook(device_t dev)
 	int c;
 
 	printf("Insert filesystem floppy and press return.");
-	cnpollc(1);
+	cnpollc(true);
 	for (;;) {
 		c = cngetc();
 		if ((c == '\r') || (c == '\n')) {
@@ -1658,7 +1658,7 @@ fd_mountroot_hook(device_t dev)
 			break;
 		}
 	}
-	cnpollc(0);
+	cnpollc(false);
 }
 
 static void

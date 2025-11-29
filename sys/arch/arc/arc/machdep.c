@@ -207,7 +207,7 @@ mach_init(int argc, char *argv[], u_int bim, void *bip)
 		ssym = (char *)bi_syms->ssym;
 		esym = (char *)bi_syms->esym;
 		kernend = (void *)mips_round_page(esym);
-#if 0	
+#if 0
 		/*
 		 * Don't clear BSS here since bi_buf[] is allocated in BSS
 		 * and it has been cleared by the bootloader in this case.
@@ -554,9 +554,9 @@ cpu_reboot(int howto, char *bootstr)
 		printf("\n");
 		printf("The operating system has halted.\n");
 		printf("Please press any key to reboot.\n\n");
-		cnpollc(1);	/* for proper keyboard command handling */
+		cnpollc(true);	/* for proper keyboard command handling */
 		cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");

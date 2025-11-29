@@ -227,9 +227,9 @@ halt_sys:
                 aprint_normal("\n");
                 aprint_normal("The operating system has halted.\n");
                 aprint_normal("Please press any key to reboot.\n\n");
-                cnpollc(1);	/* for proper keyboard command handling */
+                cnpollc(true);	/* for proper keyboard command handling */
                 cngetc();
-                cnpollc(0);
+                cnpollc(false);
 	}
 
 	aprint_normal("rebooting...\n\n");

@@ -103,9 +103,9 @@ userconf_more(void)
 	if (userconf_cnt != -1) {
 		if (userconf_cnt == userconf_lines) {
 			printf("-- more --");
-			cnpollc(1);
+			cnpollc(true);
 			c = cngetc();
-			cnpollc(0);
+			cnpollc(false);
 			userconf_cnt = 0;
 			printf("\r            \r");
 		}
@@ -393,9 +393,9 @@ userconf_change(int devno)
 
 		while (c != 'y' && c != 'Y' && c != 'n' && c != 'N') {
 			printf("change (y/n) ?");
-			cnpollc(1);
+			cnpollc(true);
 			c = cngetc();
-			cnpollc(0);
+			cnpollc(false);
 			printf("\n");
 		}
 

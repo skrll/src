@@ -82,7 +82,7 @@ void	cninit(void);
 int	cngetc(void);
 int	cngetsn(char *, int);
 void	cnputc(int);
-void	cnpollc(int);
+void	cnpollc(bool);
 void	cnbell(u_int, u_int, u_int);
 void	cnflush(void);
 void	cnhalt(void);

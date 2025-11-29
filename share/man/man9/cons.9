@@ -49,7 +49,7 @@
 .Ft void
 .Fn cnhalt "void"
 .Ft void
-.Fn cnpollc "int on"
+.Fn cnpollc "bool on"
 .Ft void
 .Fn cnputc "int c"
 .Sh DESCRIPTION
@@ -140,7 +140,7 @@ This waits until a <Enter> key is pressed:
 .Bd -literal -offset indent
 int c;
 
-cnpollc(1);
+cnpollc(true);
 for(;;) {
 	c = cngetc();
 	if ((c == '\er' || (c == '\en')) {
@@ -148,7 +148,7 @@ for(;;) {
 		break;
 	}
 }
-cnpollc(0);
+cnpollc(false);
 .Ed
 .Sh SEE ALSO
 .Xr pckbd 4 ,

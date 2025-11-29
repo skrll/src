@@ -146,7 +146,7 @@ cpu_reboot(int howto, char *bootstr)
 	__sleep_ctx = NULL;
 
 	/* Disable console buffering. */
-	cnpollc(1);
+	cnpollc(true);
 
 #ifdef KLOADER
 	if ((howto & RB_HALT) == 0) {

@@ -1133,7 +1133,7 @@ fd_mountroot_hook(device_t dev)
 	int c;
 
 	printf("Insert filesystem floppy and press return.");
-	cnpollc(1);
+	cnpollc(true);
 	for (;;) {
 		c = cngetc();
 		if ((c == '\r') || (c == '\n')) {
@@ -1141,5 +1141,5 @@ fd_mountroot_hook(device_t dev)
 			break;
 		}
 	}
-	cnpollc(0);
+	cnpollc(false);
 }

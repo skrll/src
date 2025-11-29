@@ -426,7 +426,7 @@ cpu_reboot(register int howto, char *bootstr)
 		empmdev = device_find_by_xname("empm0");
 		if (empmdev != NULL) {
 			empm_power_off(device_private(empmdev));
-		}	
+		}
 	}
 #endif /* NEMPM > 0 */
 
@@ -434,9 +434,9 @@ cpu_reboot(register int howto, char *bootstr)
 		printf("\n");
 		printf("The operating system has halted.\n");
 		printf("Please press any key to reboot.\n\n");
-		cnpollc(1);
+		cnpollc(true);
 		cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");

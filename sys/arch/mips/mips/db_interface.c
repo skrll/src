@@ -148,9 +148,9 @@ kdb_trap(int type, struct reg *regs)
 
 	ddb_regs = *regs;
 	db_active++;
-	cnpollc(1);
+	cnpollc(true);
 	db_trap(type & ~T_USER, 0 /*code*/);
-	cnpollc(0);
+	cnpollc(false);
 	db_active--;
 	*regs = ddb_regs;
 

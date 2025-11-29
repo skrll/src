@@ -572,7 +572,7 @@ mach_init(int32_t argc, int32_t argva, int32_t enva, int32_t callvec,
 		curcpu()->ci_cpu_freq =
 		    strtoul(env, NULL, 10);
 	}
-	
+
 	DPRINTF(("cpuclock %ld\n", curcpu()->ci_cpu_freq));
 
 	if (mips_options.mips_cpu_flags & CPU_MIPS_DOUBLE_COUNT)
@@ -745,9 +745,9 @@ haltsys:
 		printf("\n");
 		printf("The operating system has halted.\n");
 		printf("Please press any key to reboot.\n\n");
-		cnpollc(1);	/* For proper keyboard command handling */
+		cnpollc(true);	/* For proper keyboard command handling */
 		cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("%s\n\n", ((howto & RB_HALT) != 0) ? "halted." : "rebooting...");

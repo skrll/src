@@ -278,9 +278,9 @@ kgdb_cont:
 #ifdef DEBUG
 		/* XXX Should be a machine dependent hook */
 		printf("(press a key)\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 #endif
 	}
 

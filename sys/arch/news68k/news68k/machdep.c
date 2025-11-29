@@ -228,7 +228,7 @@ cpu_startup(void)
 
 	pmapdebug = 0;
 #endif
- 
+
 	/* Initialize the interrupt handlers. */
 	isrinit();
 
@@ -342,9 +342,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 		printf("\n");
 	}
 #endif

@@ -393,7 +393,7 @@ cpu_reboot(int howto, char *user_boot_string)
 		goto haltsys;
 
 	/* Un-blank the screen if appropriate. */
-	cnpollc(1);
+	cnpollc(true);
 
 	if ((howto & RB_NOSYNC) == 0) {
 		reboot_sync();

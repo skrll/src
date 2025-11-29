@@ -284,9 +284,9 @@ cpu_reboot(int howto, char *what)
 	if (howto & RB_HALT) {
 		printf("The operating system has halted.\n"
 		    "Press any key to reboot.\n\n");
-		cnpollc(1);	/* For proper keyboard command handling */
+		cnpollc(true);	/* For proper keyboard command handling */
 		cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting\n\n");
@@ -641,7 +641,7 @@ sort_data(uint64_t *data, size_t count)
 			 * (module 65536) to achieve the division.
 			 *
 			 * iN = 2^16 / 1.24733... = 52540
-			 * x / N == (x * iN) / 65536 
+			 * x / N == (x * iN) / 65536
 			 */
 			gap = (gap * 52540) / 65536;
 		}

@@ -111,7 +111,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.171 2025/11/20 18:05:00 thorpej Exp $"
 /* the following is used externally (sysctl_hw) */
 char	machine[] = MACHINE;	/* from <machine/param.h> */
 
-/* Our exported CPU info; we can have only one. */  
+/* Our exported CPU info; we can have only one. */
 struct cpu_info cpu_info_store;
 
 struct vm_map *phys_map = NULL;
@@ -137,7 +137,7 @@ uint8_t	mvme_ea[6];
 extern	u_int lowram;
 extern	short exframesize[];
 
-/* prototypes for local functions */ 
+/* prototypes for local functions */
 void	identifycpu(void);
 void	initcpu(void);
 void	dumpsys(void);
@@ -696,9 +696,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 		printf("\n");
 	}
 #endif
@@ -767,7 +767,7 @@ cpu_dump_mempagecnt(void)
 int
 cpu_dump(int (*dump)(dev_t, daddr_t, void *, size_t), daddr_t *blknop)
 {
-	int buf[MDHDRSIZE / sizeof(int)]; 
+	int buf[MDHDRSIZE / sizeof(int)];
 	cpu_kcore_hdr_t *chdr;
 	kcore_seg_t *kseg;
 	int error;
@@ -1000,7 +1000,7 @@ mvme68k_abort(const char *cp)
 /*
  * cpu_exec_aout_makecmds():
  *	CPU-dependent a.out format hook for execve().
- * 
+ *
  * Determine of the given exec package refers to something which we
  * understand and, if so, set up the vmcmds for it.
  */

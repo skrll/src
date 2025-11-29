@@ -237,7 +237,7 @@ cpu_reboot(int howto, char *bootstr)
 	}
 
 	/* Disable console buffering */
-	cnpollc(1);
+	cnpollc(true);
 
 	/*
 	 * If RB_NOSYNC was not specified sync the discs.

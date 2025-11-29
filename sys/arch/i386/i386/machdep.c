@@ -818,7 +818,7 @@ haltsys:
 		}
 #endif
 
-		cnpollc(1);	/* for proper keyboard command handling */
+		cnpollc(true);	/* for proper keyboard command handling */
 		if (cngetc() == 0) {
 			/* no console attached, so just hlt */
 			printf("No keyboard - cannot reboot after all.\n");
@@ -826,7 +826,7 @@ haltsys:
 				x86_hlt();
 			}
 		}
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");
@@ -1428,7 +1428,7 @@ init386(paddr_t first_avail)
 	for (x = 0; x < 32; x++) {
 		/* Reset to default. Special cases below */
 		int sel;
-#ifdef XENPV		
+#ifdef XENPV
 		sel = SEL_XEN;
 #else
 		sel = SEL_KPL;
@@ -1491,7 +1491,7 @@ init386(paddr_t first_avail)
 #endif /* XENPV */
 
 #if NMCA > 0
-	/* 
+	/*
 	 * check for MCA bus, needed to be done before ISA stuff - if
 	 * MCA is detected, ISA needs to use level triggered interrupts
 	 * by default

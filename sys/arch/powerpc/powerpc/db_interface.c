@@ -248,9 +248,9 @@ kdb_trap(int type, void *v)
 
 #ifdef DDB
 	db_active++;
-	cnpollc(1);
+	cnpollc(true);
 	db_trap(type, 0);
-	cnpollc(0);
+	cnpollc(false);
 	db_active--;
 #endif
 #ifdef KGDB

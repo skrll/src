@@ -136,7 +136,7 @@ cal_timer(void)
 }
 
 /*
- * 
+ *
  */
 void
 mach_init(u_long arg0, u_long arg1, u_long arg2, u_long arg3)
@@ -356,9 +356,9 @@ haltsys:
 		printf("\n");
 		printf("The operating system has halted.\n");
 		printf("Please press any key to reboot.\n\n");
-		cnpollc(1);	/* For proper keyboard command handling */
+		cnpollc(true);	/* For proper keyboard command handling */
 		cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("resetting...\n\n");

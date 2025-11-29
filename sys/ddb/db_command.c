@@ -579,7 +579,7 @@ db_unregister_tbl(uint8_t type,const struct db_command *cmd_tbl)
 }
 
 #ifndef _KERNEL
-#define	cnpollc(c)	__nothing
+#define	cnpollc(on)	__nothing
 #endif
 
 /*
@@ -625,9 +625,9 @@ db_command_loop(void)
 		if (db_print_position() != 0)
 			db_printf("\n");
 		db_output_line = 0;
-		cnpollc(1);
+		cnpollc(true);
 		(void) db_read_line();
-		cnpollc(0);
+		cnpollc(false);
 		db_command(&db_last_command);
 	}
 

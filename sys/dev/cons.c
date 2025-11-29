@@ -337,7 +337,7 @@ cngetsn(char *cp, int size)
 	char *lp;
 	int c, len;
 
-	cnpollc(1);
+	cnpollc(true);
 
 	lp = cp;
 	len = 0;
@@ -348,7 +348,7 @@ cngetsn(char *cp, int size)
 		case '\r':
 			printf("\n");
 			*lp++ = '\0';
-			cnpollc(0);
+			cnpollc(false);
 			return (len);
 		case '\b':
 		case '\177':

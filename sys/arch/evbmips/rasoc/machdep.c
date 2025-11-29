@@ -79,7 +79,7 @@ cal_timer(void)
 	uint32_t cntfreq;
 
 	cntfreq = curcpu()->ci_cpu_freq = RA_CLOCK_RATE;
-	
+
 	/* MIPS 4Kc CP0 counts every other clock */
 	if (mips_options.mips_cpu_flags & CPU_MIPS_DOUBLE_COUNT)
 		cntfreq /= 2;
@@ -267,9 +267,9 @@ cpu_reboot(int howto, char *bootstr)
 		printf("\n");
 		printf("The operating system has halted.\n");
 		printf("Please press any key to reboot.\n\n");
-		cnpollc(1);	/* For proper keyboard command handling */
+		cnpollc(true);	/* For proper keyboard command handling */
 		cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("resetting board...\n\n");
