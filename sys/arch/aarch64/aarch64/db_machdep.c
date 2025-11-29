@@ -1134,7 +1134,6 @@ kdb_trap(int type, struct trapframe *tf)
 	struct cpu_info * const ci = curcpu();
 	bool static_brk = false;
 #endif
-	int s;
 	bool restore_hw_watchpoints = true;
 
 	switch (type) {
@@ -1214,7 +1213,7 @@ kdb_trap(int type, struct trapframe *tf)
 		/* Should switch to kdb`s own stack here. */
 		ddb_regs = *tf;
 
-		s = splhigh();
+		const int s = splhigh();
 		db_active++;
 		cnpollc(true);
 		db_trap(type, 0/*code*/);

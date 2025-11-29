@@ -1045,22 +1045,16 @@ ukbd_cngetc(void *v, u_int *type, int *data)
 void
 ukbd_cnpollc(void *v, int on)
 {
-	struct ukbd_softc *sc = v;
-	struct usbd_device *dev;
+	struct ukbd_softc * const sc = v;
+	struct usbd_device * const udev = sc->sc_udev;
 
 	DPRINTFN(2,("%s: sc=%p on=%d\n", __func__, v, on));
 
-	/* XXX Can this just use sc->sc_udev, or am I mistaken?  */
-	usbd_interface2device_handle(sc->sc_iface, &dev);
-	if (on) {
-		sc->sc_spl = splusb();
+	if (on)
 		pollenter++;
-	}
-	usbd_set_polling(dev, on);
-	if (!on) {
+	usbd_set_polling(udev, on);
+	if (!on)
 		pollenter--;
-		splx(sc->sc_spl);
-	}
 }
 
 int
