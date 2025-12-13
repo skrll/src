@@ -415,6 +415,8 @@ dwc_mmc_bus_clock(sdmmc_chipset_handle_t sch, int freq)
 		return 1;
 
 	if (freq) {
+printf("%s: freq = %u\n", __func__, freq);
+cpu_Debugger();
 		if (sc->sc_bus_clock && sc->sc_bus_clock(sc, freq) != 0)
 			return 1;
 
