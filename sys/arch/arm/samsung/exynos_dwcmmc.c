@@ -85,6 +85,10 @@ exynos_dwcmmc_match(device_t parent, cfdata_t cf, void *aux)
 	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
+// xxxnh dw_mci_exynos_get_ciu_div
+///* Minimal required clock frequency for cclkin, unit: HZ */
+//#define EXYNOS_CCLKIN_MIN       50000000
+
 static void
 exynos_dwcmmc_attach(device_t parent, device_t self, void *aux)
 {
@@ -107,6 +111,12 @@ exynos_dwcmmc_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": missing samsung,dw-mshc-ciu-div property\n");
 		return;
 	}
+
+	// sc_ciu_div
+	//   samsung,dw-mshc-ciu-div = <0x03>;
+	// 
+
+// CLKSEL64 vs CLKSEL
 
 	esc->sc_clk_biu = fdtbus_clock_get(phandle, "biu");
 	if (esc->sc_clk_biu == NULL) {
@@ -200,6 +210,49 @@ exynos_dwcmmc_bus_clock(struct dwc_mmc_softc *sc, int rate)
 	struct exynos_dwcmmc_softc *esc = device_private(sc->sc_dev);
 	const int ciu_div = esc->sc_ciu_div + 1;
 	int error;
+
+
+// XXX
+#if 0
+
+
+/* CLKSEL register defines */
+#define SDMMC_CLKSEL_CCLK_SAMPLE(x)     (((x) & 7) << 0)
+#define SDMMC_CLKSEL_CCLK_DRIVE(x)      (((x) & 7) << 16)
+#define SDMMC_CLKSEL_CCLK_DIVIDER(x)    (((x) & 7) << 24)
+#define SDMMC_CLKSEL_GET_DRV_WD3(x)     (((x) >> 16) & 0x7)
+#define SDMMC_CLKSEL_GET_DIV(x)         (((x) >> 24) & 0x7)
+#define SDMMC_CLKSEL_UP_SAMPLE(x, y)    (((x) & ~SDMMC_CLKSEL_CCLK_SAMPLE(7)) |\
+                                         SDMMC_CLKSEL_CCLK_SAMPLE(y))
+#define SDMMC_CLKSEL_TIMING(x, y, z)    (SDMMC_CLKSEL_CCLK_SAMPLE(x) |  \
+                                         SDMMC_CLKSEL_CCLK_DRIVE(y) |   \
+                                         SDMMC_CLKSEL_CCLK_DIVIDER(z))
+#define SDMMC_CLKSEL_TIMING_MASK        SDMMC_CLKSEL_TIMING(0x7, 0x7, 0x7)
+#define SDMMC_CLKSEL_WAKEUP_INT         BIT(11)
+
+        struct dw_mci_exynos_priv_data *priv = host->priv;
+
+        if (priv->ctrl_type == DW_MCI_TYPE_EXYNOS4412)
+                return EXYNOS4412_FIXED_CIU_CLK_DIV;
+        else if (priv->ctrl_type == DW_MCI_TYPE_EXYNOS4210)
+                return EXYNOS4210_FIXED_CIU_CLK_DIV;
+        else if (priv->ctrl_type == DW_MCI_TYPE_EXYNOS7 ||
+                        priv->ctrl_type == DW_MCI_TYPE_EXYNOS7_SMU ||
+                        priv->ctrl_type == DW_MCI_TYPE_EXYNOS7870 ||
+                        priv->ctrl_type == DW_MCI_TYPE_EXYNOS7870_SMU ||
+                        priv->ctrl_type == DW_MCI_TYPE_ARTPEC8)
+                return SDMMC_CLKSEL_GET_DIV(mci_readl(host, CLKSEL64)) + 1;
+        else
+                return SDMMC_CLKSEL_GET_DIV(mci_readl(host, CLKSEL)) + 1;
+
+#endif
+
+#define SDMMC_CLKSEL                    0x09C
+#define SDMMC_CLKSEL64                  0x0A8
+	uint32_t clksel = bus_space_read_4(sc->sc_bst, sc->sc_bsh, SDMMC_CLKSEL);
+	u_int div = __SHIFTOUT(clksel, __BITS(26,24)) + 1;
+
+	printf("%s: CLKSEL %#0x div %u\n", __func__, clksel, div);
 
 	error = clk_set_rate(esc->sc_clk_ciu, 1000 * rate * ciu_div);
 	if (error != 0) {

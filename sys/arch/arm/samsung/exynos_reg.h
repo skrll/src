@@ -131,7 +131,8 @@
 #define PLL2650X_LOCK_FACTOR            3000		/* P * F = lock time max */
 
 #define PLL_MPS2FREQ(F, M, P, S) \
-	((P) == 0 ? 0 : (((F) * (M)) / ((P) * (1 << (S)))))
+	((P) == 0 ? 0 : (((uint64_t)(F) * (M)) / ((P) * (1U << (S)))))
+
 #define PLL35XX_FREQ(f, v) PLL_MPS2FREQ( \
 	(f),\
 	__SHIFTOUT((v), PLL35XX_CON0_M),\
@@ -139,7 +140,7 @@
 	__SHIFTOUT((v), PLL35XX_CON0_S))
 
 #define PLL_MKPS2FREQ(F, M, K, P, S) \
-	((P) == 0 ? 0 : (((F) * (((M) << 16) + (K))) / ((P) * (1U << (S))) / (1U << 16) ))
+	((P) == 0 ? 0 : (((uint64_t)(F) * (((M) << 16) + (K))) / ((P) * (1U << (S))) / (1U << 16) ))
 
 #define PLL2650X_FREQ(f, v0, v1) PLL_MKPS2FREQ( \
 	(f),\
