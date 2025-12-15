@@ -257,9 +257,15 @@ initarm(void *arg)
 {
 	const struct fdt_platform *plat;
 	uint64_t memory_start, memory_end;
+	extern char etext[];
+	extern char _end[];
 
 	/* set temporally to work printf()/panic() even before consinit() */
 	cn_tab = &earlycons;
+
+	vaddr_t fdt_va = (vaddr_t)fdt_addr_r;
+	if ((vaddr_t)etext < fdt_va && fdt_va < (vaddr_t)_end)
+		panic("FDT placed within loaded kernel");
 
 	/* Load FDT */
 	int error = fdt_check_header(fdt_addr_r);
