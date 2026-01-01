@@ -479,6 +479,10 @@ _rtld_tls_module_allocate(struct tls_tcb *tcb, size_t idx)
 		assert(ALIGNED_P(p, obj->tlsalign));
 		assert(lo <= p);
 		assert(p + obj->tlssize <= hi);
+
+		dbg(("%s: static  %p (%p/%#zx)",
+		    obj->path, p, tcb, obj->tlsoffset));
+
 		return p;
 	}
 
@@ -492,6 +496,9 @@ _rtld_tls_module_allocate(struct tls_tcb *tcb, size_t idx)
 	memset(p + obj->tlsinitsize, 0, obj->tlssize - obj->tlsinitsize);
 
 	obj->tls_dynamic = 1;
+
+	dbg(("%s: dynamic %p (%p/%#zx)",
+	    obj->path, p, tcb, obj->tlspoffset));
 
 	return p;
 }

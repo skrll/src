@@ -308,11 +308,13 @@ _rtld_map_object(const char *path, int fd, const struct stat *sb)
 		obj->tlsindex = ++_rtld_tls_max_index;
 		obj->tlssize = phtls->p_memsz;
 		obj->tlsalign = phtls->p_align;
+		obj->tlspoffset = phtls->p_offset;
 		obj->tlsinitsize = phtls->p_filesz;
 		tls_vaddr = phtls->p_vaddr;
-		dbg(("%s: tls index %zu size %zu align %zu initsize %zu",
+		dbg(("%s: tls index %zu size %zu align %zu offset %zu"
+		    " initsize %zu",
 		    obj->path, obj->tlsindex, obj->tlssize, obj->tlsalign,
-		    obj->tlsinitsize));
+		    obj->tlspoffset, obj->tlsinitsize));
 	}
 #endif
 

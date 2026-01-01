@@ -608,12 +608,14 @@ _rtld_digest_phdr(const Elf_Phdr *phdr, int phnum, caddr_t entry)
 			obj->tlsindex = 1;
 			obj->tlssize = ph->p_memsz;
 			obj->tlsalign = ph->p_align;
+			obj->tlspoffset = ph->p_offset;
 			obj->tlsinitsize = ph->p_filesz;
 			obj->tlsinit = (void *)(obj->relocbase +
 			    (uintptr_t)ph->p_vaddr);
-			dbg(("headers: %s %p phsize %" PRImemsz,
+			dbg(("headers: %s %p phsize %" PRImemsz
+			    " palign %" PRImemsz " poffset %" PRImemsz,
 			    "PT_TLS", (void *)(uintptr_t)vaddr,
-			     ph->p_memsz));
+			     ph->p_memsz, ph->p_align, ph->p_offset));
 			break;
 #endif
 #ifdef __ARM_EABI__
