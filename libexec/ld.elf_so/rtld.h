@@ -286,6 +286,7 @@ typedef struct Struct_Obj_Entry {
 	size_t		tlssize;	/* Size of TLS block */
 	size_t		tlsoffset;	/* Offset in the static TLS block */
 	size_t		tlsalign;	/* Needed alignment for static TLS */
+	size_t		tlspoffset;	/* p_offset of the static TLS block */
 #endif
 
 #ifdef GNU_RELRO
