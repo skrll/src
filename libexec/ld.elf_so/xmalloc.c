@@ -90,6 +90,7 @@ __RCSID("$NetBSD: xmalloc.c,v 1.28 2026/07/20 18:46:37 riastradh Exp $");
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include "debug.h"
 #include "rtld.h"
 
 /*
@@ -108,6 +109,7 @@ static char 		*pagepool_start, *pagepool_end;
 union	overhead {
 	union	overhead *ov_next;	/* when free */
 	struct {
+// XXXNH for large alignments this isn't big enough, e.g. 2^17
 		uint16_t	ovu_index;	/* bucket # */
 		uint8_t		ovu_magic;	/* magic number */
 	} ovu;
@@ -244,6 +246,17 @@ xmalloc_aligned(size_t size, size_t align, size_t offset)
 	ov->ov_magic = AMAGIC;
 	ov->ov_index = x - (uintptr_t)mem + sizeof(union overhead);
 
+	dbg(("%s: size %#zx align %#zx offset %#zx."
+	    " mem %p - %p returned %#jx ov_index %#x (%#jx)"
+	    " ov %p",
+	    __func__,
+	    size, align, offset,
+	    mem, (void *)((uintptr_t)mem + size + align + offset + sizeof(union overhead)),
+	    x, ov1.ov_index,
+	    x - (uintptr_t)mem + sizeof(union overhead),
+	    ov
+	));
+
 	return ((void *)x);
 }
 
@@ -297,6 +310,10 @@ xfree(void *cp)
 
 	op = opx->ov_magic == AMAGIC ? (void *)((caddr_t)cp - opx->ov_index) :
 	    opx;
+	if (opx->ov_magic == AMAGIC) {
+		dbg(("%s: freeing %p op @ %p AMAGIC ov_index %#x",
+		    __func__, cp, op, op1.ov_index));
+	}
 	ASSERT(op->ov_magic == MAGIC);		/* make sure it was in use */
 	if (op->ov_magic != MAGIC)
 		return;				/* sanity */
