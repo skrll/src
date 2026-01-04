@@ -361,7 +361,8 @@ validate_status_signaled(int status, int expected_termsig, int expected_core)
 	    "Unexpected signal received");
 
 	ATF_REQUIRE_EQ_MSG(!!WCOREDUMP(status), expected_core,
-	    "Unexpectedly core file %s generated", expected_core ? "not" : "");
+	    "Unexpectedly core file %s generated (%d vs %d)", expected_core ? "not" : "",
+	    !!WCOREDUMP(status), expected_core);
 }
 
 static void __used
