@@ -209,7 +209,7 @@ raise_raw(int sig)
 		ATF_REQUIRE(WIFSIGNALED(status));
 		ATF_REQUIRE(!WIFSTOPPED(status));
 		ATF_REQUIRE_EQ(WTERMSIG(status), sig);
-		ATF_REQUIRE_EQ(!!WCOREDUMP(status), expect_core);
+		ATF_REQUIRE_EQ_MSG(!!WCOREDUMP(status), expect_core, "!!WCOREDUMP(status) %d != expect_core %d", !!WCOREDUMP(status), expect_core);
 		break;
 #ifdef VFORK
 	case SIGTSTP:
