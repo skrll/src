@@ -267,7 +267,9 @@ morecore(size_t bucket)
 		nblks = 1;
 	}
 	if (amt > PAGEPOOL_SIZE)
-		if (morepages((amt >> pageshift) + NPOOLPAGES) == 0)
+		if (morepages((amt >> pageshift) + NPOOLPAGES) == 0 &&
+		    /* Retry with min required size */
+		    morepages(amt >> pageshift) == 0)
 			return;
 	op = (union overhead *)pagepool_start;
 	pagepool_start += amt;
