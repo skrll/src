@@ -56,6 +56,7 @@ __lwp_gettcb_fast(void)
 static inline void
 __lwp_settcb(struct tls_tcb *__tcb)
 {
+// XXX 2?
 	__tcb += TLS_TP_OFFSET / sizeof(*__tcb) + 1;
 	_lwp_setprivate(__tcb);
 }
