@@ -676,6 +676,11 @@ pmap_md_page_syncicache(struct vm_page_md *mdpg, const kcpuset_t *onproc)
 	if (opts->mips_cpu_flags & CPU_MIPS_I_D_CACHE_COHERENT)
 		return;
 
+	struct mips_cache_info * const mci = &mips_cache_info;
+	if (mci->mci_picache_vivt) {
+		// all mappings in pvlist.
+	}
+
 	/*
 	 * If onproc is empty, we could do a
 	 * pmap_page_protect(pg, VM_PROT_NONE) and remove all
