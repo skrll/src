@@ -247,6 +247,10 @@ efi_fdt_system_table(void)
 	chosen = efi_fdt_chosen();
 
 	fdt_setprop_u64(fdt_data, chosen, "netbsd,uefi-system-table", (uint64_t)(uintptr_t)ST);
+#ifdef EFIBOOT_DEBUG
+	printf("ST:0x%" PRIx64 "\n", (uint64_t)(uintptr_t)ST);
+#endif
+
 #endif
 }
 
