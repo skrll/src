@@ -38,10 +38,6 @@ LEAF(_membar_sync)
 	j	ra
 	 BDSYNC
 END(_membar_sync)
-ATOMIC_OP_ALIAS(membar_sync,_membar_sync)
-
-STRONG_ALIAS(_membar_enter,_membar_sync)
-ATOMIC_OP_ALIAS(membar_enter,_membar_sync)
 
 #ifdef __OCTEON__
 
@@ -102,6 +98,18 @@ STRONG_ALIAS(_membar_consumer,_membar_acquire)
 ATOMIC_OP_ALIAS(membar_consumer,_membar_acquire)
 
 LEAF(_membar_release)
+	/*
+	 * syncw is documented as ordering store-before-store in
+	 *
+	 *	Cavium OCTEON III CN78XX Hardware Reference Manual,
+	 *	CN78XX-HM-0.99E, September 2014.
+	 *
+	 * It's unclear from the documentation the architecture
+	 * guarantees load-before-store ordering without barriers, but
+	 * this code assumes it does.  If that assumption is wrong, we
+	 * can only use syncw for membar_producer -- membar_release has
+	 * to use the full sync.
+	 */
 #if defined(_MIPS_ARCH_OCTEON2)
 	j	ra
 	 syncw
@@ -112,25 +120,26 @@ LEAF(_membar_release)
 	 syncw
 #endif
 END(_membar_release)
-ATOMIC_OP_ALIAS(membar_release,_membar_release)
-
-STRONG_ALIAS(_membar_exit,_membar_release)
-ATOMIC_OP_ALIAS(membar_exit,_membar_release)
-
-STRONG_ALIAS(_membar_producer,_membar_release)
-ATOMIC_OP_ALIAS(membar_producer,_membar_release)
-
-#else  /* !__OCTEON__ */
-
-STRONG_ALIAS(_membar_acquire,_membar_sync)
-ATOMIC_OP_ALIAS(membar_acquire,_membar_sync)
-STRONG_ALIAS(_membar_release,_membar_sync)
-ATOMIC_OP_ALIAS(membar_release,_membar_sync)
-STRONG_ALIAS(_membar_exit,_membar_sync)
-ATOMIC_OP_ALIAS(membar_exit,_membar_sync)
-STRONG_ALIAS(_membar_consumer,_membar_sync)
-ATOMIC_OP_ALIAS(membar_consumer,_membar_sync)
-STRONG_ALIAS(_membar_producer,_membar_sync)
-ATOMIC_OP_ALIAS(membar_producer,_membar_sync)
-
 #endif
+
+ATOMIC_OP_ALIAS(membar_sync,_membar_sync)
+ATOMIC_OP_ALIAS(membar_acquire,_membar_sync)
+//STRONG_ALIAS(_membar_acquire,_membar_sync)
+ATOMIC_OP_ALIAS(membar_enter,_membar_sync)
+STRONG_ALIAS(_membar_enter,_membar_sync)
+#ifdef __OCTEON__
+ATOMIC_OP_ALIAS(membar_exit,_membar_release)
+STRONG_ALIAS(_membar_exit,_membar_release)
+ATOMIC_OP_ALIAS(membar_release,_membar_release)
+ATOMIC_OP_ALIAS(membar_producer,_membar_release)
+STRONG_ALIAS(_membar_producer,_membar_release)
+#else
+ATOMIC_OP_ALIAS(membar_exit,_membar_sync)
+STRONG_ALIAS(_membar_exit,_membar_sync)
+ATOMIC_OP_ALIAS(membar_release,_membar_sync)
+STRONG_ALIAS(_membar_release,_membar_sync)
+ATOMIC_OP_ALIAS(membar_producer,_membar_sync)
+STRONG_ALIAS(_membar_producer,_membar_sync)
+#endif
+ATOMIC_OP_ALIAS(membar_consumer,_membar_sync)
+STRONG_ALIAS(_membar_consumer,_membar_sync)
