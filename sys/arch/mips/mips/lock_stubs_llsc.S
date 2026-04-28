@@ -295,6 +295,7 @@ LEAF(llsc_mutex_spin_exit)
 	 nop
 #endif
 	INT_S	zero, MTX_LOCK(a0)
+	SYNC_PLUNGER
 
 	/*
 	 * We need to grab this before the mutex count is incremented

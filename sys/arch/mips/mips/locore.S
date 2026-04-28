@@ -261,6 +261,15 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 #endif
 	REG_EPILOGUE
 
+	/*
+	 * Ensure all PCB stores are visible to other CPUs before
+	 * switching away from this LWP.  On Octeon, stores can linger
+	 * in the write buffer for hundreds of thousands of cycles.
+	 * Without this barrier, another CPU resuming this LWP could
+	 * read stale/partial register values from the PCB.
+	 */
+	SYNC_PLUNGER
+
 #if defined(PARANOID_SPL)
 	/*
 	 * Verify interrupt configuration matches IPL_SCHED
@@ -325,6 +334,7 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 	 */
 	SYNC_PRODUCER		/* XXX fixup to nop for uniprocessor boot */
 	PTR_S	MIPS_CURLWP, CPU_INFO_CURLWP(t2)
+	SYNC_PLUNGER		/* Octeon: second syncw drains publish store */
 	SYNC_DEKKER		/* XXX fixup to nop for uniprocessor boot */
 
 	/* restore interrupts */
@@ -465,6 +475,7 @@ NESTED(softint_fast_dispatch, CALLFRAME_SIZ, ra)
 	move	s4, t0					# remember curpcb
 	SYNC_PRODUCER /* XXX fixup */	/* for mutex_enter; see cpu_switchto */
 	PTR_S	MIPS_CURLWP, CPU_INFO_CURLWP(s1)	#    ...
+	SYNC_PLUNGER
 	/*
 	 * No need for barrier after ci->ci_curlwp = softlwp -- when we
 	 * enter a softint lwp, it can't be holding any mutexes, so it
