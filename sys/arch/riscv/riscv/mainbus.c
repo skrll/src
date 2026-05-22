@@ -30,7 +30,6 @@
  */
 
 #include "opt_console.h"
-#include "opt_efi.h"
 #include "opt_modular.h"
 
 #include <sys/cdefs.h>
