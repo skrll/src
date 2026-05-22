@@ -29,8 +29,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_efi.h"
-
 #include <sys/atomic.h>
 #include <sys/ksyms.h>
 
