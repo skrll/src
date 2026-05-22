@@ -29,10 +29,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_efi.h"
-
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: efi_runtime.c,v 1.11 2023/05/22 16:27:48 riastradh Exp $");
+
+#include "efi.h"
 
 #include <sys/param.h>
 #include <sys/mutex.h>
