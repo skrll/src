@@ -121,6 +121,7 @@ LIST_HEAD(kern_history_head, kern_history);
 #define	KERNHIST_USBHIST	__BIT(4)	/* usbhist */
 #define	KERNHIST_SCDEBUGHIST	__BIT(5)	/* scdebughist */
 #define	KERNHIST_BIOHIST	__BIT(6)	/* biohist */
+#define	KERNHIST_NVMMHIST	__BIT(7)	/* nvmmhist */
 
 #ifdef _KERNEL
 
@@ -146,6 +147,17 @@ extern	struct kern_history_head kern_histories;
 
 #define KERNHIST_DECL(NAME) extern struct kern_history NAME
 #define KERNHIST_DEFINE(NAME) struct kern_history NAME
+
+#ifndef KERNHIST_PTRKTOX
+#define KERNHIST_PTRKTOX(k)	k
+#endif
+#ifndef KERNHIST_PTRXTOK
+#define KERNHIST_PTRXTOK(x)	x
+#endif
+
+#ifndef KERNHIST_BINTIME_ALLOWED
+#define KERNHIST_BINTIME_ALLOWED true
+#endif
 
 #define KERNHIST_LINK_STATIC(NAME) \
 do { \
@@ -180,6 +192,10 @@ do { \
 #define KERNHIST_DELAY	100000
 #endif
 
+#ifndef KERNHIST_CPUNUMBER
+#define KERNHIST_CPUNUMBER	((uint32_t)cpu_number())
+#endif
+
 #if defined(KERNHIST_PRINT)
 extern int kernhist_print_enabled;
 #define KERNHIST_PRINTNOW(E) \
@@ -201,13 +217,15 @@ do { \
 		_i_ = (NAME).f; \
 		_j_ = (_i_ + 1 < (NAME).n) ? _i_ + 1 : 0; \
 	} while (atomic_cas_uint(&(NAME).f, _i_, _j_) != _i_); \
-	struct kern_history_ent * const _e_ = &(NAME).e[_i_]; \
-	if (__predict_true(!cold)) \
+	struct kern_history_ent * const _e_ = KERNHIST_PTRKTOX(&(NAME).e[_i_]); \
+	if (__predict_true(!cold) && KERNHIST_BINTIME_ALLOWED) \
 		bintime(&_e_->bt); \
-	_e_->cpunum = (uint32_t)cpu_number(); \
-	_e_->fmt = (FMT); \
+	else \
+		memset(&_e_->bt, 0, sizeof(_e_->bt)); \
+	_e_->cpunum = KERNHIST_CPUNUMBER; \
+	_e_->fmt = KERNHIST_PTRXTOK(FMT); \
 	_e_->fmtlen = strlen(FMT); \
-	_e_->fn = _kernhist_name; \
+	_e_->fn = KERNHIST_PTRXTOK(_kernhist_name); \
 	_e_->fnlen = strlen(_kernhist_name); \
 	_e_->call = _kernhist_call; \
 	_e_->v[0] = (uintmax_t)(A); \
