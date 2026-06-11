@@ -248,6 +248,13 @@ defflag	opt_biohist.h			BIOHIST_PRINT: KERNHIST_PRINT
 defparam opt_biohist.h			BIOHIST_SIZE
 
 #
+# Options for NVMMHIST
+#
+defflag opt_nvmm.h			NVMM_DEBUG: KERNHIST
+defflag opt_nvmm.h			NVMMHIST_PRINT: KERNHIST_PRINT
+defparam opt_nvmm.h			NVMMHIST_SIZE
+
+#
 # These are here for the benefit of kern_history.c so that
 # UVMHIST can be built in kernels without usb.
 #
