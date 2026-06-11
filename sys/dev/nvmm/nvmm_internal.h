@@ -31,6 +31,10 @@
 #ifndef _NVMM_INTERNAL_H_
 #define _NVMM_INTERNAL_H_
 
+#if defined(_KERNEL_OPT)
+#include "opt_nvmm.h"
+#endif
+
 #include <sys/types.h>
 
 #include <sys/lwp.h>
@@ -39,6 +43,70 @@
 #include <sys/sched.h>
 
 #include <dev/nvmm/nvmm.h>
+
+/*
+ * Make NVMMHIST_PRINT force on KERNHIST_PRINT for at least NVMMHIST_* usage.
+ */
+#if defined(NVMMHIST_PRINT) && !defined(KERNHIST_PRINT)
+#define KERNHIST_PRINT 1
+#endif
+
+#include <sys/kernhist.h>
+
+#if defined(NVMM_DEBUG)
+
+extern int nvmmdebug;
+
+#define NVMMHIST_DECL(NAME)		KERNHIST_DECL(NAME)
+#define NVMMHIST_DEFINE(NAME)		KERNHIST_DEFINE(NAME)
+#define NVMMHIST_INIT(NAME,N)		KERNHIST_INIT(NAME,N)
+#define NVMMHIST_LINK_STATIC(NAME)	KERNHIST_LINK_STATIC(NAME)
+#define NVMMHIST_LOGN(NAME,N,FMT,A,B,C,D)	do {		\
+	if ((NAME) >= (N)) {					\
+		KERNHIST_LOG(nvmmhist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define NVMMHIST_LOGM(NAME,N,FMT,A,B,C,D)	do {		\
+	if ((NAME) & (N)) {					\
+		KERNHIST_LOG(nvmmhist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define NVMMHIST_LOG(NAME,FMT,A,B,C,D)	NVMMHIST_LOGN(NAME,1,FMT,A,B,C,D)
+#define NVMMHIST_CALLED(NAME)			do {		\
+	if ((NAME) != 0) {					\
+		KERNHIST_CALLED(nvmmhist);			\
+	}							\
+} while (0)
+#define NVMMHIST_CALLARGS(NAME,FMT,A,B,C,D) do {			\
+	if ((NAME) != 0) {					\
+		KERNHIST_CALLARGS(nvmmhist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define NVMMHIST_CALLARGSN(NAME,N,FMT,A,B,C,D) do {		\
+	if ((NAME) >= (N)) {					\
+		KERNHIST_CALLARGS(nvmmhist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define NVMMHIST_FUNC()			KERNHIST_FUNC(__func__)
+
+NVMMHIST_DECL(nvmmhist);
+
+#else
+
+#define NVMMHIST_DECL(NAME)
+#define NVMMHIST_DEFINE(NAME)
+#define NVMMHIST_INIT(NAME,N)
+#define NVMMHIST_LINK_STATIC(NAME)
+#define NVMMHIST_LOGN(N,NAME,FMT,A,B,C,D)	do { } while(0)
+#define NVMMHIST_LOGM(N,NAME,FMT,A,B,C,D)	do { } while(0)
+#define NVMMHIST_LOG(NAME,FMT,A,B,C,D)		do { } while(0)
+#define NVMMHIST_CALLARGS(NAME,FMT,A,B,C,D)
+#define NVMMHIST_CALLARGSN(NAME,N,FMT,A,B,C,D)
+#define NVMMHIST_CALLED(NAME)
+#define NVMMHIST_FUNC()
+
+#endif
+
 
 struct uvm_object;
 struct vmspace;

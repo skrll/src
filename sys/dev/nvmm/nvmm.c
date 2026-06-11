@@ -31,6 +31,12 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.50 2026/08/08 15:00:07 riastradh Exp $");
 
+#ifdef _KERNEL_OPT
+#include "opt_nvmm.h"
+#endif
+
+#include "ioconf.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
@@ -45,16 +51,61 @@ __KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.50 2026/08/08 15:00:07 riastradh Exp $");
 #include <sys/file.h>
 #include <sys/filedesc.h>
 #include <sys/device.h>
+#include <sys/sysctl.h>
 
 #include <uvm/uvm_aobj.h>
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm_page.h>
 
-#include "ioconf.h"
-
 #include <dev/nvmm/nvmm.h>
 #include <dev/nvmm/nvmm_internal.h>
 #include <dev/nvmm/nvmm_ioctl.h>
+
+#if defined(NVMM_DEBUG)
+
+#ifndef NVMMHIST_SIZE
+#define NVMMHIST_SIZE 50000
+#endif
+
+static struct kern_history_ent nvmmhistbuf[NVMMHIST_SIZE];
+NVMMHIST_DEFINE(nvmmhist) = KERNHIST_INITIALIZER(nvmmhist, nvmmhistbuf);
+
+#ifndef NVMM_DEBUG_DEFAULT
+#define NVMM_DEBUG_DEFAULT 0
+#endif
+
+int	nvmmdebug = NVMM_DEBUG_DEFAULT;
+SYSCTL_SETUP(sysctl_hw_nvmm_setup, "sysctl hw.nvmm setup")
+{
+	int err;
+	const struct sysctlnode *rnode;
+	const struct sysctlnode *cnode;
+
+	err = sysctl_createv(clog, 0, NULL, &rnode,
+	    CTLFLAG_PERMANENT, CTLTYPE_NODE, "nvmm",
+	    SYSCTL_DESCR("nvmm global controls"),
+	    NULL, 0, NULL, 0, CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+	if (err)
+		goto fail;
+
+	/* control debugging printfs */
+	err = sysctl_createv(clog, 0, &rnode, &cnode,
+	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE, CTLTYPE_INT,
+	    "debug", SYSCTL_DESCR("Enable NVMMHIST debugging output"),
+	    NULL, 0, &nvmmdebug, sizeof(nvmmdebug), CTL_CREATE, CTL_EOL);
+	if (err)
+		goto fail;
+
+	return;
+fail:
+	aprint_error("%s: sysctl_createv failed (err = %d)\n", __func__, err);
+}
+#endif
+
+#define	DPRINTF(FMT,A,B,C,D)	NVMMHIST_LOG(nvmmdebug,FMT,A,B,C,D)
+#define	DPRINTFN(N,FMT,A,B,C,D)	NVMMHIST_LOGN(nvmmdebug,N,FMT,A,B,C,D)
+
 
 static struct nvmm_machine machines[NVMM_MAX_MACHINES];
 static volatile unsigned int nmachines __cacheline_aligned;
@@ -1051,6 +1102,8 @@ static int
 nvmm_init(void)
 {
 	size_t i, n;
+
+	NVMMHIST_LINK_STATIC(nvmmhist);
 
 	nvmm_impl = nvmm_ident();
 	if (nvmm_impl == NULL)
