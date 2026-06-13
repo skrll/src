@@ -33,13 +33,15 @@
 #define RTKIT_EP_SYSLOG			2
 #define RTKIT_EP_DEBUG			3
 #define RTKIT_EP_IOREPORT		4
+#define RTKIT_EP_OSLOG			8
+#define RTKIT_EP_UNKNOWN		10
 
 #define RTKIT_MGMT_TYPE_MASK		__BITS(59, 52)
 #define RTKIT_MGMT_TYPE(x)		__SHIFTOUT((x), RTKIT_MGMT_TYPE_MASK)
 
-#define RTKIT_MGMT_PWR_STATE_MASK	__BITS(7, 0)
+#define RTKIT_MGMT_PWR_STATE_MASK	__BITS(15, 0)
 #define RTKIT_MGMT_PWR_STATE(x)		__SHIFTOUT((x), RTKIT_MGMT_PWR_STATE_MASK)
-#define RTKIT_MGMT_PWR_STATE_ON		0x20
+#define RTKIT_MGMT_PWR_STATE_ON		0x20		// XXXNH?
 
 #define RTKIT_MGMT_HELLO		1
 #define RTKIT_MGMT_HELLO_ACK		2
@@ -47,6 +49,7 @@
 #define RTKIT_MGMT_IOP_PWR_STATE	6
 #define RTKIT_MGMT_IOP_PWR_STATE_ACK	7
 #define RTKIT_MGMT_EPMAP		8
+#define RTKIT_MGMT_AP_PWR_STATE		11
 
 #define RTKIT_MGMT_HELLO_MINVER_MASK	__BITS(15, 0)
 #define RTKIT_MGMT_HELLO_MINVER(x)	__SHIFTOUT((x), RTKIT_MGMT_HELLO_MINVER_MASK)
@@ -69,6 +72,25 @@
 #define RTKIT_BUFFER_ADDR(x)		__SHIFTOUT((x), RTKIT_BUFFER_ADDR_MASK)
 #define RTKIT_BUFFER_SIZE_MASK		__BITS(51, 44)
 #define RTKIT_BUFFER_SIZE(x)		__SHIFTOUT((x), RTKIT_BUFFER_SIZE_MASK)
+
+#define RTKIT_SYSLOG_LOG		5
+#define RTKIT_SYSLOG_LOG_IDX(x)		(((x) >> 0) & 0xff)
+#define RTKIT_SYSLOG_INIT		8
+#define RTKIT_SYSLOG_INIT_N_ENTRIES(x)	(((x) >> 0) & 0xff)
+#define RTKIT_SYSLOG_INIT_MSG_SIZE(x)	(((x) >> 24) & 0xff)
+
+#define RTKIT_IOREPORT_UNKNOWN1		8
+#define RTKIT_IOREPORT_UNKNOWN2		12
+
+#define RTKIT_OSLOG_TYPE(x)            (((x) >> 56) & 0xff)
+#define RTKIT_OSLOG_TYPE_SHIFT         (56 - RTKIT_MGMT_TYPE_SHIFT)
+#define RTKIT_OSLOG_BUFFER_REQUEST     1
+#define RTKIT_OSLOG_BUFFER_ADDR(x)     (((x) >> 0) & 0xfffffffff)
+#define RTKIT_OSLOG_BUFFER_SIZE(x)     (((x) >> 36) & 0xfffff)
+#define RTKIT_OSLOG_BUFFER_SIZE_SHIFT  36
+#define RTKIT_OSLOG_UNKNOWN1           3
+#define RTKIT_OSLOG_UNKNOWN2           4
+#define RTKIT_OSLOG_UNKNOWN3           5
 
 /* Versions we support. */
 #define RTKIT_MINVER			11
@@ -214,6 +236,16 @@ rtkit_handle_crashlog(struct rtkit_state *state, struct apple_mbox_msg *msg)
 		if (error)
 			return error;
 		break;
+
+	case RTKIT_IOREPORT_UNKNOWN1:
+	case RTKIT_IOREPORT_UNKNOWN2:
+		/* These unknown events have to be acked to make progress. */
+		error = rtkit_send(mc, RTKIT_EP_IOREPORT,
+		    RTKIT_MGMT_TYPE(msg->data0), msg->data0);
+                if (error)
+                        return error;
+                break;
+
 	default:
 		printf("unhandled crashlog event "
 		    "0x%016"PRIx64"\n", msg->data0);
