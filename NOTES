@@ -1,0 +1,54 @@
+https://mail-index.netbsd.org/source-changes-d/2024/08/10/msg014251.html
+
+
+It's great to see more MP-safety and removal of conditional-NET_MPSAFE
+scaffolding -- but please, no more all-encompassing `core locks'!
+
+The usage model for a network interface is:
+
+1. (under IFNET_LOCK) if_init:
+   (a) resets hardware, while nothing else is touching registers
+   (b) programs multicast filter
+   (c) starts Tx/Rx and tick for mii/watchdog
+   (d) sets IFF_RUNNING
+
+2. concurrently:
+   - (mii lock) periodic mii ticks or (with IFNET_LOCK too) ifmedia ioctls
+   - (tx lock) Tx submissions
+   - (rx lock) Rx notifications
+   - (multicast filter lock) SIOCADDMULTI/SIOCDELMULTI
+   - (ic lock) 802.11 state machine notifications
+   - (IFNET_LOCK) maybe other ioctls (some of which return ENETRESET
+     to cause an if_stop/init cycle in thread context)
+
+3. (under IFNET_LOCK) if_stop:
+   (a) clears IFF_RUNNING
+   (b) halts Tx/Rx/tick and waits for completion
+   (c) disables concurrent multicast updates
+   (d) calls mii_down to wait for concurrent mii activity to quiesce
+   (e) resets hardware, now that nothing is touching registers any more
+
+All of the steps in (1) if_init, and all of the steps in (3) if_stop,
+are already serialized by IFNET_LOCK, the heavyweight configuration
+lock, in low-priority thread context.  Sometimes, while (2) running,
+ifconfig(8) will reconfigure things, also serialized by IFNET_LOCK.
+
+So there's _no need_ for a `core lock' to cover everything in if_init
+and if_stop: IFNET_LOCK already takes care of that.
+
+Any high-priority activity like Tx/Rx paths, callouts, &c., MUST NOT
+take IFNET_LOCK or wait for the completion of the heavyweight
+configuration changes, which often have to wait for concurrent
+high-priority activity to cease -- such waits lead to deadlocks like
+<https://mail-index.netbsd.org/tech-net/2022/01/10/msg008170.html>.
+
+So it's _harmful_ to have a `core lock' cover everything in if_init
+and if_stop.
+
+In usbnet(9), I broke the deadlock by eliminating the core lock and
+replacing it by a narrowly scoped lock covering only the state needed
+by multicast filter updates, which happen from high-priority contexts.
+I suggest doing the same here (and in bge(4) and in vmx(4) and
+wherever else we have an overbroad `core lock'), with the attached
+patch.  But I don't have any awge(4) hardware to test.  Could I
+trouble you to test this and commit it if it works?
