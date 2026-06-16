@@ -1,0 +1,40 @@
+TODO
+
+- timers
+  - virtual and physical?
+    - update intr_{,un}mask to support PPIs (and SGIs?)
+      - does pic_unblock_percpu help? Probably not.
+      - more cpu_lock in pic.c
+      - is_mask_count need to die? no there's a is_percpu
+      - armgic_block_irqs
+        - sc_enabled_local handling not needed once APs are online?
+        - GICD_ICENABLER0 is banked - easy
+      - gicv3_block_irqs
+        - preemption issue (need a struct cpu_info * parameter?)
+          maybe preemption needs to be disabled for PPI masking?
+        - GICR_ISENABLER0 not banked - oh.
+  - virtualise completly (no need, but maybe do it for the physical timer)
+  - migration support
+  - NVHE - should copy from host EL1 to EL2 so host can tick while in guest
+    (non-secure physical timer exist with ARMv8.0)
+
+- check panic works for non-VHE EL2
+- BE support?
+- aarch32 support?
+- debug registers
+- PMU
+
+
+
+- non-VHE
+  - check translation tables and memory direct map for EL2 kernel.
+    right list of memory (see nvmm_aarch64_el2_setup)? Maybe have
+    a super small kernel which only maps a strict subset.
+    - trap handlers
+    - cpu_info
+    - cpudata
+  - identity mapping with cache on earlier? yes!
+  - more register parameters to hvc_init?
+  - work out arguments are really needed for nvmm_aarch64_maintain_ipa
+    (gva?)
+
