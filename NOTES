@@ -1,0 +1,47 @@
+https://github.com/ryo/netbsd-src/tree/wip/aarch64_el2
+
+https://www.dragonflybsd.org/docs/docs/howtos/nvmm/
+
+https://www.netbsd.org/~kamil/bhyvecon_canada_2019.html#slide17
+https://www.netbsd.org/gallery/presentations/ryo/2023_AsiaBSDCon/ABC2023WIP-nvmm-aarch64.pdf
+
+https://blog.netbsd.org/tnf/entry/from_zero_to_nvmm
+
+To use the NetBSD/amd64 Virtual Memory Monitor (NVMM) for QEMU :
+
+Load the NVMM kernel driver if not already loaded
+# modload nvmm
+
+You may want to run the NVMM tests to confirm that your setup is correct:
+# cd /usr/tests/lib/libnvmm/
+# atf-run | atf-report
+
+Configure the permissions by adding the username(s) of its users to the nvmm
+group in /etc/group.
+
+Append "-accel nvmm" to your usual Qemu command line
+$ qemu-system-x86_64 -smp 4 -m 8G -cdrom Win10_2004_English_x64.iso -accel nvmm
+
+See nvmm(4) and nvmmctl(8) or visit
+   https://m00nbsd.net/4e0798b7f2620c965d0dd9d6a7a2f296.html for more info.
+
+
+
+void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled)
+{
+        bool now_enabled = vcpu_has_cache_enabled(vcpu);
+
+        /*
+         * If switching the MMU+caches on, need to invalidate the caches.
+         * If switching it off, need to clean the caches.
+         * Clean + invalidate does the trick always.
+         */
+        if (now_enabled != was_enabled)
+                stage2_flush_vm(vcpu->kvm);
+
+        /* Caches are now on, stop trapping VM ops (until a S/W op) */
+        if (now_enabled)
+                *vcpu_hcr(vcpu) &= ~HCR_TVM;
+
+        trace_kvm_toggle_cache(*vcpu_pc(vcpu), was_enabled, now_enabled);
+}

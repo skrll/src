@@ -1,0 +1,22 @@
+TODO
+
+- check panic works for non-VHE EL2
+- BE support?
+- aarch32 support?
+- debug registers
+- PMU
+
+- VHE
+  - implement!
+
+- non-VHE
+  - check translation tables and memory direct map for EL2 kernel.
+    right list of memory (see nvmm_aarch64_el2_setup)? Maybe have
+    a super small kernel which only maps a strict subset.
+    - trap handlers
+    - cpu_info
+    - cpudata
+  - identity mapping with cache on earlier?
+  - more register parameters to hvc_init?
+  - work out arguments are really needed for nvmm_aarch64_maintain_ipa
+    (gva?)
