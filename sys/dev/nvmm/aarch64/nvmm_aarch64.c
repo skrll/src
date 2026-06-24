@@ -773,6 +773,9 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 
 	comm->state_wanted = 0;
 	comm->state_cached |= flags;
+
+	// XXXNH
+	// x86 copies cpudata->evt_pending into "interrupt" state
 }
 
 //static void
@@ -923,6 +926,8 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	int hcpu = cpu_number();
 	if (vcpu->hcpu_last != hcpu) {
 		printf("%s: cpu %d/%d\n", __func__, vcpu->hcpu_last, hcpu);
+		NVMMHIST_LOG(nvmmdebug, "vcpu %#jx migrated from hcpu %d to %d",
+		    vcpu, vcpu->hcpu_last, hcpu, 0);
 		/* timer update */
 		vcpu->hcpu_last = hcpu;
 	}
@@ -930,6 +935,9 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	fpu_load(curlwp);
 
 	while (true) {
+		NVMMHIST_LOGN(nvmmdebug, 30, "... loop",
+		    0, 0, 0, 0);
+
 		aarch64_vmenter(cpudata);
 
 		/*
