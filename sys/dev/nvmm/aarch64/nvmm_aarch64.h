@@ -218,7 +218,9 @@ struct nvmm_aarch64_state {
 	uint64_t sprs[NVMM_AARCH64_NSPR];
 	uint64_t tids[NVMM_AARCH64_NTID];		/* XXX: read only. no need to include in host context */
 	union fpelem fprs[NVMM_AARCH64_NFPR];
+	// struct nvmm_x64_state_intr intr;
 };
+
 
 struct nvmm_cap_md {
 	uint64_t mach_conf_support;
