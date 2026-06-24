@@ -658,19 +658,31 @@ nvmm_vcpu_inject(struct nvmm_owner *owner, struct nvmm_ioc_vcpu_inject *args)
 	struct nvmm_cpu *vcpu;
 	int error;
 
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGS(nvmmdebug, "owner %#jx args %#jx (machid %jd cpuid %jd)",
+	    (uintptr_t)owner, (uintptr_t)args, args->machid, args->cpuid);
+
 	error = nvmm_machine_get(owner, args->machid, &mach, false);
-	if (error)
+	if (error) {
+		NVMMHIST_LOG(nvmmdebug, "<-- done (nvmm_machine_get error =%jd)",
+		    error, 0, 0, 0);
 		return error;
+	}
 
 	error = nvmm_vcpu_get(mach, args->cpuid, &vcpu);
-	if (error)
+	if (error) {
+		NVMMHIST_LOG(nvmmdebug, "<-- done (nvmm_vcpu_get error =%jd)",
+		    error, 0, 0, 0);
 		goto out;
-
+	}
 	error = (*nvmm_impl->vcpu_inject)(vcpu);
 	nvmm_vcpu_put(vcpu);
 
 out:
 	nvmm_machine_put(mach);
+
+	NVMMHIST_LOG(nvmmdebug, "<-- done (error =%jd)", error, 0, 0, 0);
+
 	return error;
 }
 
