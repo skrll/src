@@ -389,8 +389,9 @@ VBAR_EL1            VBAR_EL2            VBAR_EL12
 static void
 vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 {
-//	NVMMHIST_FUNC();
-//	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx state #%jx", (uintptr_t)tf, (uintptr_t)state, 0, 0);
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx state #%jx",
+	    (uintptr_t)tf, (uintptr_t)state, 0, 0);
 
 	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
 	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
@@ -1086,6 +1087,7 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 	reg_vttbr_el2_write(cpudata->vttbr_el2);
 	reg_hstr_el2_write(0xffff);
 	reg_hcr_el2_write(hcr);
+	isb();
 
 	// XXXNH MDCR_EL2
 	reg_mdcr_el2_write(MDCR_EL2_TPM);
