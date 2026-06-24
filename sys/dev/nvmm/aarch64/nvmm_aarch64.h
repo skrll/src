@@ -225,6 +225,7 @@ struct nvmm_aarch64_context {
  */
 struct nvmm_aarch64_guest_state {
 	struct nvmm_aarch64_context ctx;
+	// struct nvmm_x64_state_intr intr;
 	uint64_t tids[NVMM_AARCH64_NTID];
 };
 
