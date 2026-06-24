@@ -685,6 +685,9 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 
 	comm->state_wanted = 0;
 	comm->state_cached |= flags;
+
+	// XXXNH
+	// x86 copies cpudata->evt_pending into "interrupt" state
 }
 
 //static void
@@ -754,6 +757,11 @@ aarch64_exit_evt(struct aarch64_cpudata *cpudata)
 	cpudata->evt_pending = false;
 
 #if 0
+	//XXXNH read what inject said...
+	cpudata->send_event_type;
+	cpudata->evt_pending = true;
+#endif
+#if 0
 	info = vmx_vmread(VMCS_IDT_VECTORING_INFO);
 	if (__predict_true((info & INTR_INFO_VALID) == 0)) {
 		return;
@@ -811,7 +819,7 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		return EINVAL;
 	}
 // XXXNH should this be cleared?
-#if 1
+#if 0
 	else {
 		cpudata->send_event_type = 0;
 	}
@@ -819,6 +827,8 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	int hcpu = cpu_number();
 	if (vcpu->hcpu_last != hcpu) {
+		NVMMHIST_LOG(nvmmdebug, "vcpu %#jx migrated from hcpu %d to %d",
+		    vcpu, vcpu->hcpu_last, hcpu, 0);
 		/* timer update */
 		vcpu->hcpu_last = hcpu;
 	}
@@ -826,6 +836,9 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	fpu_load(curlwp);
 
 	while (true) {
+		NVMMHIST_LOGN(nvmmdebug, 30, "... loop",
+		    0, 0, 0, 0);
+
 		aarch64_vmenter(cpudata);
 
 		/*

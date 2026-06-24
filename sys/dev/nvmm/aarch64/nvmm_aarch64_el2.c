@@ -1124,6 +1124,7 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 	reg_vttbr_el2_write(cpudata->vttbr_el2);
 	reg_hstr_el2_write(0xffff);
 	reg_hcr_el2_write(hcr);
+	isb();
 
 	reg_mdcr_el2_write(MDCR_EL2_TPM);
 	isb();
