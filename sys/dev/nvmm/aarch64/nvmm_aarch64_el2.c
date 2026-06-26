@@ -928,6 +928,7 @@ aarch64_el2_maintain_ipa(struct trapframe *tf)
 
 	uint64_t vttbr_el2, op, ipa, va __unused;
 
+	// Doesn't this get a mach *
 	// XXXNH ipa and va?!?
 	/* void aarch64_hvc_maintain_ipa(vttbr_el2, op, addr) */
 	vttbr_el2 = tf->tf_reg[0];
@@ -954,6 +955,10 @@ aarch64_el2_maintain_ipa(struct trapframe *tf)
 	if (op & NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC) {
 		NVMMHIST_LOGN(nvmmdebug, 10, "ICACHE", 0, 0 , 0, 0);
 
+#if 0
+		asm volatile("ic ialluis" ::: "memory");
+		asm volatile("dsb sy" ::: "memory");
+#endif
 		/* XXX */
 
 		// We need to do invalidate Icache for the guest VA (far_el2),

@@ -195,9 +195,6 @@ nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
 static void
 nvmm_aarch64_el2_setup(void)
 {
-	if (nvmm_available == 0)
-		return;
-
 	/*
 	 * calculate VTCR_EL2 setting from ID_AA64MMFR0_EL1.PARange
 	 */
@@ -504,6 +501,9 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 	NVMMHIST_LOG(nvmmdebug, "st2_table=%#jx, st2_table_pa=%#jx (%d concatenated)",
 	    pm->pm_st2_table, pm->pm_st2_table_pa, pm->pm_st2_concatenate_num, 0);
 
+	nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
+	    NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL, 0, 0);
+
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
 	mach->machdata = machdata;
 }
@@ -786,6 +786,9 @@ aarch64_exit_evt(struct aarch64_cpudata *cpudata)
 #endif
 }
 
+
+int nhdebug = 0;
+
 static int
 nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
@@ -847,6 +850,8 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 		aarch64_hvc_vmenter(cpudata->cpudata_pa);
 
+		if (nhdebug)
+			cpu_Debugger();
 		/*
 		 * A VM exit returns here.
 		 */
@@ -912,6 +917,7 @@ nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t v
 	struct aarch64_machdata *machdata = mach->machdata;
 
 	if (machdata != NULL) {
+		asm volatile("dsb ishst" ::: "memory");
 
 		NVMMHIST_LOGN(nvmmdebug, 4, "vttbr_el2=%#jx op=%08lx, ipa=%016lx, va=%016lx",
 		    machdata->vttbr_el2, op, ipa, va);
