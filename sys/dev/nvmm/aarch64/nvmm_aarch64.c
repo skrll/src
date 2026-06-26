@@ -440,6 +440,8 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 {
 	struct aarch64_machdata *machdata;
 	size_t concat_tablesize;
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGS(nvmmdebug, "machid=%d", mach->machid, 0, 0, 0);
 
 	/* XXX: (*nvmm_impl->machine_create)(mach) should be able to return an error... */
 	if (AARCH64_VMID(mach) >= 0x100)
@@ -496,16 +498,11 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 		}
 	}
 
-	if (nvmm_uartdebug) {
-		printf("%s:%s:%d: pmap pm=%p, l0table_pa=%016lx, st2_stabtlevel=%d, st2_table=%p, st2_table_pa=%016lx (%d concatenated)\n",
-		    cpu_name(curcpu()), __func__, __LINE__,
-		    mach->vm->vm_map.pmap,
-		    pm->pm_l0table_pa,
-		    pm->pm_st2_startlevel,
-		    mach->vm->vm_map.pmap->pm_st2_table,
-		    mach->vm->vm_map.pmap->pm_st2_table_pa,
-		    pm->pm_st2_concatenate_num);
-	}
+	NVMMHIST_LOG(nvmmdebug, "machid=%d, pm=%#jx, l0table_pa=%#jx, st2_stabtlevel=%d",
+	    mach->machid, (uintptr_t)pm, pm->pm_l0table_pa,
+	    pm->pm_st2_startlevel);
+	NVMMHIST_LOG(nvmmdebug, "st2_table=%#jx, st2_table_pa=%#jx (%d concatenated)",
+	    pm->pm_st2_table, pm->pm_st2_table_pa, pm->pm_st2_concatenate_num, 0);
 
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
 	mach->machdata = machdata;
@@ -688,6 +685,10 @@ aarch64_vcpu_state_commit(struct nvmm_cpu *vcpu)
 static int
 nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 {
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGS(nvmmdebug, "vcpu %#jx (%#jd)", vcpu,
+	    vcpu->comm->event.type, 0, 0);
+
 	struct nvmm_comm_page * const comm = vcpu->comm;
 	struct aarch64_cpudata * const cpudata = vcpu->cpudata;
 	const u_int evtype = comm->event.type;
@@ -721,15 +722,24 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 		break;
 
 	case NVMM_VCPU_EVENT_SERROR:
-	case NVMM_VCPU_EVENT_IRQ:
-	case NVMM_VCPU_EVENT_FIQ:
 		break;
+
+	case NVMM_VCPU_EVENT_IRQ:
+		NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EVENT_IRQ", 0, 0, 0, 0);
+		break;
+
+	case NVMM_VCPU_EVENT_FIQ:
+		NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EVENT_FIQ", 0, 0, 0, 0);
+		break;
+
 	default:
 		return EINVAL;
 	}
 
 	cpudata->send_event_type = evtype;
 	cpudata->evt_pending = true;
+
+	NVMMHIST_LOG(nvmmdebug, "<-- done", 0, 0, 0, 0);
 
 	return 0;
 }
@@ -739,6 +749,10 @@ static inline void
 aarch64_exit_evt(struct aarch64_cpudata *cpudata)
 {
 //	uint64_t info, err, inslen;
+
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGSN(nvmmdebug, 30, "vcpu %#jx (pending %jd type %jd)",
+		 cpudata, cpudata->evt_pending, cpudata->send_event_type, 0);
 
 	cpudata->evt_pending = false;
 
@@ -768,6 +782,10 @@ static int
 nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGSN(nvmmdebug, 20, "mach %#jx vcpu %#jx exit %#jx", (uintptr_t)mach,
+	    (uintptr_t)vcpu, (uintptr_t)exit, 0);
+
 	struct aarch64_cpudata * const cpudata = vcpu->cpudata;
 
 	kpreempt_disable();
@@ -776,6 +794,8 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	vcpu->comm->state_cached = 0;
 
 	/* event commit */
+	NVMMHIST_LOGN(nvmmdebug, 20, "event commit %jd type %#jx (@ %#jx)",
+	    vcpu->comm->event_commit, vcpu->comm->event.type, (uintptr_t)&vcpu->comm->event_commit, 0);
 	if (__predict_false(vcpu->comm->event_commit)) {
 		vcpu->comm->event_commit = false;
 		cpudata->send_event_type = vcpu->comm->event.type;
@@ -836,10 +856,14 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 		/* If no reason to return to userland, keep rolling. */
 		if (nvmm_return_needed(vcpu, &cpudata->exit)) {
+			NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (nvmm_return_needed)",
+			    0, 0, 0, 0);
 			break;
 		}
 
 		if (cpudata->exit.reason != NVMM_VCPU_EXIT_NONE) {
+			NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (reason %jd)",
+			    cpudata->exit.reason, 0, 0, 0);
 			break;
 		}
 	}
@@ -865,6 +889,10 @@ nvmm_aarch64_vmid(void *nvmm_mach)
 void
 nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t va)
 {
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGS(nvmmdebug, "nvmm_mach=%#jx, op=%#jx, ipa=%#jx, va=%#jx",
+	    nvmm_mach, op, ipa, va);
+
 	if (nvmm_mach == NULL)
 		return;
 
@@ -872,11 +900,12 @@ nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t v
 	struct aarch64_machdata *machdata = mach->machdata;
 
 	if (machdata != NULL) {
-		if (nvmm_uartdebug & 4) {
-			printf("%s:%s:%d: op=%08lx, ipa=%016lx, va=%016lx\n", cpu_name(curcpu()), __func__, __LINE__, op, ipa, va);
-		}
+
+		NVMMHIST_LOGN(nvmmdebug, 4, "vttbr_el2=%#jx op=%08lx, ipa=%016lx, va=%016lx",
+		    machdata->vttbr_el2, op, ipa, va);
 		aarch64_hvc_maintain_ipa(machdata->vttbr_el2, op, ipa, va);
 	}
+	NVMMHIST_LOGN(nvmmdebug, 4, "<-- done", 0, 0, 0, 0);
 }
 
 const struct nvmm_impl nvmm_aarch64 = {
