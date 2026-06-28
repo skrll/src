@@ -105,6 +105,44 @@ pmap_hist_init(void)
 
 #endif /* UVMHIST */
 
+#ifdef NVMM_DEBUG
+
+extern int nvmmdebug;
+
+KERNHIST_DECL(nvmmhist);
+#define NVMMHIST_CALLARGS(NAME,FMT,A,B,C,D) do {			\
+	if ((NAME) != 0) {					\
+		KERNHIST_CALLARGS(nvmmhist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define NVMMHIST_FUNC()			KERNHIST_FUNC(__func__)
+#define NVMMHIST_LOGN(NAME,N,FMT,A,B,C,D)	do {		\
+	if ((NAME) >= (N)) {					\
+		KERNHIST_LOG(nvmmhist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define NVMMHIST_LOGM(NAME,N,FMT,A,B,C,D)	do {		\
+	if ((NAME) & (N)) {					\
+		KERNHIST_LOG(nvmmhist,FMT,A,B,C,D);		\
+	}							\
+} while (0)
+#define NVMMHIST_LOG(NAME,FMT,A,B,C,D)	NVMMHIST_LOGN(NAME,1,FMT,A,B,C,D)
+
+#else
+
+#define NVMMHIST_DECL(NAME)
+#define NVMMHIST_DEFINE(NAME)
+#define NVMMHIST_INIT(NAME,N)
+#define NVMMHIST_LINK_STATIC(NAME)
+#define NVMMHIST_LOGN(N,NAME,FMT,A,B,C,D)	do { } while(0)
+#define NVMMHIST_LOGM(N,NAME,FMT,A,B,C,D)	do { } while(0)
+#define NVMMHIST_LOG(NAME,FMT,A,B,C,D)		do { } while(0)
+#define NVMMHIST_CALLARGS(NAME,FMT,A,B,C,D)
+#define NVMMHIST_CALLARGSN(NAME,N,FMT,A,B,C,D)
+#define NVMMHIST_CALLED(NAME)
+#define NVMMHIST_FUNC()
+
+#endif
 
 #ifdef PMAPCOUNTERS
 #define PMAP_COUNT(name)		(pmap_evcnt_##name.ev_count++ + 0)
@@ -2003,8 +2041,10 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	const bool user = !kernel_p && !efirt_p;
 	bool need_sync_icache, need_enter_pv;
 
-	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLARGS(pmaphist, "pm=%p, kentermode=%d", pm, kenter, 0, 0);
+	KERNHIST_FUNC(__func__);
+	KERNHIST_CALLEDNOLOG();
+
+	UVMHIST_LOG(pmaphist, "pm=%p, kentermode=%d", pm, kenter, 0, 0);
 	UVMHIST_LOG(pmaphist, "va=%016lx, pa=%016lx, prot=%08x, flags=%08x",
 	    va, pa, prot, flags);
 
@@ -2014,7 +2054,11 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	KASSERT(pa < AARCH64_MAX_PA);
 
 	if (pm->pm_stage2) {
-		UVMHIST_LOG(pmaphist,
+		NVMMHIST_LOG(nvmmdebug, "pm=%p, kentermode=%d", pm, kenter, 0, 0);
+		NVMMHIST_LOG(nvmmdebug, "va=%016lx, pa=%016lx, prot=%08x, flags=%08x",
+		    va, pa, prot, flags);
+
+		NVMMHIST_LOG(nvmmdebug,
 		    "stage2: IPA(va)=%016lx, PA=%016lx, prot=%08x, flags=%08x",
 		    va, pa, prot, flags);
 		printf("%s: IPA(va)=%016lx, PA=%016lx, prot=%08x, flags=%08x\n",
@@ -2125,6 +2169,13 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 			PMAP_COUNT(kern_mappings_changed);
 		}
 #endif
+		if (pm->pm_stage2) {
+			NVMMHIST_LOG(nvmmdebug,
+			    "va=%016lx has already mapped."
+			    " old-pa=%016lx new-pa=%016lx, old-pte=%016llx",
+			    va, l3pte_pa(opte), pa, opte);
+		}
+
 		UVMHIST_LOG(pmaphist,
 		    "va=%016lx has already mapped."
 		    " old-pa=%016lx new-pa=%016lx, old-pte=%016llx",
@@ -2138,8 +2189,11 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 #if NNVMM > 0
 			if (pm->pm_stage2) {
 				printf("%s: pa %#lx != %#lx (old)\n", __func__, pa, l3pte_pa(opte));
-				if (need_sync_icache && l3pte_s2_executable(opte))
+				if (need_sync_icache && l3pte_s2_executable(opte)) {
 					need_sync_icache = false;
+					NVMMHIST_LOG(nvmmdebug, "no icache flush", 0, 0, 0, 0);
+				}
+
 			} else
 #endif
 			if (need_sync_icache && l3pte_s1_executable(opte, user))
@@ -2270,6 +2324,7 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 		printf("%s: need_sync_icache %s ipa %#lx\n",
 		    __func__, need_sync_icache ? "true" : "false", va);
 		if (need_sync_icache) {
+			NVMMHIST_LOG(nvmmdebug, "icache_sync", 0, 0, 0, 0);
 			/* non-exec -> exec */
 			if (!l3pte_readable(pte)) {
 				atomic_swap_64(ptep, pte | LX_BLKPAG_AF);
@@ -2288,6 +2343,7 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 				    va, 0);
 			}
 		} else {
+			NVMMHIST_LOG(nvmmdebug, "no icache_sync", 0, 0, 0, 0);
 			atomic_swap_64(ptep, pte);
 			nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
 			    NVMM_AARCH64_MAINTAIN_OP_TLBI, va, 0);
