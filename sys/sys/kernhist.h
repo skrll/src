@@ -235,6 +235,12 @@ do { \
 	KERNHIST_PRINTNOW(_e_); \
 } while (0)
 
+#define KERNHIST_CALLEDNOLOG() \
+do { \
+	_kernhist_call = atomic_inc_32_nv(&_kernhist_cnt); \
+} while (0)
+
+
 #define KERNHIST_CALLED(NAME) \
 do { \
 	_kernhist_call = atomic_inc_32_nv(&_kernhist_cnt); \
