@@ -926,7 +926,7 @@ aarch64_el2_maintain_ipa(struct trapframe *tf)
 	NVMMHIST_FUNC();
 	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx", (uintptr_t)tf, 0, 0, 0);
 
-	uint64_t vttbr_el2, op, ipa, va __unused;
+	uint64_t vttbr_el2, op, ipa;
 
 	// Doesn't this get a mach *
 	// XXXNH ipa and va?!?
@@ -934,7 +934,10 @@ aarch64_el2_maintain_ipa(struct trapframe *tf)
 	vttbr_el2 = tf->tf_reg[0];
 	op = tf->tf_reg[1];
 	ipa = tf->tf_reg[2];
-	va = tf->tf_reg[3];
+	//pa = tf->tf_reg[3];
+
+	NVMMHIST_LOGN(nvmmdebug, 10, "vttbr_el2=%#jx op=%#jx ipa=%#jx",
+	    vttbr_el2, op, ipa, 0);
 
 	reg_vttbr_el2_write(vttbr_el2);
 	reg_hcr_el2_write(HCR_EL2_RW | HCR_EL2_VM);
@@ -952,25 +955,17 @@ aarch64_el2_maintain_ipa(struct trapframe *tf)
 		aarch64_tlbi_by_vmid_ipa(ipa);
 	}
 
-	if (op & NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC) {
-		NVMMHIST_LOGN(nvmmdebug, 10, "ICACHE", 0, 0 , 0, 0);
-
-#if 0
-		asm volatile("ic ialluis" ::: "memory");
-		asm volatile("dsb sy" ::: "memory");
-#endif
-		/* XXX */
-
-		// We need to do invalidate Icache for the guest VA (far_el2),
-		// However, However, the guest vCPU is lost in this context,
-		// so VA is not known...
-		//
-		// In nvme.c:vmm_do_vcpu_run(), from vcpu_run() back with
-		// NVMM_VCPU_EXIT_MEMORY to uvm_fault(), the VA (not equal IPA)
-		// in this context must be stored somewhere.
-	}
-
 	reg_hcr_el2_write(HCR_EL2_RW);
 	reg_vttbr_el2_write(0);
 	isb();
+
+	if (op & NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC) {
+		NVMMHIST_LOGN(nvmmdebug, 10, "ICACHE IPA=%#jx", ipa, 0 , 0, 0);
+
+		/*
+		 * In non-VHE mode EL2 is identity mapped, so we can use PA as "VA".
+		 * In     VME mode EL2 has direct mapped range, so we can use that.
+		 */
+//		aarch64_icache_sync_range(ipa, PAGE_SIZE);
+	}
 }

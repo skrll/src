@@ -691,32 +691,41 @@ nvmm_do_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
 	struct vmspace *vm = mach->vm;
-	int ret;
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGSN(nvmmdebug, 20, "mach %#jx vcpu %#jx exit %#jx", (uintptr_t)mach,
+	    (uintptr_t)vcpu, (uintptr_t)exit, 0);
 
 	while (1) {
 		/* Got a signal? Or pending resched? Leave. */
 		if (__predict_false(nvmm_return_needed(vcpu, exit))) {
+			NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (signal/resched)", 0, 0, 0, 0);
 			return 0;
 		}
 
 		/* Run the VCPU. */
-		ret = (*nvmm_impl->vcpu_run)(mach, vcpu, exit);
+		int ret = (*nvmm_impl->vcpu_run)(mach, vcpu, exit);
 		if (__predict_false(ret != 0)) {
+			NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (vcpu_run error =%jd)", ret, 0, 0, 0);
 			return ret;
 		}
 
 		/* Process nested page faults. */
 		if (__predict_true(exit->reason != NVMM_VCPU_EXIT_MEMORY)) {
+			NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (exit reason =%jd)",
+			    exit->reason, 0, 0, 0);
 			break;
 		}
 		if (exit->u.mem.gpa >= mach->gpa_end) {
+			NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (gpa %#jx vs %#jx)",
+			    exit->u.mem.gpa, mach->gpa_end, 0, 0);
 			break;
 		}
 		if (uvm_fault(&vm->vm_map, exit->u.mem.gpa, exit->u.mem.prot)) {
+			NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (uvm_fault failed)", 0, 0, 0, 0);
 			break;
 		}
 	}
-
+	NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (exit reason =%jd)", exit->reason, 0, 0, 0);
 	return 0;
 }
 
