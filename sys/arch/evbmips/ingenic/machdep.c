@@ -29,6 +29,8 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.18 2025/12/20 10:51:02 skrll Exp $");
 
+#define __INTR_PRIVATE
+
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_modular.h"
@@ -45,6 +47,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.18 2025/12/20 10:51:02 skrll Exp $");
 #include <sys/cpu.h>
 #include <sys/bus.h>
 #include <sys/mutex.h>
+#include <sys/atomic.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -60,6 +63,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.18 2025/12/20 10:51:02 skrll Exp $");
 #include <mips/cache.h>
 #include <mips/locore.h>
 #include <mips/cpuregs.h>
+#include <mips/mips_opcode.h>
+#include <mips/intr.h>		/* mips_splsw */
 
 #include <mips/ingenic/ingenic_coreregs.h>
 #include <mips/ingenic/ingenic_regs.h>
@@ -81,10 +86,6 @@ void	ingenic_reset(void);
 void	ingenic_putchar_init(void);
 void	ingenic_puts(const char *);
 void	ingenic_com_cnattach(void);
-
-#ifdef MULTIPROCESSOR
-kmutex_t ingenic_ipi_lock;
-#endif
 
 /* Currently the Ingenic kernels (CI20) only support little endian boards */
 CTASSERT(_BYTE_ORDER == _LITTLE_ENDIAN);
@@ -126,37 +127,125 @@ cal_timer(void)
 }
 
 #ifdef MULTIPROCESSOR
+/*
+ * On the JZ4780 the "wait" instruction gates the core's CPU and cache clock
+ * until we leave the wait :/. While the clock is gated the core cannot respond
+ * to cache-coherence probes. Perform this kludge to avoid whole SoC deadlock.
+ */
+static void
+ingenic_cpu_idle(void)
+{
+	struct cpu_info * const ci = curcpu();
+	uint32_t sr;
+
+	/*
+	 * We must writeback+invalidate the D-cache before "wait"
+	 */
+	sr = mips_cp0_status_read();
+	mips_cp0_status_write(sr & ~MIPS_SR_INT_IE);
+	__asm volatile("ehb");			/* make IE-clear take effect */
+	if (!ci->ci_want_resched) {
+		(*mips_cache_ops.mco_pdcache_wbinv_all)();
+		__asm volatile("wait; nop; nop; nop");
+	}
+	mips_cp0_status_write(sr);		/* restore IE; take any pending intr */
+}
+
+/*
+ * rewrite each cpu_info_store reference in THIS CPU's ex. vectors 
+ * lifed from octeon_fixup_cpu_info_references().
+ */
+static bool
+ingenic_fixup_cpu_info_references(int32_t load_addr, uint32_t new_insns[2],
+    void *arg)
+{
+	struct cpu_info * const ci = arg;
+
+	atomic_or_ulong(&curcpu()->ci_flags, CPUF_PRESENT);
+
+	KASSERT(MIPS_KSEG0_P(load_addr));
+	KASSERT(!CPU_IS_PRIMARY(curcpu()));
+
+	load_addr += (intptr_t)ci - (intptr_t)&cpu_info_store;
+
+	KASSERT((intptr_t)ci <= load_addr);
+	KASSERT(load_addr < (intptr_t)(ci + 1));
+
+	KASSERT(INSN_LUI_P(new_insns[0]));
+	KASSERT(INSN_LOAD_P(new_insns[1]) || INSN_STORE_P(new_insns[1]));
+
+	/*
+	 * Use the lui and load/store instruction as a prototype and make it
+	 * refer to this cpu's cpu_info instead of cpu_info_store.
+	 */
+	new_insns[0] &= __BITS(31,16);
+	new_insns[1] &= __BITS(31,16);
+	new_insns[0] |= (uint16_t)((load_addr + 0x8000) >> 16);
+	new_insns[1] |= (uint16_t)load_addr;
+
+	return true;
+}
+
 static void
 ingenic_cpu_init(struct cpu_info *ci)
 {
 	uint32_t reg;
+	bool ok __diagused;
 
-	/* enable IPIs for this core */
+	/*
+	 * give this secondary its OWN copy of the exception vectors
+	 */
+	mips32r2_vector_init(&mips_splsw);
+	ok = mips_fixup_exceptions(ingenic_fixup_cpu_info_references, ci);
+	KASSERT(ok);
+
+	(void)splhigh();		/* make sure interrupts are masked */
+
+	KASSERT((mipsNN_cp0_ebase_read() & MIPS_EBASE_CPUNUM) == ci->ci_cpuid);
+	KASSERT(curcpu() == ci);
+
+	/* enable mailbox IPIs for this core */
 	reg = mips_cp0_corereim_read();
-	if (cpu_index(ci) == 1) {
+	if (cpu_index(ci) == 1)
 		reg |= REIM_MIRQ1_M;
-	} else
+	else
 		reg |= REIM_MIRQ0_M;
 	mips_cp0_corereim_write(reg);
-	printf("%s %d %08x\n", __func__, cpu_index(ci), reg);
 }
 
-static int
+int
 ingenic_send_ipi(struct cpu_info *ci, int tag)
 {
-	uint32_t msg;
 
-	msg = 1 << tag;
+	KASSERT(tag >= 0 && tag < 32);
 
-	mutex_enter(&ingenic_ipi_lock);
-	if (kcpuset_isset(cpus_running, cpu_index(ci))) {
-		if (cpu_index(ci) == 0) {
-			mips_cp0_corembox_write(msg, 0);
-		} else {
-			mips_cp0_corembox_write(msg, 1);
+	/*
+	 * A NULL ci means "broadcast to every other CPU" (e.g. xc_broadcast()
+	 * via xc_send_ipi(NULL)).
+	 */
+	if (ci == NULL) {
+		CPU_INFO_ITERATOR cii;
+		for (CPU_INFO_FOREACH(cii, ci)) {
+			if (ci != curcpu())
+				ingenic_send_ipi(ci, tag);
 		}
+		return 0;
 	}
-	mutex_exit(&ingenic_ipi_lock);
+
+	const u_int index = cpu_index(ci);
+	KASSERT(index <= 1);
+
+	/*
+	 * second write before the target drains it would clobber the first
+	 * and lose an IPI.
+	 */
+	membar_release();
+	atomic_or_32((volatile uint32_t *)&ci->ci_request_ipis, __BIT(tag));
+	membar_release();
+
+	if (kcpuset_isset(cpus_running, index))
+		mips_cp0_corembox_write(index, __BIT(tag));
+
 	return 0;
 }
 #endif /* MULTIPROCESSOR */
@@ -178,7 +267,11 @@ mach_init(void)
 
 	/* set CPU model info for sysctl_hw */
 	cpu_setmodel("Ingenic XBurst");
-	mips_vector_init(NULL, false);
+	/*
+	 * multicpu_p=true: the JZ4780 has two cores, so the ll/sc atomic
+	 * vector MUST be selected instead of the default RAS
+	 */
+	mips_vector_init(NULL, true);
 	cal_timer();
 	uvm_md_init();
 	/*
@@ -204,9 +297,16 @@ mach_init(void)
 	 * memory is at 0x20000000 with first 256MB mirrored to 0x00000000 so
 	 * we can see them through KSEG*
 	 * assume 1GB for now, the SoC can theoretically support up to 3GB
+	 *
+	 * Reserve the low per-CPU EBASE pages.
 	 */
-	mem_clusters[0].start = PAGE_SIZE;
-	mem_clusters[0].size = 0x10000000 - PAGE_SIZE;
+#if defined(MULTIPROCESSOR) && defined(MIPS_EBASE_PERCPU)
+	const paddr_t ebase_reserve = 2 * PAGE_SIZE;	/* cpu0 + cpu1 pages */
+#else
+	const paddr_t ebase_reserve = PAGE_SIZE;	/* trap-vector page only */
+#endif
+	mem_clusters[0].start = ebase_reserve;
+	mem_clusters[0].size = 0x10000000 - ebase_reserve;
 	mem_clusters[1].start = 0x30000000;
 	mem_clusters[1].size = 0x30000000;
 	mem_cluster_cnt = 2;
@@ -233,9 +333,13 @@ mach_init(void)
 	mips_init_lwp0_uarea();
 
 #ifdef MULTIPROCESSOR
-	mutex_init(&ingenic_ipi_lock, MUTEX_DEFAULT, IPL_HIGH);
 	mips_locoresw.lsw_send_ipi = ingenic_send_ipi;
 	mips_locoresw.lsw_cpu_init = ingenic_cpu_init;
+	/*
+	 * Override the default mips_wait_idle: the JZ4780 needs a D-cache
+	 * writeback before "wait" or a sibling core can deadlock the SoC.
+	 */
+	mips_locoresw.lsw_cpu_idle = ingenic_cpu_idle;
 #endif
 
 	apbus_init();

@@ -6,6 +6,7 @@ defflag	opt_cputype.h		ENABLE_MIPS_16KB_PAGE
 defflag	opt_cputype.h		ENABLE_MIPS_8KB_PAGE
 defflag	opt_cputype.h		MIPS64_OCTEON
 defflag	opt_cputype.h		MIPS64_SB1
+defflag	opt_multiprocessor.h	MIPS_EBASE_PERCPU
 defflag	opt_cputype.h		MIPS64_XLP MIPS64_XLR MIPS64_XLS
 					# and the rest...
 					# MIPS1	MIPS2 MIPS3 MIPS4 MIPS5

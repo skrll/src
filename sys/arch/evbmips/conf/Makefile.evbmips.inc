@@ -31,7 +31,10 @@ EXTRA_KERNELS+= ${KERNELS:@.KERNEL.@${.KERNEL.}.bin@}
 
 .if defined(NEED_UBOOTIMAGE) && ${NEED_UBOOTIMAGE} != "no"
 _OSRELEASE!=		${HOST_SH} $S/conf/osrelease.sh
-MKUBOOTIMAGEARGS=       -A mips -T kernel
+# XXX: Creator CI20 u-boot has no NetBSD boot handler
+# dunno about other boards, this is a hack for CI20 obv
+UBOOTIMAGE_OS?=		linux
+MKUBOOTIMAGEARGS=       -A mips -T kernel -O ${UBOOTIMAGE_OS}
 MKUBOOTIMAGEARGS+=      -a ${TEXTADDR:C/....$/0000/}
 .if ${NEED_UBOOTIMAGE:Mbsentry} == "bsentry"
 MKUBOOTIMAGEARGS+=	-E $(TEXTADDR)

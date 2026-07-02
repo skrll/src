@@ -128,7 +128,11 @@ cpu_info_alloc(struct pmap_tlb_info *ti, cpuid_t cpu_id, cpuid_t cpu_package_id,
 
 	KASSERT(cpu_id < MAXCPUS);
 
-#ifdef MIPS64_OCTEON
+#if defined(MIPS64_OCTEON) || defined(MIPS_EBASE_PERCPU)
+	/*
+	 * place this CPU's exception vectors AND its cpu_info in one
+	 * per-CPU page at EBASE = MIPS_UTLB_MISS_EXC_VEC + cpu_id*4096
+	 */
 	const int exc_step = 1 << MIPS_EBASE_EXC_BASE_SHIFT;
 	vaddr_t exc_page = MIPS_UTLB_MISS_EXC_VEC + exc_step * cpu_id;
 	__CTASSERT(sizeof(struct cpu_info) + sizeof(struct pmap_tlb_info)
@@ -197,6 +201,11 @@ cpu_info_alloc(struct pmap_tlb_info *ti, cpuid_t cpu_id, cpuid_t cpu_package_id,
 	ci->ci_cpuwatch_count = cpu_info_store.ci_cpuwatch_count;
 
 	cpu_topology_set(ci, cpu_package_id, cpu_core_id, cpu_smt_id, 0);
+
+	/*
+	 * cpu_info was memset to 0 above, which leaves ci_tlb_slot == 0.
+	 */
+	ci->ci_tlb_slot = -1;
 
 	pmap_md_alloc_ephemeral_address_space(ci);
 
@@ -900,7 +909,12 @@ cpu_hatch(struct cpu_info *ci)
 	 * in the exception vectors, enter that mapping into TLB now.
 	 */
 	if (ci->ci_tlb_slot >= 0) {
-		const uint32_t tlb_lo = MIPS3_PG_G|MIPS3_PG_V
+		/*
+		 * cpu_info is written from the exception vectors via this
+		 * mapping, so it must be dirty/writable and cacheable
+		 */
+		const uint32_t tlb_lo = MIPS3_PG_G|MIPS3_PG_V|MIPS3_PG_D
+		    | MIPS3_PG_CACHED
 		    | mips3_paddr_to_tlbpfn((vaddr_t)ci);
 		const struct tlbmask tlbmask = {
 			.tlb_hi = -PAGE_SIZE | KERNEL_PID,
@@ -911,7 +925,10 @@ cpu_hatch(struct cpu_info *ci)
 			.tlb_lo0 = 0,
 			.tlb_lo1 = tlb_lo,
 #endif
-			.tlb_mask = -1,
+			/*
+			 * 4KB page
+			 */
+			.tlb_mask = 0,
 		};
 
 		tlb_invalidate_addr(tlbmask.tlb_hi, KERNEL_PID);
