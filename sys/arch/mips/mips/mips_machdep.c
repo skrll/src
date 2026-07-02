@@ -234,7 +234,6 @@ extern const mips_locore_jumpvec_t mips32_locore_vec;
 #endif
 
 #if defined(MIPS32R2)
-static void	mips32r2_vector_init(const struct splsw *);
 extern const struct locoresw mips32r2_locoresw;
 extern const mips_locore_jumpvec_t mips32r2_locore_vec;
 #endif
@@ -913,7 +912,7 @@ mips32_vector_init(const struct splsw *splsw)
 #endif /* MIPS32 */
 
 #if defined(MIPS32R2)
-static void
+void
 mips32r2_vector_init(const struct splsw *splsw)
 {
 	/* r4000 exception handler address */
@@ -944,7 +943,13 @@ mips32r2_vector_init(const struct splsw *splsw)
 		panic("startup: %s vector code too large",
 		    "interrupt exception");
 
-	memcpy((void *)MIPS_UTLB_MISS_EXC_VEC, mips32r2_tlb_miss,
+	const intptr_t ebase = (intptr_t)mipsNN_cp0_ebase_read();
+	const int cpunum = ebase & MIPS_EBASE_CPUNUM;
+
+	/*
+	 * This may run on a secondary CPU, so each CPU sets its own EBASE
+	 */
+	memcpy((void *)(intptr_t)(ebase & ~MIPS_EBASE_CPUNUM), mips32r2_tlb_miss,
 	      mips32r2_intr_end - mips32r2_tlb_miss);
 
 	/*
@@ -963,8 +968,12 @@ mips32r2_vector_init(const struct splsw *splsw)
 	/*
 	 * If this CPU doesn't have a COP0 USERLOCAL register, at the end
 	 * of cpu_switch resume overwrite the instructions which update it.
+	 * XXX
+	 * Only cpu0 patches this shared code: the loop KASSERTs it hasn't
+	 * already been patched (insn != JR_RA), so a secondary re-running it
+	 * would panic on cpu0's earlier edit. Shrug.
 	 */
-	if (!MIPS_HAS_USERLOCAL) {
+	if (!MIPS_HAS_USERLOCAL && cpunum == 0) {
 		extern uint32_t mips32r2_cpu_switch_resume[];
 		for (uint32_t *insnp = mips32r2_cpu_switch_resume;; insnp++) {
 			KASSERT(insnp[0] != JR_RA);
@@ -978,9 +987,10 @@ mips32r2_vector_init(const struct splsw *splsw)
 	}
 
 	/*
-	 * Copy locore-function vector.
+	 * Copy locore-function vector (only cpu0 sets it).
 	 */
-	mips_locore_jumpvec = mips32r2_locore_vec;
+	if (cpunum == 0)
+		mips_locore_jumpvec = mips32r2_locore_vec;
 
 	mips_icache_sync_all();
 	mips_dcache_wbinv_all();
