@@ -127,7 +127,7 @@ config		netbsd	root on dme0 type nfs
 
 mainbus0 	at root
 options 	MULTIPROCESSOR
-options         MIPS_EBASE_PERCPU
+options 	MIPS_EBASE_PERCPU
 
 cpu* 		at mainbus?
 #wdog0		at mainbus?
