@@ -153,7 +153,7 @@ ingenic_cpu_idle(void)
 
 /*
  * rewrite each cpu_info_store reference in THIS CPU's ex. vectors
- * lifed from octeon_fixup_cpu_info_references().
+ * lifted from octeon_fixup_cpu_info_references().
  */
 static bool
 ingenic_fixup_cpu_info_references(int32_t load_addr, uint32_t new_insns[2],
