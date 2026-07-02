@@ -95,8 +95,8 @@ file	arch/mips/mips/bds_emul.S		fpemul
 
 file	arch/mips/mips/procfs_machdep.c		procfs
 
-# 
-# Compatibility modules 
+#
+# Compatibility modules
 #
 # Binary compatibility with previous NetBSD releases (COMPAT_XX)
 file	arch/mips/mips/compat_13_machdep.c	compat_13 | compat_ultrix

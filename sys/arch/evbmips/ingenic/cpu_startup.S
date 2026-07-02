@@ -76,14 +76,11 @@ NESTED_NOPROFILE(ingenic_trampoline, 0, ra)
 	 */
 	PTR_S	MIPS_CURLWP, CPU_INFO_CURLWP(a0)
 
-
 	li	v0, 0
 	mtc0	v0, MIPS_COP_0_STATUS		# reset to known state
 	COP0_SYNC
 
-
 	PTR_L	sp, L_MD_UTF(MIPS_CURLWP)	# fetch KSP
-
 
 	/*
 	 * Indicate that no one has called us.
@@ -91,12 +88,10 @@ NESTED_NOPROFILE(ingenic_trampoline, 0, ra)
 	move	ra, zero
 	REG_S	ra, CALLFRAME_RA(sp)
 
-
 	/*
 	 * New execution constant needs GP to be loaded.
 	 */
 	PTR_LA	gp, _C_LABEL(_gp)
-
 
 	/*
 	 * and off we go.
@@ -147,7 +142,7 @@ VECTOR(ingenic_wakeup, unknown)
 
 	/*
 	 * We execute here at the KSEG1 (uncached) alias of this vector...
-	 * the reset entry in CORE_REIM must be uncached. 
+	 * the reset entry in CORE_REIM must be uncached.
 	 */
 	PTR_LA	t0, _C_LABEL(ingenic_trampoline)
 	jr	t0
