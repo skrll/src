@@ -168,7 +168,7 @@ evbmips_iointr(int ipl, uint32_t ipending, struct clockframe *cf)
 	if (ipending & MIPS_INT_MASK_1) {
 		/*
 		 * mailbox interrupt / IPI
-		 * The actual set of requested IPIs is in 
+		 * The actual set of requested IPIs is in
 		 * ci->ci_request_ipis (see ingenic_send_ipi()).
 		 */
 		const uint32_t pend = (id == 0) ? CS_MIRQ0_P : CS_MIRQ1_P;

@@ -235,7 +235,7 @@ ingenic_clockintr(struct clockframe *cf)
 
 #ifdef MULTIPROCESSOR
 	/*
-	 * Only core 0 owns the OST, work this around until we run 
+	 * Only core 0 owns the OST, work this around until we run
 	 * per-core timer.
 	 */
 	CPU_INFO_ITERATOR cii;
