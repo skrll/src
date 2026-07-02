@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.15 2026/08/10 07:29:26 andvar Exp $");
 #include <sys/systm.h>
 #include <sys/timetc.h>
 #include <sys/bitops.h>
+#include <sys/atomic.h>
 
 #include <mips/locore.h>
 #include <machine/intr.h>
@@ -158,6 +159,7 @@ evbmips_iointr(int ipl, uint32_t ipending, struct clockframe *cf)
 	/* see which core we're on */
 	id = mipsNN_cp0_ebase_read() & 7;
 
+
 	/*
 	 * XXX
 	 * the manual counts the softint bits as INT0 and INT1, our headers
@@ -165,49 +167,42 @@ evbmips_iointr(int ipl, uint32_t ipending, struct clockframe *cf)
 	 */
 	if (ipending & MIPS_INT_MASK_1) {
 		/*
-		 * this is a mailbox interrupt / IPI
+		 * mailbox interrupt / IPI
+		 * The actual set of requested IPIs is in 
+		 * ci->ci_request_ipis (see ingenic_send_ipi()).
 		 */
+		const uint32_t pend = (id == 0) ? CS_MIRQ0_P : CS_MIRQ1_P;
 		uint32_t reg;
 		int s = splsched();
 
-		/* read pending IPIs */
 		reg = mips_cp0_corestatus_read();
-		if (id == 0) {
-			if (reg & CS_MIRQ0_P) {
+		if (reg & pend) {
+			/* drain (and discard) the doorbell payload */
+			(void)mips_cp0_corembox_read(id);
+			/* ack: clear this core's mailbox-pending bit */
+			mips_cp0_corestatus_write(reg & ~pend);
 #ifdef MULTIPROCESSOR
-				uint32_t tag;
-				tag = mips_cp0_corembox_read(id);
-
-				ipi_process(curcpu(), tag);
-#ifdef INGENIC_INTR_DEBUG
-				snprintf(buffer, 256,
-				    "IPI for core 0, msg %08x\n", tag);
-				ingenic_puts(buffer);
-#endif
-#endif
-				reg &= (~CS_MIRQ0_P);
-				/* clear it */
-				mips_cp0_corestatus_write(reg);
+			struct cpu_info * const ci = curcpu();
+			uint32_t ipis = atomic_swap_32(
+			    (volatile uint32_t *)&ci->ci_request_ipis, 0);
+			if (ipis & __BIT(INGENIC_IPI_CLOCK)) {
+				/*
+				 * Tick relayed from the OST owner (core 0)...
+				 * this core has no periodic timer yet.
+				 */
+				ipis &= ~__BIT(INGENIC_IPI_CLOCK);
+				hardclock(cf);
 			}
-		} else if (id == 1) {
-			if (reg & CS_MIRQ1_P) {
-#ifdef MULTIPROCESSOR
-				uint32_t tag;
-				tag = mips_cp0_corembox_read(id);
-				ingenic_puts("1");
-				if (tag & 0x400)
-					hardclock(cf);
-				//ipi_process(curcpu(), tag);
-#ifdef INGENIC_INTR_DEBUG
-				snprintf(buffer, 256,
-				    "IPI for core 1, msg %08x\n", tag);
-				ingenic_puts(buffer);
-#endif
-#endif
-				reg &= (~CS_MIRQ1_P);
-				/* clear it */
-				mips_cp0_corestatus_write(reg);
+			if (ipis != 0) {
+				membar_acquire();
+				ipi_process(ci, ipis);
 			}
+#ifdef INGENIC_INTR_DEBUG
+			snprintf(buffer, 256, "IPI core %u, ipis %08x\n",
+			    id, ipis);
+			ingenic_puts(buffer);
+#endif
+#endif
 		}
 		splx(s);
 	}
@@ -215,7 +210,6 @@ evbmips_iointr(int ipl, uint32_t ipending, struct clockframe *cf)
 		/* this is a timer interrupt */
 		ingenic_clockintr(cf);
 		clockintrs.ev_count++;
-		ingenic_puts("INT2\n");
 	}
 	if (ipending & MIPS_INT_MASK_0) {
 		uint32_t mask;
