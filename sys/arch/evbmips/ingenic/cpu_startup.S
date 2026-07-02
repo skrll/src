@@ -47,6 +47,19 @@ RCSID("$NetBSD: cpu_startup.S,v 1.2 2023/02/23 14:56:00 riastradh Exp $");
 
 NESTED_NOPROFILE(ingenic_trampoline, 0, ra)
 	/*
+	 * set CPU's per-CPU exception base
+	 * EBASE becomes MIPS_UTLB_MISS_EXC_VEC + cpunum*4096
+	 * Done here while Status.BEV is still 1
+	 * mips32r2 architecture requires BEV=1 when writing EBASE
+	 */
+	mfc0	t0, MIPS_COP_0_EBASE
+	andi	t1, t0, MIPS_EBASE_CPUNUM
+	ins	t0, t1, MIPS_EBASE_EXC_BASE_SHIFT, MIPS_EBASE_CPUNUM_WIDTH
+	ehb
+	mtc0	t0, MIPS_COP_0_EBASE
+	COP0_SYNC
+
+	/*
 	 * We act as the idle lwp so make it CURLWP.  When know
 	 * that the cpu_info is a KSEG0 address.
 	 */
@@ -63,11 +76,14 @@ NESTED_NOPROFILE(ingenic_trampoline, 0, ra)
 	 */
 	PTR_S	MIPS_CURLWP, CPU_INFO_CURLWP(a0)
 
+
 	li	v0, 0
 	mtc0	v0, MIPS_COP_0_STATUS		# reset to known state
 	COP0_SYNC
 
+
 	PTR_L	sp, L_MD_UTF(MIPS_CURLWP)	# fetch KSP
+
 
 	/*
 	 * Indicate that no one has called us.
@@ -75,10 +91,12 @@ NESTED_NOPROFILE(ingenic_trampoline, 0, ra)
 	move	ra, zero
 	REG_S	ra, CALLFRAME_RA(sp)
 
+
 	/*
 	 * New execution constant needs GP to be loaded.
 	 */
 	PTR_LA	gp, _C_LABEL(_gp)
+
 
 	/*
 	 * and off we go.
@@ -127,7 +145,12 @@ VECTOR(ingenic_wakeup, unknown)
 	PTR_L	a1, _C_LABEL(startup_cpu_info)
 	nop
 
-	j	ingenic_trampoline
+	/*
+	 * We execute here at the KSEG1 (uncached) alias of this vector...
+	 * the reset entry in CORE_REIM must be uncached. 
+	 */
+	PTR_LA	t0, _C_LABEL(ingenic_trampoline)
+	jr	t0
 	  nop
 	.set	at
 VECTOR_END(ingenic_wakeup)

@@ -121,12 +121,13 @@ options 	NFS_BOOT_BOOTP
 options 	NFS_BOOT_DHCP
 #options 	NFS_V2_ONLY
 
-config		netbsd	root on sd0a type ffs
+#config		netbsd	root on sd0a type ffs
 #config		netbsd	root on axe0 type nfs
-#config		netbsd	root on dme0 type nfs
+config		netbsd	root on dme0 type nfs
 
 mainbus0 	at root
-#options 	MULTIPROCESSOR
+options 	MULTIPROCESSOR
+options         MIPS_EBASE_PERCPU
 
 cpu* 		at mainbus?
 #wdog0		at mainbus?

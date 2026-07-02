@@ -712,6 +712,7 @@ struct splsw;
 struct mips_vmfreelist;
 struct phys_ram_seg;
 
+void	mips32r2_vector_init(const struct splsw *);
 void	mips64r2_vector_init(const struct splsw *);
 void	mips_vector_init(const struct splsw *, bool);
 void	mips_init_msgbuf(void);
