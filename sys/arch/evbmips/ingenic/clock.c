@@ -231,13 +231,21 @@ ingenic_clockintr(struct clockframe *cf)
 		ingenic_puts("+");
 	}
 #endif
+	hardclock(cf);
+
 #ifdef MULTIPROCESSOR
 	/*
-	 * XXX
-	 * needs to take the IPI lock and ping all online CPUs, not just core 1
+	 * Only core 0 owns the OST, work this around until we run 
+	 * per-core timer.
 	 */
-	mips_cp0_corembox_write(1, 1 << INGENIC_IPI_CLOCK);
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci2;
+
+	for (CPU_INFO_FOREACH(cii, ci2)) {
+		if (ci2 != ci &&
+		    kcpuset_isset(kcpuset_running, cpu_index(ci2)))
+			ingenic_send_ipi(ci2, INGENIC_IPI_CLOCK);
+	}
 #endif
-	hardclock(cf);
 	splx(s);
 }

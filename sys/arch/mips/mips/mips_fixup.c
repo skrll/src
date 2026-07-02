@@ -211,7 +211,12 @@ mips_fixup_zero_relative(int32_t load_addr, uint32_t new_insns[2], void *arg)
 	 */
 	TLBINFO_LOCK(ti);
 	if (ci->ci_tlb_slot < 0) {
+		/*
+		 * cpu_info is read/written cached through its KSEG0 alias...
+		 * XBurst L1 does not virtually alias
+		 */
 		uint32_t tlb_lo = MIPS3_PG_G | MIPS3_PG_V | MIPS3_PG_D
+		    | MIPS3_PG_CACHED
 		    | mips3_paddr_to_tlbpfn(MIPS_KSEG0_TO_PHYS(trunc_page(load_addr)));
 		struct tlbmask tlbmask = {
 			.tlb_hi = -PAGE_SIZE | KERNEL_PID,
@@ -222,7 +227,10 @@ mips_fixup_zero_relative(int32_t load_addr, uint32_t new_insns[2], void *arg)
 			.tlb_lo0 = 0,
 			.tlb_lo1 = tlb_lo,
 #endif
-			.tlb_mask = -1,
+			/*
+			 * 4KB page.
+			 */
+			.tlb_mask = 0,
 		};
 		ci->ci_tlb_slot = ti->ti_wired++;
 		mips3_cp0_wired_write(ti->ti_wired);
