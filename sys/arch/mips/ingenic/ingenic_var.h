@@ -58,10 +58,8 @@ void mips_cp0_corembox_write(u_int, uint32_t);
 
 #ifdef MULTIPROCESSOR
 #define	INGENIC_IPI_CLOCK	31
-#if 0 /* MULTIPROCESSOR */
 struct cpu_info;
 int ingenic_send_ipi(struct cpu_info *, int);
-#endif
 #endif
 
 #endif /* INGENIC_VAR_H */

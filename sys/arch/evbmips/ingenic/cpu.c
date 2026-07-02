@@ -46,7 +46,11 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.5 2022/03/03 06:27:40 riastradh Exp $");
 #include <sys/systm.h>
 #include <sys/cpu.h>
 
+#include <uvm/uvm.h>
+
 #include <mips/locore.h>
+#include <mips/cache.h>
+#include <mips/pmap.h>
 #include <mips/ingenic/ingenic_coreregs.h>
 #include <mips/ingenic/ingenic_regs.h>
 #include <mips/ingenic/ingenic_var.h>
@@ -76,7 +80,9 @@ cpu_attach(device_t parent, device_t self, void *aux)
 	struct cpu_info *ci = curcpu();
 	int unit;
 
-	if ((unit = device_unit(self)) > 0) {
+	unit = device_unit(self);
+
+	if (unit > 0) {
 #ifdef MULTIPROCESSOR
 		uint32_t vec, reg;
 		int bail = 10000;
@@ -84,8 +90,14 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		startup_cpu_info = cpu_info_alloc(NULL, unit, 0, unit, 0);
 		startup_cpu_info->ci_cpu_freq = ci->ci_cpu_freq;
 		ci = startup_cpu_info;
+
 		wbflush();
-		vec = (uint32_t)&ingenic_wakeup;
+		/*
+		 * The secondary core leaves reset with cold caches
+		 * it MUST fetch its reset trampoline uncached
+		 */
+		vec = (uint32_t)MIPS_PHYS_TO_KSEG1(
+		    MIPS_KSEG0_TO_PHYS(&ingenic_wakeup));
 		reg = mips_cp0_corereim_read();
 		reg &= ~REIM_ENTRY_M;
 		reg |= vec;
