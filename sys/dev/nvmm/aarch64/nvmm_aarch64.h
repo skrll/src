@@ -65,9 +65,11 @@ struct nvmm_aarch64_exit {
 	uint32_t insn;		// Used by the MMIO emulation code
         struct {
 		uint64_t evt_pending:1;
+		uint64_t es_irq:1;
+		uint64_t es_fiq:1;
 		uint64_t vtimer:1;
 		uint64_t ptimer:1;
-		uint64_t rsvd:61;
+		uint64_t rsvd:59;
         } exitstate;
 };
 
@@ -209,8 +211,19 @@ struct nvmm_aarch64_event {
 #define NVMM_AARCH64_STATE_SPRS		__BIT(1)
 #define NVMM_AARCH64_STATE_TIDS		__BIT(2)
 #define NVMM_AARCH64_STATE_FPRS		__BIT(16)
-#define NVMM_AARCH64_STATE_ALL		\
-    (NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS | NVMM_AARCH64_STATE_TIDS | NVMM_AARCH64_STATE_FPRS)
+#define NVMM_AARCH64_STATE_INTERRUPT	__BIT(17)
+#define NVMM_AARCH64_STATE_ALL		(		\
+    NVMM_AARCH64_STATE_GPRS |				\
+    NVMM_AARCH64_STATE_SPRS |				\
+    NVMM_AARCH64_STATE_TIDS |				\
+    NVMM_AARCH64_STATE_FPRS |				\
+    NVMM_AARCH64_STATE_INTERRUPT |			\
+    0)
+
+
+struct nvmm_aarch64_state_interrupt {
+	uint64_t evt_pending:1;
+};
 
 /*
  * This structure is shared via the comm page.
@@ -220,7 +233,7 @@ struct nvmm_aarch64_state {
 	uint64_t sprs[NVMM_AARCH64_NSPR];
 	uint64_t tids[NVMM_AARCH64_NTID];		/* XXX: read only. no need to include in host context */
 	union fpelem fprs[NVMM_AARCH64_NFPR];
-	// struct nvmm_x64_state_intr intr;
+	struct nvmm_aarch64_state_interrupt intr;
 };
 
 

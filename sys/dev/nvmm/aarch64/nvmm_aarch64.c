@@ -722,18 +722,21 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
 		memcpy(state->sprs, cpudata->guest.sprs, sizeof(state->sprs));
 	}
+	// XXXNH probably not?!?
 	if (flags & NVMM_AARCH64_STATE_TIDS) {
 		memcpy(state->tids, cpudata->guest.tids, sizeof(state->tids));
 	}
 	if (flags & NVMM_AARCH64_STATE_FPRS) {
 		memcpy(state->fprs, cpudata->guest.fprs, sizeof(state->fprs));
 	}
+	if (flags & NVMM_AARCH64_STATE_INTERRUPT) {
+//		state->intr.irq = cpudata->type == IRQ;
+//		state->intr.fiq = cpudata->type == FIQ
+		state->intr.evt_pending = cpudata->evt_pending;
+	}
 
 	comm->state_wanted = 0;
 	comm->state_cached |= flags;
-
-	// XXXNH
-	// x86 copies cpudata->evt_pending into "interrupt" state
 }
 
 //static void
@@ -761,9 +764,15 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 	struct nvmm_comm_page * const comm = vcpu->comm;
 	struct aarch64_cpudata * const cpudata = vcpu->cpudata;
 	const u_int evtype = comm->event.type;
+	__insn_barrier();
 
+	/*
+	 * Sanity check the event - not sure this is needed as SYNC
+	 * is unlikely to be needed
+	 */
 	switch (evtype) {
 	case NVMM_VCPU_EVENT_SERROR:
+		NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EVENT_SERROR", 0, 0, 0, 0);
 		break;
 
 	case NVMM_VCPU_EVENT_IRQ:
@@ -791,40 +800,23 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 static inline void
 aarch64_exit_evt(struct aarch64_cpudata *cpudata)
 {
-//	uint64_t info, err, inslen;
-
 	NVMMHIST_FUNC();
 	NVMMHIST_CALLARGSN(nvmmdebug, 30, "vcpu %#jx (pending %jd type %jd)",
 		 cpudata, cpudata->evt_pending, cpudata->send_event_type, 0);
 
 	cpudata->evt_pending = false;
 
-#if 0
-	//XXXNH read what inject said...
-	cpudata->send_event_type;
-	cpudata->evt_pending = true;
-#endif
-#if 0
-	info = vmx_vmread(VMCS_IDT_VECTORING_INFO);
-	if (__predict_true((info & INTR_INFO_VALID) == 0)) {
-		return;
-	}
-	err = vmx_vmread(VMCS_IDT_VECTORING_ERROR);
 
-	vmx_vmwrite(VMCS_ENTRY_INTR_INFO, info);
-	vmx_vmwrite(VMCS_ENTRY_EXCEPTION_ERROR, err);
-
-	switch (__SHIFTOUT(info, INTR_INFO_TYPE)) {
-	case INTR_TYPE_SW_INT:
-	case INTR_TYPE_PRIV_SW_EXC:
-	case INTR_TYPE_SW_EXC:
-		inslen = vmx_vmread(VMCS_EXIT_INSTRUCTION_LENGTH);
-		vmx_vmwrite(VMCS_ENTRY_INSTRUCTION_LENGTH, inslen);
-	}
+	/*
+	 * Look for vtimer timer expiration.
+	 */
+#if 0
 
 	cpudata->evt_pending = true;
 #endif
 }
+
+extern int nhdebug;
 
 static inline int
 aarch64_vcpu_event_commit(struct nvmm_cpu *vcpu)
@@ -836,8 +828,6 @@ aarch64_vcpu_event_commit(struct nvmm_cpu *vcpu)
 
 	return nvmm_aarch64_vcpu_inject(vcpu);
 }
-
-extern int nhdebug;
 
 static int
 nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
@@ -878,6 +868,9 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		NVMMHIST_LOGN(nvmmdebug, 30, "... loop",
 		    0, 0, 0, 0);
 
+		// TLB flush not required as we're using VMIDs.
+
+		// Timer offset update?
 		aarch64_vmenter(cpudata);
 
 		if (nhdebug)
@@ -895,9 +888,12 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 		aarch64_exit_evt(cpudata);
 
+
 #if 0
-		// there isn't a VMCS_EXIT_REASON to read...
-		switch (...) {
+		/*
+		 * optimised exit handling.
+		 */
+		switch (cpudata->exit.reason) {
 		}
 #endif
 
@@ -920,6 +916,9 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	memcpy(exit, &cpudata->exit, sizeof(*exit));
 
 	fpu_save(curlwp);
+
+	// drop reference
+	// vmx_vmcs_leave(vcpu);
 
 	return 0;
 }
