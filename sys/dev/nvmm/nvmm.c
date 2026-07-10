@@ -503,12 +503,14 @@ nvmm_vcpu_create(struct nvmm_owner *owner, struct nvmm_ioc_vcpu_create *args)
 	error = uvm_map(kernel_map, (vaddr_t *)&vcpu->comm, PAGE_SIZE,
 	    mach->commuobj, args->cpuid * PAGE_SIZE, 0, UVM_MAPFLAG(UVM_PROT_RW,
 	    UVM_PROT_RW, UVM_INH_SHARE, UVM_ADV_RANDOM, 0));
+
 	if (error) {
 		uao_detach(mach->commuobj);
 		nvmm_vcpu_free(mach, vcpu);
 		nvmm_vcpu_put(vcpu);
 		goto out;
 	}
+
 	error = uvm_map_pageable(kernel_map, (vaddr_t)vcpu->comm,
 	    (vaddr_t)vcpu->comm + PAGE_SIZE, false, 0);
 	if (error) {
