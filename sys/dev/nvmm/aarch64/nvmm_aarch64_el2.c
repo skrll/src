@@ -553,6 +553,11 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	reg_vttbr_el2_write(0);
 	isb();
 
+	NVMMHIST_LOGN(nvmmdebug, 20,
+	    "mair_el2 = %#jx vtcr_el2 = %#jx ttbr0_el2 = %#jx sctlr_el2 = %#jx",
+	    reg_mair_el2_read(), reg_vtcr_el2_read(),
+	    reg_ttbr0_el2_read(), reg_sctlr_el2_read());
+
 	/* save guest state */
 	vcpu_context_save(tf, &cpudata->guest);
 	/* load host state */
@@ -820,6 +825,11 @@ aarch64_el2_vmenter(struct trapframe *tf)
 {
 	NVMMHIST_FUNC();
 	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx state #%jx", (uintptr_t)tf, 0, 0, 0);
+
+	NVMMHIST_LOGN(nvmmdebug, 20,
+	    "mair_el2 = %#jx vtcr_el2 = %#jx ttbr0_el2 = %#jx sctlr_el2 = %#jx",
+	    reg_mair_el2_read(), reg_vtcr_el2_read(),
+	    reg_ttbr0_el2_read(), reg_sctlr_el2_read());
 
 	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
 	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));

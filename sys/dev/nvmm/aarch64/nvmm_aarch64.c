@@ -783,9 +783,6 @@ aarch64_exit_evt(struct aarch64_cpudata *cpudata)
 int nhdebug = 0;
 
 
-
-
-
 static inline int
 aarch64_vcpu_event_commit(struct nvmm_cpu *vcpu)
 {
@@ -816,7 +813,7 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	vcpu->comm->state_cached = 0;
 
 	if (__predict_false(aarch64_vcpu_event_commit(vcpu) != 0)) {
-//		vmx_vmcs_leave(vcpu); reference drop
+//		vmx_vmcs_leave(vcpu); reference drop and kpreempt_enable
 		kpreempt_enable();
 		return EINVAL;
 	}
@@ -843,7 +840,6 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 		// Timer offset update?
 
-
 		aarch64_hvc_vmenter(cpudata->cpudata_pa);
 
 		if (nhdebug)
@@ -860,7 +856,6 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		// reason is NVMM_VCPU_EXIT_NONE
 
 		aarch64_exit_evt(cpudata);
-
 
 #if 0
 		/*
