@@ -963,6 +963,17 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 		aarch64_exit_evt(cpudata);
 
+<<<<<<< HEAD
+=======
+#if 0
+		/*
+		 * optimised exit handling.
+		 */
+		switch (cpudata->exit.reason) {
+		}
+#endif
+
+>>>>>>> acc2d19ba9f4 (more random debug)
 		/* If no reason to return to userland, keep rolling. */
 		if (nvmm_return_needed(vcpu, &cpudata->exit)) {
 			NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (nvmm_return_needed)",
