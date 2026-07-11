@@ -39,15 +39,15 @@
 
 RCSID("$NetBSD: locore.S,v 1.109 2026/09/09 07:24:52 skrll Exp $")
 
+#define DEBUG_LOCORE			// debug print */
+/*#define DEBUG_LOCORE_PRINT_LOCK	// avoid mixing AP's output */
+
 #ifdef AARCH64_DEVICE_MEM_NONPOSTED
 #define	MAIR_DEVICE_MEM		MAIR_DEVICE_nGnRnE
 #else
 #define	MAIR_DEVICE_MEM		MAIR_DEVICE_nGnRE
 #endif
 #define	MAIR_DEVICE_MEM_NP	MAIR_DEVICE_nGnRnE
-
-/*#define DEBUG_LOCORE			// debug print */
-/*#define DEBUG_LOCORE_PRINT_LOCK	// avoid mixing AP's output */
 
 #define LOCORE_EL2
 
