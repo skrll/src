@@ -666,6 +666,15 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 	if (flags & NVMM_AARCH64_STATE_INTERRUPT) {
 //		state->intr.irq = cpudata->type == IRQ;
 //		state->intr.fiq = cpudata->type == FIQ
+		/* XXXNH: The shared state currently records that an emulated
+		 * interrupt source is pending, for example a device signal such as
+		 * the generic timer or another toyvirt/QEMU-style source. The
+		 * EL2 path can then use that pending state to turn the event into
+		 * a guest-visible virtual interrupt. This is a minimal way to
+		 * represent the pending interrupt state and does not yet carry
+		 * richer details such as vector, priority, or syndrome
+		 * information through the shared state.
+		 */
 		state->intr.evt_pending = cpudata->evt_pending;
 	}
 
@@ -750,7 +759,20 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 		return EINVAL;
 	}
 
-	// Maybe this should be a bit mask
+	// XXXNH: This currently only records the event in shared state for EL2
+	// to notice on a later pass through the run loop. For x86-like behavior,
+	// we should arrange a guest-visible interrupt/exception path before the
+	// next entry. On AArch64 this means enabling the virtual interrupt
+	// delivery machinery and, ideally, exposing the event through an
+	// emulated interrupt-controller-like source rather than treating it as
+	// a purely abstract flag. This is not a direct wakeup of another host
+	// thread; the other thread signals via the shared comm page and this path
+	// consumes that signal.
+	// XXXNH: The current code still combines the event path into one step.
+	// The intended stages are:
+	// 1) validate/translate the incoming request,
+	// 2) program the EL2 interrupt state for the next entry, and
+	// 3) make the next guest entry observe the pending event.
 	cpudata->send_event_type = evtype;
 	cpudata->evt_pending = true;
 
@@ -824,6 +846,18 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	}
 #endif
 
+	/* XXXNH: This is the host vCPU thread's handoff point for a pending event
+	 * from the shared comm page. The guest is not running while we are between
+	 * exits, so this is the moment where we can still arrange EL2 interrupt
+	 * state and make the next guest entry deliver the event. The current path
+	 * only records it for later EL2 handling, instead of setting up the full
+	 * guest-visible interrupt/exception path on the next entry.
+	 * XXXNH: A cleaner structure would make this loop responsible for:
+	 * - draining pending comm-page requests,
+	 * - applying any state changes,
+	 * - deciding whether to re-enter the guest or return to userland.
+	 */
+
 	int hcpu = cpu_number();
 	if (vcpu->hcpu_last != hcpu) {
 		NVMMHIST_LOG(nvmmdebug, "vcpu %#jx migrated from hcpu %d to %d",
@@ -854,6 +888,10 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		// An interrupt will be taken to EL2 and on the eret to here
 		// the interrupt will trigger an exception.
 		// reason is NVMM_VCPU_EXIT_NONE
+		//
+		// XXXNH: Consider making the exit path explicitly distinguish
+		// between ordinary guest exits, pending event delivery, and
+		// host-side state changes so that the loop is easier to reason about.
 
 		aarch64_exit_evt(cpudata);
 

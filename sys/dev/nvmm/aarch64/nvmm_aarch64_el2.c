@@ -885,6 +885,13 @@ aarch64_el2_vmenter(struct trapframe *tf)
 #endif
 
 	if (__predict_false(cpudata->send_event_type != NVMM_VCPU_EVENT_NONE)) {
+		/* XXXNH: This is the point where the guest-visible interrupt/exception
+		 * delivery path is wired up for the next entry. On AArch64 this is not
+		 * a direct "inject vector N" operation like x86 VM-entry injection;
+		 * instead it enables the virtual interrupt machinery so the guest can
+		 * observe the event through the exception path, ideally via an
+		 * emulated interrupt-controller-like source.
+		 */
 		switch (cpudata->send_event_type) {
 		case NVMM_VCPU_EVENT_SYNC:
 			NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EVENT_SYNC: PC=%#jx LR=%#jx VBAR_EL1=0x%016lx",
