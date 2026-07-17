@@ -457,13 +457,6 @@ ENTRY_NP(cpu_mpstart)
 	CPU_DPRINTSREG("SCTLR_EL1        = ", sctlr_el1)
 	CPU_DPRINTSREG("MIDR_EL1         = ", midr_el1)
 	CPU_DPRINTSREG("MPIDR_EL1        = ", mpidr_el1)
-	CPU_DPRINTSREG("ID_AA64MPFR0_EL1 = ", id_aa64pfr0_el1)
-	CPU_DPRINTSREG("ID_AA64MPFR1_EL1 = ", id_aa64pfr1_el1)
-	CPU_DPRINTSREG("ID_AA64ISAR0_EL1 = ", id_aa64isar0_el1)
-	CPU_DPRINTSREG("ID_AA64ISAR1_EL1 = ", id_aa64isar1_el1)
-	CPU_DPRINTSREG("ID_AA64MMFR0_EL1 = ", id_aa64mmfr0_el1)
-	CPU_DPRINTSREG("ID_AA64MMFR1_EL1 = ", id_aa64mmfr1_el1)
-
 
 #ifdef LOCORE_EL2
 	CPU_DPRINT("Drop to EL1...\n")

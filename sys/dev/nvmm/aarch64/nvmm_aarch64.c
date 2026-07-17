@@ -50,7 +50,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <aarch64/cpufunc.h>
 #include <aarch64/pmap.h>
-#include <arch/aarch64/aarch64/disasm.h>
 
 #define AARCH64_VMID(mach) (mach->machid + 1) /* avoid 0. 0 is host's VMID */
 
@@ -818,18 +817,6 @@ aarch64_vcpu_event_commit(struct nvmm_cpu *vcpu)
 }
 
 
-static void
-disasm_printaddr(uintptr_t address)
-{
-        printf("%lx", address);
-}
-
-void disasm_insn(const disasm_interface_t *, uintptr_t , uint32_t );
-
-static const disasm_interface_t db_disasm_interface = {
-        .di_printaddr = disasm_printaddr,
-        .di_printf = printf
-};
 
 static int
 nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
@@ -926,23 +913,6 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		if (cpudata->exit.reason != NVMM_VCPU_EXIT_NONE) {
 			NVMMHIST_LOGN(nvmmdebug, 20, "<-- done (reason %jd)",
 			    cpudata->exit.reason, 0, 0, 0);
-
-			switch (cpudata->exit.reason) {
-			case NVMM_VCPU_EXIT_MEMORY: printf("MEMORY "); break;
-			case NVMM_VCPU_EXIT_MSR:    printf("MSR    "); break;
-			case NVMM_VCPU_EXIT_MRS:    printf("MRS    "); break;
-			case NVMM_VCPU_EXIT_SMC:    printf("SMC    "); break;
-			case NVMM_VCPU_EXIT_HVC:    printf("HVC    "); break;
-			case NVMM_VCPU_EXIT_WFE:    printf("WFE    "); break;
-			case NVMM_VCPU_EXIT_WFI:    printf("WFI    "); break;
-			case NVMM_VCPU_EXIT_IRQ:    printf("IRQ    "); break;
-			case NVMM_VCPU_EXIT_NONE:   printf("NONE   "); break;
-			default:                    printf("???    "); break;
-			}
-
-			uintptr_t loc = cpudata->guest.sprs[NVMM_AARCH64_SPR_PC];
-			printf("%018jx: ", loc);
-			disasm_insn(&db_disasm_interface, loc, exit->insn);
 			break;
 		}
 	}
