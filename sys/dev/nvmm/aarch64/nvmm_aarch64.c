@@ -864,6 +864,8 @@ aarch64_vcpu_event_commit(struct nvmm_cpu *vcpu)
 	return nvmm_aarch64_vcpu_inject(vcpu);
 }
 
+
+
 static int
 nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
