@@ -783,13 +783,6 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
                 reg_cntv_ctl_el0_write(cntv_ctl | CNTCTL_IMASK);
 	}
 
-	/* Debug */
-	uint32_t *hpa = (uint32_t *)aarch64_gva_to_pa(tf->tf_spsr, tf->tf_pc);
-	if (hpa != (void *)-1) {
-		struct nvmm_aarch64_exit *exit = &cpudata->exit;
-		exit->insn = le32toh(*hpa);
-	}
-
 	aarch64_vmexit_context(tf, cpudata);
 }
 
@@ -984,12 +977,11 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		break;
 	}
 
+// XXXNH used by the MMIO emulation code. hmm.
+#if 1
 	if (eclass != ESR_EC_INSN_ABT_EL_LOW &&
 	    eclass != ESR_EC_INSN_ABT_EL_CUR) {
-		/*
-		 * XXXNH this is used by the MMIO emulation code - defer to
-		 * userland?
-		 */
+		// XXXNH defer to userland
 		/*
 		 * read an instruction from PC.
 		 * if instruction abort, it cannot be read.
@@ -1000,12 +992,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 			    le32toh(*(uint32_t *)AARCH64_PA_TO_KVA(pa)) :
 			    le32toh(*(uint32_t *)pa);
 	}
-
-	/* Debug */
-	uint32_t *hpa = (uint32_t *)aarch64_gva_to_pa(tf->tf_spsr, tf->tf_pc);
-	if (hpa != (void *)-1) {
-		exit->insn = le32toh(*hpa);
-	}
+#endif
 
 	// E2H needs to do eret to guest if not doing vmexit
 	if (do_vmexit) {
