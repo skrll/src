@@ -774,6 +774,13 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
 
 		aarch64_vmexit_context(tf, cpudata);
 	} else {
+		/* Debug */
+		uint32_t *hpa = (uint32_t *)aarch64_gva_to_pa(tf->tf_spsr, tf->tf_pc);
+		if (hpa != (void *)-1) {
+			struct nvmm_aarch64_exit *exit = &cpudata->exit;
+			exit->insn = le32toh(*hpa);
+		}
+
 		aarch64_vmexit_context(tf, cpudata);
 
 		/*
@@ -1012,7 +1019,10 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	// if (eclass == ESR_EC_DATA_ABT_EL_LOW)?
 	if (eclass != ESR_EC_INSN_ABT_EL_LOW &&
 	    eclass != ESR_EC_INSN_ABT_EL_CUR) {
-		// XXXNH defer to userland
+		/*
+		 * XXXNH this is used by the MMIO emulation code - defer to
+		 * userland?
+		 */
 		/*
 		 * read an instruction from PC.
 		 * if instruction abort, it cannot be read.
@@ -1022,6 +1032,12 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 			exit->insn = e2h_enabled ?
 			    le32toh(*(uint32_t *)AARCH64_PA_TO_KVA(pa)) :
 			    le32toh(*(uint32_t *)pa);
+	}
+
+	/* Debug */
+	uint32_t *hpa = (uint32_t *)aarch64_gva_to_pa(tf->tf_spsr, tf->tf_pc);
+	if (hpa != (void *)-1) {
+		exit->insn = le32toh(*hpa);
 	}
 
 	if (do_vmexit) {
