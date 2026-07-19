@@ -728,6 +728,11 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	reg_hcr_el2_write(hcr);
 	reg_hstr_el2_write(0);
 	reg_vttbr_el2_write(0);
+
+#if 0
+	/* GIC */
+	reg_ich_hcr_el2_write(0);
+#endif
 	isb();
 
 	NVMMHIST_LOGN(nvmmdebug, 20,
@@ -1028,6 +1033,11 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 	vcpu_context_save(tf, &cpudata->host);
 	/* load guest state */
 	vcpu_context_load(tf, &cpudata->guest);
+
+#if 0
+	/* GIC */
+	reg_ich_hcr_el2_write(ICH_HCR_EL2_TALL1 | ICH_HCR_EL2_TALL0 | ICH_HCR_EL2_TC);
+#endif
 
 	uint64_t hcr = HCR_EL2_RW;	/* 64bit */
 
