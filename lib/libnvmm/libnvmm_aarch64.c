@@ -1076,6 +1076,399 @@ OP5FUNC(op_ldp_signed, sf, imm7, Rt2, Rn, Rt)
 	return updated;	/* Rt,Rt2 are updated? */
 }
 
+/* emul "stp Rt,Rt2,[Rn],#imm7" */
+OP5FUNC(op_stp_simd_postidx, opc, imm7, Rt2, Rn, Rt)
+{
+	struct nvmm_aarch64_state *state = vcpu->state;
+	const struct nvmm_vcpu_exit *exit = vcpu->exit;
+	const gpaddr_t gpa = exit->u.mem.gpa;
+	__uint128_t reg1, reg2;
+	size_t bytes;
+	int updated = 0;
+
+	switch (opc) {
+	case 0:
+		/* St[12] */
+		bytes = 4;
+		break;
+	case 1:
+		/* Dt[12] */
+		bytes = 8;
+		break;
+	case 2:
+		/* Qt[12] */
+		bytes = 16;
+		break;
+	case 3:
+	default:
+		return -1;
+	}
+
+	uint64_t va = state->gprs[NVMM_AARCH64_GPR_X0 + Rn];
+
+	/* XXX: illegal alignment access is not supported */
+	if (FAULT_ACROSS_A_PAGE(va, gpa))
+		return -1;
+	if (!ACCESS_WITHIN_A_PAGE(gpa, bytes * 2))
+		return -1;
+
+	reg1 = state->fprs[NVMM_AARCH64_FPR_V0 + Rt].u128[0];
+	reg2 = state->fprs[NVMM_AARCH64_FPR_V0 + Rt2].u128[0];
+
+	switch (opc) {
+	case 0:
+		nvmm_assist_mem_write(mach, vcpu, gpa, reg1, 4);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 4, reg2, 4);
+		break;
+	case 1:
+		nvmm_assist_mem_write(mach, vcpu, gpa, reg1, 8);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 8, reg2, 8);
+		break;
+	case 2:
+		// XXXNH endian
+		nvmm_assist_mem_write(mach, vcpu, gpa, reg1, 8);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 8, reg1 >> 64, 8);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 16, reg2, 8);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 24, reg2 >> 64, 8);
+		break;
+	case 3:
+	default:
+		return -1;
+	}
+	if (imm7 != 0) {
+		va += SignExtend(7, imm7, bytes);
+		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
+		updated = 1;
+	}
+	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+
+	return updated;	/* Rn is updated? */
+}
+
+/* emul "stp Rt,Rt2,[Rn,#imm7]!" */
+OP5FUNC(op_stp_simd_preidx, opc, imm7, Rt2, Rn, Rt)
+{
+	struct nvmm_aarch64_state *state = vcpu->state;
+	const struct nvmm_vcpu_exit *exit = vcpu->exit;
+	const gpaddr_t gpa = exit->u.mem.gpa;
+	__uint128_t reg1, reg2;
+	size_t bytes;
+	int updated = 0;
+
+	switch (opc) {
+	case 0:
+		/* St[12] */
+		bytes = 4;
+		break;
+	case 1:
+		/* Dt[12] */
+		bytes = 8;
+		break;
+	case 2:
+		/* Qt[12] */
+		bytes = 16;
+		break;
+	case 3:
+	default:
+		return -1;
+	}
+
+	uint64_t va = state->gprs[NVMM_AARCH64_GPR_X0 + Rn];
+	if (imm7 != 0) {
+		va += SignExtend(7, imm7, bytes);
+		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
+		updated = 1;
+	}
+
+	/* XXX: illegal alignment access is not supported */
+	if (FAULT_ACROSS_A_PAGE(va, gpa))
+		return -1;
+	if (!ACCESS_WITHIN_A_PAGE(gpa, bytes * 2))
+		return -1;
+
+	reg1 = state->fprs[NVMM_AARCH64_FPR_V0 + Rt].u128[0];
+	reg2 = state->fprs[NVMM_AARCH64_FPR_V0 + Rt2].u128[0];
+
+	switch (opc) {
+	case 0:
+		nvmm_assist_mem_write(mach, vcpu, gpa, reg1, 4);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 4, reg2, 4);
+		break;
+	case 1:
+		nvmm_assist_mem_write(mach, vcpu, gpa, reg1, 8);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 8, reg2, 8);
+		break;
+	case 2:
+		// XXXNH endian
+		nvmm_assist_mem_write(mach, vcpu, gpa, reg1, 8);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 8, reg1 >> 64, 8);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 16, reg2, 8);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 24, reg2 >> 64, 8);
+		break;
+	default:
+		return -1;
+	}
+	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+
+	return updated;	/* Rn is updated? */
+}
+
+/* emul "stp Rt,Rt2,[Rn,#imm7]" */
+OP5FUNC(op_stp_simd_signed, opc, imm7, Rt2, Rn, Rt)
+{
+	struct nvmm_aarch64_state *state = vcpu->state;
+	const struct nvmm_vcpu_exit *exit = vcpu->exit;
+	const gpaddr_t gpa = exit->u.mem.gpa;
+	__uint128_t reg1, reg2;
+	size_t bytes;
+
+	switch (opc) {
+	case 0:
+		/* St[12] */
+		bytes = 4;
+		break;
+	case 1:
+		/* Dt[12] */
+		bytes = 8;
+		break;
+	case 2:
+		/* Qt[12] */
+		bytes = 16;
+		break;
+	case 3:
+	default:
+		return -1;
+	}
+
+	uint64_t va = state->gprs[NVMM_AARCH64_GPR_X0 + Rn];
+	if (imm7 != 0)
+		va += SignExtend(7, imm7, bytes);
+
+	/* XXX: illegal alignment access is not supported */
+	if (FAULT_ACROSS_A_PAGE(va, gpa))
+		return -1;
+	if (!ACCESS_WITHIN_A_PAGE(gpa, bytes * 2))
+		return -1;
+	reg1 = state->fprs[NVMM_AARCH64_FPR_V0 + Rt].u128[0];
+	reg2 = state->fprs[NVMM_AARCH64_FPR_V0 + Rt2].u128[0];
+
+	switch (opc) {
+	case 0:
+		nvmm_assist_mem_write(mach, vcpu, gpa, reg1, 4);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 4, reg2, 4);
+		break;
+	case 1:
+		nvmm_assist_mem_write(mach, vcpu, gpa, reg1, 8);
+		nvmm_assist_mem_write(mach, vcpu, gpa + 8, reg2, 8);
+		break;
+	}
+
+	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+
+	return 0;	/* No registers that need to be updated */
+}
+
+/* emul "ldp Rt,Rt2,[Rn],#imm7" */
+OP5FUNC(op_ldp_simd_postidx, opc, imm7, Rt2, Rn, Rt)
+{
+	struct nvmm_aarch64_state *state = vcpu->state;
+	const struct nvmm_vcpu_exit *exit = vcpu->exit;
+	const gpaddr_t gpa = exit->u.mem.gpa;
+	__uint128_t reg1, reg2;
+	size_t bytes;
+
+	switch (opc) {
+	case 0:
+		/* St[12] */
+		bytes = 4;
+		break;
+	case 1:
+		/* Dt[12] */
+		bytes = 8;
+		break;
+	case 2:
+		/* Qt[12] */
+		bytes = 16;
+		break;
+	case 3:
+	default:
+		return -1;
+	}
+
+	uint64_t va = state->gprs[NVMM_AARCH64_GPR_X0 + Rn];
+
+	/* XXX: illegal alignment access is not supported */
+	if (FAULT_ACROSS_A_PAGE(va, gpa))
+		return -1;
+	if (!ACCESS_WITHIN_A_PAGE(gpa, bytes))
+		return -1;
+
+	switch (opc) {
+	case 0:
+		reg1 = nvmm_assist_mem_read(mach, vcpu, gpa, 4);
+		reg2 = nvmm_assist_mem_read(mach, vcpu, gpa + 4, 4);
+		break;
+	case 1:
+		reg1 = nvmm_assist_mem_read(mach, vcpu, gpa, 8);
+		reg2 = nvmm_assist_mem_read(mach, vcpu, gpa + 8, 8);
+		break;
+	case 2:
+		// XXXNH
+	default:
+		reg1 = 0;
+		reg2 = 0;
+	}
+	if (imm7 != 0) {
+		va += SignExtend(7, imm7, bytes);
+		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
+	}
+
+	state->fprs[NVMM_AARCH64_FPR_V0 + Rt].u128[0] = reg1;
+	state->fprs[NVMM_AARCH64_FPR_V0 + Rt2].u128[0] = reg2;
+
+	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+
+	return 1;	/* Rt,Rt2,Rn are updated! */
+}
+
+/* emul "ldp Rt,Rt2,[Rn,#imm7]!" */
+OP5FUNC(op_ldp_simd_preidx, opc, imm7, Rt2, Rn, Rt)
+{
+	struct nvmm_aarch64_state *state = vcpu->state;
+	const struct nvmm_vcpu_exit *exit = vcpu->exit;
+	const gpaddr_t gpa = exit->u.mem.gpa;
+	__uint128_t reg1, reg2;
+	size_t bytes;
+	int updated = 0;
+
+	switch (opc) {
+	case 0:
+		/* St[12] */
+		bytes = 4;
+		break;
+	case 1:
+		/* Dt[12] */
+		bytes = 8;
+		break;
+	case 2:
+		/* Qt[12] */
+		bytes = 16;
+		break;
+	case 3:
+	default:
+		return -1;
+	}
+
+	uint64_t va = state->gprs[NVMM_AARCH64_GPR_X0 + Rn];
+
+	/* XXX: illegal alignment access is not supported */
+	if (FAULT_ACROSS_A_PAGE(va, gpa))
+		return -1;
+	if (!ACCESS_WITHIN_A_PAGE(gpa, bytes))
+		return -1;
+
+	if (imm7 != 0) {
+		va += SignExtend(7, imm7, bytes);
+		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
+		updated = 1;
+	}
+
+	reg1 = 0;
+	reg2 = 0;
+	switch (opc) {
+	case 0:
+		reg1 = nvmm_assist_mem_read(mach, vcpu, gpa, 4);
+		reg2 = nvmm_assist_mem_read(mach, vcpu, gpa + 4, 4);
+		break;
+	case 1:
+		reg1 = nvmm_assist_mem_read(mach, vcpu, gpa, 8);
+		reg2 = nvmm_assist_mem_read(mach, vcpu, gpa + 8, 8);
+		break;
+	case 2:
+		// XXXNH
+		break;
+	case 3:
+	default:
+		break;
+	}
+	if (!REG_XZR_P(Rt)) {
+		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = reg1;
+		updated = 1;
+	}
+	if (!REG_XZR_P(Rt2)) {
+		state->gprs[NVMM_AARCH64_GPR_X0 + Rt2] = reg2;
+		updated = 1;
+	}
+	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+
+	return updated;	/* Rt,Rt2,Rn are updated? */
+}
+
+/* emul "ldp Rt,Rt2,[Rn,#imm7]" */
+OP5FUNC(op_ldp_simd_signed, opc, imm7, Rt2, Rn, Rt)
+{
+	struct nvmm_aarch64_state *state = vcpu->state;
+	const struct nvmm_vcpu_exit *exit = vcpu->exit;
+	const gpaddr_t gpa = exit->u.mem.gpa;
+	__uint128_t reg1, reg2;
+	size_t bytes;
+	int updated = 0;
+
+	switch (opc) {
+	case 0:
+		/* St[12] */
+		bytes = 4;
+		break;
+	case 1:
+		/* Dt[12] */
+		bytes = 8;
+		break;
+	case 2:
+		/* Qt[12] */
+		bytes = 16;
+		break;
+	case 3:
+	default:
+		return -1;
+	}
+
+	uint64_t va = state->gprs[NVMM_AARCH64_GPR_X0 + Rn];
+	if (imm7 != 0)
+		va += SignExtend(7, imm7, bytes);
+
+	/* XXX: illegal alignment access is not supported */
+	if (FAULT_ACROSS_A_PAGE(va, gpa))
+		return -1;
+	if (!ACCESS_WITHIN_A_PAGE(gpa, bytes))
+		return -1;
+
+	reg1 = 0;
+	reg2 = 0;
+	switch (opc) {
+	case 0:
+	case 1:
+		reg1 = nvmm_assist_mem_read(mach, vcpu, gpa, bytes);
+		reg2 = nvmm_assist_mem_read(mach, vcpu, gpa + bytes, bytes);
+		break;
+	case 2:
+		//XXXNH
+		break;
+	default:
+	}
+
+	if (!REG_XZR_P(Rt)) {
+		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = reg1;
+		updated = 1;
+	}
+	if (!REG_XZR_P(Rt2)) {
+		state->gprs[NVMM_AARCH64_GPR_X0 + Rt2] = reg2;
+		updated = 1;
+	}
+	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+
+	return updated;	/* Rt,Rt2 are updated? */
+}
+
 struct bitpos {
 	uint8_t pos;
 	uint8_t width;
@@ -1095,6 +1488,11 @@ struct insn_info {
 #define FMT_OPC_IMM9_RN_RT	{{22, 1}, {12, 9}, { 5, 5}, { 0, 5}}
 #define FMT_SF_IMM9_RN_RT	{{30, 1}, {12, 9}, { 5, 5}, { 0, 5}}
 #define FMT_SF_IMM7_RT2_RN_RT	{{31, 1}, {15, 7}, {10, 5}, { 5, 5}, { 0, 5}}
+#define FMT_OPC_IMM7_RT2_RN_RT	{{30, 2}, {15, 7}, {10, 5}, { 5, 5}, { 0, 5}}
+
+
+// XXXNH really should do opc, v, l, imm7, Rt2, Rn, Rt, cf Load/store register pair (post-indexed) C4-568
+
 
 static const struct insn_info insn_tables[] = {
  /* mask,      pattern,    opcode format,               opfunc             */
@@ -1124,6 +1522,14 @@ static const struct insn_info insn_tables[] = {
  { 0x7fc00000, 0x28c00000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_postidx },
  { 0x7fc00000, 0x29c00000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_preidx },
  { 0x7fc00000, 0x29400000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_signed },
+
+ { 0x3ff00000, 0x2c800000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_postidx },
+ { 0x3ff00000, 0x2d800000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_preidx  },
+ { 0x3ff00000, 0x2c000000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_signed  },
+
+ { 0x3ff00000, 0x2cc00000, FMT_OPC_IMM7_RT2_RN_RT,      op_ldp_simd_postidx },
+ { 0x3ff00000, 0x2dc00000, FMT_OPC_IMM7_RT2_RN_RT,      op_ldp_simd_preidx  },
+ { 0x3ff00000, 0x2c400000, FMT_OPC_IMM7_RT2_RN_RT,      op_ldp_simd_signed  },
 };
 
 static int
