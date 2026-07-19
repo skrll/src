@@ -637,6 +637,11 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	reg_hcr_el2_write(hcr);
 	reg_hstr_el2_write(0);
 	reg_vttbr_el2_write(0);
+
+#if 0
+	/* GIC */
+	reg_ich_hcr_el2_write(0);
+#endif
 	isb();
 
 #if 0
@@ -1048,6 +1053,11 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 
 	if (cpudata == NULL)
 		uartprintf("panic: %s: cpudata is NULL\n", __func__);
+
+#if 0
+	/* GIC */
+	reg_ich_hcr_el2_write(ICH_HCR_EL2_TALL1 | ICH_HCR_EL2_TALL0 | ICH_HCR_EL2_TC);
+#endif
 
 	uint64_t hcr = HCR_EL2_RW;	/* 64bit */
 
