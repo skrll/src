@@ -600,6 +600,11 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
 	const bool enabled = (cntv_ctl & CNTCTL_ENABLE) != 0;
 	const bool fired = (cntv_ctl & CNTCTL_ISTATUS) != 0;
 	const bool masked = (cntv_ctl & CNTCTL_IMASK) != 0;
+	NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EXIT_IRQ=%d "
+	    "(cntv_ctl_el0 0x%01jx cntpct_el0 %#jx cntv_cval_el0 %#jx)",
+	    (enabled && !masked && fired) ? 1 : 0, cntv_ctl,
+	    reg_cntpct_el0_read(), reg_cntv_cval_el0_read());
+
 	if (enabled && !masked && fired) {
 		NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EXIT_IRQ "
 		    "(cntv_ctl_el0 0x%01jx cntpct_el0 %#jx cntv_cval_el0 %#jx)",
