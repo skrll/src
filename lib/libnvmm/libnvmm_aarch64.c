@@ -61,9 +61,13 @@ __KERNEL_RCSID(0, "$NetBSD$");
  * additional instructions since ARMv8.1 are not supported at this time.
  */
 
-#define FAULT_ACROSS_A_PAGE(va, gpa)	\
+__CTASSERT((int)NVMM_AARCH64_STATE_GPRS > 0);
+__CTASSERT((int)NVMM_AARCH64_STATE_SPRS > 0);
+__CTASSERT((int)NVMM_AARCH64_STATE_FPRS > 0);
+
+#define FAULT_ACROSS_A_PAGE(va, gpa)				\
 	(((va) & PAGE_MASK) != ((gpa) & PAGE_MASK))
-#define ACCESS_WITHIN_A_PAGE(addr, size)	\
+#define ACCESS_WITHIN_A_PAGE(addr, size)			\
 	(((addr) & ~PAGE_MASK) == (((addr) + (size) - 1) & ~PAGE_MASK))
 
 static inline bool
@@ -228,15 +232,13 @@ func(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,		\
 
 #define REG_XZR_P(regno)	((regno) == 31)	/* is the zero register? */
 
-static inline uint64_t
-SignExtend(int bitwidth, uint64_t imm, unsigned int multiply)
+static inline int64_t
+SignExtend(unsigned int bitwidth, int64_t imm, int multiply)
 {
-	const uint64_t signbit = ((uint64_t)1 << (bitwidth - 1));
-	const uint64_t immmax = signbit << 1;
+	unsigned int shift = 64 - bitwidth;
+	int64_t val = (imm << shift) >> shift;
 
-	if (imm & signbit)
-		imm -= immmax;
-	return imm * multiply;
+	return val * multiply;
 }
 
 /* emul "dc zva,Rt" */
@@ -249,7 +251,8 @@ OP1FUNC(op_dc_zva, Rt)
 	static uint8_t zerodat[2048] __aligned(128);
 
 	if (Rt == 31) {
-		warnx("%s: dc zva with x31: PC=%016lx", __func__, state->sprs[NVMM_AARCH64_SPR_PC]);
+		warnx("%s: dc zva with x31: PC=%016lx",
+		    __func__, state->sprs[NVMM_AARCH64_SPR_PC]);
 		return -1;	/* XX */
 	}
 
@@ -270,8 +273,8 @@ OP1FUNC(op_dc_zva, Rt)
 	}
 
 	/*
-	 * since the write exceeds 8 bytes, callback is called directly without
-	 * nvmm_assist_mem_write().
+	 * since the write exceeds 8 bytes, callback is called directly
+	 * without nvmm_assist_mem_write().
 	 */
 	mem.mach = mach;
 	mem.vcpu = vcpu;
@@ -300,12 +303,12 @@ OP3FUNC(op_ldrb_immpostidx, imm9, Rn, Rt)
 	regdata = nvmm_assist_mem_read(mach, vcpu, gpa, 1);
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated |= NVMM_AARCH64_STATE_GPRS;
 	}
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated |= NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -326,12 +329,12 @@ OP3FUNC(op_ldrb_immpreidx, imm9, Rn, Rt)
 	regdata = nvmm_assist_mem_read(mach, vcpu, gpa, 1);
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -358,12 +361,12 @@ OP3FUNC(op_ldrh_immpostidx, imm9, Rn, Rt)
 	regdata = nvmm_assist_mem_read(mach, vcpu, gpa, 2);
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -390,12 +393,12 @@ OP3FUNC(op_ldrh_immpreidx, imm9, Rn, Rt)
 	regdata = nvmm_assist_mem_read(mach, vcpu, gpa, 2);
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -423,12 +426,12 @@ OP3FUNC(op_ldrsw_immpostidx, imm9, Rn, Rt)
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] =
 		    SignExtend(31, regdata, 1);
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -448,7 +451,7 @@ OP3FUNC(op_ldrsw_immpreidx, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	/* XXX: illegal alignment access is not supported */
@@ -461,7 +464,7 @@ OP3FUNC(op_ldrsw_immpreidx, imm9, Rn, Rt)
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] =
 		    SignExtend(31, regdata, 1);
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -485,12 +488,12 @@ OP4FUNC(op_ldrsb_immpostidx, opc, imm9, Rn, Rt)
 		if (opc & 1)
 			regdata &= __BITS(31, 0);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated |= NVMM_AARCH64_STATE_GPRS;
 	}
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -510,7 +513,7 @@ OP4FUNC(op_ldrsb_immpreidx, opc, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	regdata = nvmm_assist_mem_read(mach, vcpu, gpa, 1);
@@ -519,7 +522,7 @@ OP4FUNC(op_ldrsb_immpreidx, opc, imm9, Rn, Rt)
 		if (opc & 1)
 			regdata &= __BITS(31, 0);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -549,12 +552,12 @@ OP4FUNC(op_ldrsh_immpostidx, opc, imm9, Rn, Rt)
 		if (opc & 1)
 			regdata &= __BITS(31, 0);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -574,7 +577,7 @@ OP4FUNC(op_ldrsh_immpreidx, opc, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	/* XXX: illegal alignment access is not supported */
@@ -589,7 +592,7 @@ OP4FUNC(op_ldrsh_immpreidx, opc, imm9, Rn, Rt)
 		if (opc & 1)
 			regdata &= __BITS(31, 0);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -620,11 +623,10 @@ OP4FUNC(op_ldr_immpostidx, sf, imm9, Rn, Rt)
 	}
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, (sf == 0) ? 4 : 8);
-		updated = 1;
 	}
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -644,7 +646,7 @@ OP4FUNC(op_ldr_immpreidx, sf, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, (sf == 0) ? 4 : 8);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	/* XXX: illegal alignment access is not supported */
@@ -660,7 +662,7 @@ OP4FUNC(op_ldr_immpreidx, sf, imm9, Rn, Rt)
 	}
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = regdata;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -684,7 +686,7 @@ OP3FUNC(op_strb_immpostidx, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -704,7 +706,7 @@ OP3FUNC(op_strb_immpreidx, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	regdata = REG_XZR_P(Rt) ? 0 : state->gprs[NVMM_AARCH64_GPR_X0 + Rt];
@@ -738,7 +740,7 @@ OP3FUNC(op_strh_immpostidx, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -758,7 +760,7 @@ OP3FUNC(op_strh_immpreidx, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, 1);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	/* XXX: illegal alignment access is not supported */
@@ -802,7 +804,7 @@ OP4FUNC(op_str_immpostidx, sf, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, (sf == 0) ? 4 : 8);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -822,7 +824,7 @@ OP4FUNC(op_str_immpreidx, sf, imm9, Rn, Rt)
 	if (imm9 != 0) {
 		va += SignExtend(9, imm9, (sf == 0) ? 4 : 8);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	/* XXX: illegal alignment access is not supported */
@@ -874,7 +876,7 @@ OP5FUNC(op_stp_postidx, sf, imm7, Rt2, Rn, Rt)
 	if (imm7 != 0) {
 		va += SignExtend(7, imm7, (sf == 0) ? 4 : 8);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -894,7 +896,7 @@ OP5FUNC(op_stp_preidx, sf, imm7, Rt2, Rn, Rt)
 	if (imm7 != 0) {
 		va += SignExtend(7, imm7, (sf == 0) ? 4 : 8);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	/* XXX: illegal alignment access is not supported */
@@ -980,15 +982,15 @@ OP5FUNC(op_ldp_postidx, sf, imm7, Rt2, Rn, Rt)
 	if (imm7 != 0) {
 		va += SignExtend(7, imm7, (sf == 0) ? 4 : 8);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = reg1;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (!REG_XZR_P(Rt2)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt2] = reg2;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -1015,7 +1017,7 @@ OP5FUNC(op_ldp_preidx, sf, imm7, Rt2, Rn, Rt)
 	if (imm7 != 0) {
 		va += SignExtend(7, imm7, (sf == 0) ? 4 : 8);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (sf == 0) {
 		reg1 = nvmm_assist_mem_read(mach, vcpu, gpa, 4);
@@ -1026,11 +1028,11 @@ OP5FUNC(op_ldp_preidx, sf, imm7, Rt2, Rn, Rt)
 	}
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = reg1;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (!REG_XZR_P(Rt2)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt2] = reg2;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -1065,11 +1067,11 @@ OP5FUNC(op_ldp_signed, sf, imm7, Rt2, Rn, Rt)
 	}
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = reg1;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (!REG_XZR_P(Rt2)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt2] = reg2;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -1138,7 +1140,7 @@ OP5FUNC(op_stp_simd_postidx, opc, imm7, Rt2, Rn, Rt)
 	if (imm7 != 0) {
 		va += SignExtend(7, imm7, bytes);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -1177,7 +1179,7 @@ OP5FUNC(op_stp_simd_preidx, opc, imm7, Rt2, Rn, Rt)
 	if (imm7 != 0) {
 		va += SignExtend(7, imm7, bytes);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	/* XXX: illegal alignment access is not supported */
@@ -1275,6 +1277,7 @@ OP5FUNC(op_ldp_simd_postidx, opc, imm7, Rt2, Rn, Rt)
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
 	__uint128_t reg1, reg2;
+	int updated = 0;
 	size_t bytes;
 
 	switch (opc) {
@@ -1321,14 +1324,16 @@ OP5FUNC(op_ldp_simd_postidx, opc, imm7, Rt2, Rn, Rt)
 	if (imm7 != 0) {
 		va += SignExtend(7, imm7, bytes);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
+		updated |= NVMM_AARCH64_STATE_GPRS;
 	}
 
 	state->fprs[NVMM_AARCH64_FPR_V0 + Rt].u128[0] = reg1;
 	state->fprs[NVMM_AARCH64_FPR_V0 + Rt2].u128[0] = reg2;
+	updated |= NVMM_AARCH64_STATE_FPRS;
 
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
-	return 1;	/* Rt,Rt2,Rn are updated! */
+	return updated;
 }
 
 /* emul "ldp Rt,Rt2,[Rn,#imm7]!" */
@@ -1370,7 +1375,7 @@ OP5FUNC(op_ldp_simd_preidx, opc, imm7, Rt2, Rn, Rt)
 	if (imm7 != 0) {
 		va += SignExtend(7, imm7, bytes);
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rn] = va;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 
 	reg1 = 0;
@@ -1393,11 +1398,11 @@ OP5FUNC(op_ldp_simd_preidx, opc, imm7, Rt2, Rn, Rt)
 	}
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = reg1;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (!REG_XZR_P(Rt2)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt2] = reg2;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
@@ -1458,30 +1463,42 @@ OP5FUNC(op_ldp_simd_signed, opc, imm7, Rt2, Rn, Rt)
 
 	if (!REG_XZR_P(Rt)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt] = reg1;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	if (!REG_XZR_P(Rt2)) {
 		state->gprs[NVMM_AARCH64_GPR_X0 + Rt2] = reg2;
-		updated = 1;
+		updated = NVMM_AARCH64_STATE_GPRS;
 	}
 	state->sprs[NVMM_AARCH64_SPR_PC] += 4;
 
 	return updated;	/* Rt,Rt2 are updated? */
 }
 
-struct bitpos {
-	uint8_t pos;
-	uint8_t width;
+struct bitmask {
+	uint8_t lo;
+	uint8_t hi;
 };
 
 struct insn_info {
 	uint32_t mask;
 	uint32_t pattern;
 #define INSN_MAXARG	8
-	struct bitpos bitinfo[INSN_MAXARG];
+	struct bitmask bitinfo[INSN_MAXARG];
 	OPFUNC_DECL(int (*opfunc),,,,,,,,);
+	bool is_simd;
 };
 
+#define BM(_lo, _hi) { .lo = _lo, .hi = _hi}
+
+/* bit positions of arg in opecode. { bitpos, biwidth } */
+#define FMT_RT			{ BM( 0,  4) }
+#define FMT_IMM9_RN_RT		{ BM(12, 20), BM( 5,  9), BM( 0,  4) }
+#define FMT_OPC_IMM9_RN_RT	{ BM(22, 22), BM(12, 20), BM( 5,  9), BM(0, 4) }
+#define FMT_SF_IMM9_RN_RT	{ BM(30, 30), BM(12, 20), BM( 5,  9), BM(0, 4) }
+#define FMT_SF_IMM7_RT2_RN_RT	{ BM(31, 31), BM(15, 21), BM(10, 14), BM(5, 9), BM( 0, 4) }
+#define FMT_OPC_IMM7_RT2_RN_RT	{ BM(30, 31), BM(15, 21), BM(10, 14), BM(5, 9), BM( 0, 4) }
+
+#if 0
 /* bit positions of arg in opecode. { bitpos, biwidth } */
 #define FMT_RT			{{ 0, 5}}
 #define FMT_IMM9_RN_RT		{{12, 9}, { 5, 5}, { 0, 5}}
@@ -1489,7 +1506,7 @@ struct insn_info {
 #define FMT_SF_IMM9_RN_RT	{{30, 1}, {12, 9}, { 5, 5}, { 0, 5}}
 #define FMT_SF_IMM7_RT2_RN_RT	{{31, 1}, {15, 7}, {10, 5}, { 5, 5}, { 0, 5}}
 #define FMT_OPC_IMM7_RT2_RN_RT	{{30, 2}, {15, 7}, {10, 5}, { 5, 5}, { 0, 5}}
-
+#endif
 
 // XXXNH really should do opc, v, l, imm7, Rt2, Rn, Rt, cf Load/store register pair (post-indexed) C4-568
 
@@ -1497,39 +1514,40 @@ struct insn_info {
 static const struct insn_info insn_tables[] = {
  /* mask,      pattern,    opcode format,               opfunc             */
  /* ---------  ----------  ---------------------------	------------------ */
- { 0xffffffe0, 0xd50b7420, FMT_RT,			op_dc_zva },
- { 0xffe00c00, 0x38400400, FMT_IMM9_RN_RT,		op_ldrb_immpostidx },
- { 0xffe00c00, 0x38400c00, FMT_IMM9_RN_RT,		op_ldrb_immpreidx },
- { 0xffe00c00, 0x78400400, FMT_IMM9_RN_RT,		op_ldrh_immpostidx },
- { 0xffe00c00, 0x78400c00, FMT_IMM9_RN_RT,		op_ldrh_immpreidx },
- { 0xffe00c00, 0xb8800400, FMT_IMM9_RN_RT,		op_ldrsw_immpostidx },
- { 0xffe00c00, 0xb8800c00, FMT_IMM9_RN_RT,		op_ldrsw_immpreidx },
- { 0xffe00c00, 0x38000400, FMT_IMM9_RN_RT,		op_strb_immpostidx },
- { 0xffe00c00, 0x38000c00, FMT_IMM9_RN_RT,		op_strb_immpreidx },
- { 0xffe00c00, 0x78000400, FMT_IMM9_RN_RT,		op_strh_immpostidx },
- { 0xffe00c00, 0x78000c00, FMT_IMM9_RN_RT,		op_strh_immpreidx },
- { 0xffa00c00, 0x38800400, FMT_OPC_IMM9_RN_RT,		op_ldrsb_immpostidx },
- { 0xffa00c00, 0x38800c00, FMT_OPC_IMM9_RN_RT,		op_ldrsb_immpreidx },
- { 0xffa00c00, 0x78800400, FMT_OPC_IMM9_RN_RT,		op_ldrsh_immpostidx },
- { 0xffa00c00, 0x78800c00, FMT_OPC_IMM9_RN_RT,		op_ldrsh_immpreidx },
- { 0xbfe00c00, 0xb8400400, FMT_SF_IMM9_RN_RT,		op_ldr_immpostidx },
- { 0xbfe00c00, 0xb8400c00, FMT_SF_IMM9_RN_RT,		op_ldr_immpreidx },
- { 0xbfe00c00, 0xb8000400, FMT_SF_IMM9_RN_RT,		op_str_immpostidx },
- { 0xbfe00c00, 0xb8000c00, FMT_SF_IMM9_RN_RT,		op_str_immpreidx },
- { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_postidx },
- { 0x7fc00000, 0x29800000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_preidx },
- { 0x7fc00000, 0x29000000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_signed },
- { 0x7fc00000, 0x28c00000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_postidx },
- { 0x7fc00000, 0x29c00000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_preidx },
- { 0x7fc00000, 0x29400000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_signed },
+ { 0xffffffe0, 0xd50b7420, FMT_RT,			op_dc_zva,		false },
+ { 0xffe00c00, 0x38400400, FMT_IMM9_RN_RT,		op_ldrb_immpostidx,	false },
+ { 0xffe00c00, 0x38400c00, FMT_IMM9_RN_RT,		op_ldrb_immpreidx,	false },
+ { 0xffe00c00, 0x78400400, FMT_IMM9_RN_RT,		op_ldrh_immpostidx,	false },
+ { 0xffe00c00, 0x78400c00, FMT_IMM9_RN_RT,		op_ldrh_immpreidx,	false },
+ { 0xffe00c00, 0xb8800400, FMT_IMM9_RN_RT,		op_ldrsw_immpostidx,	false },
+ { 0xffe00c00, 0xb8800c00, FMT_IMM9_RN_RT,		op_ldrsw_immpreidx,	false },
+ { 0xffe00c00, 0x38000400, FMT_IMM9_RN_RT,		op_strb_immpostidx,	false },
+ { 0xffe00c00, 0x38000c00, FMT_IMM9_RN_RT,		op_strb_immpreidx,	false },
+ { 0xffe00c00, 0x78000400, FMT_IMM9_RN_RT,		op_strh_immpostidx,	false },
+ { 0xffe00c00, 0x78000c00, FMT_IMM9_RN_RT,		op_strh_immpreidx,	false },
+ { 0xffa00c00, 0x38800400, FMT_OPC_IMM9_RN_RT,		op_ldrsb_immpostidx,	false },
+ { 0xffa00c00, 0x38800c00, FMT_OPC_IMM9_RN_RT,		op_ldrsb_immpreidx,	false },
+ { 0xffa00c00, 0x78800400, FMT_OPC_IMM9_RN_RT,		op_ldrsh_immpostidx,	false },
+ { 0xffa00c00, 0x78800c00, FMT_OPC_IMM9_RN_RT,		op_ldrsh_immpreidx,	false },
+ { 0xbfe00c00, 0xb8400400, FMT_SF_IMM9_RN_RT,		op_ldr_immpostidx,	false },
+ { 0xbfe00c00, 0xb8400c00, FMT_SF_IMM9_RN_RT,		op_ldr_immpreidx,	false },
+ { 0xbfe00c00, 0xb8000400, FMT_SF_IMM9_RN_RT,		op_str_immpostidx,	false },
+ { 0xbfe00c00, 0xb8000c00, FMT_SF_IMM9_RN_RT,		op_str_immpreidx,	false },
 
- { 0x3ff00000, 0x2c800000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_postidx },
- { 0x3ff00000, 0x2d800000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_preidx  },
- { 0x3ff00000, 0x2c000000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_signed  },
+ { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_postidx,		false },
+ { 0x7fc00000, 0x29800000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_preidx,		false },
+ { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_signed,		false },
+ { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_postidx,		false },
+ { 0x7fc00000, 0x29800000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_preidx,		false },
+ { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_signed,		false },
 
- { 0x3ff00000, 0x2cc00000, FMT_OPC_IMM7_RT2_RN_RT,      op_ldp_simd_postidx },
- { 0x3ff00000, 0x2dc00000, FMT_OPC_IMM7_RT2_RN_RT,      op_ldp_simd_preidx  },
- { 0x3ff00000, 0x2c400000, FMT_OPC_IMM7_RT2_RN_RT,      op_ldp_simd_signed  },
+ { 0x0ff00000, 0x0c800000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_postidx,	true },
+ { 0x0ff00000, 0x0d800000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_preidx,	true },
+ { 0x0ff00000, 0x0c000000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_signed,	true },
+
+ { 0x0ff00000, 0x0cc00000, FMT_OPC_IMM7_RT2_RN_RT,      op_ldp_simd_postidx,	true },
+ { 0x0ff00000, 0x0dc00000, FMT_OPC_IMM7_RT2_RN_RT,      op_ldp_simd_preidx,	true },
+ { 0x0ff00000, 0x0c400000, FMT_OPC_IMM7_RT2_RN_RT,      op_ldp_simd_signed,	true },
 };
 
 static int
@@ -1539,27 +1557,13 @@ nvmm_assist_mem_aarch64_emul(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
 	const uint32_t insn = exit->insn;
-
-#define WIDTHMASK(w)    (__BITS(31, 0) >> (32 - (w)))
 	uint64_t args[INSN_MAXARG];
 	unsigned int i, j;
 	int emul_ret = -1;
 
 	for (i = 0; i < __arraycount(insn_tables); i++) {
-		if ((insn & insn_tables[i].mask) != insn_tables[i].pattern)
-			continue;
-
-		/* extract operands */
-		for (j = 0; j < INSN_MAXARG; j++) {
-			if (insn_tables[i].bitinfo[j].width == 0)
-				break;
-			args[j] = (insn >> insn_tables[i].bitinfo[j].pos) &
-			    WIDTHMASK(insn_tables[i].bitinfo[j].width);
-		}
-		emul_ret = insn_tables[i].opfunc(mach, vcpu,
-		    args[0], args[1], args[2], args[3],
-		    args[4], args[5], args[6], args[7]);
-		break;
+		if ((insn & insn_tables[i].mask) == insn_tables[i].pattern)
+			break;
 	}
 	if (i == __arraycount(insn_tables)) {
 		warnx("%s: unsupported instruction: "
@@ -1567,16 +1571,33 @@ nvmm_assist_mem_aarch64_emul(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,
 		errno = ENODEV;
 		return -1;
 	}
+
+	/* extract operands */
+	for (j = 0; j < INSN_MAXARG; j++) {
+		const uint8_t lo = insn_tables[i].bitinfo[j].lo;
+		const uint8_t hi = insn_tables[i].bitinfo[j].hi;
+
+		if (lo == 0 && hi == 0)
+			break;
+
+		args[j] = __SHIFTOUT(insn, __BITS(hi, lo));
+	}
+
+	if (insn_tables[i].is_simd) {
+		int ret = nvmm_vcpu_getstate(mach, vcpu, NVMM_AARCH64_STATE_FPRS);
+		if (ret == -1)
+			return -1;
+	}
+
+	emul_ret = insn_tables[i].opfunc(mach, vcpu,
+	    args[0], args[1], args[2], args[3],
+	    args[4], args[5], args[6], args[7]);
 	if (emul_ret < 0) {
 		errno = ENODEV;
 		return -1;
 	}
 
-	/* need to update GPRs(Xn) and SPRs(PC)? */
-	if (emul_ret == 0)
-		*update = NVMM_AARCH64_STATE_SPRS;
-	else
-		*update = NVMM_AARCH64_STATE_SPRS | NVMM_AARCH64_STATE_GPRS;
+	*update = emul_ret | NVMM_AARCH64_STATE_SPRS;
 
 	return 0;
 }
@@ -1663,12 +1684,6 @@ nvmm_assist_mem(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 		return -1;
 	}
 
-	/* load x0-x31, and PC, SPSR, SCTLR, ... */
-	ret = nvmm_vcpu_getstate(mach, vcpu,
-	    NVMM_AARCH64_STATE_SPRS | NVMM_AARCH64_STATE_GPRS);
-	if (ret == -1)
-		return -1;
-
 	/* XXX */
 	if (exit->insn == 0) {
 		/* XXX: fetch it ourselves from GPA -> HVA */
@@ -1693,6 +1708,12 @@ nvmm_assist_mem(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 		    "inst=%08"PRIx32, __func__, exit->insn);
 		goto assist_failure;
 	}
+
+	/* load x0-x31, and PC, SPSR, SCTLR, ... */
+	ret = nvmm_vcpu_getstate(mach, vcpu,
+	    NVMM_AARCH64_STATE_SPRS | NVMM_AARCH64_STATE_GPRS);
+	if (ret == -1)
+		return -1;
 
 	if (__SHIFTOUT(esr_el2, ESR_ISS_DATAABORT_ISV) == 0) {
 		if (vcpu->state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] & SPSR_A32)
