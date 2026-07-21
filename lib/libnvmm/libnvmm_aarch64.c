@@ -930,8 +930,10 @@ OP5FUNC(op_stp_signed, sf, imm7, Rt2, Rn, Rt)
 	uint64_t reg1, reg2;
 
 	uint64_t va = state->gprs[NVMM_AARCH64_GPR_X0 + Rn];
+	warnx("%s: va=%016"PRIx64", gpa=%016"PRIx64, __func__, va, gpa);
 	if (imm7 != 0)
 		va += SignExtend(7, imm7, (sf == 0) ? 4 : 8);
+	warnx("imm7 = %ld, va=%016"PRIx64"\n", imm7, va);
 
 	/* XXX: illegal alignment access is not supported */
 	if (FAULT_ACROSS_A_PAGE(va, gpa))
@@ -1514,32 +1516,33 @@ struct insn_info {
 static const struct insn_info insn_tables[] = {
  /* mask,      pattern,    opcode format,               opfunc             */
  /* ---------  ----------  ---------------------------	------------------ */
- { 0xffffffe0, 0xd50b7420, FMT_RT,			op_dc_zva,		false },
- { 0xffe00c00, 0x38400400, FMT_IMM9_RN_RT,		op_ldrb_immpostidx,	false },
- { 0xffe00c00, 0x38400c00, FMT_IMM9_RN_RT,		op_ldrb_immpreidx,	false },
- { 0xffe00c00, 0x78400400, FMT_IMM9_RN_RT,		op_ldrh_immpostidx,	false },
- { 0xffe00c00, 0x78400c00, FMT_IMM9_RN_RT,		op_ldrh_immpreidx,	false },
- { 0xffe00c00, 0xb8800400, FMT_IMM9_RN_RT,		op_ldrsw_immpostidx,	false },
- { 0xffe00c00, 0xb8800c00, FMT_IMM9_RN_RT,		op_ldrsw_immpreidx,	false },
- { 0xffe00c00, 0x38000400, FMT_IMM9_RN_RT,		op_strb_immpostidx,	false },
- { 0xffe00c00, 0x38000c00, FMT_IMM9_RN_RT,		op_strb_immpreidx,	false },
- { 0xffe00c00, 0x78000400, FMT_IMM9_RN_RT,		op_strh_immpostidx,	false },
- { 0xffe00c00, 0x78000c00, FMT_IMM9_RN_RT,		op_strh_immpreidx,	false },
- { 0xffa00c00, 0x38800400, FMT_OPC_IMM9_RN_RT,		op_ldrsb_immpostidx,	false },
- { 0xffa00c00, 0x38800c00, FMT_OPC_IMM9_RN_RT,		op_ldrsb_immpreidx,	false },
- { 0xffa00c00, 0x78800400, FMT_OPC_IMM9_RN_RT,		op_ldrsh_immpostidx,	false },
+ { 0xffffffe0, 0xd50b7420, FMT_RT,                     op_dc_zva,		false },
+ { 0xffe00c00, 0x38400400, FMT_IMM9_RN_RT,             op_ldrb_immpostidx,	false },
+ { 0xffe00c00, 0x38400c00, FMT_IMM9_RN_RT,             op_ldrb_immpreidx,	false },
+ { 0xffe00c00, 0x78400400, FMT_IMM9_RN_RT,             op_ldrh_immpostidx,	false },
+ { 0xffe00c00, 0x78400c00, FMT_IMM9_RN_RT,             op_ldrh_immpreidx,	false },
+ { 0xffe00c00, 0xb8800400, FMT_IMM9_RN_RT,             op_ldrsw_immpostidx,	false },
+ { 0xffe00c00, 0xb8800c00, FMT_IMM9_RN_RT,             op_ldrsw_immpreidx,	false },
+ { 0xffe00c00, 0x38000400, FMT_IMM9_RN_RT,             op_strb_immpostidx,	false },
+ { 0xffe00c00, 0x38000c00, FMT_IMM9_RN_RT,             op_strb_immpreidx,	false },
+ { 0xffe00c00, 0x78000400, FMT_IMM9_RN_RT,             op_strh_immpostidx,	false },
+ { 0xffe00c00, 0x78000c00, FMT_IMM9_RN_RT,             op_strh_immpreidx,	false },
+ { 0xffa00c00, 0x38800400, FMT_OPC_IMM9_RN_RT,         op_ldrsb_immpostidx,	false },
+ { 0xffa00c00, 0x38800c00, FMT_OPC_IMM9_RN_RT,         op_ldrsb_immpreidx,	false },
+ { 0xffa00c00, 0x78800400, FMT_OPC_IMM9_RN_RT,         op_ldrsh_immpostidx,	false },
  { 0xffa00c00, 0x78800c00, FMT_OPC_IMM9_RN_RT,		op_ldrsh_immpreidx,	false },
  { 0xbfe00c00, 0xb8400400, FMT_SF_IMM9_RN_RT,		op_ldr_immpostidx,	false },
  { 0xbfe00c00, 0xb8400c00, FMT_SF_IMM9_RN_RT,		op_ldr_immpreidx,	false },
  { 0xbfe00c00, 0xb8000400, FMT_SF_IMM9_RN_RT,		op_str_immpostidx,	false },
  { 0xbfe00c00, 0xb8000c00, FMT_SF_IMM9_RN_RT,		op_str_immpreidx,	false },
-
  { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_postidx,		false },
+
  { 0x7fc00000, 0x29800000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_preidx,		false },
- { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_signed,		false },
- { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_postidx,		false },
- { 0x7fc00000, 0x29800000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_preidx,		false },
- { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_signed,		false },
+ { 0x7fc00000, 0x29000000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_signed,		false },
+ { 0x7fc00000, 0x28c00000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_postidx,		false },
+ { 0x7fc00000, 0x29c00000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_preidx,		false },
+ { 0x7fc00000, 0x29400000, FMT_SF_IMM7_RT2_RN_RT,	op_ldp_signed,		false },
+ { 0x7fc00000, 0x28800000, FMT_SF_IMM7_RT2_RN_RT,	op_stp_postidx,		false },
 
  { 0x0ff00000, 0x0c800000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_postidx,	true },
  { 0x0ff00000, 0x0d800000, FMT_OPC_IMM7_RT2_RN_RT,      op_stp_simd_preidx,	true },
