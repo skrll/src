@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_history.c,v 1.21 2026/01/04 01:34:29 riastradh 
 #include "opt_syscall_debug.h"
 #include "opt_usb.h"
 #include "opt_uvmhist.h"
+#include "opt_nvmm.h"
 #include "opt_biohist.h"
 #include "opt_sysctl.h"
 
@@ -56,6 +57,9 @@ __KERNEL_RCSID(0, "$NetBSD: kern_history.c,v 1.21 2026/01/04 01:34:29 riastradh 
 
 #ifdef UVMHIST
 #include <uvm/uvm.h>
+// XXXNH
+KERNHIST_DECL(pmaphist);
+KERNHIST_DECL(pmst2hist);
 #endif
 
 #ifdef USB_DEBUG
@@ -64,6 +68,11 @@ __KERNEL_RCSID(0, "$NetBSD: kern_history.c,v 1.21 2026/01/04 01:34:29 riastradh 
 
 #ifdef BIOHIST
 #include <sys/biohist.h>
+#endif
+
+#ifdef NVMM_DEBUG
+// XXXNH
+KERNHIST_DECL(nvmmhist);
 #endif
 
 #ifdef SYSCALL_DEBUG
@@ -229,6 +238,12 @@ kernhist_dumpmask(uint32_t bitmask)	/* XXX only support 32 hists */
 
 	if ((bitmask & KERNHIST_UVMLOANHIST) || bitmask == 0)
 		hists[i++] = &loanhist;
+
+	if ((bitmask & KERNHIST_PMAPHIST) || bitmask == 0)
+		hists[i++] = &pmaphist;
+
+	if ((bitmask & KERNHIST_PMST2HIST) || bitmask == 0)
+		hists[i++] = &pmst2hist;
 #endif
 
 #ifdef USB_DEBUG
@@ -244,6 +259,11 @@ kernhist_dumpmask(uint32_t bitmask)	/* XXX only support 32 hists */
 #ifdef BIOHIST
 	if ((bitmask & KERNHIST_BIOHIST) || bitmask == 0)
 		hists[i++] = &biohist;
+#endif
+
+#ifdef NVMM_DEBUG
+	if ((bitmask & KERNHIST_NVMMHIST) || bitmask == 0)
+		hists[i++] = &nvmmhist;
 #endif
 
 	hists[i] = NULL;

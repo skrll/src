@@ -269,9 +269,11 @@ struct pmap_limits pmap_limits = {	/* VA and PA limits */
 #ifdef UVMHIST
 static struct kern_history_ent pmapexechistbuf[10000];
 static struct kern_history_ent pmaphistbuf[10000];
+static struct kern_history_ent pmst2histbuf[10000];
 static struct kern_history_ent pmapxtabhistbuf[5000];
 UVMHIST_DEFINE(pmapexechist) = UVMHIST_INITIALIZER(pmapexechist, pmapexechistbuf);
 UVMHIST_DEFINE(pmaphist) = UVMHIST_INITIALIZER(pmaphist, pmaphistbuf);
+UVMHIST_DEFINE(pmst2hist) = UVMHIST_INITIALIZER(pmst2hist, pmst2histbuf);
 UVMHIST_DEFINE(pmapxtabhist) = UVMHIST_INITIALIZER(pmapxtabhist, pmapxtabhistbuf);
 #endif
 
