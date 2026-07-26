@@ -85,8 +85,14 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.158 2026/05/21 10:07:02 skrll Exp $");
 #define UVMHIST_PMAPHIST_SIZE	(1024 * 4)
 #endif
 
+#ifndef UVMHIST_PMST2HIST_SIZE
+#define UVMHIST_PMST2HIST_SIZE	(1024 * 256)
+#endif
+
 struct kern_history_ent pmaphistbuf[UVMHIST_PMAPHIST_SIZE];
+struct kern_history_ent pmst2histbuf[UVMHIST_PMST2HIST_SIZE];
 UVMHIST_DEFINE(pmaphist) = UVMHIST_INITIALIZER(pmaphist, pmaphistbuf);
+UVMHIST_DEFINE(pmst2hist) = UVMHIST_INITIALIZER(pmst2hist, pmst2histbuf);
 
 static void
 pmap_hist_init(void)
@@ -94,6 +100,7 @@ pmap_hist_init(void)
 	static bool inited = false;
 	if (inited == false) {
 		UVMHIST_LINK_STATIC(pmaphist);
+		UVMHIST_LINK_STATIC(pmst2hist);
 		inited = true;
 	}
 }
@@ -1975,8 +1982,10 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	const bool user = !kernel_p && !efirt_p;
 	bool need_sync_icache, need_enter_pv;
 
-	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLARGS(pmaphist, "pm=%p, kentermode=%d", pm, kenter, 0, 0);
+	KERNHIST_FUNC(__func__);
+	KERNHIST_CALLEDNOLOG();
+
+	UVMHIST_LOG(pmaphist, "pm=%p, kentermode=%d", pm, kenter, 0, 0);
 	UVMHIST_LOG(pmaphist, "va=%016lx, pa=%016lx, prot=%08x, flags=%08x",
 	    va, pa, prot, flags);
 
@@ -1986,7 +1995,11 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	KASSERT(pa < AARCH64_MAX_PA);
 
 	if (pm->pm_stage2) {
-		UVMHIST_LOG(pmaphist,
+		UVMHIST_LOG(pmst2hist, "pm=%p, kentermode=%d", pm, kenter, 0, 0);
+		UVMHIST_LOG(pmst2hist, "va=%016lx, pa=%016lx, prot=%08x, flags=%08x",
+		    va, pa, prot, flags);
+
+		UVMHIST_LOG(pmst2hist,
 		    "stage2: IPA(va)=%016lx, PA=%016lx, prot=%08x, flags=%08x",
 		    va, pa, prot, flags);
 	}
@@ -2095,6 +2108,13 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 			PMAP_COUNT(kern_mappings_changed);
 		}
 #endif
+		if (pm->pm_stage2) {
+			UVMHIST_LOG(pmst2hist,
+			    "va=%016lx has already mapped."
+			    " old-pa=%016lx new-pa=%016lx, old-pte=%016llx",
+			    va, l3pte_pa(opte), pa, opte);
+		}
+
 		UVMHIST_LOG(pmaphist,
 		    "va=%016lx has already mapped."
 		    " old-pa=%016lx new-pa=%016lx, old-pte=%016llx",
@@ -2107,8 +2127,11 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 
 #if NNVMM > 0
 			if (pm->pm_stage2) {
-				if (need_sync_icache && l3pte_s2_executable(opte))
+				if (need_sync_icache && l3pte_s2_executable(opte)) {
 					need_sync_icache = false;
+					UVMHIST_LOG(pmst2hist, "no icache flush", 0, 0, 0, 0);
+				}
+
 			} else
 #endif
 			if (need_sync_icache && l3pte_s1_executable(opte, user))
@@ -2237,6 +2260,7 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 #if NNVMM > 0
 	if (pm->pm_stage2) {
 		if (need_sync_icache) {
+			UVMHIST_LOG(pmst2hist, "icache_sync", 0, 0, 0, 0);
 			/* non-exec -> exec */
 			if (!l3pte_readable(pte)) {
 				atomic_swap_64(ptep, pte | LX_BLKPAG_AF);
@@ -2255,6 +2279,7 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 				    va, 0);
 			}
 		} else {
+			UVMHIST_LOG(pmst2hist, "no icache_sync", 0, 0, 0, 0);
 			atomic_swap_64(ptep, pte);
 			nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
 			    NVMM_AARCH64_MAINTAIN_OP_TLBI, va, 0);
@@ -2409,9 +2434,14 @@ _pmap_remove(struct pmap *pm, vaddr_t sva, vaddr_t eva, bool kremove,
 	vsize_t blocksize = 0;
 	bool pdpremoved;
 
-	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLARGS(pmaphist, "pm=%p, sva=%016lx, eva=%016lx, kremove=%d",
+	KERNHIST_FUNC(__func__);
+	KERNHIST_CALLEDNOLOG();
+	UVMHIST_LOG(pmaphist, "pm=%p, sva=%016lx, eva=%016lx, kremove=%d",
 	    pm, sva, eva, kremove);
+	if (pm->pm_stage2) {
+		UVMHIST_LOG(pmst2hist, "pm=%p, sva=%016lx, eva=%016lx, kremove=%d",
+		    pm, sva, eva, kremove);
+	}
 
 	KASSERT(kremove || mutex_owned(&pm->pm_lock));
 
@@ -2452,6 +2482,8 @@ _pmap_remove(struct pmap *pm, vaddr_t sva, vaddr_t eva, bool kremove,
 
 #if NNVMM > 0
 		if (pm->pm_stage2) {
+			UVMHIST_LOG(pmst2hist, "pm=%p, invalidate va=%016lx",
+			    pm, va, 0, 0);
 			nvmm_aarch64_maintain_ipa(pm->pm_nvmm,
 			    NVMM_AARCH64_MAINTAIN_OP_TLBI, va, 0);
 		} else
