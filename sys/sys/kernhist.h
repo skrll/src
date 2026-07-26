@@ -122,6 +122,8 @@ LIST_HEAD(kern_history_head, kern_history);
 #define	KERNHIST_SCDEBUGHIST	__BIT(5)	/* scdebughist */
 #define	KERNHIST_BIOHIST	__BIT(6)	/* biohist */
 #define	KERNHIST_NVMMHIST	__BIT(7)	/* nvmmhist */
+#define KERNHIST_PMAPHIST	__BIT(8)	/* pmaphist */
+#define KERNHIST_PMST2HIST	__BIT(9)	/* pmst2hist */
 
 #ifdef _KERNEL
 
@@ -234,6 +236,12 @@ do { \
 	_e_->v[3] = (uintmax_t)(D); \
 	KERNHIST_PRINTNOW(_e_); \
 } while (0)
+
+#define KERNHIST_CALLEDNOLOG() \
+do { \
+	_kernhist_call = atomic_inc_32_nv(&_kernhist_cnt); \
+} while (0)
+
 
 #define KERNHIST_CALLED(NAME) \
 do { \
