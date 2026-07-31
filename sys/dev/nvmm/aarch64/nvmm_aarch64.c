@@ -57,6 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 int nvmm_available;
 
 struct aarch64_machdata {
+	uint64_t cntvoff_el2;
 	uint64_t vttbr_el2;
 };
 
@@ -514,6 +515,9 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 	machdata->vttbr_el2 =
 	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
 	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
+
+	// XXXNH this is read at EL1 so gets offset applied. hmm.
+	machdata->cntvoff_el2 = reg_cntpct_el0_read();
 }
 
 static void
