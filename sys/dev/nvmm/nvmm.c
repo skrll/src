@@ -97,7 +97,7 @@ nvmm_enter_sig(void)
 	error = 0;
 out:	mutex_exit(&suspension.lock);
 
-	return 0;
+	return error;
 }
 
 static void
