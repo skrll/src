@@ -114,7 +114,7 @@ no_el2_host_mode:
 	msr	hstr_el2, xzr
 
 	/* Enable access to the physical timers at EL1. */
-	mov	x2, #(CNTHCTL_NVHE_EL1PCTEN | CNTHCTL_NVHE_EL1PCEN)
+	mov	x2, #(CNTHCTL_EL1TVT | CNTHCTL_NVHE_EL1PCTEN | CNTHCTL_NVHE_EL1PCEN)
 	msr	cnthctl_el2, x2
 
 	/* Set the counter offset to a known value. */
