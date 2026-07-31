@@ -474,8 +474,10 @@ nvmm_gpa_unmap(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
 	int ret;
 
 	ret = __area_delete(mach, hva, gpa, size);
-	if (ret == -1)
+	if (ret == -1) {
+		errno = ESRCH;
 		return -1;
+	}
 
 	args.machid = mach->machid;
 	args.gpa = gpa;
