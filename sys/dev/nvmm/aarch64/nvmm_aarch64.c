@@ -57,6 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 int nvmm_available;
 
 struct aarch64_machdata {
+	uint64_t cntvoff_el2;
 	uint64_t vttbr_el2;
 };
 
@@ -504,6 +505,13 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 
 	machdata = kmem_zalloc(sizeof(struct aarch64_machdata), KM_SLEEP);
 	mach->machdata = machdata;
+
+	machdata->vttbr_el2 =
+	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
+	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
+
+	// XXXNH this is read at EL1 so gets offset applied. hmm.
+	machdata->cntvoff_el2 = reg_cntpct_el0_read();
 }
 
 static void
@@ -543,9 +551,8 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    UVM_KMF_WIRED | UVM_KMF_ZERO);
 	vcpu->cpudata = cpudata;
 
-	machdata->vttbr_el2 = cpudata->vttbr_el2 =
-	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
-	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
+	// XXXNH is this really needed? I guess so... unless cpudata has a machdata pointer?
+	cpudata->vttbr_el2 = machdata->vttbr_el2;
 
 	if (e2h_enabled) {
 		extern uintptr_t hyp_vectors;
