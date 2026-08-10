@@ -1,5 +1,11 @@
 TODO
 
+- timers
+  - virtual and physical?
+  - virtualise completly
+  - migration support
+
+
 - check panic works for non-VHE EL2
 - BE support?
 - aarch32 support?
