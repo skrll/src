@@ -45,3 +45,104 @@ void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled)
 
         trace_kvm_toggle_cache(*vcpu_pc(vcpu), was_enabled, now_enabled);
 }
+
+
++----------------------------+-------------+-------------+----------------------------------------------+
+| Execution Context / State  | E2H Setting | TGE Setting | Description                                  |
++----------------------------+-------------+-------------+----------------------------------------------+
+| Guest Kernel (EL1)         | 1           | 0           | Standard virtualization mode for EL1 guest.   |
+| Guest Application (EL0)    | 1           | 0           | Exceptions from EL0 route to EL1.            |
+| Host Kernel (EL2)          | 1           | 1           | VHE enabled; host OS runs efficiently in EL2.|
+| Host Application (EL0)     | 1           | 1           | EL0 traps and uses EL2 virtual address space.|
++----------------------------+-------------+-------------+----------------------------------------------+
+
++-----------------------------+-------------+-------------------------------------------------------+
+| Hypervisor State / Context  | TGE Setting | Description                                           |
++-----------------------------+-------------+-------------------------------------------------------+
+| Running a Guest VM          | 0           | Guest exceptions route to Guest EL1; EL2 untouched.   |
+| Host/Hypervisor Execution   | 1           | Host context switching; forces EL0 exceptions to EL2. |
++-----------------------------+-------------+-------------------------------------------------------+
+
+					// 0
+SPSR_EL12	SPSR_EL1		// 1
+					// 2
+					// 3
+AMAIR_EL12	AMAIR_EL1		// 4
+CNTKCTL_EL12	CNTKCTL_EL1		// 5
+CONTEXTIDR_EL12	CONTEXTIDR_EL1		// 6
+CPACR_EL12	CPACR_EL1		// 7
+					// 8
+ELR_EL12	ELR_EL1			// 9
+ESR_EL12	ESR_EL1			// 10
+FAR_EL12	FAR_EL1			// 11
+					// 12
+					// 13
+MAIR_EL12	MAIR_EL1		// 14
+					// 15
+					// 16
+					// 17
+					// 18
+SCTLR_EL12	SCTLR_EL1		// 19
+TCR_EL12	TCR_EL1			// 20
+					// 21
+					// 22
+					// 23
+TTBR0_EL12	TTBR0_EL1		// 24
+TTBR1_EL12	TTBR1_EL1		// 25
+VBAR_EL12	VBAR_EL1		// 26
+
+
+AFSR0_EL12	AFSR0_EL1		// XXX missing
+AFSR1_EL12	AFSR1_EL1		// XXX missing
+AMAIR2_EL12	AMAIR2_EL2		// XXX missing
+BRBCR_EL12	BRBCR_EL1		// XXX missing
+CNTP_CTL_EL02	CNTP_CTL_EL0		// not trapped!
+CNTP_CVAL_EL02	CNTP_CVAL_EL0		// not trapped!
+CNTP_TVAL_EL02	CNTP_TVAL_EL0		// not trapped!
+CNTV_CTL_EL02	CNTV_CTL_EL0		// not trapped!
+CNTV_CVAL_EL02	CNTV_CVAL_EL0		// not trapped!
+CNTV_TVAL_EL02	CNTV_TVAL_EL0		// not trapped!
+GCSCR_EL12	GCSCR_EL1		// XXX missing
+GCSPR_EL12	GCSPR_EL1		// XXX missing
+MAIR2_EL12	MAIR2_EL1		// XXX missing
+MPAM1_EL12	MPAM1_EL1		// XXX missing
+PFAR_EL12	PFAR_EL1		// XXX missing
+PIR_EL12	PIR_EL1			// XXX missing
+PIRE0_EL12	PIRE0_EL1		// XXX missing
+PMSCR_EL12	PMSCR_EL1		// XXX missing
+POR_EL12	POR_EL1			// XXX missing
+SCTLR_EL12	SCTLR_EL1		// XXX missing
+SCTLR2_EL12	SCTLR2_EL1		// XXX missing
+SCXTNUM_EL12	SCXTNUM_EL1		// XXX missing
+SMCR_EL12	SMCR_EL1		// XXX missing
+SPMACCESSR_EL12	SPMACCESSR_EL1		// XXX missing
+TCR2_EL12	TCR2_EL1		// XXX missing
+TFSR_EL12	TFSR_EL1		// XXX missing
+TRCITECR_EL12	TRCITECR_EL1		// XXX missing
+TRFCR_EL12	TRFCR_EL1		// XXX missing
+ZCR_EL12	ZCR_EL1			// XXX missing
+
+_EL1 Mnemonic       _EL2 Target         _EL12 Guest View
+--------------------------------------------------------
+AFSR0_EL1           AFSR0_EL2           AFSR0_EL12
+AFSR1_EL1           AFSR1_EL2           AFSR1_EL12
+AMAIR_EL1           AMAIR_EL2           AMAIR_EL12
+CNTKCTL_EL1         CNTHCTL_EL2         CNTKCTL_EL12
+CNTP_CTL_EL1        CNTP_CTL_EL2        CNTP_CTL_EL12
+CNTP_CVAL_EL1       CNTP_CVAL_EL2       CNTP_CVAL_EL12
+CNTP_TVAL_EL1       CNTP_TVAL_EL2       CNTP_TVAL_EL12
+CNTV_CTL_EL1        CNTV_CTL_EL2        CNTV_CTL_EL12
+CNTV_CVAL_EL1       CNTV_CVAL_EL2       CNTV_CVAL_EL12
+CNTV_TVAL_EL1       CNTV_TVAL_EL2       CNTV_TVAL_EL12
+CONTEXTIDR_EL1      CONTEXTIDR_EL2      CONTEXTIDR_EL12
+CPACR_EL1           CPTR_EL2            CPACR_EL12
+ELR_EL1             ELR_EL2             ELR_EL12
+ESR_EL1             ESR_EL2             ESR_EL12
+FAR_EL1             FAR_EL2             FAR_EL12
+MAIR_EL1            MAIR_EL2            MAIR_EL12
+SCTLR_EL1           SCTLR_EL2           SCTLR_EL12
+SPSR_EL1            SPSR_EL2            SPSR_EL12
+TCR_EL1             TCR_EL2             TCR_EL12
+TTBR0_EL1           TTBR0_EL2           TTBR0_EL12
+TTBR1_EL1           TTBR1_EL2           TTBR1_EL12
+VBAR_EL1            VBAR_EL2            VBAR_EL12
