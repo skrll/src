@@ -53,11 +53,16 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 int aarch64_el2_initted;
 
+void aarch64_hvc_vmenter(paddr_t);
+
 #define IN_RANGE_P(addr,sta,end)	((sta) <= (addr) && (addr) < (end))
 
 static inline void *
 nvmm_el2_pointer_ktox(void *ptr)
 {
+	if (e2h_enabled)
+		return ptr;
+
 	extern char __kernel_text[];
 	extern char _end[];
 
@@ -75,9 +80,12 @@ nvmm_el2_pointer_ktox(void *ptr)
 	return (void *)pa;
 }
 
-static inline void *
+static inline const void *
 nvmm_el2_pointer_xtok(const void *ptr)
 {
+	if (e2h_enabled)
+		return ptr;
+
 	extern char __kernel_text[];
 	extern char _end[];
 
@@ -90,7 +98,7 @@ nvmm_el2_pointer_xtok(const void *ptr)
 		va = KERN_PHYSTOV(pa);
 	}
 
-	return (void *)va;
+	return (const void *)va;
 }
 
 paddr_t
@@ -236,6 +244,148 @@ aarch64_el2_init(struct trapframe *tf)
 	isb();
 }
 
+#define NVMM_AARCH64_SPR_PC		0	/* ELR_EL2 */
+#define NVMM_AARCH64_SPR_SPSR_EL1	1
+/* when VMENTER, X31 has priority according to SPSR */
+#define NVMM_AARCH64_SPR_SP_EL0		2
+#define NVMM_AARCH64_SPR_SP_EL1		3
+
+#define NVMM_AARCH64_SPR_AMAIR_EL1	4
+#define NVMM_AARCH64_SPR_CNTKCTL_EL1	5
+#define NVMM_AARCH64_SPR_CONTEXTIDR_EL1	6
+#define NVMM_AARCH64_SPR_CPACR_EL1	6
+#define NVMM_AARCH64_SPR_CSSELR_EL1	8
+#define NVMM_AARCH64_SPR_ELR_EL1	9
+#define NVMM_AARCH64_SPR_ESR_EL1	10
+#define NVMM_AARCH64_SPR_FAR_EL1	11
+#define NVMM_AARCH64_SPR_FPCR		12
+#define NVMM_AARCH64_SPR_FPSR		13
+#define NVMM_AARCH64_SPR_MAIR_EL1	14
+#define NVMM_AARCH64_SPR_MDSCR_EL1	15
+#define NVMM_AARCH64_SPR_MIDR_EL1	16	/* VMIDR_EL2 */
+#define NVMM_AARCH64_SPR_MPIDR_EL1	17	/* VMPIDR_EL2 */
+#define NVMM_AARCH64_SPR_PAR_EL1	18
+#define NVMM_AARCH64_SPR_SCTLR_EL1	19
+#define NVMM_AARCH64_SPR_TCR_EL1	20
+#define NVMM_AARCH64_SPR_TPIDRRO_EL0	21
+#define NVMM_AARCH64_SPR_TPIDR_EL0	22
+#define NVMM_AARCH64_SPR_TPIDR_EL1	23
+#define NVMM_AARCH64_SPR_TTBR0_EL1	24
+#define NVMM_AARCH64_SPR_TTBR1_EL1	25
+#define NVMM_AARCH64_SPR_VBAR_EL1	26
+#define NVMM_AARCH64_SPR_CNTV_CTL_EL0	27
+#define NVMM_AARCH64_SPR_CNTV_CVAL_EL0	28
+#define NVMM_AARCH64_NSPR		64
+
+#if 0
++----------------------------+-------------+-------------+----------------------------------------------+
+| Execution Context / State  | E2H Setting | TGE Setting | Description                                  |
++----------------------------+-------------+-------------+----------------------------------------------+
+| Guest Kernel (EL1)         | 1           | 0           | Standard virtualization mode for EL1 guest.   |
+| Guest Application (EL0)    | 1           | 0           | Exceptions from EL0 route to EL1.            |
+| Host Kernel (EL2)          | 1           | 1           | VHE enabled; host OS runs efficiently in EL2.|
+| Host Application (EL0)     | 1           | 1           | EL0 traps and uses EL2 virtual address space.|
++----------------------------+-------------+-------------+----------------------------------------------+
+
++-----------------------------+-------------+-------------------------------------------------------+
+| Hypervisor State / Context  | TGE Setting | Description                                           |
++-----------------------------+-------------+-------------------------------------------------------+
+| Running a Guest VM          | 0           | Guest exceptions route to Guest EL1; EL2 untouched.   |
+| Host/Hypervisor Execution   | 1           | Host context switching; forces EL0 exceptions to EL2. |
++-----------------------------+-------------+-------------------------------------------------------+
+#endif
+
+
+#if 0
+					// 0
+SPSR_EL12	SPSR_EL1 		// 1
+					// 2
+					// 3
+AMAIR_EL12	AMAIR_EL1		// 4
+CNTKCTL_EL12	CNTKCTL_EL1		// 5
+CONTEXTIDR_EL12	CONTEXTIDR_EL1 		// 6
+CPACR_EL12	CPACR_EL1 		// 7
+					// 8
+ELR_EL12	ELR_EL1			// 9
+ESR_EL12	ESR_EL1			// 10
+FAR_EL12	FAR_EL1 		// 11
+					// 12
+					// 13
+MAIR_EL12	MAIR_EL1 		// 14
+					// 15
+					// 16
+					// 17
+					// 18
+SCTLR_EL12	SCTLR_EL1		// 19
+TCR_EL12	TCR_EL1 		// 20
+					// 21
+					// 22
+					// 23
+TTBR0_EL12	TTBR0_EL1 		// 24
+TTBR1_EL12	TTBR1_EL1 		// 25
+VBAR_EL12	VBAR_EL1 		// 26
+
+
+AFSR0_EL12	AFSR0_EL1		// XXX missing
+AFSR1_EL12	AFSR1_EL1		// XXX missing
+AMAIR2_EL12	AMAIR2_EL2		// XXX missing
+BRBCR_EL12	BRBCR_EL1		// XXX missing
+CNTP_CTL_EL02	CNTP_CTL_EL0		// not trapped!
+CNTP_CVAL_EL02	CNTP_CVAL_EL0		// not trapped!
+CNTP_TVAL_EL02	CNTP_TVAL_EL0		// not trapped!
+CNTV_CTL_EL02	CNTV_CTL_EL0		// not trapped!
+CNTV_CVAL_EL02	CNTV_CVAL_EL0		// not trapped!
+CNTV_TVAL_EL02	CNTV_TVAL_EL0		// not trapped!
+GCSCR_EL12	GCSCR_EL1		// XXX missing
+GCSPR_EL12	GCSPR_EL1		// XXX missing
+MAIR2_EL12	MAIR2_EL1		// XXX missing
+MPAM1_EL12	MPAM1_EL1		// XXX missing
+PFAR_EL12	PFAR_EL1		// XXX missing
+PIR_EL12	PIR_EL1			// XXX missing
+PIRE0_EL12	PIRE0_EL1		// XXX missing
+PMSCR_EL12	PMSCR_EL1		// XXX missing
+POR_EL12	POR_EL1			// XXX missing
+SCTLR_EL12	SCTLR_EL1		// XXX missing
+SCTLR2_EL12	SCTLR2_EL1		// XXX missing
+SCXTNUM_EL12	SCXTNUM_EL1		// XXX missing
+SMCR_EL12	SMCR_EL1		// XXX missing
+SPMACCESSR_EL12	SPMACCESSR_EL1 		// XXX missing
+TCR2_EL12	TCR2_EL1		// XXX missing
+TFSR_EL12	TFSR_EL1		// XXX missing
+TRCITECR_EL12	TRCITECR_EL1		// XXX missing
+TRFCR_EL12	TRFCR_EL1		// XXX missing
+ZCR_EL12	ZCR_EL1 		// XXX missing
+#endif
+
+#if 0
+_EL1 Mnemonic       _EL2 Target         _EL12 Guest View
+--------------------------------------------------------
+AFSR0_EL1           AFSR0_EL2           AFSR0_EL12
+AFSR1_EL1           AFSR1_EL2           AFSR1_EL12
+AMAIR_EL1           AMAIR_EL2           AMAIR_EL12
+CNTKCTL_EL1         CNTHCTL_EL2         CNTKCTL_EL12
+CNTP_CTL_EL1        CNTP_CTL_EL2        CNTP_CTL_EL12
+CNTP_CVAL_EL1       CNTP_CVAL_EL2       CNTP_CVAL_EL12
+CNTP_TVAL_EL1       CNTP_TVAL_EL2       CNTP_TVAL_EL12
+CNTV_CTL_EL1        CNTV_CTL_EL2        CNTV_CTL_EL12
+CNTV_CVAL_EL1       CNTV_CVAL_EL2       CNTV_CVAL_EL12
+CNTV_TVAL_EL1       CNTV_TVAL_EL2       CNTV_TVAL_EL12
+CONTEXTIDR_EL1      CONTEXTIDR_EL2      CONTEXTIDR_EL12
+CPACR_EL1           CPTR_EL2            CPACR_EL12
+ELR_EL1             ELR_EL2             ELR_EL12
+ESR_EL1             ESR_EL2             ESR_EL12
+FAR_EL1             FAR_EL2             FAR_EL12
+MAIR_EL1            MAIR_EL2            MAIR_EL12
+MDSCR_EL1           MDSCR_EL2           MDSCR_EL12
+SCTLR_EL1           SCTLR_EL2           SCTLR_EL12
+SPSR_EL1            SPSR_EL2            SPSR_EL12
+TCR_EL1             TCR_EL2             TCR_EL12
+TPIDR_EL1           TPIDR_EL2           TPIDR_EL12
+TTBR0_EL1           TTBR0_EL2           TTBR0_EL12
+TTBR1_EL1           TTBR1_EL2           TTBR1_EL12
+VBAR_EL1            VBAR_EL2            VBAR_EL12
+#endif
+
 static void
 vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 {
@@ -245,6 +395,7 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
 	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
 
+	/* E2H? */
 	state->sprs[NVMM_AARCH64_SPR_PC] = tf->tf_pc;
 	state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] = tf->tf_spsr;
 
@@ -274,32 +425,52 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	} else {
 		state->gprs[NVMM_AARCH64_GPR_X31] = state->sprs[NVMM_AARCH64_SPR_SP_EL1];
 	}
-
 	state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0] = reg_tpidrro_el0_read();
 	state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0] = reg_tpidr_el0_read();
-	state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1] = reg_amair_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1] = reg_cntkctl_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1] = reg_contextidr_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_CPACR_EL1] = reg_cpacr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_CSSELR_EL1] = reg_csselr_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_ELR_EL1] = reg_elr_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_ESR_EL1] = reg_esr_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_FAR_EL1] = reg_far_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_FPCR] = reg_fpcr_read();
 	state->sprs[NVMM_AARCH64_SPR_FPSR] = reg_fpsr_read();
-	state->sprs[NVMM_AARCH64_SPR_MAIR_EL1] = reg_mair_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1] = reg_mdscr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_MIDR_EL1] = reg_vpidr_el2_read();
 	state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1] = reg_vmpidr_el2_read();
 	state->sprs[NVMM_AARCH64_SPR_PAR_EL1] = reg_par_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1] = reg_sctlr_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_TCR_EL1] = reg_tcr_el1_read();
 	state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1] = reg_tpidr_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1] = reg_ttbr0_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1] = reg_ttbr1_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_VBAR_EL1] = reg_vbar_el1_read();
-	state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0] = reg_cntv_ctl_el0_read();
-	state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0] = reg_cntv_cval_el0_read();
+
+	if (e2h_enabled) {
+		state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1] = reg_amair_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1] = reg_cntkctl_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1] = reg_contextidr_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_CPACR_EL1] = reg_cpacr_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_ELR_EL1] = reg_elr_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_ESR_EL1] = reg_esr_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_FAR_EL1] = reg_far_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_MAIR_EL1] = reg_mair_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1] = reg_sctlr_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_TCR_EL1] = reg_tcr_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1] = reg_ttbr0_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1] = reg_ttbr1_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_VBAR_EL1] = reg_vbar_el12_read();
+		state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0] = reg_cntv_ctl_el02_read();
+		state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0] = reg_cntv_cval_el02_read();
+	} else {
+		state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1] = reg_amair_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1] = reg_cntkctl_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1] = reg_contextidr_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_CPACR_EL1] = reg_cpacr_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_ELR_EL1] = reg_elr_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_ESR_EL1] = reg_esr_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_FAR_EL1] = reg_far_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_MAIR_EL1] = reg_mair_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1] = reg_sctlr_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_TCR_EL1] = reg_tcr_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1] = reg_tpidr_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1] = reg_ttbr0_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1] = reg_ttbr1_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_VBAR_EL1] = reg_vbar_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0] = reg_cntv_ctl_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0] = reg_cntv_cval_el0_read();
+	}
+
 
 	NVMMHIST_LOGN(nvmmdebug, 40,
 	    "pc =              %#18jx  "
@@ -402,6 +573,51 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 		reg_sp_el1_write(state->gprs[NVMM_AARCH64_GPR_X31]);
 	}
 
+	reg_tpidrro_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0]);
+	reg_tpidr_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0]);
+	reg_csselr_el1_write(state->sprs[NVMM_AARCH64_SPR_CSSELR_EL1]);
+	reg_fpcr_write(state->sprs[NVMM_AARCH64_SPR_FPCR]);
+	reg_fpsr_write(state->sprs[NVMM_AARCH64_SPR_FPSR]);
+	reg_mdscr_el1_write(state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1]);
+	reg_par_el1_write(state->sprs[NVMM_AARCH64_SPR_PAR_EL1]);
+	reg_tpidr_el1_write(state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1]);
+	reg_vpidr_el2_write(state->sprs[NVMM_AARCH64_SPR_MIDR_EL1]);
+	reg_vmpidr_el2_write(state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1]);
+
+	if (e2h_enabled) {
+		reg_amair_el12_write(state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1]);
+		reg_cntkctl_el12_write(state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1]);
+		reg_contextidr_el12_write(state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1]);
+		reg_cpacr_el12_write(state->sprs[NVMM_AARCH64_SPR_CPACR_EL1]);
+		reg_elr_el12_write(state->sprs[NVMM_AARCH64_SPR_ELR_EL1]);
+		reg_esr_el12_write(state->sprs[NVMM_AARCH64_SPR_ESR_EL1]);
+		reg_far_el12_write(state->sprs[NVMM_AARCH64_SPR_FAR_EL1]);
+		reg_mair_el12_write(state->sprs[NVMM_AARCH64_SPR_MAIR_EL1]);
+		reg_sctlr_el12_write(state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1]);
+		reg_tcr_el12_write(state->sprs[NVMM_AARCH64_SPR_TCR_EL1]);
+		reg_ttbr0_el12_write(state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1]);
+		reg_ttbr1_el12_write(state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1]);
+		reg_vbar_el12_write(state->sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
+		reg_cntv_ctl_el02_write(state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0]);
+		reg_cntv_cval_el02_write(state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0]);
+	} else {
+		reg_amair_el1_write(state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1]);
+		reg_cntkctl_el1_write(state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1]);
+		reg_contextidr_el1_write(state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1]);
+		reg_cpacr_el1_write(state->sprs[NVMM_AARCH64_SPR_CPACR_EL1]);
+		reg_elr_el1_write(state->sprs[NVMM_AARCH64_SPR_ELR_EL1]);
+		reg_esr_el1_write(state->sprs[NVMM_AARCH64_SPR_ESR_EL1]);
+		reg_far_el1_write(state->sprs[NVMM_AARCH64_SPR_FAR_EL1]);
+		reg_mair_el1_write(state->sprs[NVMM_AARCH64_SPR_MAIR_EL1]);
+		reg_sctlr_el1_write(state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1]);
+		reg_tcr_el1_write(state->sprs[NVMM_AARCH64_SPR_TCR_EL1]);
+		reg_ttbr0_el1_write(state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1]);
+		reg_ttbr1_el1_write(state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1]);
+		reg_vbar_el1_write(state->sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
+		reg_cntv_ctl_el0_write(state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0]);
+		reg_cntv_cval_el0_write(state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0]);
+	}
+
 	// XXXNH
 	// PMU regs
 	// physical timer regs - always virtualise?
@@ -410,52 +626,6 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	// OSLAR_EL1
 	// PMSELR_EL0
 	// VTCR_EL2???
-
-	// VHE:
-	// AMAIR_EL12
-	// CNTKCTL_EL12
-	// CNTV_CVAL_EL12
-	// CONTEXTIDR_EL12
-	// CPACR_EL12
-	// ELR_EL12
-	// ESR_EL12
-	// FAR_EL12
-	// MAIR_EL12
-	// SCTRL_EL12
-	// SPSR_EL12
-	// TCR_EL12
-	// TTBR0_EL12
-	// TTBR0_EL12
-	// VBAR_EL12
-	// VTTBR_EL2
-	// AFSR[012]_EL12
-	// PAUTH: AP*KEY*_EL1
-
-	reg_tpidrro_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0]);
-	reg_tpidr_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0]);
-	reg_amair_el1_write(state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1]);
-	reg_cntkctl_el1_write(state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1]);
-	reg_contextidr_el1_write(state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1]);
-	reg_cpacr_el1_write(state->sprs[NVMM_AARCH64_SPR_CPACR_EL1]);
-	reg_csselr_el1_write(state->sprs[NVMM_AARCH64_SPR_CSSELR_EL1]);
-	reg_elr_el1_write(state->sprs[NVMM_AARCH64_SPR_ELR_EL1]);
-	reg_esr_el1_write(state->sprs[NVMM_AARCH64_SPR_ESR_EL1]);
-	reg_far_el1_write(state->sprs[NVMM_AARCH64_SPR_FAR_EL1]);
-	reg_fpcr_write(state->sprs[NVMM_AARCH64_SPR_FPCR]);
-	reg_fpsr_write(state->sprs[NVMM_AARCH64_SPR_FPSR]);
-	reg_mair_el1_write(state->sprs[NVMM_AARCH64_SPR_MAIR_EL1]);
-	reg_mdscr_el1_write(state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1]);
-	reg_par_el1_write(state->sprs[NVMM_AARCH64_SPR_PAR_EL1]);
-	reg_sctlr_el1_write(state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1]);
-	reg_tcr_el1_write(state->sprs[NVMM_AARCH64_SPR_TCR_EL1]);
-	reg_tpidr_el1_write(state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1]);
-	reg_ttbr0_el1_write(state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1]);
-	reg_ttbr1_el1_write(state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1]);
-	reg_vbar_el1_write(state->sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
-	reg_vpidr_el2_write(state->sprs[NVMM_AARCH64_SPR_MIDR_EL1]);
-	reg_vmpidr_el2_write(state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1]);
-	reg_cntv_ctl_el0_write(state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0]);
-	reg_cntv_cval_el0_write(state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0]);
 
 	NVMMHIST_LOGN(nvmmdebug, 40,
 	    "tpidrro_el0 =     %#18jx  "
@@ -801,18 +971,17 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	}
 }
 
+
+
+
 void
-aarch64_el2_vmenter(struct trapframe *tf)
+aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 {
 	NVMMHIST_FUNC();
-	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx state #%jx", (uintptr_t)tf, 0, 0, 0);
-
-	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
-	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
+	NVMMHIST_CALLARGSN(nvmmdebug, 10, "cpudata %#jx", (uintptr_t)cpudata, 0, 0, 0);
 
 	struct cpu_info * const ci = aarch64nvmm_curcpu();
-	ci->ci_cpudata = (struct aarch64_cpudata *)tf->tf_reg[0];
-	struct aarch64_cpudata * const cpudata = ci->ci_cpudata;
+	ci->ci_cpudata = cpudata;
 
 	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
 	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
@@ -860,6 +1029,9 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	hcr |= HCR_EL2_FB;		/* force broadcast TLBI VMALLE1,TLBI VAE1,TLBI ASIDE1,TLBI VAAE1,TLBI VALE1,TLBI VAALE1,IC IALLU */
 #endif
 
+	if (e2h_enabled)
+		hcr |= HCR_EL2_E2H;
+
 	if (__predict_false(cpudata->send_event_type != NVMM_VCPU_EVENT_NONE)) {
 		switch (cpudata->send_event_type) {
 		case NVMM_VCPU_EVENT_SYNC:
@@ -903,6 +1075,31 @@ aarch64_el2_vmenter(struct trapframe *tf)
 	    cpudata->guest.gprs[NVMM_AARCH64_GPR_X0],
 	    hcr);
 }
+
+void
+aarch64_el2_vmenter(struct trapframe *tf)
+{
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx state #%jx", (uintptr_t)tf, 0, 0, 0);
+
+	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
+	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
+
+	struct aarch64_cpudata * const cpudata = (struct aarch64_cpudata *)tf->tf_reg[0];
+
+	aarch64_el2_vmenter_context(tf, cpudata);
+}
+
+void
+aarch64_vmenter(struct aarch64_cpudata *cpudata)
+{
+	if (e2h_enabled)
+		aarch64_e2h_vmenter(cpudata);
+	else
+		aarch64_hvc_vmenter(cpudata->cpudata_pa);
+}
+
+
 
 /* do TLB and CACHE operation with vm's VTTBR_EL2 */
 void

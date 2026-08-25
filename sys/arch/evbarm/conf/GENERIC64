@@ -66,6 +66,9 @@ options 	EARLYCONS=plcom, CONSADDR=0x09000000
 
 pseudo-device	nvmm		# NetBSD Virtual Machine Monitor
 
+# Support non-VHE mode for virtualization
+options 	ARMV80_NVHE
+
 # Hardware management of the Access flag and dirty state (HAFDBS).
 options 	ARMV81_HAFDBS
 

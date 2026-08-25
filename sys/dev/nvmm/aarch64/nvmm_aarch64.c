@@ -49,6 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <machine/bootconfig.h>
 
 #include <aarch64/cpufunc.h>
+#include <aarch64/machdep.h>
 #include <aarch64/pmap.h>
 
 #define AARCH64_VMID(mach) (mach->machid + 1) /* avoid 0. 0 is host's VMID */
@@ -60,7 +61,6 @@ struct aarch64_machdata {
 };
 
 void aarch64_hvc_init(paddr_t);
-void aarch64_hvc_vmenter(paddr_t);
 void aarch64_hvc_maintain_ipa(uint64_t, uint64_t, uint64_t, uint64_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
@@ -198,6 +198,10 @@ nvmm_aarch64_el2_setup(void)
 {
 	KASSERT(nvmm_available);
 
+	if (e2h_enabled)
+		return;
+
+#ifdef ARMV80_NVHE
 	/*
 	 * calculate VTCR_EL2 setting from ID_AA64MMFR0_EL1.PARange
 	 */
@@ -385,6 +389,7 @@ nvmm_aarch64_el2_setup(void)
 	xc_wait(where);
 
 	aarch64_el2_initted = 1;
+#endif
 }
 
 static void
@@ -820,8 +825,7 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	}
 
 	while (true) {
-
-		aarch64_hvc_vmenter(cpudata->cpudata_pa);
+		aarch64_vmenter(cpudata);
 
 		/*
 		 * A VM exit returns here.

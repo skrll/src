@@ -48,14 +48,14 @@ RCSID("$NetBSD$")
 	CTASSERT((\p1) + 8 == (\p2))
 .endm
 
-#define	VECT_RETURN	\
-	.balign 128;	\
-	1:	ERET
+#define	VECT_RETURN			\
+	.balign 128;			\
+1:	ERET
 
-#define	VECT_HALT	\
-	.balign 128;	\
-	1:	wfi;	\
-		b	1b
+#define	VECT_HALT			\
+	.balign 128;			\
+1:	wfi;				\
+	b	1b
 
 #if NNVMM == 0
 

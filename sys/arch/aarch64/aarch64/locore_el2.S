@@ -50,7 +50,8 @@ drop_to_el1_inline:
 
 	/*
 	 * If we are started in EL2, configure the required hypervisor
-	 * registers and drop to EL1.
+	 * registers and drop to EL1 or, if available, enable E2 Host
+	 * for FEAT_VHE capable PEs.
 	 *
 	 * x27 is cpuindex (0,1,2,...,MAXCPU-1)
 	 */
@@ -66,16 +67,66 @@ drop_to_el1:
 in_el2:
 	/* Check for EL2 host mode */
 	mrs	x2, hcr_el2
+	isb
 	tbz	x2, #34, no_el2_host_mode	/* HCR_E2H not set? */
 
-	/* EL2 host mode enabled, nothing to do, leave. */
+	/*
+	 * EL2 host mode enabled, nothing to do, leave. EL2 system registers
+	 * will be configured via their _EL1 aliases
+	 */
 	ret
 
 no_el2_host_mode:
-	/* EL1 will be AArch64. */
+	/* Default HCR_EL2 to EL1 as AArch64 */
 	mov	x2, #HCR_EL2_RW
-	msr	hcr_el2, x2
+	mrs	x1, id_aa64mmfr1_el1
 
+	/* Extract the VH field (bits 11:8) */
+	ubfx    x1, x1, #8, #4
+
+	cmp	x1, #0
+	b.eq    vhe_not_supported
+
+	/* 1. Mirror memory attribute types from EL1 to EL2 */
+	mrs	x0, mair_el1
+	msr	mair_el2, x0
+
+	/* 2. Configure CPTR_EL2 safely for VHE Host Mode */
+	mov	x0, #CPACR_FPEN_ALL
+	msr	cptr_el2, x0
+
+	/* 3. Initialize TCR_EL2 using standard TCR configuration values */
+	ldr	x0, tcr_setting
+	msr	tcr_el2, x0
+	isb
+
+	/* Enable VHE */
+	orr	x2, x2, #HCR_EL2_E2H
+	orr	x2, x2, #HCR_EL2_TGE
+	msr	hcr_el2, x2
+	isb
+
+	/* Don't trap to EL2 on access to various registers. */
+	mov	x2, #CPTR_EL2_VHE_FPEN_NONE
+	msr	cptr_el2, x2
+
+	adrl	x0, _C_LABEL(e2h_enabled)
+	mov	x1, #1
+	str	w1, [x0]
+
+#if NNVMM > 0
+	/* nvmm_available = 1 */
+	adrl	x0, _C_LABEL(nvmm_available)
+	mov	x1, #1
+	str	w1, [x0]
+#endif
+	b	el2_setup_eret_context
+
+vhe_not_supported:
+	msr	hcr_el2, x2
+	isb
+
+#ifdef ARMV80_NVHE
 	/* Mirror the Virtualization Process ID Register. */
 	mrs	x2, midr_el1
 	msr	vpidr_el2, x2
@@ -123,8 +174,9 @@ no_el2_host_mode:
 	adr	x2, hyp_vectors
 	msr	vbar_el2, x2
 
-	/* Configure GICv3 CPU interface */
+	/* Configure GICv3 CPU interface if available */
 	mrs	x2, id_aa64pfr0_el1
+
 	/* Extract GIC bits from the register */
 	and	x2, x2, #ID_AA64PFR0_EL1_GIC
 	lsr	x2, x2, #ID_AA64PFR0_EL1_GIC_SHIFT
@@ -138,11 +190,6 @@ no_el2_host_mode:
 	msr	icc_sre_el2, x2
 2:
 
-	/*
-	 * Set the current sp (=SP_EL2) to SP_EL1.
-	 */
-	mov	x0, sp
-	msr	sp_el1, x0
 #if NNVMM > 0
 	/* nvmm_available = 1 */
 	adrl	x0, _C_LABEL(nvmm_available)
@@ -171,6 +218,17 @@ no_el2_host_mode:
 	msr	tpidr_el2, xzr
 #endif
 
+#endif /* ARMV80_NVHE */
+
+el2_setup_eret_context:
+	/*
+	 * Prepare to leave EL2 permanently.
+	 * Copy our current active stack pointer directly to SP_EL1 so the
+	 * receiving EL1 kernel has a valid stack execution context immediately.
+	 */
+	mov	x0, sp
+	msr	sp_el1, x0
+
 	/*
 	 * DAIF = {1,1,1,1} thanks to boot protocol, so it's safe to set {elr,spsr}_el2
 	 * Set the address to return to.
@@ -179,6 +237,7 @@ no_el2_host_mode:
 	mov	x2, #(SPSR_F | SPSR_I | SPSR_A | SPSR_A64_D | SPSR_M_EL1H)
 	msr	spsr_el2, x2
 
+el2_vhe_active_exit:
 	/* Use DPRINTSREG for BP and CPU_DPRINTSREG for APs */
 	cmp	x27, #0
 	b.ne	3f
@@ -240,7 +299,64 @@ no_el2_host_mode:
 	 * An isb is not required before eret if
 	 * SCTLR_EL2.EOS=1 [bit 11] (RES1)
 	 */
+	// BP will eret to drop_to_el1 call site in drop_to_el1_inline
+	// APs will eret to drop_to_el1 call site in cpu_mpstart
 	eret
+
+
+#if NNVMM > 0
+/*
+ * aarch64_e2h_vmenter(struct aarch64_cpudata *cpudata)
+ */
+ENTRY_NP(aarch64_e2h_vmenter)
+//	.balign 128
+//	CTASSERT(TF_X0 == 0)
+	stp	x0, x1, [sp, #-TF_SIZE]!		// not needed callee saved only
+	stp	x2, x3, [sp, #TF_X2]			// ...
+	stp	x4, x5, [sp, #TF_X4]
+	stp	x6, x7, [sp, #TF_X6]
+	stp	x8, x9, [sp, #TF_X8]
+	stp	x10, x11, [sp, #TF_X10]
+	stp	x12, x13, [sp, #TF_X12]
+	stp	x14, x15, [sp, #TF_X14]
+	stp	x16, x17, [sp, #TF_X16]
+	stp	x18, x19, [sp, #TF_X18]
+	stp	x20, x21, [sp, #TF_X20]
+	stp	x22, x23, [sp, #TF_X22]
+	stp	x24, x25, [sp, #TF_X24]
+	stp	x26, x27, [sp, #TF_X26]
+	stp	x28, x29, [sp, #TF_X28]
+
+#if 0
+//	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	mrs	x21, elr_el2
+	mrs	x22, spsr_el2
+	stp	x21, x22, [sp, #TF_PC]
+	/* x22 = spsr */
+#endif
+	add	x8, sp, #TF_SIZE
+
+//	CTASSERT_ADJACENT(TF_X30, TF_SP)
+	stp	lr, x8, [sp, #TF_X30]
+
+#if 0
+	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
+	mrs	x23, esr_el2
+	mrs	x24, far_el2
+	stp	x23, x24, [sp, #TF_ESR]
+#endif
+
+	mov	x1, x0 				/* second argument = cpudata */
+	mov	x0, sp				/* first argument = tf */
+	bl	aarch64_el2_vmenter_context
+
+	/*
+	 * The guest system registers are all in place.
+	 * Load the general registers from the trapframe.
+	 */
+	b	el2trap_el2_exit
+END(aarch64_e2h_vmenter)
+#endif
 
 	.align 3
 .Lsctlr_el1_res1:
