@@ -113,6 +113,8 @@ u_long kern_vtopdiff __attribute__((__section__(".data")));
 /* extra physical memory allocated from round_page(_end[]) */
 long kernend_extra;
 
+int e2h_enabled;
+
 /* dump configuration */
 int	cpu_dump(void);
 int	cpu_dumpsize(void);
@@ -697,6 +699,10 @@ cpu_startup(void)
 
 	/* Hello! */
 	banner();
+
+	if (e2h_enabled) {
+		printf("Running at EL2\n");
+	}
 
 	cpu_startup_hook();
 }

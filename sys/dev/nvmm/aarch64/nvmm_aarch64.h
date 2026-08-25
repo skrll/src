@@ -66,7 +66,8 @@ struct nvmm_aarch64_exit {
 	struct {
 		uint64_t evt_pending:1;
 		uint64_t vtimer:1;
-		uint64_t rsvd:62;
+		uint64_t ptimer:1;
+		uint64_t rsvd:61;
 	} exitstate;
 };
 

@@ -68,6 +68,8 @@ extern void (*cpu_powerdown_address)(void);
 
 extern char *booted_kernel;
 
+extern int e2h_enabled;
+
 /*
  * note that we use void * as all the platforms have different ideas on what
  * the structure is
