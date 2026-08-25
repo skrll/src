@@ -53,13 +53,13 @@ pseudo-device 	openfirm	# /dev/openfirm
 #options 	EARLYCONS=thunderx, CONSADDR=0x87e024000000
 
 # RPI 5
-options 	EARLYCONS=acpi, CONSADDR=0x107d001000
+#options 	EARLYCONS=acpi, CONSADDR=0x107d001000
 
 # The QEMU sbsa-ref machine
 #options 	EARLYCONS=plcom, CONSADDR=0x60000000
 
 # The QEMU virt machine
-#options 	EARLYCONS=plcom, CONSADDR=0x09000000
+options 	EARLYCONS=plcom, CONSADDR=0x09000000
 # Ampere Altra/Altra Max
 #options 	EARLYCONS=plcom, CONSADDR=0x100002600000
 
