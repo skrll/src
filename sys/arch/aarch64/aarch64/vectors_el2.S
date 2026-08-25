@@ -61,6 +61,7 @@ RCSID("$NetBSD$")
 
 	.balign 2048
 ENTRY_NBTI(hyp_vectors)
+STRONG_ALIAS(hyp_vectors_nvhe, hyp_vectors)
 	VECT_HALT	/* Synchronous EL2t */
 	VECT_HALT	/* IRQ EL2t */
 	VECT_HALT	/* FIQ EL2t */
@@ -84,7 +85,7 @@ END(hyp_vectors)
 
 #else /* NNVMM == 0 */
 
-.macro vector_entry, func, el
+.macro vector_entry_nvhe, func, el
 	.balign 128
 	CTASSERT(TF_X0 == 0)
 	stp	x0, x1, [sp, #-TF_SIZE]!
@@ -136,32 +137,117 @@ END(hyp_vectors)
 	b	\func
 .endm
 
-
 	.balign 2048
-ENTRY_NBTI(hyp_vectors)
+ENTRY_NBTI(hyp_vectors_nvhe)
 	/* from EL2 with sp_el0 */
-	vector_entry	el2sync_el2t, 2
-	vector_entry	el2irq_el2t, 2
-	vector_entry	el2fiq_el2t, 2
-	vector_entry	el2error_el2t, 2
+	vector_entry_nvhe	el2sync_el2t, 2
+	vector_entry_nvhe	el2irq_el2t, 2
+	vector_entry_nvhe	el2fiq_el2t, 2
+	vector_entry_nvhe	el2error_el2t, 2
 
 	/* from EL2 with sp_el2 */
-	vector_entry	el2sync_el2h, 2
-	vector_entry	el2irq_el2h, 2
-	vector_entry	el2fiq_el2h, 2
-	vector_entry	el2error_el2h, 2
+	vector_entry_nvhe	el2sync_el2h, 2
+	vector_entry_nvhe	el2irq_el2h, 2
+	vector_entry_nvhe	el2fiq_el2h, 2
+	vector_entry_nvhe	el2error_el2h, 2
 
 	/* from 64bit EL0/EL1 */
-	vector_entry	el2sync_el_low, 1
-	vector_entry	el2irq_el_low, 1
-	vector_entry	el2fiq_el_low, 1
-	vector_entry	el2error_el_low, 1
+	vector_entry_nvhe	el2sync_el_low, 1
+	vector_entry_nvhe	el2irq_el_low, 1
+	vector_entry_nvhe	el2fiq_el_low, 1
+	vector_entry_nvhe	el2error_el_low, 1
 
 	/* from 32bit EL0/EL1 */
-	vector_entry	el2sync32_el_low, 1
-	vector_entry	el2irq32_el_low, 1
-	vector_entry	el2fiq32_el_low, 1
-	vector_entry	el2error32_el_low, 1
+	vector_entry_nvhe	el2sync32_el_low, 1
+	vector_entry_nvhe	el2irq32_el_low, 1
+	vector_entry_nvhe	el2fiq32_el_low, 1
+	vector_entry_nvhe	el2error32_el_low, 1
+
+
+.macro vector_entry_vhe, func, el
+	.balign 128
+	CTASSERT(TF_X0 == 0)
+	stp	x0, x1, [sp, #-TF_SIZE]!
+	stp	x2, x3, [sp, #TF_X2]
+	stp	x4, x5, [sp, #TF_X4]
+	stp	x6, x7, [sp, #TF_X6]
+	stp	x8, x9, [sp, #TF_X8]
+	stp	x10, x11, [sp, #TF_X10]
+	stp	x12, x13, [sp, #TF_X12]
+	stp	x14, x15, [sp, #TF_X14]
+	stp	x16, x17, [sp, #TF_X16]
+	stp	x18, x19, [sp, #TF_X18]
+	stp	x20, x21, [sp, #TF_X20]
+	stp	x22, x23, [sp, #TF_X22]
+	stp	x24, x25, [sp, #TF_X24]
+	stp	x26, x27, [sp, #TF_X26]
+	stp	x28, x29, [sp, #TF_X28]
+
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	mrs	x21, elr_el2
+	mrs	x22, spsr_el2
+	stp	x21, x22, [sp, #TF_PC]
+	/* x22 = spsr */
+
+.if \el == 2
+	/* sp was already grown, x8 = sp + TF_SIZE = original sp */
+	add	x8, sp, #TF_SIZE
+.else
+	// XXXNH
+	/*
+	 * from EL0/EL1, tf_sp is not stored.
+	 * entity of SP(x31) is SP_EL0 or SP_EL1 depending on the mode.
+	 */
+	mov	x8, xzr
+.endif
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
+	stp	lr, x8, [sp, #TF_X30]
+
+	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
+	mrs	x23, esr_el2
+	mrs	x24, far_el2
+	stp	x23, x24, [sp, #TF_ESR]
+
+	mov	x0, sp				/* argument = tf */
+	bl	\func
+
+	mrs 	x0, tpidr_el2
+	ldr 	w0, [x0, #CI_INVM]
+        cbz     w0, el2trap_vmexit
+.if \el == 2
+	b	el2trap_el2_exit
+.else
+	b	el2trap_el_low_exit
+.endif
+.endm
+
+
+	.balign 2048
+ENTRY_NBTI(hyp_vectors_vhe)
+	/* from EL2 with sp_el0 */
+	vector_entry_vhe	el2sync_el2t, 2
+	vector_entry_vhe	el2irq_el2t, 2
+	vector_entry_vhe	el2fiq_el2t, 2
+	vector_entry_vhe	el2error_el2t, 2
+
+	/* from EL2 with sp_el2 */
+	vector_entry_vhe	el2sync_el2h, 2
+	vector_entry_vhe	el2irq_el2h, 2
+	vector_entry_vhe	el2fiq_el2h, 2
+	vector_entry_vhe	el2error_el2h, 2
+
+	/* from 64bit EL0/EL1 */
+	vector_entry_vhe	el2sync_el_low, 1
+	vector_entry_vhe	el2irq_el_low, 1
+	vector_entry_vhe	el2fiq_el_low, 1
+	vector_entry_vhe	el2error_el_low, 1
+
+	/* from 32bit EL0/EL1 */
+	vector_entry_vhe	el2sync32_el_low, 1
+	vector_entry_vhe	el2irq32_el_low, 1
+	vector_entry_vhe	el2fiq32_el_low, 1
+	vector_entry_vhe	el2error32_el_low, 1
+
 
 	.balign 64
 ENTRY_NP(el2trap_el2_exit)
@@ -249,5 +335,159 @@ ENTRY_NP(el2trap_el_low_exit)
 	 */
 	ERET
 END(el2trap_el_low_exit)
+
+
+
+	.balign 64
+ENTRY_NP(el2_enter_guest)
+	/*
+	 * Load all the guest general purpose registers and eret to the guest.
+	 */
+	ldp	x8, x9, [sp, #TF_X8]
+	ldp	x10, x11, [sp, #TF_X10]
+	ldp	x12, x13, [sp, #TF_X12]
+	ldp	x14, x15, [sp, #TF_X14]
+	ldp	x16, x17, [sp, #TF_X16]
+	ldp	x18, x19, [sp, #TF_X18]
+	ldp	x20, x21, [sp, #TF_X20]
+	ldp	x22, x23, [sp, #TF_X22]
+	ldp	x24, x25, [sp, #TF_X24]
+	ldp	x26, x27, [sp, #TF_X26]
+	ldp	x28, x29, [sp, #TF_X28]
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
+	ldp	x30, x7, [sp, #TF_X30]
+
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	ldp	x0, x1, [sp, #TF_PC]
+
+	msr	daifset, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
+
+	msr	elr_el2, x0
+	msr	spsr_el2, x1
+
+	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
+	ldp	x0, x1, [sp, #TF_ESR]
+	msr	esr_el2, x0
+	msr	far_el2, x1
+
+	ldp	x0, x1, [sp, #TF_X0]
+	ldp	x2, x3, [sp, #TF_X2]
+	ldp	x4, x5, [sp, #TF_X4]
+
+	msr 	sp_el1, x7
+	ldp	x6, x7, [SP, #TF_X6]
+
+	// Ensure correct stack pointer on return to
+	// we've just loaded the guest trapframe and want it
+	// the hyp_vectors to save the new guest trapframe in the
+	// same stack slot.
+	add 	sp, sp, #TF_SIZE
+	/*
+	 * An isb is not required before eret if
+	 * SCTLR_EL2.EOS=1 [bit 11] (RES1)
+	 */
+	ERET
+END(el2_enter_guest)
+
+/*
+ * aarch64_e2h_vmenter(struct aarch64_cpudata *cpudata)
+ */
+ENTRY_NP(aarch64_e2h_vmenter)
+	stp	x0, x1, [sp, #-TF_SIZE]!		// not needed callee saved only
+	stp	x2, x3, [sp, #TF_X2]			// ...
+	stp	x4, x5, [sp, #TF_X4]
+	stp	x6, x7, [sp, #TF_X6]
+	stp	x8, x9, [sp, #TF_X8]
+	stp	x10, x11, [sp, #TF_X10]
+	stp	x12, x13, [sp, #TF_X12]
+	stp	x14, x15, [sp, #TF_X14]
+	stp	x16, x17, [sp, #TF_X16]
+	stp	x18, x19, [sp, #TF_X18]			// x19 ...
+	stp	x20, x21, [sp, #TF_X20]
+	stp	x22, x23, [sp, #TF_X22]
+	stp	x24, x25, [sp, #TF_X24]
+	stp	x26, x27, [sp, #TF_X26]
+	stp	x28, x29, [sp, #TF_X28]			// ... X28 and FP and LR are callee saved
+
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	mov 	x21, lr
+	mov     x22, #SPSR_M_EL1H		// What is it really? Maybe it doesn't matter.
+	stp	x21, x22, [sp, #TF_PC]
+
+	add	x8, sp, #TF_SIZE
+
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
+	stp	lr, x8, [sp, #TF_X30]
+
+#if 0
+	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
+	mrs	x23, esr_el2
+	mrs	x24, far_el2
+	stp	x23, x24, [sp, #TF_ESR]
+#endif
+
+	mov	x1, x0 				/* second argument = cpudata */
+	mov	x0, sp				/* first argument = tf */
+
+	/*
+	 * Disable all traps while context swtiching from host to guest.
+	 *
+	 * A good example of where this is imperative are switching from host debug
+	 * registers to guest registers.
+	 */
+	msr	daifset, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
+
+	/*
+	 * Once the guest system registers are all in place after
+	 * aarch64_el2_vmenter_context call into el2_enter_guest which
+	 * will load the general registers from the trapframe and eret
+	  to the guest.
+	 */
+	adr 	lr, el2_enter_guest
+
+	b	aarch64_el2_vmenter_context
+END(aarch64_e2h_vmenter)
+
+// XXXNH in VHE land we don't need to eret.
+// XXXNH we can switch context, turn on {E2H,TGE} and jump to tf->tf_pc as
+// XXXNH saved by aarch64_e2h_vmenter, or in the case of interrupts 
+// XXXNH ARM_IRQ_HANDLER
+// XXXNH also only need to save / restore callee saved registers.
+
+	.balign 64
+ENTRY_NP(el2trap_vmexit)
+	ldp	x8, x9, [sp, #TF_X8]
+	ldp	x10, x11, [sp, #TF_X10]
+	ldp	x12, x13, [sp, #TF_X12]
+	ldp	x14, x15, [sp, #TF_X14]
+	ldp	x16, x17, [sp, #TF_X16]
+	ldp	x18, x19, [sp, #TF_X18]
+	ldp	x20, x21, [sp, #TF_X20]
+	ldp	x22, x23, [sp, #TF_X22]
+	ldp	x24, x25, [sp, #TF_X24]
+	ldp	x26, x27, [sp, #TF_X26]
+	ldp	x28, x29, [sp, #TF_X28]
+
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
+	ldp	x30, x7, [sp, #TF_X30]
+
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	ldp	x0, x1, [sp, #TF_PC]
+
+	mov	lr, x0
+	// stack pointer is correct wrt when we entered the guest
+	// no it's not because of load_context!
+//	mov 	sp, x7
+	add 	sp, sp, #TF_SIZE
+
+	// clear DAIF so that interrupts from guest have chance to be delivered.
+	msr	daifclr, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
+
+	ret
+END(el2trap_vmexit)
+
+
+
+
 
 #endif /* NNVMM == 0 */

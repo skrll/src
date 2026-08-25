@@ -49,6 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <machine/bootconfig.h>
 
 #include <aarch64/cpufunc.h>
+#include <aarch64/machdep.h>
 #include <aarch64/pmap.h>
 
 #define AARCH64_VMID(mach) (mach->machid + 1) /* avoid 0. 0 is host's VMID */
@@ -60,7 +61,6 @@ struct aarch64_machdata {
 };
 
 void aarch64_hvc_init(paddr_t);
-void aarch64_hvc_vmenter(paddr_t);
 void aarch64_hvc_maintain_ipa(uint64_t, uint64_t, uint64_t, uint64_t);
 static void nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu);
 
@@ -145,6 +145,8 @@ nvmm_aarch64_ident(void)
 	return nvmm_available;
 }
 
+#ifdef ARMV80_NVHE
+
 static pd_entry_t *
 nvmm_aarch64_pagealloc(void)
 {
@@ -160,7 +162,7 @@ nvmm_aarch64_pagealloc(void)
 	pg->flags &= ~PG_BUSY;	/* never busy */
 	return (pd_entry_t *)VM_PAGE_TO_PHYS(pg);
 }
-
+#endif
 
 static void
 nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
@@ -170,7 +172,11 @@ nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
 
 	ci->ci_invm = false;
 
-	// non-VHE only
+	if (e2h_enabled) {
+		reg_vtcr_el2_write((uintptr_t)vtcr_el2);
+		return;
+	}
+
         if (!pmap_extract(pmap_kernel(), (vaddr_t)ci, &cipa))
                 panic("cannot resolve PA of cpuinfo");
 
@@ -231,7 +237,6 @@ nvmm_aarch64_el2_setup(void)
 	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_16T;
 #elif NVMM_MAX_RAM <= (256 * 1024 * 1024 * 1024 * 1024)
 	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_256T;
-
 #else
 #error Physical addresses of 48bits or more are not supported
 #endif
@@ -337,54 +342,55 @@ nvmm_aarch64_el2_setup(void)
 	printf("%s: VTCR_EL2=%08"PRIx64", vtcr_ps=%"PRIu64", parange=%"PRIu64", stage2_startlevel=%u, stage2_concatenate_num=%u\n",
 	    cpu_name(curcpu()), vtcr_el2, vtcr_ps, parange, stage2_startlevel, stage2_concatenate_num);
 
-	/*
-	 * Enable EL2 MMU via hvc. The entity is in aarch64_el2_init().
-	 * There is a way to do it at the beginning of aarch64/locore_el2,
-	 * but the process is complicated, so we do it in this nvmm initialization.
-	 *
-	 * Once the EL2 MMU is enabled, it is never disabled again.
-	 * EL2 VA=PA identity mapping is enabled until reboot.
-	 * Allocated page tables are not released by calling nvmm_aarch64_fini().
-	 */
-
 	static pd_entry_t *ttbr_pa;
-	if (ttbr_pa != NULL)
-		return;
+#ifdef ARMV80_NVHE
+	if (!e2h_enabled) {
+		/*
+		 * Enable EL2 MMU via hvc. The entity is in aarch64_el2_init().
+		 * There is a way to do it at the beginning of aarch64/locore_el2,
+		 * but the process is complicated, so we do it in this nvmm initialization.
+		 *
+		 * Once the EL2 MMU is enabled, it is never disabled again.
+		 * EL2 VA=PA identity mapping is enabled until reboot.
+		 * Allocated page tables are not released by calling nvmm_aarch64_fini().
+		 */
 
-	ttbr_pa = nvmm_aarch64_pagealloc();
+		if (ttbr_pa != NULL)
+			return;
+
+		ttbr_pa = nvmm_aarch64_pagealloc();
 
 #ifdef VERBOSE_INIT_ARM
-	printf("Creating EL2 page tables\n");
+		printf("Creating EL2 page tables\n");
 #define PRFUNC	printf
 #else
 #define PRFUNC	NULL
 #endif
 
 #ifdef CONSADDR
-	/* XXX: for EL2 uartprintf debugging */
-	const pt_entry_t devattr = LX_BLKPAG_ATTR_DEVICE_MEM |
-	    LX_BLKPAG_AP_RW | LX_BLKPAG_XN;
-	pmapboot_enter_ttbr(CONSADDR, CONSADDR, L2_SIZE, L2_SIZE,
-	    devattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
+		/* XXX: for EL2 uartprintf debugging */
+		const pt_entry_t devattr = LX_BLKPAG_ATTR_DEVICE_MEM |
+		    LX_BLKPAG_AP_RW | LX_BLKPAG_XN;
+		pmapboot_enter_ttbr(CONSADDR, CONSADDR, L2_SIZE, L2_SIZE,
+		    devattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
 #endif
 
-	/* EL2 VA=PA identity mapping */
-	const pt_entry_t memattr = LX_BLKPAG_ATTR_NORMAL_WB |
-	    LX_BLKPAG_AP_RW;
-	for (u_int blk = 0; blk < bootconfig.dramblocks; blk++) {
-		uint64_t start, end;
+		/* EL2 VA=PA identity mapping */
+		const pt_entry_t memattr = LX_BLKPAG_ATTR_NORMAL_WB |
+		    LX_BLKPAG_AP_RW;
+		for (u_int blk = 0; blk < bootconfig.dramblocks; blk++) {
+			uint64_t start, end;
 
-		start = trunc_page(bootconfig.dram[blk].address);
-		end = round_page(bootconfig.dram[blk].address +
-		(uint64_t)bootconfig.dram[blk].pages * PAGE_SIZE);
+			start = trunc_page(bootconfig.dram[blk].address);
+			end = round_page(bootconfig.dram[blk].address +
+			(uint64_t)bootconfig.dram[blk].pages * PAGE_SIZE);
 
-		pmapboot_enter_range_ttbr(start, start, end - start,
-		    memattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
+			pmapboot_enter_range_ttbr(start, start, end - start,
+			    memattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
+		}
 	}
-
-	/* XXX: no need to flush cache here? EL2 may be cache off... */
-
-	/* call aarch64_hvc_init(ttbr_pa, vtcr_el2) on all cpus */
+#endif
+	/* call nvmm_aarch64_cpu_init(ttbr_pa, vtcr_el2) on all cpus */
 	uint64_t where = xc_broadcast(0, (xcfunc_t)nvmm_aarch64_cpu_init,
 	    (void *)ttbr_pa, (void *)vtcr_el2);
 	xc_wait(where);
@@ -458,6 +464,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 		    (pd_entry_t *)stage2table_buf[mach->machid];
 		pmap_extract(pmap_kernel(), (vaddr_t)pm->pm_st2_table,
 		    &pm->pm_st2_table_pa);
+// XXXNH?
 #else
 		/* allocate dynamically. Not well tested. */
 		struct pglist pglist;
@@ -467,6 +474,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 			panic("%s: cannot allocate initial lookup page",
 			    __func__);
 		}
+
 		pm->pm_st2_table_pa = VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
 		pm->pm_st2_table =
 		    (pd_entry_t *)AARCH64_PA_TO_KVA(pm->pm_st2_table_pa);
@@ -545,9 +553,14 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	/* copy vttbr_el2 for easy access from nVHE EL2 */
 	cpudata->vttbr_el2 = machdata->vttbr_el2;
 
-	// non-VHE only
-	if (!pmap_extract(pmap_kernel(), (vaddr_t)cpudata, &cpudata->cpudata_pa))
-		panic("cannot resolve PA of cpudata");
+	if (e2h_enabled) {
+		extern uintptr_t hyp_vectors_vhe;
+		cpudata->vbar_el2 = (uint64_t)&hyp_vectors_vhe;
+	} else {
+		/* non-VHE mode */
+		if (!pmap_extract(pmap_kernel(), (vaddr_t)cpudata, &cpudata->cpudata_pa))
+			panic("cannot resolve PA of cpudata");
+	}
 
 	/* Install the RESET state. */
 	memcpy(&vcpu->comm->state, &nvmm_aarch64_reset_state,
@@ -828,8 +841,7 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	}
 
 	while (true) {
-
-		aarch64_hvc_vmenter(cpudata->cpudata_pa);
+		aarch64_vmenter(cpudata);
 
 		/*
 		 * A VM exit returns here.
@@ -882,6 +894,11 @@ nvmm_aarch64_vmid(void *nvmm_mach)
 	return AARCH64_VMID(mach);
 }
 
+/*
+ * XXXNH shouldn't expose this.
+ * Instead expose an api similar to Arm TLBI ops which in the E2H case is
+ * just the TLBI ops and in the !E2H case is the HVC op.
+ */
 void
 nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t va)
 {
@@ -899,7 +916,35 @@ nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t v
 
 		NVMMHIST_LOGN(nvmmdebug, 4, "vttbr_el2=%#jx op=%08lx, ipa=%016lx, va=%016lx",
 		    machdata->vttbr_el2, op, ipa, va);
-		aarch64_hvc_maintain_ipa(machdata->vttbr_el2, op, ipa, va);
+		if (e2h_enabled) {
+			// hmm, kpreempt_disable();
+
+			KASSERT(kpreempt_disabled());
+
+			uint64_t hcr_el2 = reg_hcr_el2_read();
+			uint64_t guesthcr = (hcr_el2 & ~HCR_EL2_TGE) | HCR_EL2_VM;
+			reg_vttbr_el2_write(machdata->vttbr_el2);
+			reg_hcr_el2_write(guesthcr);
+			isb();
+
+			switch (op & (NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL | NVMM_AARCH64_MAINTAIN_OP_TLBI)) {
+			case NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL:
+				aarch64_tlbi_by_vmid();
+				break;
+			case NVMM_AARCH64_MAINTAIN_OP_TLBI:
+				aarch64_tlbi_by_vmid_ipa(ipa);
+				break;
+			default:
+				panic("%s: unknown maintain op %#jx", __func__, op);
+			}
+
+			reg_hcr_el2_write(hcr_el2);
+			reg_vttbr_el2_write(0);
+			isb();
+			// hmm, kpreempt_enable();
+		} else {
+			aarch64_hvc_maintain_ipa(machdata->vttbr_el2, op, ipa, va);
+		}
 	}
 	NVMMHIST_LOGN(nvmmdebug, 4, "<-- done", 0, 0, 0, 0);
 }

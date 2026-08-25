@@ -50,7 +50,8 @@ drop_to_el1_inline:
 
 	/*
 	 * If we are started in EL2, configure the required hypervisor
-	 * registers and drop to EL1.
+	 * registers and drop to EL1 or, if available, enable E2 Host
+	 * for FEAT_VHE capable PEs.
 	 *
 	 * x27 is cpuindex (0,1,2,...,MAXCPU-1)
 	 */
@@ -66,16 +67,69 @@ drop_to_el1:
 in_el2:
 	/* Check for EL2 host mode */
 	mrs	x2, hcr_el2
-	tbz	x2, #34, no_el2_host_mode	/* HCR_E2H not set? */
+	isb
+	tbz	x2, #34, not_el2_host_mode	/* HCR_E2H not set? */
 
-	/* EL2 host mode enabled, nothing to do, leave. */
+	/*
+	 * EL2 host mode enabled, nothing to do, leave. EL2 system registers
+	 * will be configured via their _EL1 aliases
+	 */
 	ret
 
-no_el2_host_mode:
-	/* EL1 will be AArch64. */
+not_el2_host_mode:
+	/* Default HCR_EL2 to EL1 as AArch64 */
 	mov	x2, #HCR_EL2_RW
-	msr	hcr_el2, x2
+	mrs	x1, id_aa64mmfr1_el1
 
+	/* Extract the VH field (bits 11:8) */
+	ubfx    x1, x1, #8, #4
+
+	cmp	x1, #0
+	b.eq    vhe_not_supported
+
+	/* Mirror memory attribute types from EL1 to EL2 */
+	mrs	x0, mair_el1
+	msr	mair_el2, x0
+
+	/* Initialize TCR_EL2 using standard TCR configuration values */
+	ldr	x0, tcr_setting
+	msr	tcr_el2, x0
+	isb
+
+	/* Enable VHE */
+	orr	x2, x2, #HCR_EL2_E2H
+	orr	x2, x2, #HCR_EL2_TGE
+	msr	hcr_el2, x2
+	isb
+
+	/* Don't trap to EL2 on access to various registers. */
+	mov	x2, #CPTR_EL2_VHE_FPEN_NONE
+	msr	cptr_el2, x2
+
+	/*
+	 * Enable physical/virtual timer access from EL0
+	 */
+	mov	x2, #(CNTHCTL_EL2_VHE_EL0PCTEN | CNTHCTL_EL2_VHE_EL0VCTEN)
+	orr	x2, x2, #(CNTHCTL_EL2_VHE_EL0PTEN  | CNTHCTL_EL2_VHE_EL0VTEN)
+	msr	cnthctl_el2, x2
+	isb
+
+	adrl	x0, _C_LABEL(e2h_enabled)
+	mov	x1, #1
+	str	w1, [x0]
+
+#if NNVMM > 0
+	/* nvmm_available = 1 */
+	adrl	x0, _C_LABEL(nvmm_available)
+	str	w1, [x0]			/* still 1 from above */
+#endif
+	b	vhe_return
+
+vhe_not_supported:
+	msr	hcr_el2, x2
+	isb
+
+#ifdef ARMV80_NVHE
 	/* Mirror the Virtualization Process ID Register. */
 	mrs	x2, midr_el1
 	msr	vpidr_el2, x2
@@ -120,11 +174,12 @@ no_el2_host_mode:
 	msr	cntvoff_el2, xzr
 
 	/* Set the hypervisor trap vectors. */
-	adr	x2, hyp_vectors
+	adr	x2, hyp_vectors_nvhe
 	msr	vbar_el2, x2
 
-	/* Configure GICv3 CPU interface */
+	/* Configure GICv3 CPU interface if available */
 	mrs	x2, id_aa64pfr0_el1
+
 	/* Extract GIC bits from the register */
 	and	x2, x2, #ID_AA64PFR0_EL1_GIC
 	lsr	x2, x2, #ID_AA64PFR0_EL1_GIC_SHIFT
@@ -138,11 +193,6 @@ no_el2_host_mode:
 	msr	icc_sre_el2, x2
 2:
 
-	/*
-	 * Set the current sp (=SP_EL2) to SP_EL1.
-	 */
-	mov	x0, sp
-	msr	sp_el1, x0
 #if NNVMM > 0
 	/* nvmm_available = 1 */
 	adrl	x0, _C_LABEL(nvmm_available)
@@ -171,6 +221,16 @@ no_el2_host_mode:
 	msr	tpidr_el2, xzr
 #endif
 
+#endif	/* ARMV80_NVHE */
+
+	/*
+	 * Prepare to leave EL2 permanently.
+	 * Copy our current active stack pointer directly to SP_EL1 so the
+	 * receiving EL1 kernel has a valid stack execution context immediately.
+	 */
+	mov	x0, sp
+	msr	sp_el1, x0
+
 	/*
 	 * DAIF = {1,1,1,1} thanks to boot protocol, so it's safe to set {elr,spsr}_el2
 	 * Set the address to return to.
@@ -187,6 +247,7 @@ no_el2_host_mode:
 	DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
 	DPRINTSREG("TCR_EL2          = ", tcr_el2)
 	DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	DPRINTSREG("CNTHCTL_EL2      = ", cnthctl_el2)
 	DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
 	DPRINTSREG("MAIR_EL2         = ", mair_el2)
 	DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
@@ -216,6 +277,7 @@ no_el2_host_mode:
 	CPU_DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
 	CPU_DPRINTSREG("TCR_EL2          = ", tcr_el2)
 	CPU_DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	CPU_DPRINTSREG("CNTHCTL_EL2      = ", cnthctl_el2)
 	CPU_DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
 	CPU_DPRINTSREG("MAIR_EL2         = ", mair_el2)
 	CPU_DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
@@ -240,7 +302,78 @@ no_el2_host_mode:
 	 * An isb is not required before eret if
 	 * SCTLR_EL2.EOS=1 [bit 11] (RES1)
 	 */
+	// BP will eret to drop_to_el1 call site in drop_to_el1_inline
+	// APs will eret to drop_to_el1 call site in cpu_mpstart
 	eret
+
+
+vhe_return:
+	/*
+	 * Prepare to leave EL2 permanently.
+	 * Copy our current active stack pointer directly to SP_EL1 so the
+	 * receiving EL1 kernel has a valid stack execution context immediately.
+	 */
+	mov	x0, sp
+	msr	sp_el1, x0
+
+	mov	x9, lr
+
+	/* Use DPRINTSREG for BP and CPU_DPRINTSREG for APs */
+	cmp	x27, #0
+	b.ne	3f
+
+	DPRINT("\n")
+	DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
+	DPRINTSREG("TCR_EL2          = ", tcr_el2)
+	DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
+	DPRINTSREG("MAIR_EL2         = ", mair_el2)
+	DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
+	DPRINTSREG("DAIF             = ", daif)
+
+	DPRINTREG("SP (EL2)         = ", sp)
+
+	mrs	x2, id_aa64pfr0_el1
+	/* Extract GIC bits from the register */
+	and	x2, x2, #ID_AA64PFR0_EL1_GIC
+	lsr	x2, x2, #ID_AA64PFR0_EL1_GIC_SHIFT
+	/* GIC[3:0] == 0001 - GIC CPU interface via special regs. supported */
+	cmp	x2, #ID_AA64PFR0_EL1_GIC_CPUIF_EN
+	b.ne	4f
+
+	DPRINTSREG("ICC_SRE_EL2      = ", icc_sre_el2)
+	DPRINTSREG("ICH_HCR_EL2      = ", ich_hcr_el2)
+	DPRINTSREG("ICH_VTR_EL2      = ", ich_vtr_el2)
+
+4:
+	mov	lr, x9
+	ret
+3:
+	CPU_DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
+	CPU_DPRINTSREG("TCR_EL2          = ", tcr_el2)
+	CPU_DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	CPU_DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
+	CPU_DPRINTSREG("MAIR_EL2         = ", mair_el2)
+	CPU_DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
+	CPU_DPRINTSREG("DAIF             = ", daif)
+
+	CPU_DPRINTREG("SP (EL2)         = ", sp)
+
+	mrs	x2, id_aa64pfr0_el1
+	/* Extract GIC bits from the register */
+	and	x2, x2, #ID_AA64PFR0_EL1_GIC
+	lsr	x2, x2, #ID_AA64PFR0_EL1_GIC_SHIFT
+	/* GIC[3:0] == 0001 - GIC CPU interface via special regs. supported */
+	cmp	x2, #ID_AA64PFR0_EL1_GIC_CPUIF_EN
+	b.ne	5f
+
+	CPU_DPRINTSREG("ICC_SRE_EL2      = ", icc_sre_el2)
+	CPU_DPRINTSREG("ICH_HCR_EL2      = ", ich_hcr_el2)
+	CPU_DPRINTSREG("ICH_VTR_EL2      = ", ich_vtr_el2)
+
+5:
+	mov	lr, x9
+	ret
 
 	.align 3
 .Lsctlr_el1_res1:

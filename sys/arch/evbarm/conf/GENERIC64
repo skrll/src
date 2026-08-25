@@ -29,13 +29,16 @@ options 	MULTIPROCESSOR
 pseudo-device 	openfirm	# /dev/openfirm
 
 #options 	DIAGNOSTIC	# internal consistency checks
-#options 	DEBUG
+options 	DEBUG
 #options 	LOCKDEBUG
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 #options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
-options 	NVMM_DEBUG
+#options 	NVMM_DEBUG
+#options 	NVMMHIST_PRINT
+#options 	NVMM_DEBUG_DEFAULT=40
+#options 	UVMHIST_PRINT
 #options 	PMAP_DEBUG
 
 # Heartbeat checks
@@ -65,6 +68,9 @@ options 	EARLYCONS=plcom, CONSADDR=0x09000000
 #options 	EARLYCONS=plcom, CONSADDR=0x100002600000
 
 pseudo-device	nvmm		# NetBSD Virtual Machine Monitor
+
+# Support non-VHE mode for virtualization
+options 	ARMV80_NVHE
 
 # Hardware management of the Access flag and dirty state (HAFDBS).
 options 	ARMV81_HAFDBS

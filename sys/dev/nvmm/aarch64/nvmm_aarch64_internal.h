@@ -29,6 +29,7 @@
 #ifndef _NVMM_AARCH64_INTERNAL_H_
 #define _NVMM_AARCH64_INTERNAL_H_
 
+#include <aarch64/machdep.h>
 
 static inline struct cpu_info *
 aarch64nvmm_curcpu(void)
@@ -43,7 +44,10 @@ aarch64nvmm_cpu_number(void)
 }
 
 struct aarch64_cpudata {
-	uint64_t cpudata_pa;
+	union {
+		uint64_t cpudata_pa;		// Only used when e2h_enabled is false.
+		uint64_t vbar_el2;		// Only used when e2h_enabled is true
+	};
 	uint64_t vttbr_el2;
 	uint64_t send_event_type;
 	uint64_t send_event_esr;
@@ -71,11 +75,16 @@ ipa_hpfar_far(vaddr_t hpfar, vaddr_t far)
 }
 
 void dump_el2_trapframe(struct trapframe *);
+
+void aarch64_vmenter(struct aarch64_cpudata *);
+void aarch64_e2h_vmenter(struct aarch64_cpudata *);
+
 void aarch64_el2_init(struct trapframe *);
 void aarch64_el2_vmenter(struct trapframe *);
-void aarch64_el2_vmexit_trap(struct trapframe *tf);
-void aarch64_el2_vmexit_irq(struct trapframe *tf);
-void aarch64_el2_maintain_ipa(struct trapframe *tf);
+struct trapframe * aarch64_el2_vmenter_context(struct trapframe *, struct aarch64_cpudata *);
+void aarch64_el2_vmexit_trap(struct trapframe *);
+void aarch64_el2_vmexit_irq(struct trapframe *);
+void aarch64_el2_maintain_ipa(struct trapframe *);
 
 void nvmm_aarch64_load_fpregs(const union fpelem *);
 void nvmm_aarch64_save_fpregs(union fpelem *);

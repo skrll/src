@@ -12,9 +12,6 @@ TODO
 - debug registers
 - PMU
 
-- VHE
-  - implement!
-
 - non-VHE
   - check translation tables and memory direct map for EL2 kernel.
     right list of memory (see nvmm_aarch64_el2_setup)? Maybe have

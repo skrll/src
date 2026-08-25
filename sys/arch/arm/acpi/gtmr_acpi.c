@@ -37,6 +37,8 @@ __KERNEL_RCSID(0, "$NetBSD: gtmr_acpi.c,v 1.5 2021/08/07 16:18:42 thorpej Exp $"
 #include <sys/cpu.h>
 #include <sys/device.h>
 
+#include <prop/proplib.h>
+
 #include <dev/acpi/acpireg.h>
 #include <dev/acpi/acpivar.h>
 
@@ -46,6 +48,8 @@ __KERNEL_RCSID(0, "$NetBSD: gtmr_acpi.c,v 1.5 2021/08/07 16:18:42 thorpej Exp $"
 
 #include <dev/fdt/fdtvar.h>
 #include <arm/fdt/arm_fdtvar.h>
+
+#include <aarch64/machdep.h>
 
 extern struct bus_space arm_generic_bs_tag;
 
@@ -67,19 +71,44 @@ gtmr_acpi_match(device_t parent, cfdata_t cf, void *aux)
 static void
 gtmr_acpi_attach(device_t parent, device_t self, void *aux)
 {
-	ACPI_TABLE_GTDT *gtdt = aux;
 	struct mpcore_attach_args mpcaa;
-	void *ih;
-
-	const int irq = gtdt->VirtualTimerInterrupt;
+	ACPI_TABLE_GTDT *gtdt = aux;
 	const int ipl = IPL_CLOCK;
-	const int type = (gtdt->VirtualTimerFlags & ACPI_GTDT_INTERRUPT_MODE) ?
-	    IST_EDGE : IST_LEVEL;
+	bool physical = false;
+	int irq = 0;
+	int type;
+
+	if (gtdt->Header.Revision < 2) {
+		aprint_error_dev(self, "unsupported GTDT revision %d\n",
+		    gtdt->Header.Revision);
+		return;
+	}
+	if (gtdt->Header.Revision >= 3 && e2h_enabled) {
+		ACPI_GTDT_EL2 * const gtdt_el2 =
+			ACPI_ADD_PTR(ACPI_GTDT_EL2, gtdt, sizeof(ACPI_TABLE_GTDT));
+
+		irq = gtdt_el2->VirtualEL2TimerGsiv;
+		type = (gtdt_el2->VirtualEL2TimerFlags & ACPI_GTDT_INTERRUPT_MODE) ?
+			IST_EDGE : IST_LEVEL;
+	}
+	if (irq == 0) {
+		if (e2h_enabled) {
+			irq = gtdt->NonSecureEl2Interrupt;
+			type = (gtdt->NonSecureEl2Flags & ACPI_GTDT_INTERRUPT_MODE) ?
+			    IST_EDGE : IST_LEVEL;
+			physical = true;
+		} else {
+			irq = gtdt->VirtualTimerInterrupt;
+			type = (gtdt->VirtualTimerFlags & ACPI_GTDT_INTERRUPT_MODE) ?
+			    IST_EDGE : IST_LEVEL;
+		}
+	}
 
 	aprint_naive("\n");
 	aprint_normal(": irq %d\n", irq);
 
-	ih = intr_establish_xname(irq, ipl, type | IST_MPSAFE, gtmr_intr, NULL, device_xname(self));
+	void *ih = intr_establish_xname(irq, ipl, type | IST_MPSAFE, gtmr_intr,
+	    NULL, device_xname(self));
 	if (ih == NULL) {
 		aprint_error_dev(self, "couldn't install interrupt handler\n");
 		return;
@@ -88,6 +117,10 @@ gtmr_acpi_attach(device_t parent, device_t self, void *aux)
 	memset(&mpcaa, 0, sizeof(mpcaa));
 	mpcaa.mpcaa_name = "armgtmr";
 	mpcaa.mpcaa_irq = -1;
+
+	prop_dictionary_set_bool(device_properties(self), "physical",
+	    physical);
+
 	config_found(self, &mpcaa, NULL, CFARGS_NONE);
 
 	arm_fdt_cpu_hatch_register(self, gtmr_acpi_cpu_hatch);
