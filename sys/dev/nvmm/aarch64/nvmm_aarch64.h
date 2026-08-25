@@ -66,7 +66,8 @@ struct nvmm_aarch64_exit {
         struct {
 		uint64_t evt_pending:1;
 		uint64_t vtimer:1;
-		uint64_t rsvd:62;
+		uint64_t ptimer:1;
+		uint64_t rsvd:61;
         } exitstate;
 };
 
@@ -149,6 +150,8 @@ struct nvmm_aarch64_event {
 #define NVMM_AARCH64_SPR_VBAR_EL1	27
 #define NVMM_AARCH64_SPR_CNTV_CTL_EL0	28
 #define NVMM_AARCH64_SPR_CNTV_CVAL_EL0	29
+#define NVMM_AARCH64_SPR_CNTP_CTL_EL0	30
+#define NVMM_AARCH64_SPR_CNTP_CVAL_EL0	31
 #define NVMM_AARCH64_NSPR		64
 
 #define NVMM_AARCH64_TID_MVFR0_EL1		0	/* HDR_EL2.TID3 */
