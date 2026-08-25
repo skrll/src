@@ -872,6 +872,7 @@ AARCH64REG_READWRITE_INLINE(cptr_el2)	// Architectural Feature Trap Register
 #define CPTR_EL2_NVHE_RES1	(__BIT(13) | __BIT(9) | __BITS(7, 0))
 #define CPTR_EL2_NVHE_RES0	(__BITS(63, 32) | __BITS(29, 21) | __BITS(19, 14) | __BIT(11))
 
+#define CPTR_EL2_VHE_FPEN_NONE	__SHIFTIN(3, CPTR_EL2_VHE_FPEN)
 
 AARCH64REG_READWRITE_INLINE(hpfar_el2)		// Hypervisor IPA Fault Address Register
 
