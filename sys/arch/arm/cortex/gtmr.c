@@ -274,6 +274,7 @@ gtmr_init_cpu_clock(struct cpu_info *ci)
 	 */
 	cntk = gtmr_cntk_ctl_read();
 	cntk &= ~(CNTKCTL_PL0PTEN | CNTKCTL_PL0VTEN | CNTKCTL_EVNTEN);
+#if 0
 	if (sc->sc_physical) {
 		cntk |= CNTKCTL_PL0PCTEN;
 		cntk &= ~CNTKCTL_PL0VCTEN;
@@ -281,6 +282,9 @@ gtmr_init_cpu_clock(struct cpu_info *ci)
 		cntk |= CNTKCTL_PL0VCTEN;
 		cntk &= ~CNTKCTL_PL0PCTEN;
 	}
+#else
+	cntk |= CNTKCTL_PL0VCTEN;
+#endif
 	gtmr_cntk_ctl_write(cntk);
 	isb();
 
