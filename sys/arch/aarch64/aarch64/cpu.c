@@ -174,6 +174,9 @@ cpu_attach(device_t dv, cpuid_t id)
 	    return;
 	}
 
+	if (e2h_enabled)
+		reg_tpidr_el2_write((uintptr_t)ci);
+
 #ifdef DDB
 	db_machdep_init(ci);
 #endif
@@ -780,6 +783,9 @@ cpu_hatch(struct cpu_info *ci)
 {
 	KASSERT(curcpu() == ci);
 	KASSERT((reg_tcr_el1_read() & TCR_EPD0) != 0);
+
+	if (e2h_enabled)
+		reg_tpidr_el2_write((uintptr_t)ci);
 
 #ifdef DDB
 	db_machdep_cpu_init();

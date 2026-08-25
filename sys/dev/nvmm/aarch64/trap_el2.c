@@ -288,12 +288,22 @@ dump_guest_regs(struct trapframe *tf)
 void
 el2sync_el_low(struct trapframe *tf)
 {
-	struct cpu_info * const ci = aarch64nvmm_curcpu();
-
 	const uint64_t esr = tf->tf_esr;
 	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
 
 	if (eclass == ESR_EC_HVC_A64) {
+		/*
+		 * Handle NVMM HVC (Hypervisor Call)
+		 *
+		 * When NVHE (Non-Virtualized Host Extensions) is enabled,
+		 * NVMM uses intenal HVC calls to perform EL2 tasks.
+		 *
+		 * When VHE is enabled, the HVC instruction if used by the guest is
+		 * trapped to EL2.
+		 */
+#ifdef ARMV80_NVHE
+		struct cpu_info * const ci = aarch64nvmm_curcpu();
+
 		if (!ci->ci_invm) {
 			/* hvc #n */
 			switch (tf->tf_esr & 0xffff) {
@@ -309,34 +319,35 @@ el2sync_el_low(struct trapframe *tf)
 			default:
 				break;
 			}
-		} else {
-			if (nvmm_uartdebug >= 2) {
-				uartprintf("%20s(%20"PRIu64"/%08lx): "
-				    "PC=%016"PRIx64" ESR_EL2=0x%08" PRIx64
-				    " (eclass=0x%"PRIx64")\n",
-				    __func__,
-				    reg_cntpct_el0_read(),
-				    reg_mpidr_el1_read(),
-				    tf->tf_pc, esr, eclass);
-
-				dump_el2_trapframe(tf);
-			}
-
-			// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: <DEBUG>
-			if ((tf->tf_esr & 0xffff) == 99) {
-				/* analyze guest stacktrace */
-				struct trapframe *gtf_pa = (struct trapframe *)aarch64_gva_to_pa(tf->tf_spsr, tf->tf_reg[0]);
-				uartprintf("guest tf(va) %016lx -> (pa)%p\n", tf->tf_reg[0], gtf_pa);
-				dump_el2_trapframe(gtf_pa);
-				uartprintf("guest: esr_el1=%016"PRIxREGISTER"\n", reg_esr_el1_read());
-				uartprintf("guest: far_el1=%016"PRIxREGISTER"\n", reg_far_el1_read());
-				uartprintf("guest: elr_el1=%016"PRIxREGISTER"\n", reg_elr_el1_read());
-				aarch64_guest_backtrace_tf(tf, gtf_pa);	/* XXX: dangerous */
-			}
-			// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: </DEBUG>
-
-			aarch64_el2_vmexit_trap(tf);
+			return;
 		}
+#endif
+		if (nvmm_uartdebug >= 2) {
+			uartprintf("%20s(%20"PRIu64"/%08lx): "
+				"PC=%016"PRIx64" ESR_EL2=0x%08" PRIx64
+				" (eclass=0x%"PRIx64")\n",
+				__func__,
+				reg_cntpct_el0_read(),
+				reg_mpidr_el1_read(),
+				tf->tf_pc, esr, eclass);
+
+			dump_el2_trapframe(tf);
+		}
+
+		// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: <DEBUG>
+		if ((tf->tf_esr & 0xffff) == 99) {
+			/* analyze guest stacktrace */
+			struct trapframe *gtf_pa = (struct trapframe *)aarch64_gva_to_pa(tf->tf_spsr, tf->tf_reg[0]);
+			uartprintf("guest tf(va) %016lx -> (pa)%p\n", tf->tf_reg[0], gtf_pa);
+			dump_el2_trapframe(gtf_pa);
+			uartprintf("guest: esr_el1=%016"PRIxREGISTER"\n", reg_esr_el1_read());
+			uartprintf("guest: far_el1=%016"PRIxREGISTER"\n", reg_far_el1_read());
+			uartprintf("guest: elr_el1=%016"PRIxREGISTER"\n", reg_elr_el1_read());
+			aarch64_guest_backtrace_tf(tf, gtf_pa);	/* XXX: dangerous */
+		}
+		// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: </DEBUG>
+
+		aarch64_el2_vmexit_trap(tf);
 	} else {
 		if (nvmm_uartdebug >= 10) {
 			uartprintf("%20s(%20"PRIu64"/%08lx): "
@@ -397,19 +408,23 @@ el2sync_el_low(struct trapframe *tf)
 void
 el2irq_el_low(struct trapframe *tf)
 {
+	struct cpu_info * const ci = aarch64nvmm_curcpu();
+
 	if (nvmm_uartdebug >= 5) {
 		uartprintf("%20s(%20"PRIu64"):"
-		    " PC=%016"PRIx64
+		    " VM=%d PC=%016"PRIx64
 		    " SPSR_EL2=0x%08"PRIx64" ESR_EL2=0x%08"PRIx64
 		    " SPSR_EL1=0x%08"PRIx64" ESR_EL1=0x%08"PRIx64
 		    " CNTV_CTL=0x%08"PRIx64" CNTP_CTL=0x%08"PRIx64
 		    " CNTHV_CTL=0x%08"PRIx64" CNTHP_CTL=0x%08"PRIx64
 		    "\n",
-		    __func__, reg_cntpct_el0_read(),tf->tf_pc,
+		    __func__, reg_cntpct_el0_read(), ci->ci_invm, tf->tf_pc,
 		    tf->tf_spsr, tf->tf_esr,
 		    reg_spsr_el1_read(), reg_esr_el1_read(),
-		    reg_cntv_ctl_el0_read(), reg_cntp_ctl_el0_read(),
-		    reg_cnthv_ctl_el2_read(), reg_cnthp_ctl_el2_read()
+		    e2h_enabled ? reg_cntv_ctl_el02_read() : reg_cntv_ctl_el0_read(),
+		    e2h_enabled ? reg_cntp_ctl_el02_read() : reg_cntp_ctl_el0_read(),
+		    reg_cnthv_ctl_el2_read(),
+		    reg_cnthp_ctl_el2_read()
 		    );
 
 		if (nvmm_uartdebug >= 10)
@@ -422,19 +437,23 @@ el2irq_el_low(struct trapframe *tf)
 void
 el2fiq_el_low(struct trapframe *tf)
 {
+	struct cpu_info * const ci = aarch64nvmm_curcpu();
+
 	if (nvmm_uartdebug >= 5) {
 		uartprintf("%20s(%20"PRIu64"):"
-		    " PC=%016"PRIx64
+		    " VM=%d PC=%016"PRIx64
 		    " SPSR_EL2=0x%08"PRIx64" ESR_EL2=0x%08"PRIx64
 		    " SPSR_EL1=0x%08"PRIx64" ESR_EL1=0x%08"PRIx64
 		    " CNTV_CTL=0x%08"PRIx64" CNTP_CTL=0x%08"PRIx64
 		    " CNTHV_CTL=0x%08"PRIx64" CNTHP_CTL=0x%08"PRIx64
 		    "\n",
-		    __func__, reg_cntpct_el0_read(),tf->tf_pc,
+		    __func__, reg_cntpct_el0_read(), ci->ci_invm, tf->tf_pc,
 		    tf->tf_spsr, tf->tf_esr,
 		    reg_spsr_el1_read(), reg_esr_el1_read(),
-		    reg_cntv_ctl_el0_read(), reg_cntp_ctl_el0_read(),
-		    reg_cnthv_ctl_el2_read(), reg_cnthp_ctl_el2_read()
+		    e2h_enabled ? reg_cntv_ctl_el02_read() : reg_cntv_ctl_el0_read(),
+		    e2h_enabled ? reg_cntp_ctl_el02_read() : reg_cntp_ctl_el0_read(),
+		    reg_cnthv_ctl_el2_read(),
+		    reg_cnthp_ctl_el2_read()
 		    );
 
 		if (nvmm_uartdebug >= 10)
@@ -447,19 +466,23 @@ el2fiq_el_low(struct trapframe *tf)
 void
 el2error_el_low(struct trapframe *tf)
 {
+	struct cpu_info * const ci = aarch64nvmm_curcpu();
+
 	if (nvmm_uartdebug >= 5) {
 		uartprintf("%20s(%20"PRIu64"):"
-		    " PC=%016"PRIx64
+		    " VM=%d PC=%016"PRIx64
 		    " SPSR_EL2=0x%08"PRIx64" ESR_EL2=0x%08"PRIx64
 		    " SPSR_EL1=0x%08"PRIx64" ESR_EL1=0x%08"PRIx64
 		    " CNTV_CTL=0x%08"PRIx64" CNTP_CTL=0x%08"PRIx64
 		    " CNTHV_CTL=0x%08"PRIx64" CNTHP_CTL=0x%08"PRIx64
 		    "\n",
-		    __func__, reg_cntpct_el0_read(),tf->tf_pc,
+		    __func__, reg_cntpct_el0_read(), ci->ci_invm, tf->tf_pc,
 		    tf->tf_spsr, tf->tf_esr,
 		    reg_spsr_el1_read(), reg_esr_el1_read(),
-		    reg_cntv_ctl_el0_read(), reg_cntp_ctl_el0_read(),
-		    reg_cnthv_ctl_el2_read(), reg_cnthp_ctl_el2_read()
+		    e2h_enabled ? reg_cntv_ctl_el02_read() : reg_cntv_ctl_el0_read(),
+		    e2h_enabled ? reg_cntp_ctl_el02_read() : reg_cntp_ctl_el0_read(),
+		    reg_cnthv_ctl_el2_read(),
+		    reg_cnthp_ctl_el2_read()
 		    );
 
 		if (nvmm_uartdebug >= 10)

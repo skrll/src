@@ -87,7 +87,7 @@ endian_eb_p(struct nvmm_vcpu *vcpu)
 	struct nvmm_aarch64_guest_state *state = vcpu->state;
 	struct nvmm_aarch64_context * const ctx = &state->ctx;
 	uint64_t sctlr = ctx->sprs[NVMM_AARCH64_SPR_SCTLR_EL1];
-	uint64_t spsr = ctx->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
+	uint64_t spsr = ctx->sprs[NVMM_AARCH64_SPR_CPSR];
 
 	if ((spsr & SPSR_A32) != 0)
 		return ((spsr & SPSR_A32_E) != 0);
@@ -266,7 +266,7 @@ SignExtend(unsigned int bitwidth, uint64_t imm, unsigned int multiply)
 static inline unsigned int	
 nvmm_state_sp_reg(struct nvmm_aarch64_context *ctx)
 {
-	uint64_t spsr = ctx->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
+	uint64_t spsr = ctx->sprs[NVMM_AARCH64_SPR_CPSR];
 
 	if ((spsr & SPSR_A32) == 0) {
 		if ((spsr & __BIT(0)) == 0)
@@ -1949,7 +1949,7 @@ nvmm_assist_mem(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 		struct nvmm_aarch64_guest_state *state = vcpu->state;
 		struct nvmm_aarch64_context * const ctx = &state->ctx;
 
-		if (ctx->sprs[NVMM_AARCH64_SPR_SPSR_EL1] & SPSR_A32)
+		if (ctx->sprs[NVMM_AARCH64_SPR_CPSR] & SPSR_A32)
 			ret = nvmm_assist_mem_aarch32_emul(mach, vcpu, &update);
 		else
 			ret = nvmm_assist_mem_aarch64_emul(mach, vcpu, &update);

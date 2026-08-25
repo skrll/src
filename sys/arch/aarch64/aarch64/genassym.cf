@@ -300,6 +300,7 @@ define	CI_CPUID		offsetof(struct cpu_info, ci_cpuid)
 define	CI_CURLWP		offsetof(struct cpu_info, ci_curlwp)
 define	CI_IDLELWP		offsetof(struct cpu_info, ci_data.cpu_idlelwp)
 define	CI_INTR_DEPTH		offsetof(struct cpu_info, ci_intr_depth)
+define	CI_INVM			offsetof(struct cpu_info, ci_invm)
 define	CI_MIDR			offsetof(struct cpu_info, ci_id.ac_midr)
 define	CI_MPIDR		offsetof(struct cpu_info, ci_id.ac_mpidr)
 define	CI_MTX_COUNT		offsetof(struct cpu_info, ci_mtx_count)
@@ -317,6 +318,11 @@ define	DAIF_MASK		DAIF_MASK
 
 define	CNTHCTL_NVHE_EL1PCTEN	CNTHCTL_EL2_NVHE_EL1PCTEN
 define	CNTHCTL_NVHE_EL1PCEN	CNTHCTL_EL2_NVHE_EL1PCEN
+define	CNTHCTL_EL2_VHE_EL0PCTEN	CNTHCTL_EL2_VHE_EL0PCTEN
+define	CNTHCTL_EL2_VHE_EL0VCTEN	CNTHCTL_EL2_VHE_EL0VCTEN
+define	CNTHCTL_EL2_VHE_EL0PTEN		CNTHCTL_EL2_VHE_EL0PTEN
+define	CNTHCTL_EL2_VHE_EL0VTEN		CNTHCTL_EL2_VHE_EL0VTEN
+
 define	CNTKCTL_EL0VCTEN	CNTKCTL_EL0VCTEN
 define	SPSR_SS_SHIFT		SPSR_SS_SHIFT
 define	SPSR_F			SPSR_F
@@ -389,8 +395,11 @@ define	SCTLR_EnDA		SCTLR_EnDA
 define	SCTLR_EnDB		SCTLR_EnDB
 
 define	HCR_EL2_RW		HCR_EL2_RW
+define	HCR_EL2_E2H		HCR_EL2_E2H
+define	HCR_EL2_TGE		HCR_EL2_TGE
 
 define	CPTR_EL2_NVHE_RES1	CPTR_EL2_NVHE_RES1
+define	CPTR_EL2_VHE_FPEN_NONE	CPTR_EL2_VHE_FPEN_NONE
 
 define	ICC_SRE_EL2_EN		ICC_SRE_EL2_EN
 define	ICC_SRE_EL2_SRE		ICC_SRE_EL2_SRE
