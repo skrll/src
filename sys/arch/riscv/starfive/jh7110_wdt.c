@@ -169,6 +169,7 @@ jh7110_wdt_tickle(struct sysmon_wdog *smw)
 	jh7110_wdt_write(sc, JH7110_WDT_INTCLR, 1);
 
 	jh7110_wdt_write(sc, JH7110_WDT_LOCK, 1);
+
 	return 0;
 }
 

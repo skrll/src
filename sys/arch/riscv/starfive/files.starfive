@@ -66,6 +66,6 @@ attach	jh7110trng at fdt with jh7110_trng
 file	arch/riscv/starfive/jh7110_trng.c		jh7110_trng
 
 # JH7110 WDT
-device	jh7110wdt: sysmon_wdog
+device	jh7110wdt: sysmon_wdog, fdt_reset
 attach	jh7110wdt at fdt with jh7110_wdt
 file	arch/riscv/starfive/jh7110_wdt.c		jh7110_wdt
