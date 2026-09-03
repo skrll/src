@@ -116,5 +116,8 @@ jh71x0temp* 	at fdt?			# StarFive JH71x0 Temperature sensor
 # Random number generators
 jh7110trng* 	at fdt?			# StarFive JH7110 True RNG
 
+# Watchdog
+jh7110wdt* 	at fdt?			# StarFive JH7110 Watchdog
+
 # Pull in optional local configuration - always at end
 cinclude 	"arch/riscv/conf/GENERIC64.local"
