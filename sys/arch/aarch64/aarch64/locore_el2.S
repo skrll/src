@@ -106,10 +106,6 @@ not_el2_host_mode:
 	msr	hcr_el2, x2
 	isb
 
-	/* Don't trap to EL2 on access to various registers. */
-	mov	x2, #CPTR_EL2_VHE_FPEN_NONE
-	msr	cptr_el2, x2
-
 	/*
 	 * Enable physical/virtual timer access from EL0
 	 */

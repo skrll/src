@@ -464,6 +464,56 @@ ENTRY_NP(el2_enter_guest)
 	ERET
 END(el2_enter_guest)
 
+/*
+ * aarch64_e2h_vmenter(struct aarch64_cpudata *cpudata)
+ */
+ENTRY_NP(aarch64_e2h_vmenter)
+	CTASSERT(TF_X0 == 0)
+	stp	x0, x1, [sp, #-TF_SIZE]!		// not needed callee saved only
+	stp	x2, x3, [sp, #TF_X2]			// ...
+	stp	x4, x5, [sp, #TF_X4]
+	stp	x6, x7, [sp, #TF_X6]
+	stp	x8, x9, [sp, #TF_X8]
+	stp	x10, x11, [sp, #TF_X10]
+	stp	x12, x13, [sp, #TF_X12]
+	stp	x14, x15, [sp, #TF_X14]
+	stp	x16, x17, [sp, #TF_X16]
+	stp	x18, x19, [sp, #TF_X18]
+	stp	x20, x21, [sp, #TF_X20]
+	stp	x22, x23, [sp, #TF_X22]
+	stp	x24, x25, [sp, #TF_X24]
+	stp	x26, x27, [sp, #TF_X26]
+	stp	x28, x29, [sp, #TF_X28]
+
+#if 0
+//	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	mrs	x21, elr_el2
+	mrs	x22, spsr_el2
+	stp	x21, x22, [sp, #TF_PC]
+	/* x22 = spsr */
+#endif
+	add	x8, sp, #TF_SIZE
+
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
+	stp	lr, x8, [sp, #TF_X30]
+
+#if 0
+	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
+	mrs	x23, esr_el2
+	mrs	x24, far_el2
+	stp	x23, x24, [sp, #TF_ESR]
+#endif
+
+	mov	x1, x0 				/* second argument = cpudata */
+	mov	x0, sp				/* first argument = tf */
+	bl	aarch64_el2_vmenter_context
+
+	/*
+	 * The guest system registers are all in place.
+	 * Load the general registers from the trapframe.
+	 */
+	b	el2trap_el2_exit
+END(aarch64_e2h_vmenter)
 
 
 #endif /* NNVMM == 0 */
