@@ -29,13 +29,16 @@ options 	MULTIPROCESSOR
 pseudo-device 	openfirm	# /dev/openfirm
 
 #options 	DIAGNOSTIC	# internal consistency checks
-#options 	DEBUG
+options 	DEBUG
 #options 	LOCKDEBUG
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 #options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
-options 	NVMM_DEBUG
+#options 	NVMM_DEBUG
+#options 	NVMMHIST_PRINT
+#options 	NVMM_DEBUG_DEFAULT=40
+#options 	UVMHIST_PRINT
 #options 	PMAP_DEBUG
 
 # Heartbeat checks

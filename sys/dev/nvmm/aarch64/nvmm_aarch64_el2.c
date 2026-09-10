@@ -557,6 +557,71 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 
 	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
 	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
+	NVMMHIST_LOGN(nvmmdebug, 40,
+	    "tpidrro_el0 =     %#18jx  "
+	    "tpidr_el0 =       %#18jx  "
+	    "amair_el1 =       %#18jx  "
+	    "cntkctl_el1 =     %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0],
+	    state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0],
+	    state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1]);
+
+	NVMMHIST_LOGN(nvmmdebug, 40,
+	    "contextidr_el1 =  %#18jx  "
+	    "cpacr_el1 =       %#18jx  "
+	    "csselr_el1 =      %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_CPACR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_CSSELR_EL1], 0);
+
+	NVMMHIST_LOGN(nvmmdebug, 40,
+	    "elr_el1 =         %#18jx  "
+	    "esr_el1 =         %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_ELR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_ESR_EL1], 0, 0);
+
+	NVMMHIST_LOGN(nvmmdebug, 40,
+	    "far_el1 =         %#18jx  "
+	    "fpcr =            %#18jx  "
+	    "fpsr =            %#18jx  "
+	    "mair_el1 =        %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_FAR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_FPCR],
+	    state->sprs[NVMM_AARCH64_SPR_FPSR],
+	    state->sprs[NVMM_AARCH64_SPR_MAIR_EL1]);
+
+	NVMMHIST_LOGN(nvmmdebug, 40,
+	    "mdscr_el1 =       %#18jx  "
+	    "par_el1 =         %#18jx  "
+	    "sctlr_el1 =       %#18jx  "
+	    "tcr_el1 =         %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_PAR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_TCR_EL1]);
+
+	NVMMHIST_LOGN(nvmmdebug, 40,
+	    "tpidr_el1 =       %#18jx  "
+	    "ttbr0_el1 =       %#18jx  "
+	    "ttbr1_el1 =       %#18jx  "
+	    "vbar_el1 =        %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
+
+	NVMMHIST_LOGN(nvmmdebug, 40,
+	    "midr_el1 =        %#18jx  "
+	    "mpidr_el1 =       %#18jx  "
+	    "cntv_ctl_el0 =    %#18jx  "
+	    "cntv_cval_el0 =   %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_MIDR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0],
+	    state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0]);
+
+	NVMMHIST_LOGN(nvmmdebug, 10, "<--- done", 0, 0, 0, 0);
 
 	tf->tf_pc = state->sprs[NVMM_AARCH64_SPR_PC];
 	tf->tf_spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
@@ -627,71 +692,6 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	// PMSELR_EL0
 	// VTCR_EL2???
 
-	NVMMHIST_LOGN(nvmmdebug, 40,
-	    "tpidrro_el0 =     %#18jx  "
-	    "tpidr_el0 =       %#18jx  "
-	    "amair_el1 =       %#18jx  "
-	    "cntkctl_el1 =     %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0],
-	    state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0],
-	    state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1]);
-
-	NVMMHIST_LOGN(nvmmdebug, 40,
-	    "contextidr_el1 =  %#18jx  "
-	    "cpacr_el1 =       %#18jx  "
-	    "csselr_el1 =      %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_CPACR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_CSSELR_EL1], 0);
-
-	NVMMHIST_LOGN(nvmmdebug, 40,
-	    "elr_el1 =         %#18jx  "
-	    "esr_el1 =         %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_ELR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_ESR_EL1], 0, 0);
-
-	NVMMHIST_LOGN(nvmmdebug, 40,
-	    "far_el1 =         %#18jx  "
-	    "fpcr =            %#18jx  "
-	    "fpsr =            %#18jx  "
-	    "mair_el1 =        %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_FAR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_FPCR],
-	    state->sprs[NVMM_AARCH64_SPR_FPSR],
-	    state->sprs[NVMM_AARCH64_SPR_MAIR_EL1]);
-
-	NVMMHIST_LOGN(nvmmdebug, 40,
-	    "mdscr_el1 =       %#18jx  "
-	    "par_el1 =         %#18jx  "
-	    "sctlr_el1 =       %#18jx  "
-	    "tcr_el1 =         %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_PAR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_TCR_EL1]);
-
-	NVMMHIST_LOGN(nvmmdebug, 40,
-	    "tpidr_el1 =       %#18jx  "
-	    "ttbr0_el1 =       %#18jx  "
-	    "ttbr1_el1 =       %#18jx  "
-	    "vbar_el1 =        %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_TPIDR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
-
-	NVMMHIST_LOGN(nvmmdebug, 40,
-	    "midr_el1 =        %#18jx  "
-	    "mpidr_el1 =       %#18jx  "
-	    "cntv_ctl_el0 =    %#18jx  "
-	    "cntv_cval_el0 =   %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_MIDR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0],
-	    state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0]);
-
-	NVMMHIST_LOGN(nvmmdebug, 10, "<--- done", 0, 0, 0, 0);
 }
 
 static void

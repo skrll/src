@@ -47,6 +47,9 @@ __KERNEL_RCSID(0, "$NetBSD: gtmr_fdt.c,v 1.12 2021/11/12 21:59:05 jmcneill Exp $
 #if defined(__arm__)
 #include <arm/armreg.h>
 #endif
+#if defined(__aarch64__)
+#include <aarch64/machdep.h>
+#endif
 
 static int	gtmr_fdt_match(device_t, cfdata_t, void *);
 static void	gtmr_fdt_attach(device_t, device_t, void *);
@@ -56,7 +59,8 @@ static void	gtmr_fdt_cpu_hatch(void *, struct cpu_info *);
 CFATTACH_DECL_NEW(gtmr_fdt, 0, gtmr_fdt_match, gtmr_fdt_attach, NULL, NULL);
 
 /* The virtual timer list entry */
-#define GTMR_VTIMER 2
+#define GTMR_VTIMER	2
+#define GTMR_EL2TIMER	4	// ugh bindings
 
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "arm,armv7-timer" },
@@ -86,12 +90,13 @@ gtmr_fdt_attach(device_t parent, device_t self, void *aux)
 	const int phandle = faa->faa_phandle;
 
 	char intrstr[128];
-	if (!fdtbus_intr_str(phandle, GTMR_VTIMER, intrstr, sizeof(intrstr))) {
+	const int irq = e2h_enabled ? GTMR_EL2TIMER : GTMR_VTIMER;
+	if (!fdtbus_intr_str(phandle, irq, intrstr, sizeof(intrstr))) {
 		aprint_error(": failed to decode interrupt\n");
 		return;
 	}
 
-	void *ih = fdtbus_intr_establish_xname(phandle, GTMR_VTIMER, IPL_CLOCK,
+	void *ih = fdtbus_intr_establish_xname(phandle, irq, IPL_CLOCK,
 	    FDT_INTR_MPSAFE, gtmr_intr, NULL, device_xname(self));
 	if (ih == NULL) {
 		aprint_error_dev(self, "couldn't install interrupt handler\n");

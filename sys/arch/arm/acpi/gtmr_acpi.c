@@ -47,6 +47,8 @@ __KERNEL_RCSID(0, "$NetBSD: gtmr_acpi.c,v 1.5 2021/08/07 16:18:42 thorpej Exp $"
 #include <dev/fdt/fdtvar.h>
 #include <arm/fdt/arm_fdtvar.h>
 
+#include <aarch64/machdep.h>
+
 extern struct bus_space arm_generic_bs_tag;
 
 static int	gtmr_acpi_match(device_t, cfdata_t, void *);
@@ -71,7 +73,7 @@ gtmr_acpi_attach(device_t parent, device_t self, void *aux)
 	struct mpcore_attach_args mpcaa;
 	void *ih;
 
-	const int irq = gtdt->VirtualTimerInterrupt;
+	const int irq = e2h_enabled ? gtdt->NonSecureEl2Interrupt : gtdt->VirtualTimerInterrupt;
 	const int ipl = IPL_CLOCK;
 	const int type = (gtdt->VirtualTimerFlags & ACPI_GTDT_INTERRUPT_MODE) ?
 	    IST_EDGE : IST_LEVEL;

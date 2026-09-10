@@ -165,7 +165,11 @@ nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
 
 	ci->ci_invm = false;
 
-	// non-VHE only
+	if (e2h_enabled) {
+		reg_vtcr_el2_write((uintptr_t)vtcr_el2);
+		return;
+	}
+
         if (!pmap_extract(pmap_kernel(), (vaddr_t)ci, &cipa))
                 panic("cannot resolve PA of cpuinfo");
 
@@ -198,10 +202,6 @@ nvmm_aarch64_el2_setup(void)
 {
 	KASSERT(nvmm_available);
 
-	if (e2h_enabled)
-		return;
-
-#ifdef ARMV80_NVHE
 	/*
 	 * calculate VTCR_EL2 setting from ID_AA64MMFR0_EL1.PARange
 	 */
@@ -230,7 +230,6 @@ nvmm_aarch64_el2_setup(void)
 	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_16T;
 #elif NVMM_MAX_RAM <= (256 * 1024 * 1024 * 1024 * 1024)
 	mmfr0_parange = ID_AA64MMFR0_EL1_PARANGE_256T;
-
 #else
 #error Physical addresses of 48bits or more are not supported
 #endif
@@ -336,6 +335,8 @@ nvmm_aarch64_el2_setup(void)
 	printf("%s: VTCR_EL2=%08"PRIx64", vtcr_ps=%"PRIu64", parange=%"PRIu64", stage2_startlevel=%u, stage2_concatenate_num=%u\n",
 	    cpu_name(curcpu()), vtcr_el2, vtcr_ps, parange, stage2_startlevel, stage2_concatenate_num);
 
+#ifdef ARMV80_NVHE
+
 	/*
 	 * Enable EL2 MMU via hvc. The entity is in aarch64_el2_init().
 	 * There is a way to do it at the beginning of aarch64/locore_el2,
@@ -380,16 +381,13 @@ nvmm_aarch64_el2_setup(void)
 		pmapboot_enter_range_ttbr(start, start, end - start,
 		    memattr, PRFUNC, ttbr_pa, true, nvmm_aarch64_pagealloc);
 	}
-
-	/* XXX: no need to flush cache here? EL2 may be cache off... */
-
-	/* call aarch64_hvc_init(ttbr_pa, vtcr_el2) on all cpus */
+#endif
+	/* call nvmm_aarch64_cpu_init(ttbr_pa, vtcr_el2) on all cpus */
 	uint64_t where = xc_broadcast(0, (xcfunc_t)nvmm_aarch64_cpu_init,
 	    (void *)ttbr_pa, (void *)vtcr_el2);
 	xc_wait(where);
 
 	aarch64_el2_initted = 1;
-#endif
 }
 
 static void
@@ -458,6 +456,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 		    (pd_entry_t *)stage2table_buf[mach->machid];
 		pmap_extract(pmap_kernel(), (vaddr_t)pm->pm_st2_table,
 		    &pm->pm_st2_table_pa);
+// XXXNH?
 #else
 		/* allocate dynamically. Not well tested. */
 		struct pglist pglist;
@@ -467,6 +466,7 @@ nvmm_aarch64_machine_create(struct nvmm_machine *mach)
 			panic("%s: cannot allocate initial lookup page",
 			    __func__);
 		}
+
 		pm->pm_st2_table_pa = VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
 		pm->pm_st2_table =
 		    (pd_entry_t *)AARCH64_PA_TO_KVA(pm->pm_st2_table_pa);
@@ -878,6 +878,11 @@ nvmm_aarch64_vmid(void *nvmm_mach)
 	return AARCH64_VMID(mach);
 }
 
+/*
+ * XXXNH shouldn't expose this.
+ * Instead expose an api similar to Arm TLBI ops which in the E2H case is
+ * just the TLBI ops and in the !E2H case is the HVC op.
+ */
 void
 nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t va)
 {
@@ -895,7 +900,34 @@ nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t v
 
 		NVMMHIST_LOGN(nvmmdebug, 4, "vttbr_el2=%#jx op=%08lx, ipa=%016lx, va=%016lx",
 		    machdata->vttbr_el2, op, ipa, va);
-		aarch64_hvc_maintain_ipa(machdata->vttbr_el2, op, ipa, va);
+		if (e2h_enabled) {
+			// hmm, kpreempt_disable();
+
+			KASSERT(kpreempt_disabled());
+
+			uint64_t hcr_el2 = reg_hcr_el2_read() & ~HCR_EL2_TGE;
+			reg_vttbr_el2_write(machdata->vttbr_el2);
+			reg_hcr_el2_write(hcr_el2 | HCR_EL2_VM);
+			isb();
+
+			switch (op) {
+			case NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL:
+				aarch64_tlbi_by_vmid();
+				break;
+			case NVMM_AARCH64_MAINTAIN_OP_TLBI:
+				aarch64_tlbi_by_vmid_ipa(ipa);
+				break;
+			default:
+				panic("%s: unknown maintain op %#jx", __func__, op);
+			}
+
+			reg_hcr_el2_write(hcr_el2);
+			reg_vttbr_el2_write(0);
+			isb();
+			// hmm, kpreempt_enable();
+		} else {
+			aarch64_hvc_maintain_ipa(machdata->vttbr_el2, op, ipa, va);
+		}
 	}
 	NVMMHIST_LOGN(nvmmdebug, 4, "<-- done", 0, 0, 0, 0);
 }

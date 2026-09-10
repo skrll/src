@@ -29,6 +29,7 @@
 #ifndef _NVMM_AARCH64_INTERNAL_H_
 #define _NVMM_AARCH64_INTERNAL_H_
 
+#include <aarch64/machdep.h>
 
 static inline struct cpu_info *
 aarch64nvmm_curcpu(void)

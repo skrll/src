@@ -68,7 +68,7 @@ in_el2:
 	/* Check for EL2 host mode */
 	mrs	x2, hcr_el2
 	isb
-	tbz	x2, #34, no_el2_host_mode	/* HCR_E2H not set? */
+	tbz	x2, #34, not_el2_host_mode	/* HCR_E2H not set? */
 
 	/*
 	 * EL2 host mode enabled, nothing to do, leave. EL2 system registers
@@ -76,7 +76,7 @@ in_el2:
 	 */
 	ret
 
-no_el2_host_mode:
+not_el2_host_mode:
 	/* Default HCR_EL2 to EL1 as AArch64 */
 	mov	x2, #HCR_EL2_RW
 	mrs	x1, id_aa64mmfr1_el1
@@ -110,6 +110,14 @@ no_el2_host_mode:
 	mov	x2, #CPTR_EL2_VHE_FPEN_NONE
 	msr	cptr_el2, x2
 
+	/*
+	 * Enable physical/virtual timer access from EL0
+	 */
+	mov	x2, #(CNTHCTL_EL2_VHE_EL0PCTEN | CNTHCTL_EL2_VHE_EL0VCTEN)
+	orr	x2, x2, #(CNTHCTL_EL2_VHE_EL0PTEN  | CNTHCTL_EL2_VHE_EL0VTEN)
+	msr	cnthctl_el2, x2
+	isb
+
 	adrl	x0, _C_LABEL(e2h_enabled)
 	mov	x1, #1
 	str	w1, [x0]
@@ -117,10 +125,9 @@ no_el2_host_mode:
 #if NNVMM > 0
 	/* nvmm_available = 1 */
 	adrl	x0, _C_LABEL(nvmm_available)
-	mov	x1, #1
-	str	w1, [x0]
+	str	w1, [x0]			/* still 1 from above */
 #endif
-	b	el2_setup_eret_context
+	b	vhe_return
 
 vhe_not_supported:
 	msr	hcr_el2, x2
@@ -218,9 +225,8 @@ vhe_not_supported:
 	msr	tpidr_el2, xzr
 #endif
 
-#endif /* ARMV80_NVHE */
+#endif	/* ARMV80_NVHE */
 
-el2_setup_eret_context:
 	/*
 	 * Prepare to leave EL2 permanently.
 	 * Copy our current active stack pointer directly to SP_EL1 so the
@@ -237,7 +243,6 @@ el2_setup_eret_context:
 	mov	x2, #(SPSR_F | SPSR_I | SPSR_A | SPSR_A64_D | SPSR_M_EL1H)
 	msr	spsr_el2, x2
 
-el2_vhe_active_exit:
 	/* Use DPRINTSREG for BP and CPU_DPRINTSREG for APs */
 	cmp	x27, #0
 	b.ne	3f
@@ -246,6 +251,7 @@ el2_vhe_active_exit:
 	DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
 	DPRINTSREG("TCR_EL2          = ", tcr_el2)
 	DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	DPRINTSREG("CNTHCTL_EL2      = ", cnthctl_el2)
 	DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
 	DPRINTSREG("MAIR_EL2         = ", mair_el2)
 	DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
@@ -275,6 +281,7 @@ el2_vhe_active_exit:
 	CPU_DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
 	CPU_DPRINTSREG("TCR_EL2          = ", tcr_el2)
 	CPU_DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	CPU_DPRINTSREG("CNTHCTL_EL2      = ", cnthctl_el2)
 	CPU_DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
 	CPU_DPRINTSREG("MAIR_EL2         = ", mair_el2)
 	CPU_DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
@@ -302,6 +309,74 @@ el2_vhe_active_exit:
 	// BP will eret to drop_to_el1 call site in drop_to_el1_inline
 	// APs will eret to drop_to_el1 call site in cpu_mpstart
 	eret
+
+
+vhe_return:
+	/*
+	 * Prepare to leave EL2 permanently.
+	 * Copy our current active stack pointer directly to SP_EL1 so the
+	 * receiving EL1 kernel has a valid stack execution context immediately.
+	 */
+	mov	x0, sp
+	msr	sp_el1, x0
+
+	mov	x9, lr
+
+	/* Use DPRINTSREG for BP and CPU_DPRINTSREG for APs */
+	cmp	x27, #0
+	b.ne	3f
+
+	DPRINT("\n")
+	DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
+	DPRINTSREG("TCR_EL2          = ", tcr_el2)
+	DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
+	DPRINTSREG("MAIR_EL2         = ", mair_el2)
+	DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
+	DPRINTSREG("DAIF             = ", daif)
+
+	DPRINTREG("SP (EL2)         = ", sp)
+
+	mrs	x2, id_aa64pfr0_el1
+	/* Extract GIC bits from the register */
+	and	x2, x2, #ID_AA64PFR0_EL1_GIC
+	lsr	x2, x2, #ID_AA64PFR0_EL1_GIC_SHIFT
+	/* GIC[3:0] == 0001 - GIC CPU interface via special regs. supported */
+	cmp	x2, #ID_AA64PFR0_EL1_GIC_CPUIF_EN
+	b.ne	4f
+
+	DPRINTSREG("ICC_SRE_EL2      = ", icc_sre_el2)
+	DPRINTSREG("ICH_HCR_EL2      = ", ich_hcr_el2)
+	DPRINTSREG("ICH_VTR_EL2      = ", ich_vtr_el2)
+
+4:
+	mov	lr, x9
+	ret
+3:
+	CPU_DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
+	CPU_DPRINTSREG("TCR_EL2          = ", tcr_el2)
+	CPU_DPRINTSREG("HCR_EL2          = ", hcr_el2)
+	CPU_DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
+	CPU_DPRINTSREG("MAIR_EL2         = ", mair_el2)
+	CPU_DPRINTSREG("TPIDR_EL2        = ", tpidr_el2)
+	CPU_DPRINTSREG("DAIF             = ", daif)
+
+	CPU_DPRINTREG("SP (EL2)         = ", sp)
+
+	mrs	x2, id_aa64pfr0_el1
+	/* Extract GIC bits from the register */
+	and	x2, x2, #ID_AA64PFR0_EL1_GIC
+	lsr	x2, x2, #ID_AA64PFR0_EL1_GIC_SHIFT
+	/* GIC[3:0] == 0001 - GIC CPU interface via special regs. supported */
+	cmp	x2, #ID_AA64PFR0_EL1_GIC_CPUIF_EN
+	b.ne	5f
+
+	CPU_DPRINTSREG("ICC_SRE_EL2      = ", icc_sre_el2)
+	CPU_DPRINTSREG("ICH_HCR_EL2      = ", ich_hcr_el2)
+	CPU_DPRINTSREG("ICH_VTR_EL2      = ", ich_vtr_el2)
+
+5:
+	ret
 
 
 #if NNVMM > 0
@@ -348,6 +423,9 @@ ENTRY_NP(aarch64_e2h_vmenter)
 
 	mov	x1, x0 				/* second argument = cpudata */
 	mov	x0, sp				/* first argument = tf */
+
+	msr	daifset, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
+
 	bl	aarch64_el2_vmenter_context
 
 	/*
