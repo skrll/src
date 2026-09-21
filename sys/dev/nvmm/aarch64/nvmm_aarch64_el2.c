@@ -389,13 +389,17 @@ VBAR_EL1            VBAR_EL2            VBAR_EL12
 static void
 vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 {
-	NVMMHIST_FUNC();
-	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx state #%jx", (uintptr_t)tf, (uintptr_t)state, 0, 0);
+//	NVMMHIST_FUNC();
+//	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx state #%jx", (uintptr_t)tf, (uintptr_t)state, 0, 0);
 
 	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
 	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
 
-	/* E2H? */
+	/*
+	 * E2H?
+	 * yes, because guest.
+	 * host, not so much. does LR get saved into TF_PC? yes, it does.
+	 */
 	state->sprs[NVMM_AARCH64_SPR_PC] = tf->tf_pc;
 	state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] = tf->tf_spsr;
 
@@ -470,8 +474,7 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 		state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0] = reg_cntv_ctl_el0_read();
 		state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0] = reg_cntv_cval_el0_read();
 	}
-
-
+#if 0
 	NVMMHIST_LOGN(nvmmdebug, 40,
 	    "pc =              %#18jx  "
 	    "spsr =            %#18jx  "
@@ -547,17 +550,21 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	    state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0], 0, 0);
 
 	NVMMHIST_LOGN(nvmmdebug, 10, "<--- done", 0, 0, 0, 0);
+#endif
 }
 
 static void
 vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 {
+#if 0
 	NVMMHIST_FUNC();
 	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx state #%jx", (uintptr_t)tf, (uintptr_t)state, 0, 0);
-
+#endif
 	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
 	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
-	NVMMHIST_LOGN(nvmmdebug, 40,
+
+#if 0
+	    NVMMHIST_LOGN(nvmmdebug, 40,
 	    "tpidrro_el0 =     %#18jx  "
 	    "tpidr_el0 =       %#18jx  "
 	    "amair_el1 =       %#18jx  "
@@ -622,7 +629,13 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	    state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0]);
 
 	NVMMHIST_LOGN(nvmmdebug, 10, "<--- done", 0, 0, 0, 0);
-
+#endif
+	/*
+	 * E2H?
+	 * yes, because guest.
+	 * host, not so much (maybe it  doesn't matter because return
+	 *       from guest to host doesn't use trapframe for LR?)
+	 */
 	tf->tf_pc = state->sprs[NVMM_AARCH64_SPR_PC];
 	tf->tf_spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
 
@@ -697,14 +710,21 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 static void
 aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 {
-	NVMMHIST_FUNC();
-	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx cpudata %#jx",
-	    (uintptr_t)tf, (uintptr_t)cpudata, 0, 0);
+//	NVMMHIST_FUNC();
+//	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx cpudata %#jx",
+//	    (uintptr_t)tf, (uintptr_t)cpudata, 0, 0);
 
 	struct cpu_info * const ci = aarch64nvmm_curcpu();
+	uint64_t hcr = HCR_EL2_RW;
+
+	if (e2h_enabled) {
+                extern uintptr_t el1_vectors;
+		reg_vbar_el2_write((uint64_t)&el1_vectors);
+		hcr |= HCR_EL2_E2H | HCR_EL2_TGE;
+	}
 
 	reg_mdcr_el2_write(0);
-	reg_hcr_el2_write(HCR_EL2_RW);
+	reg_hcr_el2_write(hcr);
 	reg_hstr_el2_write(0);
 	reg_vttbr_el2_write(0);
 	isb();
@@ -716,8 +736,8 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 
 	ci->ci_invm = false;
 
-	NVMMHIST_LOGN(nvmmdebug, 10, "<--- done (host loaded %#jx, guest saved %#jx)",
-	    (uintptr_t)&cpudata->host, (uintptr_t)&cpudata->guest, 0, 0);
+//	NVMMHIST_LOGN(nvmmdebug, 10, "<--- done (host loaded %#jx, guest saved %#jx)",
+//	    (uintptr_t)&cpudata->host, (uintptr_t)&cpudata->guest, 0, 0);
 }
 
 void
@@ -860,8 +880,8 @@ emul_sysreg_rw(struct trapframe *tf)
 void
 aarch64_el2_vmexit_trap(struct trapframe *tf)
 {
-	NVMMHIST_FUNC();
-	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx", (uintptr_t)tf, 0, 0, 0);
+//	NVMMHIST_FUNC();
+//	NVMMHIST_CALLARGSN(nvmmdebug, 10, "tf %#jx", (uintptr_t)tf, 0, 0, 0);
 
 	struct cpu_info * const ci = aarch64nvmm_curcpu();
 	struct aarch64_cpudata * const cpudata = ci->ci_cpudata;
@@ -901,7 +921,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	case ESR_EC_INSN_ABT_EL_CUR:
 	case ESR_EC_DATA_ABT_EL_CUR:
 		/* el2sync_el2h() should be called, so it shouldn't come here... */
-		NVMMHIST_LOG(nvmmdebug, "INSN or DATA ABORT occured on EL2?", 0, 0, 0, 0);
+//		NVMMHIST_LOG(nvmmdebug, "INSN or DATA ABORT occured on EL2?", 0, 0, 0, 0);
 		exit->reason = NVMM_VCPU_EXIT_HALTED;
 		break;
 	case ESR_EC_UNKNOWN:
@@ -921,7 +941,7 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	case ESR_EC_WTCHPNT_EL_CUR:
 	case ESR_EC_BKPT_INSN_A64:
 	default:
-		NVMMHIST_LOG(nvmmdebug, "PC=%#jx ESR_EL2=%#jx (eclass=%#jx)", tf->tf_pc, esr, eclass, 0);
+//		NVMMHIST_LOG(nvmmdebug, "PC=%#jx ESR_EL2=%#jx (eclass=%#jx)", tf->tf_pc, esr, eclass, 0);
 		dump_el2_trapframe(tf);
 		exit->reason = NVMM_VCPU_EXIT_HALTED;
 		break;
@@ -931,10 +951,10 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 			do_vmexit = false;
 		} else {
 			if (__SHIFTOUT(esr, ESR_ISS_SYSREG_DIRECTION) == 0) {
-				NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EXIT_MSR", 0, 0, 0, 0);
+//				NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EXIT_MSR", 0, 0, 0, 0);
 				exit->reason = NVMM_VCPU_EXIT_MSR;
 			} else {
-				NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EXIT_MRS", 0, 0, 0, 0);
+//				NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EXIT_MRS", 0, 0, 0, 0);
 				exit->reason = NVMM_VCPU_EXIT_MRS;
 			}
 		}
@@ -952,7 +972,6 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	}
 
 // XXXNH used by the MMIO emulation code. hmm.
-#if 1
 	if (eclass != ESR_EC_INSN_ABT_EL_LOW &&
 	    eclass != ESR_EC_INSN_ABT_EL_CUR) {
 		// XXXNH defer to userland
@@ -960,21 +979,20 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		 * read an instruction from PC.
 		 * if instruction abort, it cannot be read.
 		 */
-		uint32_t *pa = (uint32_t *)aarch64_gva_to_pa(tf->tf_spsr, tf->tf_pc);
-		if (pa != (void *)-1)
-			exit->insn = le32toh(*pa);
+		paddr_t pa = aarch64_gva_to_pa(tf->tf_spsr, tf->tf_pc);
+		if (pa != -1)
+			exit->insn = e2h_enabled ?
+			    le32toh(*(uint32_t *)AARCH64_PA_TO_KVA(pa)) :
+			    le32toh(*(uint32_t *)pa);
 	}
-#endif
 
+	// E2H needs to do eret to guest if not doing vmexit
 	if (do_vmexit) {
 		aarch64_vmexit_context(tf, cpudata);
 	}
 }
 
-
-
-
-void
+struct trapframe *
 aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 {
 	NVMMHIST_FUNC();
@@ -988,6 +1006,10 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 
 	if (cpudata == NULL)
 		uartprintf("panic: %s: cpudata is NULL\n", __func__);
+
+	NVMMHIST_LOG(nvmmdebug, "VBAR_EL2=%#016jx VBAR_EL1=%#016jx VBAR_EL12=0x%016lx",
+	    reg_vbar_el2_read(), reg_vbar_el1_read(), reg_vbar_el12_read(),
+	    0);
 
 	/* save host state */
 	vcpu_context_save(tf, &cpudata->host);
@@ -1035,26 +1057,28 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 	if (__predict_false(cpudata->send_event_type != NVMM_VCPU_EVENT_NONE)) {
 		switch (cpudata->send_event_type) {
 		case NVMM_VCPU_EVENT_SYNC:
+#if 0
 			NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EVENT_SYNC: PC=%#jx LR=%#jx VBAR_EL1=0x%016lx",
 			    cpudata->guest.sprs[NVMM_AARCH64_SPR_PC],
 			    cpudata->guest.gprs[NVMM_AARCH64_GPR_X30],
 			    cpudata->guest.sprs[NVMM_AARCH64_SPR_VBAR_EL1],
 			    0);
+#endif
 			break;
 		case NVMM_VCPU_EVENT_SERROR:
-			NVMMHIST_LOG(nvmmdebug, "virtual serror", 0, 0, 0, 0);
+//			NVMMHIST_LOG(nvmmdebug, "virtual serror", 0, 0, 0, 0);
 			hcr |= HCR_EL2_VSE;
 			break;
 		case NVMM_VCPU_EVENT_IRQ:
-			NVMMHIST_LOG(nvmmdebug, "virtual irq", 0, 0, 0, 0);
+//			NVMMHIST_LOG(nvmmdebug, "virtual irq", 0, 0, 0, 0);
 			hcr |= HCR_EL2_VI;
 			break;
 		case NVMM_VCPU_EVENT_FIQ:
-			NVMMHIST_LOG(nvmmdebug, "virtual fiq", 0, 0, 0, 0);
+//			NVMMHIST_LOG(nvmmdebug, "virtual fiq", 0, 0, 0, 0);
 			hcr |= HCR_EL2_VF;
 			break;
 		default:
-			NVMMHIST_LOG(nvmmdebug, "type %#jx", cpudata->send_event_type, 0, 0, 0);
+//			NVMMHIST_LOG(nvmmdebug, "type %#jx", cpudata->send_event_type, 0, 0, 0);
 		}
 		cpudata->send_event_type = NVMM_VCPU_EVENT_NONE;
 	}
@@ -1067,13 +1091,19 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 	reg_mdcr_el2_write(MDCR_EL2_TPM);
 	isb();
 
+	if (e2h_enabled)
+		reg_vbar_el2_write(cpudata->vbar_el2);
+
 	ci->ci_invm = true;
 
+#if 0
 	NVMMHIST_LOGN(nvmmdebug, 10, "pc=%#jx lr=%#jx x0=%#jx hcr_el2=%#jx",
 	    cpudata->guest.sprs[NVMM_AARCH64_SPR_PC],
 	    cpudata->guest.gprs[NVMM_AARCH64_GPR_X30],
 	    cpudata->guest.gprs[NVMM_AARCH64_GPR_X0],
 	    hcr);
+#endif
+	return tf;
 }
 
 void

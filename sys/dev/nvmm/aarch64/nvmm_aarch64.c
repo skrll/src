@@ -101,7 +101,7 @@ struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 	.fprs = {},	/* q0-q31 are all zero */
 	.sprs = {
 		[NVMM_AARCH64_SPR_SCTLR_EL1]	= SCTLR_RES1,
-		[NVMM_AARCH64_SPR_SPSR_EL1]	= SPSR_M_EL1H,
+		[NVMM_AARCH64_SPR_SPSR_EL1]	= SPSR_A64_D | SPSR_A | SPSR_I | SPSR_F | SPSR_M_EL1H,
 	},
 	.tids = {}	/* initted in nvmm_aarch64_init_reset_state() */
 };
@@ -140,6 +140,8 @@ nvmm_aarch64_ident(void)
 	return true;
 }
 
+#ifdef ARMV80_NVHE
+
 static pd_entry_t *
 nvmm_aarch64_pagealloc(void)
 {
@@ -155,7 +157,7 @@ nvmm_aarch64_pagealloc(void)
 	pg->flags &= ~PG_BUSY;	/* never busy */
 	return (pd_entry_t *)VM_PAGE_TO_PHYS(pg);
 }
-
+#endif
 
 static void
 nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
@@ -335,6 +337,7 @@ nvmm_aarch64_el2_setup(void)
 	printf("%s: VTCR_EL2=%08"PRIx64", vtcr_ps=%"PRIu64", parange=%"PRIu64", stage2_startlevel=%u, stage2_concatenate_num=%u\n",
 	    cpu_name(curcpu()), vtcr_el2, vtcr_ps, parange, stage2_startlevel, stage2_concatenate_num);
 
+	static pd_entry_t *ttbr_pa;
 #ifdef ARMV80_NVHE
 
 	/*
@@ -347,7 +350,6 @@ nvmm_aarch64_el2_setup(void)
 	 * Allocated page tables are not released by calling nvmm_aarch64_fini().
 	 */
 
-	static pd_entry_t *ttbr_pa;
 	if (ttbr_pa != NULL)
 		return;
 
@@ -542,9 +544,14 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    __SHIFTIN(AARCH64_VMID(mach), VTTBR_VIMD) |
 	    __SHIFTIN(mach->vm->vm_map.pmap->pm_st2_table_pa, VTTBR_BADDR);
 
-	// non-VHE only
-	if (!pmap_extract(pmap_kernel(), (vaddr_t)cpudata, &cpudata->cpudata_pa))
-		panic("cannot resolve PA of cpudata");
+	if (e2h_enabled) {
+		extern uintptr_t hyp_vectors;
+		cpudata->vbar_el2 = (uint64_t)&hyp_vectors;
+	} else {
+		/* non-VHE mode */
+		if (!pmap_extract(pmap_kernel(), (vaddr_t)cpudata, &cpudata->cpudata_pa))
+			panic("cannot resolve PA of cpudata");
+	}
 
 	/* Install the RESET state. */
 	memcpy(&vcpu->comm->state, &nvmm_aarch64_reset_state,
@@ -910,7 +917,7 @@ nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t v
 			reg_hcr_el2_write(hcr_el2 | HCR_EL2_VM);
 			isb();
 
-			switch (op) {
+			switch (op & (NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL | NVMM_AARCH64_MAINTAIN_OP_TLBI)) {
 			case NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL:
 				aarch64_tlbi_by_vmid();
 				break;

@@ -165,6 +165,155 @@ ENTRY_NBTI(hyp_vectors)
 
 	.balign 64
 ENTRY_NP(el2trap_el2_exit)
+//	ldp	x0, x1, [sp, #TF_X0]
+	// sp is the guest trapframe which context save has copied away
+	// restore sp to the dummy trapframe that aarch64_e2h_vmenter
+	// pushed
+	ldp	x8, x9, [sp, #TF_X8]
+	ldp	x10, x11, [sp, #TF_X10]
+	ldp	x12, x13, [sp, #TF_X12]
+	ldp	x14, x15, [sp, #TF_X14]
+	ldp	x16, x17, [sp, #TF_X16]
+	ldp	x18, x19, [sp, #TF_X18]
+	ldp	x20, x21, [sp, #TF_X20]
+	ldp	x22, x23, [sp, #TF_X22]
+	ldp	x24, x25, [sp, #TF_X24]
+	ldp	x26, x27, [sp, #TF_X26]
+	ldp	x28, x29, [sp, #TF_X28]
+	// XXXNH x30/lr gets overridded
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
+	ldp	x30, x7, [sp, #TF_X30]
+
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	ldp	x0, x1, [sp, #TF_PC]
+
+	// XXXNH in VHE land we don't need to eret.
+	// XXXNH we can switch context, turn on {E2H,TGE} and jump to tf->tf_pc as
+	// XXXNH saved by aarch64_e2h_vmenter, or in the case of interrupts 
+	// XXXNH ARM_IRQ_HANDLER
+	// XXXNH also only need to save / restore callee saved registers.
+
+	mov	lr, x0
+	// stack pointer is correct wrt when we entered the guest
+	// no it's not because of load_context!
+//	mov 	sp, x7
+	add 	sp, sp, #TF_SIZE
+
+	// clear DAIF so that interrupts from guest have chance to be delivered.
+	msr	daifclr, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
+
+
+
+	ret
+
+	msr	daifset, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
+
+	msr	elr_el2, x0
+	msr	spsr_el2, x1
+
+	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
+	ldp	x0, x1, [sp, #TF_ESR]
+	msr	esr_el2, x0
+	msr	far_el2, x1
+
+	ldp	x0, x1, [sp, #TF_X0]
+	ldp	x2, x3, [sp, #TF_X2]
+	ldp	x4, x5, [sp, #TF_X4]
+
+	mov	x6, sp
+//	mov	sp, x7
+	msr 	sp_el1, x7 	// needed for VHE, but not for nVHE
+	ldp	x6, x7, [x6, #TF_X6]
+
+	/*
+	 * An isb is not required before eret if
+	 * SCTLR_EL2.EOS=1 [bit 11] (RES1)
+	 */
+	ERET
+END(el2trap_el2_exit)
+
+
+	.balign 64
+ENTRY_NP(el2trap_el_low_exit)
+	// sp is the guest trapframe which context save has copied away
+	// restore sp to the dummy trapframe that aarch64_e2h_vmenter
+	// pushed
+//	ldp	x0, x1, [sp, #TF_X0]
+	ldp	x8, x9, [sp, #TF_X8]
+	ldp	x10, x11, [sp, #TF_X10]
+	ldp	x12, x13, [sp, #TF_X12]
+	ldp	x14, x15, [sp, #TF_X14]
+	ldp	x16, x17, [sp, #TF_X16]
+	ldp	x18, x19, [sp, #TF_X18]
+	ldp	x20, x21, [sp, #TF_X20]
+	ldp	x22, x23, [sp, #TF_X22]
+	ldp	x24, x25, [sp, #TF_X24]
+	ldp	x26, x27, [sp, #TF_X26]
+	ldp	x28, x29, [sp, #TF_X28]
+
+#if 0
+	// XXXNH x30/lr gets overridded
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
+#endif
+	ldp	x30, x7, [sp, #TF_X30]
+
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	ldp	x0, x1, [sp, #TF_PC]
+
+	// XXXNH in VHE land we don't need to eret.
+	// XXXNH we can switch context, turn on {E2H,TGE} and jump to tf->tf_pc as
+	// XXXNH saved by aarch64_e2h_vmenter, or in the case of interrupts 
+	// XXXNH ARM_IRQ_HANDLER
+	// XXXNH also only need to save / restore callee saved registers.
+
+	mov	lr, x0
+	// stack pointer is correct wrt when we entered the guest
+	// no it's not because of load_context!
+//	mov 	sp, x7
+	add 	sp, sp, #TF_SIZE
+
+
+	// clear DAIF so that interrupts from guest have chance to be delivered.
+	msr	daifclr, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
+
+
+
+	ret
+
+
+	msr	daifset, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
+
+	msr	elr_el2, x0
+	msr	spsr_el2, x1
+	/* x1 = spsr */
+
+	/*
+	 * SP(x31) is not restored here. its entity is sp_el0 or sp_el1.
+	 */
+	ldr	x30, [sp, #TF_X30]
+
+	ldp	x2, x3, [sp, #TF_X2]
+	ldp	x4, x5, [sp, #TF_X4]
+	ldp	x6, x7, [sp, #TF_X6]
+
+	CTASSERT_ADJACENT(TF_X0, TF_X1)
+	CTASSERT(TF_X0 == 0)
+	ldp	x0, x1, [sp], #TF_SIZE
+
+	/*
+	 * An isb is not required before eret if
+	 * SCTLR_EL2.EOS=1 [bit 11] (RES1)
+	 */
+	ERET
+END(el2trap_el_low_exit)
+
+
+
+	.balign 64
+ENTRY_NP(el2_enter_guest)
+	/*
+	 * Load all the guest general purpose registers and eret to the guest.
+	 */
 	ldp	x8, x9, [sp, #TF_X8]
 	ldp	x10, x11, [sp, #TF_X10]
 	ldp	x12, x13, [sp, #TF_X12]
@@ -196,58 +345,21 @@ ENTRY_NP(el2trap_el2_exit)
 	ldp	x2, x3, [sp, #TF_X2]
 	ldp	x4, x5, [sp, #TF_X4]
 
-	mov	x6, sp
-	mov	sp, x7
-	ldp	x6, x7, [x6, #TF_X6]
+	msr 	sp_el1, x7
+	ldp	x6, x7, [SP, #TF_X6]
 
+	// Ensure correct stack pointer on return to
+	// we've just loaded the guest trapframe and want it
+	// the hyp_vectors to save the new guest trapframe in the
+	// same stack slot.
+	add 	sp, sp, #TF_SIZE
 	/*
 	 * An isb is not required before eret if
 	 * SCTLR_EL2.EOS=1 [bit 11] (RES1)
 	 */
 	ERET
-END(el2trap_el2_exit)
+END(el2_enter_guest)
 
-	.balign 64
-ENTRY_NP(el2trap_el_low_exit)
-	ldp	x8, x9, [sp, #TF_X8]
-	ldp	x10, x11, [sp, #TF_X10]
-	ldp	x12, x13, [sp, #TF_X12]
-	ldp	x14, x15, [sp, #TF_X14]
-	ldp	x16, x17, [sp, #TF_X16]
-	ldp	x18, x19, [sp, #TF_X18]
-	ldp	x20, x21, [sp, #TF_X20]
-	ldp	x22, x23, [sp, #TF_X22]
-	ldp	x24, x25, [sp, #TF_X24]
-	ldp	x26, x27, [sp, #TF_X26]
-	ldp	x28, x29, [sp, #TF_X28]
 
-	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
-	ldp	x0, x1, [sp, #TF_PC]
-
-	msr	daifset, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
-
-	msr	elr_el2, x0
-	msr	spsr_el2, x1
-	/* x1 = spsr */
-
-	/*
-	 * SP(x31) is not restored here. its entity is sp_el0 or sp_el1.
-	 */
-	ldr	x30, [sp, #TF_X30]
-
-	ldp	x2, x3, [sp, #TF_X2]
-	ldp	x4, x5, [sp, #TF_X4]
-	ldp	x6, x7, [sp, #TF_X6]
-
-	CTASSERT_ADJACENT(TF_X0, TF_X1)
-	CTASSERT(TF_X0 == 0)
-	ldp	x0, x1, [sp], #TF_SIZE
-
-	/*
-	 * An isb is not required before eret if
-	 * SCTLR_EL2.EOS=1 [bit 11] (RES1)
-	 */
-	ERET
-END(el2trap_el_low_exit)
 
 #endif /* NNVMM == 0 */

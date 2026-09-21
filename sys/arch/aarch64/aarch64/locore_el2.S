@@ -384,8 +384,6 @@ vhe_return:
  * aarch64_e2h_vmenter(struct aarch64_cpudata *cpudata)
  */
 ENTRY_NP(aarch64_e2h_vmenter)
-//	.balign 128
-//	CTASSERT(TF_X0 == 0)
 	stp	x0, x1, [sp, #-TF_SIZE]!		// not needed callee saved only
 	stp	x2, x3, [sp, #TF_X2]			// ...
 	stp	x4, x5, [sp, #TF_X4]
@@ -395,20 +393,18 @@ ENTRY_NP(aarch64_e2h_vmenter)
 	stp	x12, x13, [sp, #TF_X12]
 	stp	x14, x15, [sp, #TF_X14]
 	stp	x16, x17, [sp, #TF_X16]
-	stp	x18, x19, [sp, #TF_X18]
+	stp	x18, x19, [sp, #TF_X18]			// x19 ...
 	stp	x20, x21, [sp, #TF_X20]
 	stp	x22, x23, [sp, #TF_X22]
 	stp	x24, x25, [sp, #TF_X24]
 	stp	x26, x27, [sp, #TF_X26]
-	stp	x28, x29, [sp, #TF_X28]
+	stp	x28, x29, [sp, #TF_X28]			// ... X28 and FP and LR are callee saved
 
-#if 0
 //	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
-	mrs	x21, elr_el2
-	mrs	x22, spsr_el2
+	mov 	x21, lr
+	mov     x22, #SPSR_M_EL1H		// What is it really? Maybe it doesn't matter.
 	stp	x21, x22, [sp, #TF_PC]
-	/* x22 = spsr */
-#endif
+
 	add	x8, sp, #TF_SIZE
 
 //	CTASSERT_ADJACENT(TF_X30, TF_SP)
@@ -426,13 +422,15 @@ ENTRY_NP(aarch64_e2h_vmenter)
 
 	msr	daifset, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
 
-	bl	aarch64_el2_vmenter_context
-
 	/*
-	 * The guest system registers are all in place.
-	 * Load the general registers from the trapframe.
+	 * Once the guest system registers are all in place after
+	 * aarch64_el2_vmenter_context call into el2_enter_guest which
+	 * will load the general registers from the trapframe and eret
+	  to the guest.
 	 */
-	b	el2trap_el2_exit
+	adr 	lr, el2_enter_guest
+
+	b	aarch64_el2_vmenter_context
 END(aarch64_e2h_vmenter)
 #endif
 
