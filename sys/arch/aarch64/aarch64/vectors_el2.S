@@ -84,7 +84,7 @@ END(hyp_vectors)
 
 #else /* NNVMM == 0 */
 
-.macro vector_entry, func, el
+.macro vector_entry_nvhe, func, el
 	.balign 128
 	CTASSERT(TF_X0 == 0)
 	stp	x0, x1, [sp, #-TF_SIZE]!
@@ -138,7 +138,7 @@ END(hyp_vectors)
 
 
 	.balign 2048
-ENTRY_NBTI(hyp_vectors)
+ENTRY_NBTI(hyp_vectors_nvhe)
 	/* from EL2 with sp_el0 */
 	vector_entry	el2sync_el2t, 2
 	vector_entry	el2irq_el2t, 2
@@ -162,6 +162,110 @@ ENTRY_NBTI(hyp_vectors)
 	vector_entry	el2irq32_el_low, 1
 	vector_entry	el2fiq32_el_low, 1
 	vector_entry	el2error32_el_low, 1
+
+
+.macro vector_entry_vhe, func, el
+	.balign 128
+	CTASSERT(TF_X0 == 0)
+	stp	x0, x1, [sp, #-TF_SIZE]!
+	stp	x2, x3, [sp, #TF_X2]
+	stp	x4, x5, [sp, #TF_X4]
+	stp	x6, x7, [sp, #TF_X6]
+	stp	x8, x9, [sp, #TF_X8]
+	stp	x10, x11, [sp, #TF_X10]
+	stp	x12, x13, [sp, #TF_X12]
+	stp	x14, x15, [sp, #TF_X14]
+	stp	x16, x17, [sp, #TF_X16]
+	stp	x18, x19, [sp, #TF_X18]
+	stp	x20, x21, [sp, #TF_X20]
+	stp	x22, x23, [sp, #TF_X22]
+	stp	x24, x25, [sp, #TF_X24]
+	stp	x26, x27, [sp, #TF_X26]
+	stp	x28, x29, [sp, #TF_X28]
+
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	mrs	x21, elr_el2
+	mrs	x22, spsr_el2
+	stp	x21, x22, [sp, #TF_PC]
+	/* x22 = spsr */
+
+.if \el == 2
+	/* sp was already grown, x8 = sp + TF_SIZE = original sp */
+	add	x8, sp, #TF_SIZE
+.else
+	// XXXNH
+	/*
+	 * from EL0/EL1, tf_sp is not stored.
+	 * entity of SP(x31) is SP_EL0 or SP_EL1 depending on the mode.
+	 */
+	mov	x8, xzr
+.endif
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
+	stp	lr, x8, [sp, #TF_X30]
+
+	CTASSERT_ADJACENT(TF_ESR, TF_FAR)
+	mrs	x23, esr_el2
+	mrs	x24, far_el2
+	stp	x23, x24, [sp, #TF_ESR]
+
+	mov	x0, sp				/* argument = tf */
+	bl	\func
+
+	mrs 	x0, tpidr_el2
+	ldr 	w0, [x0, #CI_INVM]
+
+        ldr     r3, [r0, #4]
+        cbz     w0, .Lvmexit
+.if \el == 2
+	b	el2trap_el2_exit
+.else
+	b	el2trap_el_low_exit
+.endif
+.Lvmexit:
+	b 	el2trap_vmexit
+.endm
+
+
+
+
+// XXXNH in VHE land we don't need to eret.
+// XXXNH we can switch context, turn on {E2H,TGE} and jump to tf->tf_pc as
+// XXXNH saved by aarch64_e2h_vmenter, or in the case of interrupts 
+// XXXNH ARM_IRQ_HANDLER
+// XXXNH also only need to save / restore callee saved registers.
+
+	.balign 64
+ENTRY_NP(el2trap_vmexit)
+	ldp	x8, x9, [sp, #TF_X8]
+	ldp	x10, x11, [sp, #TF_X10]
+	ldp	x12, x13, [sp, #TF_X12]
+	ldp	x14, x15, [sp, #TF_X14]
+	ldp	x16, x17, [sp, #TF_X16]
+	ldp	x18, x19, [sp, #TF_X18]
+	ldp	x20, x21, [sp, #TF_X20]
+	ldp	x22, x23, [sp, #TF_X22]
+	ldp	x24, x25, [sp, #TF_X24]
+	ldp	x26, x27, [sp, #TF_X26]
+	ldp	x28, x29, [sp, #TF_X28]
+
+	CTASSERT_ADJACENT(TF_X30, TF_SP)
+	ldp	x30, x7, [sp, #TF_X30]
+
+	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
+	ldp	x0, x1, [sp, #TF_PC]
+
+	mov	lr, x0
+	// stack pointer is correct wrt when we entered the guest
+	// no it's not because of load_context!
+//	mov 	sp, x7
+	add 	sp, sp, #TF_SIZE
+
+	// clear DAIF so that interrupts from guest have chance to be delivered.
+	msr	daifclr, #__SHIFTOUT(DAIF_D | DAIF_A | DAIF_I | DAIF_F, DAIF_MASK)
+
+	ret
+
+
 
 	.balign 64
 ENTRY_NP(el2trap_el2_exit)
