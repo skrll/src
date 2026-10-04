@@ -65,6 +65,8 @@ drop_to_el1:
 	ret
 
 in_el2:
+// Just remove this #if 1 block?
+#if 1
 	/* Check for EL2 host mode */
 	mrs	x2, hcr_el2
 	isb
@@ -74,9 +76,10 @@ in_el2:
 	 * EL2 host mode enabled, nothing to do, leave. EL2 system registers
 	 * will be configured via their _EL1 aliases
 	 */
-	ret
+//	b	el2_host_mode
 
 not_el2_host_mode:
+#endif
 	/* Default HCR_EL2 to EL1 as AArch64 */
 	mov	x2, #HCR_EL2_RW
 	mrs	x1, id_aa64mmfr1_el1
@@ -87,10 +90,14 @@ not_el2_host_mode:
 	cmp	x1, #0
 	b.eq    vhe_not_supported
 
+
+el2_host_mode:
+	// XXXNH not needed because HCR_EL2.E2H=1 aliases it...
 	/* Mirror memory attribute types from EL1 to EL2 */
 	mrs	x0, mair_el1
 	msr	mair_el2, x0
 
+	// XXXNH not needed because HCR_EL2.E2H=1 aliases it...
 	/* Initialize TCR_EL2 using standard TCR configuration values */
 	ldr	x0, tcr_setting
 	msr	tcr_el2, x0
