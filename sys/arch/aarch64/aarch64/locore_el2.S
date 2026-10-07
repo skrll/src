@@ -65,21 +65,6 @@ drop_to_el1:
 	ret
 
 in_el2:
-// Just remove this #if 1 block?
-#if 1
-	/* Check for EL2 host mode */
-	mrs	x2, hcr_el2
-	isb
-	tbz	x2, #34, not_el2_host_mode	/* HCR_E2H not set? */
-
-	/*
-	 * EL2 host mode enabled, nothing to do, leave. EL2 system registers
-	 * will be configured via their _EL1 aliases
-	 */
-//	b	el2_host_mode
-
-not_el2_host_mode:
-#endif
 	/* Default HCR_EL2 to EL1 as AArch64 */
 	mov	x2, #HCR_EL2_RW
 	mrs	x1, id_aa64mmfr1_el1
@@ -90,9 +75,7 @@ not_el2_host_mode:
 	cmp	x1, #0
 	b.eq    vhe_not_supported
 
-
-el2_host_mode:
-	// XXXNH not needed because HCR_EL2.E2H=1 aliases it...
+	// XXXNH not needed when HCR_EL2.E2H=1, because it's aliase it...
 	/* Mirror memory attribute types from EL1 to EL2 */
 	mrs	x0, mair_el1
 	msr	mair_el2, x0
@@ -233,7 +216,8 @@ vhe_not_supported:
 	/*
 	 * Prepare to leave EL2 permanently.
 	 * Copy our current active stack pointer directly to SP_EL1 so the
-	 * receiving EL1 kernel has a valid stack execution context immediately.
+	 * receiving EL1 kernel has a valid stack execution context
+	 * immediately.
 	 */
 	mov	x0, sp
 	msr	sp_el1, x0
@@ -312,7 +296,6 @@ vhe_not_supported:
 	// BP will eret to drop_to_el1 call site in drop_to_el1_inline
 	// APs will eret to drop_to_el1 call site in cpu_mpstart
 	eret
-
 
 vhe_return:
 	/*
