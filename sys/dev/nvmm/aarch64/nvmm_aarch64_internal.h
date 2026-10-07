@@ -66,7 +66,7 @@ ipa_hpfar_far(vaddr_t hpfar, vaddr_t far)
 {
 	uint64_t fipa = __SHIFTOUT(hpfar, HPFAR_EL2_FIPA);
 
-	CTASSERT((HPFAR_EL2_FIPA_BITS & ~PAGE_MASK) == 0);
+	CTASSERT((HPFAR_EL2_FIPA_BITS & PAGE_MASK) == 0);
 	return __SHIFTIN(fipa, HPFAR_EL2_FIPA_BITS) | (far & PAGE_MASK);
 }
 
