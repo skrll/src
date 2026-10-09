@@ -191,6 +191,7 @@ aarch64_fatal:
  */
 vstart:
 	DPRINTREG("PC               = ", x20)
+	DPRINTREG("SP               = ", sp)
 
 	/* set exception vector */
 	adrl	x0, _C_LABEL(el1_vectors)
