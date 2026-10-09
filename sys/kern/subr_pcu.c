@@ -101,7 +101,7 @@ pcu_available_p(struct lwp *l)
 {
 
 	/* XXX Not sure this is safe unless l is locked!  */
-	return (l->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) != LW_SYSTEM;
+	return (l->l_flag & (LW_SYSTEM | LW_SYSTEM_FPU)) != LW_SYSTEM;
 }
 
 /*
