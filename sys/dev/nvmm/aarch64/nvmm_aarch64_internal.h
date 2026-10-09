@@ -49,8 +49,12 @@ struct aarch64_cpudata {
 		uint64_t vbar_el2;		// Only used when e2h_enabled is true
 	};
 	uint64_t vttbr_el2;
+	uint64_t host_cntvoff_el2;
+	uint64_t guest_cntvoff_el2;
+	uint64_t guest_last_exit_time;
 	uint64_t send_event_type;
 	uint64_t send_event_esr;
+	bool guest_last_time_valid;
 	bool evt_pending;
 
 	struct nvmm_aarch64_exit exit;
