@@ -73,9 +73,13 @@ struct aarch64_cpudata {
 struct aarch64_cpudata_host {
 	uint64_t hcr_el2;
 	uint64_t mdcr_el2;
+	uint64_t host_cntvoff_el2;
+	uint64_t guest_cntvoff_el2;
+	uint64_t guest_last_exit_time;
 	uint64_t vtimer_fired : 1;
 	uint64_t enabled_pmu : 1;
-	uint64_t reserved : 62;
+	uint64_t guest_last_time_valid : 1;
+	uint64_t reserved : 61;
 	/*
 	 * Shadow registers for guest visible state.
 	 */
