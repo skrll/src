@@ -635,9 +635,13 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	isb();
 
 	/* save guest state */
+	cpudata->guest_last_exit_time = reg_cntpct_el0_read();
 	vcpu_context_save(tf, &cpudata->guest);
+
 	/* load host state */
 	vcpu_context_load(tf, &cpudata->host);
+	reg_cntvoff_el2_write(cpudata->host_cntvoff_el2);
+	isb();
 
 #ifdef NVMM_DEBUG
 	if (cpudata->guest.sprs[NVMM_AARCH64_SPR_PC] == 0x200) {
@@ -659,12 +663,6 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 #endif
 #endif
 
-#ifdef NVMM_DEBUG
-	if (cpudata->guest.sprs[NVMM_AARCH64_SPR_PC] == 0x1038fc) {
-		if (nhwficount++ > 3)
-			nvmmdebug = 0;
-	}
-#endif
 	vcpu_context_dump(&cpudata->guest, false, 0);
 
 	ci->ci_invm = false;
@@ -1171,6 +1169,16 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 	vcpu_context_save(tf, &cpudata->host);
 	/* load guest state */
 	vcpu_context_load(tf, &cpudata->guest);
+
+	cpudata->host_cntvoff_el2 = reg_cntvoff_el2_read();
+	if (cpudata->guest_last_time_valid) {
+		cpudata->guest_cntvoff_el2 +=
+		    reg_cntpct_el0_read() - cpudata->guest_last_exit_time;
+	} else {
+		cpudata->guest_cntvoff_el2 = 0;
+		cpudata->guest_last_time_valid = true;
+	}
+	reg_cntvoff_el2_write(cpudata->guest_cntvoff_el2);
 
 	reg_vttbr_el2_write(cpudata->vttbr_el2);
 	reg_hstr_el2_write(0xffff);
