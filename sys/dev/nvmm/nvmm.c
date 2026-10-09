@@ -760,7 +760,7 @@ nvmm_do_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 			paddr_t ttbr0;
 			vaddr_t hva;
 
-			ttbr0 = cpudata->guest.ctx.sprs[NVMM_AARCH64_SPR_TTBR0_EL1] &
+			ttbr0 = cpudata->guest.sprs[NVMM_AARCH64_SPR_TTBR0_EL1] &
 			    TTBR_BADDR;
 			ttbr0 = trunc_page(ttbr0);
 			hva = nvmm_gpa_to_hva(mach, ttbr0);

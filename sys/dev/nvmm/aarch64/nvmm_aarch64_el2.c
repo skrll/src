@@ -707,11 +707,18 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	reg_vttbr_el2_write(0);
 	isb();
 
-	struct aarch64_cpudata_host * const host = aarch64nvmm_host_cpudata(cpudata);
+	struct aarch64_cpudata_host * const host =
+	    aarch64nvmm_host_cpudata(cpudata);
+	/* save guest context */
+	host->guest_last_exit_time = reg_cntpct_el0_read();
+
 	/* save guest state */
 	vcpu_context_save(tf, &cpudata->guest, host);
 	/* load host state */
 	vcpu_context_load(tf, &cpudata->host, host);
+
+	reg_cntvoff_el2_write(host->host_cntvoff_el2);
+	isb();
 
 	vcpu_context_dump(tf, &cpudata->guest, false, 0);
 
@@ -1483,6 +1490,16 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 	vcpu_context_save(tf, &cpudata->host, host);
 	/* load guest state */
 	vcpu_context_load(tf, &cpudata->guest, host);
+
+	host->host_cntvoff_el2 = reg_cntvoff_el2_read();
+	if (host->guest_last_time_valid) {
+		host->guest_cntvoff_el2 +=
+		    reg_cntpct_el0_read() - host->guest_last_exit_time;
+	} else {
+		host->guest_cntvoff_el2 = 0;
+		host->guest_last_time_valid = true;
+	}
+	reg_cntvoff_el2_write(host->guest_cntvoff_el2);
 
 	reg_vttbr_el2_write(cpudata->vttbr_el2);
 	reg_hstr_el2_write(0xffff);

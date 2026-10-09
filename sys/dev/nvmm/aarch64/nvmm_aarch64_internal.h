@@ -74,6 +74,11 @@ struct aarch64_cpudata_host {
 	uint64_t enabled_pmu : 1;
 	uint64_t hcr_el2;
 	uint64_t mdcr_el2;
+	uint64_t host_cntvoff_el2;
+	uint64_t guest_cntvoff_el2;
+	uint64_t guest_last_exit_time;
+	bool guest_last_time_valid;
+
 	/*
 	 * Shadow registers for guest visible state.
 	 */
