@@ -191,6 +191,7 @@ struct cpu_info {
 	struct aarch64_cache_info ci_cacheinfo[MAX_CACHE_LEVEL];
 	struct aarch64_cpufuncs ci_cpufuncs;
 
+	int  ci_nhdebug;
 	bool ci_invm;
 	void *ci_cpudata; // struct aarch64_cpudata *
 

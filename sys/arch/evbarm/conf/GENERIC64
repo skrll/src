@@ -57,7 +57,7 @@ options 	DEBUG
 #options 	EARLYCONS=thunderx, CONSADDR=0x87e024000000
 
 # RPI 5
-options 	EARLYCONS=acpi, CONSADDR=0x107d001000
+#options 	EARLYCONS=acpi, CONSADDR=0x107d001000
 
 # The QEMU sbsa-ref machine
 #options 	EARLYCONS=plcom, CONSADDR=0x60000000

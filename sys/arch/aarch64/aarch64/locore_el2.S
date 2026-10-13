@@ -329,6 +329,16 @@ vhe_return:
 
 	DPRINTREG("SP (EL2)         = ", sp)
 
+// CNTHP_*_EL2 — EL2 physical timer (CNTHP_CTL_EL2, CNTHP_CVAL_EL2 / CNTHP_TVAL_EL2). This is the main EL2-only timer to disable if NVMM/NetBSD doesn’t use it.
+// CNTHV_*_EL2 — EL2 virtual timer. In this tree, QEMU marks it available only with VHE; disable it too when implemented and unused.
+	DPRINTSREG("CNTHV_CTL_EL2    = ", cnthv_ctl_el2);
+	DPRINTSREG("CNTHP_CTL_EL2    = ", cnthp_ctl_el2);
+
+	/* Do this before DPRINTSREG */
+	mov 	x2, #0
+	msr 	cnthp_ctl_el2, x2
+	msr 	cnthv_ctl_el2, x2
+
 	mrs	x2, id_aa64pfr0_el1
 	/* Extract GIC bits from the register */
 	and	x2, x2, #ID_AA64PFR0_EL1_GIC
@@ -354,6 +364,14 @@ vhe_return:
 	CPU_DPRINTSREG("DAIF             = ", daif)
 
 	CPU_DPRINTREG("SP (EL2)         = ", sp)
+
+	CPU_DPRINTSREG("CNTHV_CTL_EL2    = ", cnthv_ctl_el2);
+	CPU_DPRINTSREG("CNTHP_CTL_EL2    = ", cnthp_ctl_el2);
+
+	/* Do this before DPRINTSREG */
+	mov 	x2, #0
+	msr 	cnthp_ctl_el2, x2
+	msr 	cnthv_ctl_el2, x2
 
 	mrs	x2, id_aa64pfr0_el1
 	/* Extract GIC bits from the register */

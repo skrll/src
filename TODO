@@ -6,6 +6,54 @@ TODO
   - migration support
   - NVHE - should copy from host EL1 to EL2 so host can tick while in guest
 
+**
+ * kvm_handle_wfx - handle a wait-for-interrupts or wait-for-event
+ *                  instruction executed by a guest
+ *
+ * @vcpu:       the vcpu pointer
+ *
+ * WFE[T]: Yield the CPU and come back to this vcpu when the scheduler
+ * decides to.
+ * WFI: Simply call kvm_vcpu_halt(), which will halt execution of
+ * world-switches and schedule other host processes until there is an
+ * incoming IRQ or FIQ to the VM.
+ * WFIT: Same as WFI, with a timed wakeup implemented as a background timer
+ *
+ * WF{I,E}T can immediately return if the deadline has already expired.
+ */
+static int kvm_handle_wfx(struct kvm_vcpu *vcpu)
+
+static u64 compute_emulated_cntx_ctl_el0(struct kvm_vcpu *vcpu,
+                                         enum vcpu_sysreg reg)
+{
+        unsigned long ctl;
+        u64 cval, cnt;
+        bool stat;
+
+        switch (reg) {
+        case CNTP_CTL_EL0:
+                cval = __vcpu_sys_reg(vcpu, CNTP_CVAL_EL0);
+                ctl  = __vcpu_sys_reg(vcpu, CNTP_CTL_EL0);
+                cnt  = compute_counter_value(vcpu_ptimer(vcpu));
+                break;
+        case CNTV_CTL_EL0:
+                cval = __vcpu_sys_reg(vcpu, CNTV_CVAL_EL0);
+                ctl  = __vcpu_sys_reg(vcpu, CNTV_CTL_EL0);
+                cnt  = compute_counter_value(vcpu_vtimer(vcpu));
+                break;
+        default:
+                BUG();
+        }
+
+        stat = cval <= cnt;
+        __assign_bit(__ffs(ARCH_TIMER_CTRL_IT_STAT), &ctl, stat);
+
+        return ctl;
+}
+
+
+
+
 
 - check panic works for non-VHE EL2
 - BE support?

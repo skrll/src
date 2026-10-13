@@ -934,3 +934,19 @@ const struct nvmm_impl nvmm_aarch64 = {
 	.vcpu_inject = nvmm_aarch64_vcpu_inject,
 	.vcpu_run = nvmm_aarch64_vcpu_run
 };
+
+
+
+void
+nvmm_exit_dump(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
+    struct nvmm_vcpu_exit *exit);
+
+void
+nvmm_exit_dump(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
+    struct nvmm_vcpu_exit *exit)
+{
+#if 0
+	printf("%s: exit reason=%ld\n", __func__, exit->reason);
+	printf("%s: pc=%#jx\n", __func__, vcpu->comm->state.sprs[NVMM_AARCH64_SPR_PC]);
+#endif
+}

@@ -683,6 +683,9 @@ out:
 	return error;
 }
 
+void nvmm_exit_dump(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
+    struct nvmm_vcpu_exit *exit);
+
 static int
 nvmm_do_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
@@ -713,6 +716,14 @@ nvmm_do_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 			break;
 		}
 	}
+#ifdef NVMM_DEBUG
+	if (exit->reason == NVMM_VCPU_EXIT_WFI) {
+//		extern int nvmmdebug;
+//		nvmmdebug = 0xffff;
+
+	}
+#endif
+	nvmm_exit_dump(mach, vcpu, exit);
 
 	return 0;
 }

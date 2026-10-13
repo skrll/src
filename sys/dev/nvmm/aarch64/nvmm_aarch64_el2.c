@@ -633,6 +633,32 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	reg_vttbr_el2_write(0);
 	isb();
 
+#if 0
+#ifdef NVMM_DEBUG
+	struct nvmm_aarch64_state * const gstate = &cpudata->guest;
+	bool cntv_ctl_changed = false;
+	bool cntv_cval_changed = false;
+	bool cntp_ctl_changed = false;
+	bool cntp_cval_changed = false;
+	uint64_t cntv_ctl  = e2h_enabled ? reg_cntv_ctl_el02_read()  : reg_cntv_ctl_el0_read();
+	uint64_t cntv_cval = e2h_enabled ? reg_cntv_cval_el02_read() : reg_cntv_cval_el0_read();
+	uint64_t cntp_ctl  = e2h_enabled ? reg_cntp_ctl_el02_read()  : reg_cntp_ctl_el0_read();
+	uint64_t cntp_cval = e2h_enabled ? reg_cntp_cval_el02_read() : reg_cntp_cval_el0_read();
+	if (gstate->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0] != cntv_ctl)  {
+		cntv_ctl_changed = true;
+	}
+	if (gstate->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0] != cntv_cval)  {
+		cntv_cval_changed = true;
+	}
+	if (gstate->sprs[NVMM_AARCH64_SPR_CNTP_CTL_EL0] != cntp_ctl)  {
+		cntp_ctl_changed = true;
+	}
+	if (gstate->sprs[NVMM_AARCH64_SPR_CNTP_CVAL_EL0] != cntp_cval)  {
+		cntp_cval_changed = true;
+	}
+#endif
+#endif
+
 	/* save guest state */
 	vcpu_context_save(tf, &cpudata->guest);
 	/* load host state */
@@ -642,17 +668,49 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	if (cpudata->guest.sprs[NVMM_AARCH64_SPR_PC] == 0x200) {
 		nvmmdebug = 0;
 	}
+#if 0
+	if (cntv_ctl_changed && nvmmdebug) {
+		printf("cntv_ctl  changed to %#jx\n", cntv_ctl);
+	}
+	if (cntv_cval_changed && nvmmdebug) {
+		printf("cntv_cval changed to %#jx\n", cntv_cval);
+	}
+	if (cntp_ctl_changed && nvmmdebug) {
+		printf("cntp_ctl  changed to %#jx\n", cntp_ctl);
+	}
+	if (cntp_cval_changed && nvmmdebug) {
+		printf("cntp_cval changed to %#jx\n", cntp_cval);
+	}
+#endif
 #endif
 	vcpu_context_dump(&cpudata->guest, false, 0);
 
 	ci->ci_invm = false;
 }
 
+
+int nhdebug;
+
 void
 aarch64_el2_vmexit_irq(struct trapframe *tf)
 {
 	struct cpu_info * const ci = aarch64nvmm_curcpu();
 	struct aarch64_cpudata * const cpudata = ci->ci_cpudata;
+
+	if (nvmm_uartdebug >= 2) {
+		uartprintf("%20s(%20"PRIu64"/%08lx): "
+			"PC=%016"PRIx64
+			" ELR_EL2=0x%016"PRIx64
+			" ESR_EL2=0x%016"PRIx64,
+			__func__,
+			reg_cntpct_el0_read(),
+			reg_mpidr_el1_read(),
+			tf->tf_pc,
+			reg_elr_el2_read(),
+			reg_esr_el2_read());
+	}
+
+
 
 	/*
 	 * Interrupts arrive here when running as a guest (with
@@ -691,8 +749,23 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
 		 * Can't call cpu_irq directly on NVHE as we're at EL2
 		 * and we need to be at EL1.
 		 */
-		if (__predict_true(e2h_enabled))
+		if (__predict_true(e2h_enabled)) {
+			if (nvmm_uartdebug >= 2) {
+				uartprintf("%20s(%20"PRIu64"/%08lx): "
+				    "PC=%016"PRIx64
+				    " CNTHV_CTL_EL2=0x%02" PRIx64
+				    " CNTHP_CTL_EL2=0x%02" PRIx64")\n",
+				    __func__,
+				    reg_cntpct_el0_read(),
+				    reg_mpidr_el1_read(),
+				    tf->tf_pc,
+				    reg_cnthv_ctl_el2_read(),
+				    reg_cnthp_ctl_el2_read());
+			}
+			ci->ci_nhdebug = 1;
 			cpu_irq(tf);
+			ci->ci_nhdebug = 0;
+		}
 	}
 }
 
@@ -798,6 +871,19 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	bool do_vmexit = true;
 	vm_prot_t ftype;
 
+	if (nvmm_uartdebug >= 2) {
+		uartprintf("%20s(%20"PRIu64"/%08lx): "
+			"PC=%016"PRIx64
+			" ELR_EL2=0x%016"PRIx64
+			" ESR_EL2=0x%016"PRIx64,
+			__func__,
+			reg_cntpct_el0_read(),
+			reg_mpidr_el1_read(),
+			tf->tf_pc,
+			reg_elr_el2_read(),
+			reg_esr_el2_read());
+	}
+
 	exit->esr = esr;
 	exit->insn = 0;
 
@@ -875,6 +961,8 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 	}
 
 // XXXNH used by the MMIO emulation code. hmm.
+	// XXXNH stupid conditional
+	// if (eclass == ESR_EC_DATA_ABT_EL_LOW)?
 	if (eclass != ESR_EC_INSN_ABT_EL_LOW &&
 	    eclass != ESR_EC_INSN_ABT_EL_CUR) {
 		// XXXNH defer to userland
@@ -891,6 +979,11 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 
 	if (do_vmexit) {
 		aarch64_vmexit_context(tf, cpudata);
+
+		if (exit->reason == NVMM_VCPU_EXIT_WFI) {
+			printf("%s: exit->insn=%#08x @ %#lx\n", __func__,
+			    exit->insn, cpudata->guest.sprs[NVMM_AARCH64_SPR_PC]);
+		}
 	}
 }
 

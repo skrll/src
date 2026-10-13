@@ -378,6 +378,11 @@ armgic_irq_handler(void *tf)
 		 * However, if are just raising ipl, we can just update ci_cpl.
 		 */
 
+#if 0
+if (ci->ci_nhdebug)
+	printf("%s: irq %d\n", __func__, irq);
+#endif
+
 		/* Surely we can KASSERT(ipl < ci->ci_cpl); */
 		const int ipl = is->is_ipl;
 		if (__predict_false(ipl < ci->ci_cpl)) {
