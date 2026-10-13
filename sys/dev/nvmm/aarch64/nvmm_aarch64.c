@@ -922,15 +922,14 @@ nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t v
 			reg_hcr_el2_write(guesthcr);
 			isb();
 
-			switch (op & (NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL | NVMM_AARCH64_MAINTAIN_OP_TLBI)) {
-			case NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL:
+			if (op & NVMM_AARCH64_MAINTAIN_OP_TLBI_ALL)
 				aarch64_tlbi_by_vmid();
-				break;
-			case NVMM_AARCH64_MAINTAIN_OP_TLBI:
+			else if (op & NVMM_AARCH64_MAINTAIN_OP_TLBI) {
 				aarch64_tlbi_by_vmid_ipa(ipa);
-				break;
-			default:
-				panic("%s: unknown maintain op %#jx", __func__, op);
+			}
+			if (op & NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC) {
+				// XXXNH suboptimal
+				cpu_icache_sync_all();
 			}
 
 			reg_hcr_el2_write(hcr_el2);
@@ -965,3 +964,19 @@ const struct nvmm_impl nvmm_aarch64 = {
 	.vcpu_inject = nvmm_aarch64_vcpu_inject,
 	.vcpu_run = nvmm_aarch64_vcpu_run
 };
+
+
+
+void
+nvmm_exit_dump(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
+    struct nvmm_vcpu_exit *exit);
+
+void
+nvmm_exit_dump(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
+    struct nvmm_vcpu_exit *exit)
+{
+#if 0
+	printf("%s: exit reason=%ld\n", __func__, exit->reason);
+	printf("%s: pc=%#jx\n", __func__, vcpu->comm->state.sprs[NVMM_AARCH64_SPR_PC]);
+#endif
+}

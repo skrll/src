@@ -63,6 +63,7 @@ void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled)
 | Host/Hypervisor Execution   | 1           | Host context switching; forces EL0 exceptions to EL2. |
 +-----------------------------+-------------+-------------------------------------------------------+
 
+
 					// 0
 SPSR_EL12	SPSR_EL1		// 1
 					// 2
