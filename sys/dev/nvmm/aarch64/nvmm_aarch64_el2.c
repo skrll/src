@@ -273,6 +273,12 @@ vcpu_context_dump(const struct nvmm_aarch64_state *state,
 	    is_enter, hcr, state->sprs[NVMM_AARCH64_SPR_ELR_EL2],
 	    state->sprs[NVMM_AARCH64_SPR_SPSR_EL2]);
 
+	if (hcr & (HCR_EL2_VI | HCR_EL2_VF | HCR_EL2_VSE)) {
+		NVMMHIST_CALLARGSN(nvmmdebug, 1,
+		    "vIRQ %d vFIX %d vSError %d",
+		    !!(hcr & HCR_EL2_VI), !!(hcr & HCR_EL2_VF), !!(hcr & HCR_EL2_VSE), 0);
+	}
+
 	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_X0,
 	    " x0 = %#18jx  "
 	    " x1 = %#18jx  "
@@ -669,6 +675,29 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 		nvmmdebug = 0;
 	}
 #if 0
+	if (cpudata->guest.sprs[NVMM_AARCH64_SPR_PC] == 0x7f6ce200) {
+		nvmmdebug = 0xffff;
+	}
+#endif
+
+
+	/*
+	 * The guest is free to use CNTV or CNTP, so we really should be checking
+	 * both here. For now I'm being lazy and only checking CNTV. If the guest
+	 * is using CNTP, it will...
+	 */
+	uint64_t cntv_ctl = cpudata->guest.sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0];
+
+	const bool enabled = (cntv_ctl & CNTCTL_ENABLE) != 0;
+	const bool fired = (cntv_ctl & CNTCTL_ISTATUS) != 0;
+	const bool masked = (cntv_ctl & CNTCTL_IMASK) != 0;
+	if (enabled && !masked && fired) {
+		printf("%s: guest timer interrupt\n", __func__);
+//		cpudata->exit.reason = NVMM_VCPU_EXIT_IRQ;
+//		cpudata->exit.exitstate.vtimer = 1;
+	}
+
+#if 0
 	if (cntv_ctl_changed && nvmmdebug) {
 		printf("cntv_ctl  changed to %#jx\n", cntv_ctl);
 	}
@@ -709,8 +738,6 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
 			reg_elr_el2_read(),
 			reg_esr_el2_read());
 	}
-
-
 
 	/*
 	 * Interrupts arrive here when running as a guest (with
@@ -955,8 +982,24 @@ aarch64_el2_vmexit_trap(struct trapframe *tf)
 		exit->reason = NVMM_VCPU_EXIT_SMC;
 		break;
 	case ESR_EC_WFX:
-		exit->reason = ((esr & ESR_ISS_WFX_TRAP_INSN) == 0) ?
-		    NVMM_VCPU_EXIT_WFI : NVMM_VCPU_EXIT_WFE;
+		/*
+		 * The guest is free to use CNTV or CNTP, so we really should be checking
+		 * both here. For now I'm being lazy and only checking CNTV. If the guest
+		 * is using CNTP, it will...
+		 */
+		uint64_t cntv_ctl = e2h_enabled ? reg_cntv_ctl_el02_read() :
+		    reg_cntv_ctl_el0_read();
+
+		const bool enabled = (cntv_ctl & CNTCTL_ENABLE) != 0;
+		const bool fired = (cntv_ctl & CNTCTL_ISTATUS) != 0;
+		const bool masked = (cntv_ctl & CNTCTL_IMASK) != 0;
+		if (0 & enabled && !masked && fired) {
+			cpudata->exit.reason = NVMM_VCPU_EXIT_IRQ;
+			cpudata->exit.exitstate.vtimer = 1;
+		} else {
+			exit->reason = ((esr & ESR_ISS_WFX_TRAP_INSN) == 0) ?
+			    NVMM_VCPU_EXIT_WFI : NVMM_VCPU_EXIT_WFE;
+		}
 		break;
 	}
 
