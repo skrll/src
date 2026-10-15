@@ -596,11 +596,16 @@ nvmm_aarch64_vcpu_configure(struct nvmm_cpu *vcpu, uint64_t op, void *data)
 static void
 nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 {
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGSN(nvmmdebug, 10, "vcpu=%p flags=%#x", vcpu, vcpu->comm->state_wanted, 0, 0);
+
 	struct nvmm_comm_page * const comm = vcpu->comm;
 	const struct nvmm_aarch64_state * const state = &comm->state;
 	struct aarch64_cpudata * const cpudata = vcpu->cpudata;
 	const uint64_t flags = comm->state_wanted;
 	bool force_override_spsr = false;
+
+	NVMMHIST_LOGN(nvmmdebug, 10, "vcpu=%p pc=%jx", vcpu, state->sprs[NVMM_AARCH64_SPR_PC], 0, 0);
 
 	/* sanity check */
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
@@ -639,6 +644,8 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 			cpudata->guest.sprs[NVMM_AARCH64_SPR_SPSR_EL2] &= ~SPSR_M;
 			cpudata->guest.sprs[NVMM_AARCH64_SPR_SPSR_EL2] |= SPSR_M_EL1H;
 		}
+
+		NVMMHIST_LOGN(nvmmdebug, 10, "vcpu=%p pc=%jx", vcpu, state->sprs[NVMM_AARCH64_SPR_PC], 0, 0);
 	}
 	if (flags & NVMM_AARCH64_STATE_TIDS) {
 		memcpy(cpudata->guest.tids, state->tids, sizeof(state->tids));
@@ -654,6 +661,9 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 static void
 nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 {
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGSN(nvmmdebug, 10, "vcpu=%p flags=%#x", vcpu, vcpu->comm->state_wanted, 0, 0);
+
 	struct nvmm_comm_page * const comm = vcpu->comm;
 	struct nvmm_aarch64_state * const state = &comm->state;
 	const struct aarch64_cpudata * const cpudata = vcpu->cpudata;
@@ -664,6 +674,7 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
 		memcpy(state->sprs, cpudata->guest.sprs, sizeof(state->sprs));
+		NVMMHIST_LOGN(nvmmdebug, 10, "vcpu=%p pc=%jx", vcpu, state->sprs[NVMM_AARCH64_SPR_PC], 0, 0);
 	}
 	if (flags & NVMM_AARCH64_STATE_TIDS) {
 		memcpy(state->tids, cpudata->guest.tids, sizeof(state->tids));
@@ -686,6 +697,9 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 static void
 aarch64_vcpu_state_commit(struct nvmm_cpu *vcpu)
 {
+	NVMMHIST_FUNC();
+	NVMMHIST_CALLARGSN(nvmmdebug, 10, "vcpu=%p flags=%#x", vcpu, vcpu->comm->state_commit, 0, 0);
+
 	vcpu->comm->state_wanted = vcpu->comm->state_commit;
 	vcpu->comm->state_commit = 0;
 	nvmm_aarch64_vcpu_setstate(vcpu);
@@ -975,8 +989,11 @@ void
 nvmm_exit_dump(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
-#if 0
-	printf("%s: exit reason=%ld\n", __func__, exit->reason);
-	printf("%s: pc=%#jx\n", __func__, vcpu->comm->state.sprs[NVMM_AARCH64_SPR_PC]);
+#ifdef NVMM_DEBUG
+	if (nvmmdebug > 10 || __predict_true(exit->reason != NVMM_VCPU_EXIT_MEMORY)) {
+		struct aarch64_cpudata * cpudata =  vcpu->cpudata;
+
+		printf("%s: pc=%#jx insn=%#x exit reason=%lx\n", __func__, cpudata->guest.sprs[NVMM_AARCH64_SPR_PC], exit->insn, exit->reason);
+	}
 #endif
 }
