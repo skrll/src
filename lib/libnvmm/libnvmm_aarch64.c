@@ -74,6 +74,22 @@ __CTASSERT((int)NVMM_AARCH64_STATE_GPRS > 0);
 __CTASSERT((int)NVMM_AARCH64_STATE_SPRS > 0);
 __CTASSERT((int)NVMM_AARCH64_STATE_FPRS > 0);
 
+extern int nvmm_fd;
+
+static void
+nvmm_aarch64_trace(const char *fmt, uint64_t arg0, uint64_t arg1,
+    uint64_t arg2, uint64_t arg3)
+{
+	struct nvmm_ioc_log args = {
+		.fmt = fmt,
+		.args = { arg0, arg1, arg2, arg3 }
+	};
+	int saved_errno = errno;
+
+	if (nvmm_fd != -1)
+		(void)ioctl(nvmm_fd, NVMM_IOC_LOG, &args);
+	errno = saved_errno;
+}
 
 //XXXNH need to check translation granule?
 #define FAULT_ACROSS_A_PAGE(va, gpa)				\
@@ -98,8 +114,8 @@ endian_eb_p(struct nvmm_vcpu *vcpu)
 		return ((sctlr & SCTLR_E0E) != 0);
 	}
 
-	warnx("%s:%d: unsupported guest mode: SPSR_EL1: 0x%"PRIx64,
-	    __func__, __LINE__, spsr);
+	nvmm_aarch64_trace(
+	    "unsupported guest mode: SPSR_EL1: 0x%jx", spsr, 0, 0, 0);
 	abort();
 }
 
@@ -270,7 +286,7 @@ nvmm_state_sp_reg(struct nvmm_aarch64_state *state)
 		if ((spsr & __BIT(0)) == 0)
 			return NVMM_AARCH64_SPR_SP_EL0;
 	} else {
-		warnx("AA32 guest mode unsupported");
+		nvmm_aarch64_trace("AA32 guest mode unsupported", 0, 0, 0, 0);
 		abort();
 	}
 
@@ -304,8 +320,8 @@ nvmm_register_n_set(struct nvmm_aarch64_state *state, unsigned int Rn, uint64_t 
 /* emul "dc zva,Rt" */
 OP1FUNC(op_dc_zva, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	gpaddr_t gpa = exit->u.mem.gpa;
@@ -313,8 +329,9 @@ OP1FUNC(op_dc_zva, Rt)
 	static uint8_t zerodat[2048] __aligned(128);
 
 	if (Rt == 31) {
-		warnx("%s: dc zva with x31: PC=%016lx",
-		    __func__, state->sprs[NVMM_AARCH64_SPR_PC]);
+		nvmm_aarch64_trace(
+		    "dc zva with x31: PC=%016jx",
+		    state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 		return -1;	/* XX */
 	}
 
@@ -374,8 +391,8 @@ OP1FUNC(op_dc_zva, Rt)
 /* emul "ldrb Rt,[Rn],#imm9" */
 OP3FUNC(op_ldrb_immpostidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -407,8 +424,9 @@ OP3FUNC(op_ldrb_immpostidx, imm9, Rn, Rt)
 /* emul "ldrb Rt,[Rn,#imm9]!" */
 OP3FUNC(op_ldrb_immpreidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
+
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -434,8 +452,9 @@ OP3FUNC(op_ldrb_immpreidx, imm9, Rn, Rt)
 /* emul "ldrh Rt,[Rn],#imm9" */
 OP3FUNC(op_ldrh_immpostidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
+
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -467,8 +486,8 @@ OP3FUNC(op_ldrh_immpostidx, imm9, Rn, Rt)
 /* emul "ldrh Rt,[Rn],#imm9" */
 OP3FUNC(op_ldrh_immpreidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -506,8 +525,8 @@ OP3FUNC(op_ldrh_immpreidx, imm9, Rn, Rt)
 /* emul "ldrsw Rt,[Rn],#imm9" */
 OP3FUNC(op_ldrsw_immpostidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -546,8 +565,8 @@ OP3FUNC(op_ldrsw_immpostidx, imm9, Rn, Rt)
 /* emul "ldrsw Rt,[Rn,#imm9]!" */
 OP3FUNC(op_ldrsw_immpreidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -588,8 +607,8 @@ OP3FUNC(op_ldrsw_immpreidx, imm9, Rn, Rt)
 /* emul "ldrsb Rt,[Rn],#imm9" */
 OP4FUNC(op_ldrsb_immpostidx, opc, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -624,8 +643,8 @@ OP4FUNC(op_ldrsb_immpostidx, opc, imm9, Rn, Rt)
 /* emul "ldrsb Rt,[Rn,#imm9]!" */
 OP4FUNC(op_ldrsb_immpreidx, opc, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -661,8 +680,8 @@ OP4FUNC(op_ldrsb_immpreidx, opc, imm9, Rn, Rt)
 /* emul "ldrsh Rt,[Rn],#imm9" */
 OP4FUNC(op_ldrsh_immpostidx, opc, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -697,8 +716,8 @@ OP4FUNC(op_ldrsh_immpostidx, opc, imm9, Rn, Rt)
 /* emul "ldrsh Rt,[Rn,#imm9]!" */
 OP4FUNC(op_ldrsh_immpreidx, opc, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -735,8 +754,8 @@ OP4FUNC(op_ldrsh_immpreidx, opc, imm9, Rn, Rt)
 /* emul "ldr Rt,[Rn],#imm9" */
 OP4FUNC(op_ldr_immpostidx, sf, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -771,8 +790,8 @@ OP4FUNC(op_ldr_immpostidx, sf, imm9, Rn, Rt)
 /* emul "ldr Rt,[Rn,#imm9]!" */
 OP4FUNC(op_ldr_immpreidx, sf, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -807,8 +826,8 @@ OP4FUNC(op_ldr_immpreidx, sf, imm9, Rn, Rt)
 /* emul "strb Rt,[Rn],#imm9" */
 OP3FUNC(op_strb_immpostidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -832,8 +851,8 @@ OP3FUNC(op_strb_immpostidx, imm9, Rn, Rt)
 /* emul "strb Rt,[Rn,#imm9]!" */
 OP3FUNC(op_strb_immpreidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -861,8 +880,8 @@ OP3FUNC(op_strb_immpreidx, imm9, Rn, Rt)
 /* emul "strh Rt,[Rn],#imm9" */
 OP3FUNC(op_strh_immpostidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -892,8 +911,8 @@ OP3FUNC(op_strh_immpostidx, imm9, Rn, Rt)
 /* emul "strh Rt,[Rn,#imm9]!" */
 OP3FUNC(op_strh_immpreidx, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -925,8 +944,8 @@ OP3FUNC(op_strh_immpreidx, imm9, Rn, Rt)
 /* emul "str Rt,[Rn],#imm9" */
 OP4FUNC(op_str_immpostidx, sf, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -960,8 +979,8 @@ OP4FUNC(op_str_immpostidx, sf, imm9, Rn, Rt)
 /* emul "str Rt,[Rn,#imm9]!" */
 OP4FUNC(op_str_immpreidx, sf, imm9, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -998,8 +1017,8 @@ OP4FUNC(op_str_immpreidx, sf, imm9, Rn, Rt)
 /* emul "ldr Rt, [Rn, #imm12]" */
 OP4FUNC(op_ldr_immunsigned, sf, imm12, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1034,8 +1053,8 @@ OP4FUNC(op_ldr_immunsigned, sf, imm12, Rn, Rt)
 /* emul "str Rt, [Rn, #imm12]" */
 OP4FUNC(op_str_immunsigned, sf, imm12, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1071,8 +1090,9 @@ OP4FUNC(op_str_immunsigned, sf, imm12, Rn, Rt)
 /* emul "stp Rt,Rt2,[Rn],#imm7" */
 OP5FUNC(op_stp_postidx, sf, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
+
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1110,8 +1130,8 @@ OP5FUNC(op_stp_postidx, sf, imm7, Rt2, Rn, Rt)
 /* emul "stp Rt,Rt2,[Rn,#imm7]!" */
 OP5FUNC(op_stp_preidx, sf, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1149,18 +1169,19 @@ OP5FUNC(op_stp_preidx, sf, imm7, Rt2, Rn, Rt)
 /* emul "stp Rt,Rt2,[Rn,#imm7]" */
 OP5FUNC(op_stp_signed, sf, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
 	uint64_t reg1, reg2;
 
 	uint64_t va = nvmm_register_n_get(state, Rn);
-	warnx("%s: va=%016"PRIx64", gpa=%016"PRIx64, __func__, va, gpa);
+	nvmm_aarch64_trace("va=%016jx, gpa=%016jx", va, gpa, 0, 0);
 	if (imm7 != 0)
 		va += SignExtend(7, imm7, (sf == 0) ? 4 : 8);
-	warnx("imm7 = %ld, va=%016"PRIx64"\n", imm7, va);
+	nvmm_aarch64_trace("imm7 = %#jx, va=%016jx\n",
+	    imm7, va, 0, 0);
 
 	/* XXX: illegal alignment access is not supported */
 	if (FAULT_ACROSS_A_PAGE(va, gpa))
@@ -1187,8 +1208,8 @@ OP5FUNC(op_stp_signed, sf, imm7, Rt2, Rn, Rt)
 /* emul "ldp Rt,Rt2,[Rn],#imm7" */
 OP5FUNC(op_ldp_postidx, sf, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1230,8 +1251,8 @@ OP5FUNC(op_ldp_postidx, sf, imm7, Rt2, Rn, Rt)
 /* emul "ldp Rt,Rt2,[Rn,#imm7]!" */
 OP5FUNC(op_ldp_preidx, sf, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1273,8 +1294,8 @@ OP5FUNC(op_ldp_preidx, sf, imm7, Rt2, Rn, Rt)
 /* emul "ldp Rt,Rt2,[Rn,#imm7]" */
 OP5FUNC(op_ldp_signed, sf, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1314,8 +1335,8 @@ OP5FUNC(op_ldp_signed, sf, imm7, Rt2, Rn, Rt)
 /* emul "stp Rt,Rt2,[Rn],#imm7" */
 OP5FUNC(op_stp_simd_postidx, opc, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1384,8 +1405,8 @@ OP5FUNC(op_stp_simd_postidx, opc, imm7, Rt2, Rn, Rt)
 /* emul "stp Rt,Rt2,[Rn,#imm7]!" */
 OP5FUNC(op_stp_simd_preidx, opc, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1453,8 +1474,8 @@ OP5FUNC(op_stp_simd_preidx, opc, imm7, Rt2, Rn, Rt)
 /* emul "stp Rt,Rt2,[Rn,#imm7]" */
 OP5FUNC(op_stp_simd_signed, opc, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1510,8 +1531,8 @@ OP5FUNC(op_stp_simd_signed, opc, imm7, Rt2, Rn, Rt)
 /* emul "ldp Rt,Rt2,[Rn],#imm7" */
 OP5FUNC(op_ldp_simd_postidx, opc, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1577,8 +1598,8 @@ OP5FUNC(op_ldp_simd_postidx, opc, imm7, Rt2, Rn, Rt)
 /* emul "ldp Rt,Rt2,[Rn,#imm7]!" */
 OP5FUNC(op_ldp_simd_preidx, opc, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1651,8 +1672,8 @@ OP5FUNC(op_ldp_simd_preidx, opc, imm7, Rt2, Rn, Rt)
 /* emul "ldp Rt,Rt2,[Rn,#imm7]" */
 OP5FUNC(op_ldp_simd_signed, opc, imm7, Rt2, Rn, Rt)
 {
-	warnx("%s: pc=%#018lx\n",
-	    __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC]);
+	nvmm_aarch64_trace("pc=%#018jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], 0, 0, 0);
 	struct nvmm_aarch64_state *state = vcpu->state;
 	const struct nvmm_vcpu_exit *exit = vcpu->exit;
 	const gpaddr_t gpa = exit->u.mem.gpa;
@@ -1824,15 +1845,16 @@ nvmm_assist_mem_aarch64_emul(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,
 			break;
 	}
 	if (i == __arraycount(insn_tables)) {
-		warnx("%s: unsupported instruction: "
-		    "inst=0x%08"PRIx32", accessed gpa=0x%016"PRIx64, __func__, insn, gpa);
+		nvmm_aarch64_trace("unsupported instruction: "
+		    "inst=0x%08jx, accessed gpa=0x%016jx",
+		    insn, gpa, 0, 0);
+
 		errno = ENODEV;
 		return -1;
 	}
 
-	uint32_t tmp = insn;
-	utrace(__func__, &tmp, sizeof(tmp));
-	warnx("%s: pc=%#018lx, insn=%#08x gpa=0x%016"PRIx64 "\n", __func__, vcpu->state->sprs[NVMM_AARCH64_SPR_PC], insn, gpa);
+	nvmm_aarch64_trace("pc=%#018jx, insn=%#08jx gpa=0x%016jx",
+	    vcpu->state->sprs[NVMM_AARCH64_SPR_PC], insn, gpa, 0);
 	/* extract operands */
 	for (j = 0; j < INSN_MAXARG; j++) {
 		const uint8_t lo = insn_tables[i].bitinfo[j].lo;
@@ -1872,8 +1894,8 @@ nvmm_assist_mem_aarch32_emul(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,
 	const uint32_t insn = exit->insn;
 
 	/* XXX: not supported (yet?) */
-	warnx("%s: aarch32 is not supported: "
-	    "inst=0x%08"PRIx32", accessed gpa=0x%016"PRIx64, __func__, insn, gpa);
+	nvmm_aarch64_trace("aarch32 is not supported: "
+	    "inst=0x%08jx, accessed gpa=0x%016jx", insn, gpa, 0, 0);
 	errno = ENODEV;
 	return -1;
 }
@@ -1950,7 +1972,11 @@ nvmm_assist_mem(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 	if (exit->insn == 0) {
 		/* XXX: fetch it ourselves from GPA -> HVA */
 		struct nvmm_aarch64_state *state = vcpu->state;
-		warnx("%s: instruction is zero: ESR=%016lx, PC=%016lx, GPA=%016lx, prot=0x%x", __func__, exit->esr, state->sprs[NVMM_AARCH64_SPR_PC], exit->u.mem.gpa, exit->u.mem.prot);
+		nvmm_aarch64_trace(
+		    "instruction is zero: ESR=%016jx, PC=%016jx, "
+		    "GPA=%016jx, prot=0x%jx",
+		    exit->esr, state->sprs[NVMM_AARCH64_SPR_PC],
+		    exit->u.mem.gpa, exit->u.mem.prot);
 		goto assist_failure;
 	}
 
@@ -1959,15 +1985,15 @@ nvmm_assist_mem(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 
 	/* XXX */
 	if (__SHIFTOUT(esr_el2, ESR_ISS_DATAABORT_CM) != 0) {
-		warnx("%s: cache op is not supported: inst=%08"PRIx32,
-		    __func__, exit->insn);
+		nvmm_aarch64_trace("cache op is not supported: inst=%08jx",
+		    exit->insn, 0, 0, 0);
 		goto assist_failure;
 	}
 
 	/* XXX */
 	if (__SHIFTOUT(esr_el2, ESR_ISS_DATAABORT_AR) != 0) {
-		warnx("%s: acquire/release read/write is not supported: "
-		    "inst=%08"PRIx32, __func__, exit->insn);
+		nvmm_aarch64_trace("acquire/release read/write is not supported: "
+		    "inst=%08jx", exit->insn, 0, 0, 0);
 		goto assist_failure;
 	}
 
@@ -1995,7 +2021,11 @@ nvmm_assist_mem(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 	//XXX DEBUG
 	{
 		struct nvmm_aarch64_state *state = vcpu->state;
-		warnx("%s: unsupported instruction: ESR=%016lx, PC=%016lx, insn=%08x, GPA=%016lx, prot=0x%x", __func__, exit->esr, state->sprs[NVMM_AARCH64_SPR_PC], exit->insn, exit->u.mem.gpa, exit->u.mem.prot);
+		nvmm_aarch64_trace(
+		    "unsupported instruction: ESR=%016jx, PC=%016jx, "
+		    "insn=%08jx, GPA=%016jx",
+		    exit->esr, state->sprs[NVMM_AARCH64_SPR_PC],
+		    exit->insn, exit->u.mem.gpa);
 	}
 
 	/* inject SError to guest */
