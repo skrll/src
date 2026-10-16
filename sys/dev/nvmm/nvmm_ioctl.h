@@ -138,6 +138,13 @@ struct nvmm_ioc_ctl {
 	size_t size;
 };
 
+#define NVMM_IOC_LOG_MAXFMT	128
+struct nvmm_ioc_log {
+	const char *fmt;
+	/* Up to four %ju, %jo, %jx, or %jX conversions are supported. */
+	uint64_t args[4];
+};
+
 #define NVMM_IOC_CAPABILITY		_IOR ('N',  0, struct nvmm_ioc_capability)
 #define NVMM_IOC_MACHINE_CREATE		_IOWR('N',  1, struct nvmm_ioc_machine_create)
 #define NVMM_IOC_MACHINE_DESTROY	_IOW ('N',  2, struct nvmm_ioc_machine_destroy)
@@ -154,5 +161,6 @@ struct nvmm_ioc_ctl {
 #define NVMM_IOC_HVA_MAP		_IOW ('N', 13, struct nvmm_ioc_hva_map)
 #define NVMM_IOC_HVA_UNMAP		_IOW ('N', 14, struct nvmm_ioc_hva_unmap)
 #define NVMM_IOC_CTL			_IOW ('N', 20, struct nvmm_ioc_ctl)
+#define NVMM_IOC_LOG			_IOW ('N', 21, struct nvmm_ioc_log)
 
 #endif /* _NVMM_IOCTL_H_ */

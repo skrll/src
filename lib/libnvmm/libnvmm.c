@@ -44,6 +44,7 @@
 #include "nvmm.h"
 
 static struct nvmm_capability __capability;
+static int nvmm_fd = -1;
 
 #if defined(__aarch64__)
 #include "libnvmm_aarch64.c"
@@ -60,8 +61,6 @@ typedef struct __area {
 } area_t;
 
 typedef LIST_HEAD(, __area) area_list_t;
-
-static int nvmm_fd = -1;
 
 /* -------------------------------------------------------------------------- */
 
