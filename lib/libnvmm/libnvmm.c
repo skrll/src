@@ -61,7 +61,7 @@ typedef struct __area {
 
 typedef LIST_HEAD(, __area) area_list_t;
 
-static int nvmm_fd = -1;
+int nvmm_fd = -1;
 
 /* -------------------------------------------------------------------------- */
 
