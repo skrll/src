@@ -106,6 +106,15 @@ fail:
 #define	DPRINTF(FMT,A,B,C,D)	NVMMHIST_LOG(nvmmdebug,FMT,A,B,C,D)
 #define	DPRINTFN(N,FMT,A,B,C,D)	NVMMHIST_LOGN(nvmmdebug,N,FMT,A,B,C,D)
 
+#if defined(NVMM_DEBUG)
+#define NVMM_LOG_MAXFMTS	64
+
+static kmutex_t nvmm_log_lock;
+/* KERNHIST entries keep format pointers, so cached strings remain allocated. */
+static const char *nvmm_log_fmts[NVMM_LOG_MAXFMTS];
+static size_t nvmm_log_nfmts;
+#endif
+
 
 static struct nvmm_machine machines[NVMM_MAX_MACHINES];
 static volatile unsigned int nmachines __cacheline_aligned;
@@ -1083,6 +1092,145 @@ nvmm_ctl(struct nvmm_owner *owner, struct nvmm_ioc_ctl *args)
 	}
 }
 
+static int
+nvmm_log_format_validate(const char *fmt)
+{
+	const char *p = fmt;
+	unsigned int nconv = 0;
+
+	while (*p != '\0') {
+		unsigned int value;
+
+		if (*p++ != '%')
+			continue;
+		if (*p == '%') {
+			p++;
+			continue;
+		}
+
+		while (*p == '#' || *p == '0' || *p == '-' ||
+		    *p == ' ' || *p == '+')
+			p++;
+
+		value = 0;
+		while (*p >= '0' && *p <= '9') {
+			const unsigned int digit = *p++ - '0';
+
+			if (value > (64 - digit) / 10)
+				return EINVAL;
+			value = value * 10 + digit;
+		}
+
+		if (*p == '.') {
+			p++;
+			value = 0;
+			while (*p >= '0' && *p <= '9') {
+				const unsigned int digit = *p++ - '0';
+
+				if (value > (64 - digit) / 10)
+					return EINVAL;
+				value = value * 10 + digit;
+			}
+		}
+
+		if (*p++ != 'j')
+			return EINVAL;
+		switch (*p++) {
+		case 'u':
+		case 'o':
+		case 'x':
+		case 'X':
+			if (++nconv > 4)
+				return EINVAL;
+			break;
+		default:
+			return EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+#if defined(NVMM_DEBUG)
+static int
+nvmm_log_format_get(const char *fmt, const char **ret)
+{
+	const size_t len = strlen(fmt) + 1;
+	char *newfmt;
+	size_t i;
+
+	mutex_enter(&nvmm_log_lock);
+	for (i = 0; i < nvmm_log_nfmts; i++) {
+		if (strcmp(nvmm_log_fmts[i], fmt) == 0) {
+			*ret = nvmm_log_fmts[i];
+			mutex_exit(&nvmm_log_lock);
+			return 0;
+		}
+	}
+	if (nvmm_log_nfmts == NVMM_LOG_MAXFMTS) {
+		mutex_exit(&nvmm_log_lock);
+		return ENOSPC;
+	}
+	mutex_exit(&nvmm_log_lock);
+
+	newfmt = kmem_alloc(len, KM_SLEEP);
+	memcpy(newfmt, fmt, len);
+
+	mutex_enter(&nvmm_log_lock);
+	for (i = 0; i < nvmm_log_nfmts; i++) {
+		if (strcmp(nvmm_log_fmts[i], fmt) == 0) {
+			*ret = nvmm_log_fmts[i];
+			mutex_exit(&nvmm_log_lock);
+			kmem_free(newfmt, len);
+			return 0;
+		}
+	}
+	if (nvmm_log_nfmts == NVMM_LOG_MAXFMTS) {
+		mutex_exit(&nvmm_log_lock);
+		kmem_free(newfmt, len);
+		return ENOSPC;
+	}
+
+	nvmm_log_fmts[nvmm_log_nfmts++] = newfmt;
+	*ret = newfmt;
+	mutex_exit(&nvmm_log_lock);
+
+	return 0;
+}
+#endif
+
+static int
+nvmm_log(struct nvmm_ioc_log *args)
+{
+	char fmt[NVMM_IOC_LOG_MAXFMT];
+	int error;
+
+	NVMMHIST_FUNC();
+
+	error = copyinstr(args->fmt, fmt, sizeof(fmt), NULL);
+	if (error)
+		return error;
+	error = nvmm_log_format_validate(fmt);
+	if (error)
+		return error;
+
+#if defined(NVMM_DEBUG)
+	if (nvmmdebug >= 30) {
+		const char *logfmt;
+
+		error = nvmm_log_format_get(fmt, &logfmt);
+		if (error)
+			return error;
+
+		NVMMHIST_CALLED(nvmmdebug);
+		NVMMHIST_LOGN(nvmmdebug, 30, logfmt, args->args[0],
+		    args->args[1], args->args[2], args->args[3]);
+	}
+#endif
+
+	return 0;
+}
+
 /* -------------------------------------------------------------------------- */
 
 static const struct nvmm_impl *
@@ -1108,6 +1256,10 @@ nvmm_init(void)
 	nvmm_impl = nvmm_ident();
 	if (nvmm_impl == NULL)
 		return ENOTSUP;
+
+#if defined(NVMM_DEBUG)
+	mutex_init(&nvmm_log_lock, MUTEX_DEFAULT, IPL_NONE);
+#endif
 
 	for (i = 0; i < NVMM_MAX_MACHINES; i++) {
 		machines[i].machid = i;
@@ -1144,6 +1296,10 @@ nvmm_fini(void)
 
 	(*nvmm_impl->fini)();
 	nvmm_impl = NULL;
+
+#if defined(NVMM_DEBUG)
+	mutex_destroy(&nvmm_log_lock);
+#endif
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1305,6 +1461,8 @@ nvmm_ioctl_internal(file_t *fp, u_long cmd, void *data)
 		return nvmm_hva_unmap(owner, data);
 	case NVMM_IOC_CTL:
 		return nvmm_ctl(owner, data);
+	case NVMM_IOC_LOG:
+		return nvmm_log(data);
 	default:
 		return EINVAL;
 	}
