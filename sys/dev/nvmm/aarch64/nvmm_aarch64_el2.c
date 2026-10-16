@@ -269,9 +269,9 @@ vcpu_context_dump(const struct nvmm_aarch64_state *state,
 {
 	NVMMHIST_FUNC();
 	NVMMHIST_CALLARGSN(nvmmdebug, 20,
-	    "is_enter %d hcr %#16jx pc %#18jx lr %#18jx",
-	    is_enter, hcr, state->sprs[NVMM_AARCH64_SPR_PC],
-	    state->gprs[NVMM_AARCH64_GPR_X30]);
+	    "is_enter %d hcr %#16jx elr_el2 %#18jx spsr_el2 %#18jx",
+	    is_enter, hcr, state->sprs[NVMM_AARCH64_SPR_ELR_EL2],
+	    state->sprs[NVMM_AARCH64_SPR_SPSR_EL2]);
 
 	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_X0,
 	    " x0 = %#18jx  "
@@ -348,49 +348,29 @@ vcpu_context_dump(const struct nvmm_aarch64_state *state,
 	    state->gprs[NVMM_AARCH64_GPR_X31]);
 
 	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR0,
-	    "tpidrro_el0 =     %#18jx  "
-	    "tpidr_el0 =       %#18jx  "
-	    "amair_el1 =       %#18jx  "
-	    "cntkctl_el1 =     %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0],
-	    state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0],
-	    state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1]);
-	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR1,
-	    "contextidr_el1 =  %#18jx  "
-	    "cpacr_el1 =       %#18jx  "
-	    "csselr_el1 =      %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_CPACR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_CSSELR_EL1], 0);
-	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR2,
 	    "elr_el1 =         %#18jx  "
+	    "spsr_el1 =        %#18jx  "
+	    "sp_el0 =          %#18jx  "
+	    "sp_el1 =          %#18jx  ",
+	    state->sprs[NVMM_AARCH64_SPR_ELR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_SPSR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_SP_EL0],
+	    state->sprs[NVMM_AARCH64_SPR_SP_EL1]);
+	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR1,
 	    "esr_el1 =         %#18jx  "
 	    "far_el1 =         %#18jx  "
+	    "sctlr_el1 =       %#18jx  "
 	    "mair_el1 =        %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_ELR_EL1],
 	    state->sprs[NVMM_AARCH64_SPR_ESR_EL1],
 	    state->sprs[NVMM_AARCH64_SPR_FAR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_MAIR_EL1]);
-	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR3,
-	    "fpcr =            %#18jx  "
-	    "fpsr =            %#18jx  "
-	    "midr_el1 =        %#18jx  "
-	    "mpidr_el1 =       %#18jx  ",
-	    state->sprs[NVMM_AARCH64_SPR_FPCR],
-	    state->sprs[NVMM_AARCH64_SPR_FPSR],
-	    state->sprs[NVMM_AARCH64_SPR_MIDR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1]);
-	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR4,
-	    "mdscr_el1 =       %#18jx  "
-	    "par_el1 =         %#18jx  "
-	    "sctlr_el1 =       %#18jx  "
-	    "tcr_el1 =         %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_PAR_EL1],
 	    state->sprs[NVMM_AARCH64_SPR_SCTLR_EL1],
-	    state->sprs[NVMM_AARCH64_SPR_TCR_EL1]);
-	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR5,
+	    state->sprs[NVMM_AARCH64_SPR_MAIR_EL1]);
+	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR2,
+	    "cntv_ctl_el0 =    %#18jx  "
+	    "cntv_cval_el0 =   %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0],
+	    state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0], 0, 0);
+	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR3,
 	    "tpidr_el1 =       %#18jx  "
 	    "ttbr0_el1 =       %#18jx  "
 	    "ttbr1_el1 =       %#18jx  "
@@ -399,11 +379,38 @@ vcpu_context_dump(const struct nvmm_aarch64_state *state,
 	    state->sprs[NVMM_AARCH64_SPR_TTBR0_EL1],
 	    state->sprs[NVMM_AARCH64_SPR_TTBR1_EL1],
 	    state->sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
+	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR4,
+	    "contextidr_el1 =  %#18jx  "
+	    "cpacr_el1 =       %#18jx  "
+	    "csselr_el1 =      %#18jx  "
+	    "cntkctl_el1 =     %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_CONTEXTIDR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_CPACR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_CSSELR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_CNTKCTL_EL1]);
+	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR4,
+	    "tpidrro_el0 =     %#18jx  "
+	    "tpidr_el0 =       %#18jx  "
+	    "amair_el1 =       %#18jx  ",
+	    state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0],
+	    state->sprs[NVMM_AARCH64_SPR_TPIDR_EL0],
+	    state->sprs[NVMM_AARCH64_SPR_AMAIR_EL1], 0);
+	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR5,
+	    "fpcr =            %#18jx  "
+	    "fpsr =            %#18jx  "
+	    "midr_el1 =        %#18jx  "
+	    "mpidr_el1 =       %#18jx  ",
+	    state->sprs[NVMM_AARCH64_SPR_FPCR],
+	    state->sprs[NVMM_AARCH64_SPR_FPSR],
+	    state->sprs[NVMM_AARCH64_SPR_MIDR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1]);
 	NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR6,
-	    "cntv_ctl_el0 =    %#18jx  "
-	    "cntv_cval_el0 =   %#18jx",
-	    state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0],
-	    state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0], 0, 0);
+	    "mdscr_el1 =       %#18jx  "
+	    "par_el1 =         %#18jx  "
+	    "tcr_el1 =         %#18jx",
+	    state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_PAR_EL1],
+	    state->sprs[NVMM_AARCH64_SPR_TCR_EL1], 0);
 }
 
 static void
@@ -417,8 +424,8 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 	 * yes, because guest.
 	 * host, not so much. does LR get saved into TF_PC? yes, it does.
 	 */
-	state->sprs[NVMM_AARCH64_SPR_PC] = tf->tf_pc;
-	state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] = tf->tf_spsr;
+	state->sprs[NVMM_AARCH64_SPR_ELR_EL2] = tf->tf_pc;
+	state->sprs[NVMM_AARCH64_SPR_SPSR_EL2] = tf->tf_spsr;
 
 	memcpy(state->gprs, tf->tf_reg, sizeof(state->gprs));
 	nvmm_aarch64_save_fpregs(state->fprs);	/* q0-q31 */
@@ -505,10 +512,11 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 	 * host, not so much (maybe it  doesn't matter because return
 	 *       from guest to host doesn't use trapframe for LR?)
 	 */
-	tf->tf_pc = state->sprs[NVMM_AARCH64_SPR_PC];
-	tf->tf_spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
+	tf->tf_pc = state->sprs[NVMM_AARCH64_SPR_ELR_EL2];
+	tf->tf_spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL2];
 
-	memcpy(tf->tf_reg, state->gprs, sizeof(state->gprs));
+	/* tf_sp belongs to the EL2 trapframe; guest SPs are loaded below. */
+	memcpy(tf->tf_reg, state->gprs, sizeof(tf->tf_reg));
 	nvmm_aarch64_load_fpregs(state->fprs);	/* q0-q31 */
 
 	if (SPSR_USER_P(tf->tf_spsr) ||

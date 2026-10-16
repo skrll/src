@@ -354,8 +354,7 @@ ENTRY_NP(el2_enter_guest)
 	ldp	x24, x25, [sp, #TF_X24]
 	ldp	x26, x27, [sp, #TF_X26]
 	ldp	x28, x29, [sp, #TF_X28]
-	CTASSERT_ADJACENT(TF_X30, TF_SP)
-	ldp	x30, x7, [sp, #TF_X30]
+	ldr	x30, [sp, #TF_X30]
 
 	CTASSERT_ADJACENT(TF_PC, TF_SPSR)
 	ldp	x0, x1, [sp, #TF_PC]
@@ -374,7 +373,7 @@ ENTRY_NP(el2_enter_guest)
 	ldp	x2, x3, [sp, #TF_X2]
 	ldp	x4, x5, [sp, #TF_X4]
 
-	msr 	sp_el1, x7
+	/* Guest SP_EL0 and SP_EL1 were restored by vcpu_context_load(). */
 	ldp	x6, x7, [SP, #TF_X6]
 
 	// Ensure correct stack pointer on return to

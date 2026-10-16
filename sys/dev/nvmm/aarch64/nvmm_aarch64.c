@@ -100,13 +100,13 @@ struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 	.gprs = {},	/* x0-x31 are all zero */
 	.fprs = {},	/* q0-q31 are all zero */
 	.sprs = {
-		[NVMM_AARCH64_SPR_SCTLR_EL1] = SCTLR_RES1,
 		/*
 		 * Rpcdtx - The following PSTATE bits are meaningful in
 		 * .        AArch64 state. Warm reset state.
 		 */
-		[NVMM_AARCH64_SPR_SPSR_EL1] =
+		[NVMM_AARCH64_SPR_SPSR_EL2] =
 		    SPSR_A64_D | SPSR_A | SPSR_I | SPSR_F | SPSR_M_EL1H,
+		[NVMM_AARCH64_SPR_SCTLR_EL1] = SCTLR_RES1,
 	},
 	.tids = {}	/* initted in nvmm_aarch64_init_reset_state() */
 };
@@ -604,7 +604,7 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 
 	/* sanity check */
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
-		switch (__SHIFTOUT(state->sprs[NVMM_AARCH64_SPR_SPSR_EL1], SPSR_M)) {
+		switch (__SHIFTOUT(state->sprs[NVMM_AARCH64_SPR_SPSR_EL2], SPSR_M)) {
 		case SPSR_M_EL1H:
 		case SPSR_M_EL1T:
 		case SPSR_M_EL0T:
@@ -636,8 +636,8 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
 		memcpy(cpudata->guest.sprs, state->sprs, sizeof(state->sprs));
 		if (force_override_spsr) {
-			cpudata->guest.sprs[NVMM_AARCH64_SPR_SPSR_EL1] &= ~SPSR_M;
-			cpudata->guest.sprs[NVMM_AARCH64_SPR_SPSR_EL1] |= SPSR_M_EL1H;
+			cpudata->guest.sprs[NVMM_AARCH64_SPR_SPSR_EL2] &= ~SPSR_M;
+			cpudata->guest.sprs[NVMM_AARCH64_SPR_SPSR_EL2] |= SPSR_M_EL1H;
 		}
 	}
 	if (flags & NVMM_AARCH64_STATE_TIDS) {
@@ -710,15 +710,14 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 		//cpudata->send_event_
 		struct nvmm_aarch64_state *state = &cpudata->guest;
 		uint64_t vbar = state->sprs[NVMM_AARCH64_SPR_VBAR_EL1];
-		uint64_t spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
+		uint64_t spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL2];
 
 		// XXXNH need to check previous SPSR.M
 		// ...
 		// XXXNH cheat... always el1h_sync_handler
-		state->sprs[NVMM_AARCH64_SPR_ELR_EL1] = state->sprs[NVMM_AARCH64_SPR_PC];
-		state->sprs[NVMM_AARCH64_SPR_PC] = vbar + 0x200;
-		// XXXNH lose guest PSTATE
-		state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] =
+		state->sprs[NVMM_AARCH64_SPR_ELR_EL1] = state->sprs[NVMM_AARCH64_SPR_ELR_EL2];
+		state->sprs[NVMM_AARCH64_SPR_ELR_EL2] = vbar + 0x200;
+		state->sprs[NVMM_AARCH64_SPR_SPSR_EL2] =
 		    (spsr & SPSR_NZCV) |
 		    SPSR_A64_D | SPSR_A | SPSR_I | SPSR_F |
 		    SPSR_M_EL1H
@@ -727,7 +726,7 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 
 		printf("%s: SYNC ELR_EL1 %#lx PC %#lx\n", __func__,
 		    state->sprs[NVMM_AARCH64_SPR_ELR_EL1],
-		    state->sprs[NVMM_AARCH64_SPR_PC]);
+		    state->sprs[NVMM_AARCH64_SPR_ELR_EL2]);
 		break;
 
 	case NVMM_VCPU_EVENT_SERROR:
@@ -811,7 +810,7 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		if (cpudata->send_event_type == NVMM_VCPU_EVENT_SYNC) {
 			struct nvmm_aarch64_state *state = &cpudata->guest;
 			uint64_t vbar = state->sprs[NVMM_AARCH64_SPR_VBAR_EL1];
-			uint64_t spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
+			uint64_t spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL2];
 
 			// XXXNH need to check previous SPSR.M
 			// ...
@@ -819,7 +818,7 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 			state->sprs[NVMM_AARCH64_SPR_ELR_EL1] = state->sprs[NVMM_AARCH64_SPR_PC];
 			state->sprs[NVMM_AARCH64_SPR_PC] = vbar + 0x200;
 			// XXXNH lose guest PSTATE
-			state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] =
+			state->sprs[NVMM_AARCH64_SPR_SPSR_EL2] =
 			    (spsr & SPSR_NZCV) |
 			    SPSR_A64_D | SPSR_A | SPSR_I | SPSR_F |
 			    SPSR_M_EL1H
