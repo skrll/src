@@ -690,33 +690,6 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 	const u_int evtype = comm->event.type;
 
 	switch (evtype) {
-	case NVMM_VCPU_EVENT_SYNC:
-		cpudata->send_event_esr = comm->event.esr;
-
-		//cpudata->send_event_far = ...
-		//cpudata->send_event_
-		struct nvmm_aarch64_state *state = &cpudata->guest;
-		uint64_t vbar = state->sprs[NVMM_AARCH64_SPR_VBAR_EL1];
-		uint64_t spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
-
-		// XXXNH need to check previous SPSR.M
-		// ...
-		// XXXNH cheat... always el1h_sync_handler
-		state->sprs[NVMM_AARCH64_SPR_ELR_EL1] = state->sprs[NVMM_AARCH64_SPR_PC];
-		state->sprs[NVMM_AARCH64_SPR_PC] = vbar + 0x200;
-		// XXXNH lose guest PSTATE
-		state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] =
-		    (spsr & SPSR_NZCV) |
-		    SPSR_A64_D | SPSR_A | SPSR_I | SPSR_F |
-		    SPSR_M_EL1H
-		    ;
-		state->sprs[NVMM_AARCH64_SPR_FAR_EL1] = 0xdeaddeaddeaddead;
-
-		printf("%s: SYNC ELR_EL1 %#lx PC %#lx\n", __func__,
-		    state->sprs[NVMM_AARCH64_SPR_ELR_EL1],
-		    state->sprs[NVMM_AARCH64_SPR_PC]);
-		break;
-
 	case NVMM_VCPU_EVENT_SERROR:
 	case NVMM_VCPU_EVENT_IRQ:
 	case NVMM_VCPU_EVENT_FIQ:
@@ -776,24 +749,6 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	if (__predict_false(vcpu->comm->event_commit)) {
 		vcpu->comm->event_commit = false;
 		cpudata->send_event_type = vcpu->comm->event.type;
-		if (cpudata->send_event_type == NVMM_VCPU_EVENT_SYNC) {
-			struct nvmm_aarch64_state *state = &cpudata->guest;
-			uint64_t vbar = state->sprs[NVMM_AARCH64_SPR_VBAR_EL1];
-			uint64_t spsr = state->sprs[NVMM_AARCH64_SPR_SPSR_EL1];
-
-			// XXXNH need to check previous SPSR.M
-			// ...
-			// XXXNH cheat... always el1h_sync_handler
-			state->sprs[NVMM_AARCH64_SPR_ELR_EL1] = state->sprs[NVMM_AARCH64_SPR_PC];
-			state->sprs[NVMM_AARCH64_SPR_PC] = vbar + 0x200;
-			// XXXNH lose guest PSTATE
-			state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] =
-			    (spsr & SPSR_NZCV) |
-			    SPSR_A64_D | SPSR_A | SPSR_I | SPSR_F |
-			    SPSR_M_EL1H
-			    ;
-			state->sprs[NVMM_AARCH64_SPR_FAR_EL1] = 0xdeaddeaddeaddead;
-		}
 	}
 // XXXNH should this be cleared?
 #if 1

@@ -643,14 +643,6 @@ aarch64_el2_vmenter(struct trapframe *tf)
 
 	if (__predict_false(cpudata->send_event_type != NVMM_VCPU_EVENT_NONE)) {
 		switch (cpudata->send_event_type) {
-		case NVMM_VCPU_EVENT_SYNC:
-#if 0
-			uartprintf("VMENTER: PC=%016lx LR=%016lx VBAR=%016lx\n",
-			    cpudata->guest.sprs[NVMM_AARCH64_SPR_PC],
-			    cpudata->guest.gprs[NVMM_AARCH64_GPR_X30],
-			    cpudata->guest.sprs[NVMM_AARCH64_SPR_VBAR_EL1]);
-#endif
-			break;
 		case NVMM_VCPU_EVENT_SERROR:
 			hcr |= HCR_EL2_VSE;
 			break;

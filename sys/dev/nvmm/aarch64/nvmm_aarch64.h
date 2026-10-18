@@ -75,10 +75,9 @@ struct nvmm_aarch64_exit {
 struct nvmm_aarch64_event {
 	u_int type;
 #define NVMM_VCPU_EVENT_NONE	0
-#define NVMM_VCPU_EVENT_SYNC	1	// probably not
-#define NVMM_VCPU_EVENT_SERROR	2
-#define NVMM_VCPU_EVENT_IRQ	3
-#define NVMM_VCPU_EVENT_FIQ	4
+#define NVMM_VCPU_EVENT_SERROR	1
+#define NVMM_VCPU_EVENT_IRQ	2
+#define NVMM_VCPU_EVENT_FIQ	3
 	uint64_t esr;	// SYNC only
 };
 
