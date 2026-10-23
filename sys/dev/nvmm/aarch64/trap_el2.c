@@ -237,6 +237,7 @@ dump_el2_trapframe(struct trapframe *tf)
 	    tf->tf_reg[30],  tf->tf_sp);
 }
 
+#if 0
 static void
 aarch64_guest_backtrace_fp(uint64_t spsr, uint64_t fp)
 {
@@ -253,6 +254,7 @@ aarch64_guest_backtrace_fp(uint64_t spsr, uint64_t fp)
 		fp_va = fp_pa[0];
 	}
 }
+#endif
 
 static void
 aarch64_guest_backtrace_tf(struct trapframe *tf, struct trapframe *gtf)
@@ -274,6 +276,7 @@ aarch64_guest_backtrace_tf(struct trapframe *tf, struct trapframe *gtf)
 static void
 dump_guest_regs(struct trapframe *tf)
 {
+#if 0
 	dump_el2_trapframe(tf);
 	uartprintf("esr_el1  =%016"PRIxREGISTER"\n", reg_esr_el1_read());
 	uartprintf("far_el1  =%016"PRIxREGISTER"\n", reg_far_el1_read());
@@ -283,6 +286,7 @@ dump_guest_regs(struct trapframe *tf)
 	uartprintf("tf_far   =%016"PRIxREGISTER"\n", tf->tf_far);
 	aarch64_guest_backtrace_fp(tf->tf_spsr, tf->tf_reg[29]);
 	uartprintf("\n");
+#endif
 }
 
 void
@@ -471,7 +475,7 @@ el2error_el_low(struct trapframe *tf)
 		    reg_cnthv_ctl_el2_read(), reg_cnthp_ctl_el2_read()
 		    );
 
-		dump_guest_regs(tf);
+//		dump_guest_regs(tf);
 	}
 
 	aarch64_el2_vmexit_trap(tf);

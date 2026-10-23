@@ -1148,6 +1148,36 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 	if (__predict_true(e2h_enabled))
 		reg_vbar_el2_write(cpudata->vbar_el2);
 
+	if (nvmm_uartdebug >= 5) {
+#if 0
+		uartprintf("%20s(%20"PRIu64"):"
+		    " PC=%016"PRIx64
+		    " SPSR_EL2=0x%08"PRIx64" ESR_EL2=0x%08"PRIx64
+		    " SPSR_EL1=0x%08"PRIx64" ESR_EL1=0x%08"PRIx64
+		    " CNTV_CTL=0x%08"PRIx64" CNTP_CTL=0x%08"PRIx64
+		    " CNTHV_CTL=0x%08"PRIx64" CNTHP_CTL=0x%08"PRIx64
+		    "\n",
+		    __func__, reg_cntpct_el0_read(),tf->tf_pc,
+		    tf->tf_spsr, tf->tf_esr,
+		    reg_spsr_el1_read(), reg_esr_el1_read(),
+		    reg_cntv_ctl_el0_read(), reg_cntp_ctl_el0_read(),
+		    reg_cnthv_ctl_el2_read(), reg_cnthp_ctl_el2_read()
+		    );
+#else
+		uartprintf("enter (%20"PRIu64"):"
+		    " PC=%016"PRIx64
+		    " CNTV_CTL=0x%01"PRIx64" CNTP_CTL=0x%01"PRIx64
+		    " CNTHP_CTL=0x%01"PRIx64
+		    "\n",
+		    reg_cntpct_el0_read(),
+		    tf->tf_pc,
+		    reg_cntv_ctl_el0_read(), reg_cntp_ctl_el0_read(),
+		    reg_cnthp_ctl_el2_read()
+		    );
+#endif
+	}
+
+
 	ci->ci_invm = true;
 
 	// XXXNH don't like this... do it differently
