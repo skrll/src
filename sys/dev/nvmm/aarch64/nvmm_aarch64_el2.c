@@ -639,6 +639,32 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	/* load host state */
 	vcpu_context_load(tf, &cpudata->host);
 
+#ifdef NVMM_DEBUG
+	if (cpudata->guest.sprs[NVMM_AARCH64_SPR_PC] == 0x200) {
+		nvmmdebug = 0;
+	}
+#if 0
+	if (cntv_ctl_changed && nvmmdebug) {
+		printf("cntv_ctl  changed to %#jx\n", cntv_ctl);
+	}
+	if (cntv_cval_changed && nvmmdebug) {
+		printf("cntv_cval changed to %#jx\n", cntv_cval);
+	}
+	if (cntp_ctl_changed && nvmmdebug) {
+		printf("cntp_ctl  changed to %#jx\n", cntp_ctl);
+	}
+	if (cntp_cval_changed && nvmmdebug) {
+		printf("cntp_cval changed to %#jx\n", cntp_cval);
+	}
+#endif
+#endif
+
+#ifdef NVMM_DEBUG
+	if (cpudata->guest.sprs[NVMM_AARCH64_SPR_PC] == 0x1038fc) {
+		if (nhwficount++ > 3)
+			nvmmdebug = 0;
+	}
+#endif
 	vcpu_context_dump(&cpudata->guest, false, 0);
 
 	ci->ci_invm = false;
@@ -1130,6 +1156,14 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 		}
 		cpudata->send_event_type = NVMM_VCPU_EVENT_NONE;
 	}
+
+#ifdef NVMM_DEBUG
+#if 0
+	if (cpudata->guest.sprs[NVMM_AARCH64_SPR_PC] == 0x103900) {
+	}
+#endif
+#endif
+
 
 	vcpu_context_dump(&cpudata->guest, true, hcr);
 
