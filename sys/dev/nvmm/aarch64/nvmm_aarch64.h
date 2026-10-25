@@ -219,6 +219,9 @@ struct nvmm_aarch64_context {
 	uint64_t sprs[NVMM_AARCH64_NSPR];
 };
 
+/*
+ * This structure is shared via the comm page.
+ */
 struct nvmm_aarch64_guest_state {
 	struct nvmm_aarch64_context ctx;
 	uint64_t tids[NVMM_AARCH64_NTID];
