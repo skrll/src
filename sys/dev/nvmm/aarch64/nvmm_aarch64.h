@@ -209,6 +209,9 @@ struct nvmm_aarch64_event {
 #define NVMM_AARCH64_STATE_ALL		\
     (NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS | NVMM_AARCH64_STATE_TIDS | NVMM_AARCH64_STATE_FPRS)
 
+/*
+ * This structure is shared via the comm page.
+ */
 struct nvmm_aarch64_state {
 	uint64_t gprs[NVMM_AARCH64_NGPR];
 	uint64_t sprs[NVMM_AARCH64_NSPR];

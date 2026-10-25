@@ -42,9 +42,17 @@ aarch64nvmm_cpu_number(void)
         return aarch64nvmm_curcpu()->ci_index;
 }
 
+/*
+ * CPU data for AArch64 NVMM.
+ *
+ * This structure is used to store the state of the virtual CPU (VCPU) and
+ * the exit information when a VM exit occurs.
+ */
 struct aarch64_cpudata {
 	uint64_t cpudata_pa;
 	uint64_t vttbr_el2;
+	uint64_t hcr_el2;
+	uint64_t mdcr_el2;
 	uint64_t send_event_type;
 	uint64_t send_event_esr;
 	bool evt_pending;

@@ -548,6 +548,50 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 
 	/* copy vttbr_el2 for easy access from nVHE EL2 */
 	cpudata->vttbr_el2 = machdata->vttbr_el2;
+	cpudata->hcr_el2 =
+	    HCR_EL2_RW |	/* Execution state for EL1 is AArch64 */
+	    HCR_EL2_AMO | 	/* trap SError/AsyncAbort */
+	    HCR_EL2_IMO | 	/* trap Physical IRQ */
+	    HCR_EL2_FMO |	/* trap Physical FIQ */
+	    HCR_EL2_TWI | 	/* trap WFI */
+	    HCR_EL2_TWE |	/* trap WFE */
+	    HCR_EL2_TACR |	/* trap EL1 accessing ACTLR_EL1 */
+	    HCR_EL2_TIDCP |	/* trap IMPLEMENTATION DEFINED system registers */
+	    HCR_EL2_TSC |	/* trap SMC */
+	    HCR_EL2_TID3 |	/*
+				 * trap ID group3 regs:
+				 *	ID_PFR*_EL1,  ID_DFR*_EL1,  ID_AFR*_EL1,
+				 *	ID_MMFR*_EL1, ID_ISAR*_EL1 ,ID_MVFR*_EL1,
+				 *	ID_AA64PFR*_EL1,  ID_AA64DFR*_EL1,
+				 *	ID_AA64ISAR*_EL1, ID_AA64MMFR*_EL1,
+				 *	ID_AA64AFR*_EL1
+				 */
+
+	    HCR_EL2_DC |	/*
+				 * default cacheable for initial boot
+				 * will be disabled once guest enables MMU.
+				 */
+	    HCR_EL2_PTW |	/* Protect table walk */
+	    HCR_EL2_VM |	/* enable Stage2 translation */
+#ifdef MULTIPROCESSOR
+	    __SHIFTIN(1, HCR_EL2_BSU) |
+				/* upgrade to inner-shareable */
+	    HCR_EL2_FB | 	/*
+				 * force broadcast of
+				 *	TLBI VMALLE1, TLBI VAE1,  TLBI ASIDE1,
+				 *	TLBI VAAE1,   TLBI VALE1, TLBI VAALE1,
+				 *	IC IALLU
+				 */
+#endif
+	    0;
+
+	cpudata->mdcr_el2 =
+	    MDCR_EL2_TPM |	/* trap performance monitor */
+	    MDCR_EL2_TPMCR |	/* trap performance monitor control reg */
+	    MDCR_EL2_TDRA |	/* trap debug register access */
+	    MDCR_EL2_TDOSA |	/* trap debug OS register access */
+	    0;
+
 
 	// non-VHE only
 	if (!pmap_extract(pmap_kernel(), (vaddr_t)cpudata, &cpudata->cpudata_pa))
