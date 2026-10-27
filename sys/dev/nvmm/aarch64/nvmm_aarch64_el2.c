@@ -707,13 +707,13 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
 struct sysreg_table {
 	uint32_t code;
 	int id;
-	bool writable;
-	const char name[32];	/* debug. don't use "const char *" because el2 running on PA */
+	bool spr;
+	const char name[32 - sizeof(uint32_t) - sizeof(int) - sizeof(bool)];	/* debug. don't use "const char *" because el2 running on PA */
 };
 
 /* must be sorted by code */
-const struct sysreg_table sysreg_tid[] = {
-	/*         op0 op1 CRn CRm op2 ID                                   writable?  name             */
+const struct sysreg_table sysreg_trapped[] = {
+	/*         op0 op1 CRn CRm op2 ID 					writable?  name             */
 	{ SYSREG_ENC(3, 0,  0,  3, 0), NVMM_AARCH64_TID_MVFR0_EL1,		false, "MVFR0_EL1"	},
 	{ SYSREG_ENC(3, 0,  0,  3, 1), NVMM_AARCH64_TID_MVFR1_EL1,		false, "MVFR1_EL1"	},
 	{ SYSREG_ENC(3, 0,  0,  3, 2), NVMM_AARCH64_TID_MVFR2_EL1,		false, "MVFR2_EL1"	},
@@ -728,12 +728,40 @@ const struct sysreg_table sysreg_tid[] = {
 	{ SYSREG_ENC(3, 0,  0,  7, 0), NVMM_AARCH64_TID_ID_AA64MMFR0_EL1,	false, "ID_AA64MMFR0_EL1" },
 	{ SYSREG_ENC(3, 0,  0,  7, 1), NVMM_AARCH64_TID_ID_AA64MMFR1_EL1,	false, "ID_AA64MMFR1_EL1" },
 	{ SYSREG_ENC(3, 0,  0,  7, 2), NVMM_AARCH64_TID_ID_AA64MMFR2_EL1,	false, "ID_AA64MMFR2_EL1" },
+
+	{ SYSREG_ENC(3, 0,  1,  0, 0), NVMM_AARCH64_SPR_SCTLR_EL1,		true, "SCTLR_EL1" },
+	{ SYSREG_ENC(3, 0,  2,  0, 0), NVMM_AARCH64_SPR_TTBR0_EL1,		true, "TTBR0_EL1" },
+	{ SYSREG_ENC(3, 0,  2,  0, 1), NVMM_AARCH64_SPR_TTBR1_EL1,		true, "TTBR1_EL1" },
+	{ SYSREG_ENC(3, 0,  2,  0, 2), NVMM_AARCH64_SPR_TCR_EL1,		true, "TCR_EL1" },
+//	{ SYSREG_ENC(3, 0,  5,  1, 0), NVMM_AARCH64_SPR_AFSR0_EL1,		true, "AFSR0_EL1" },
+//	{ SYSREG_ENC(3, 0,  5,  1, 1), NVMM_AARCH64_SPR_AFSR1_EL1,		true, "AFSR1_EL1" },
+	{ SYSREG_ENC(3, 0,  5,  2, 0), NVMM_AARCH64_SPR_ESR_EL1,		true, "ESR_EL1"	},
+	{ SYSREG_ENC(3, 0,  6,  0, 0), NVMM_AARCH64_SPR_FAR_EL1,		true, "FAR_EL1"	},
+	{ SYSREG_ENC(3, 0, 10,  2, 0), NVMM_AARCH64_SPR_MAIR_EL1,		true, "MAIR_EL1" },
+	{ SYSREG_ENC(3, 0, 10,  3, 0), NVMM_AARCH64_SPR_AMAIR_EL1,		true, "AMAIR_EL1" },
+	{ SYSREG_ENC(3, 0, 13,  0, 1), NVMM_AARCH64_SPR_CONTEXTIDR_EL1,		true, "CONTEXTIDR_EL1" },
 };
+
+
+static void
+sysreg_table_check(const struct sysreg_table *table, size_t tablenum)
+{
+#ifdef DEBUG
+	for (size_t i = 1; i < tablenum; i++) {
+		if (table[i - 1].code >= table[i].code) {
+			printf("sysreg table is not sorted by code");
+			break;
+		}
+	}
+#endif
+}
 
 static const struct sysreg_table *
 sysreg_bsearch(const struct sysreg_table *table, size_t tablenum, uint32_t code)
 {
 	const struct sysreg_table *base = table;
+
+	sysreg_table_check(table, tablenum);
 
 	for (size_t lim = tablenum; lim != 0; lim /= 2) {
 		const struct sysreg_table *p = base + (lim / 2);
@@ -746,6 +774,26 @@ sysreg_bsearch(const struct sysreg_table *table, size_t tablenum, uint32_t code)
 		}
 	}
 	return NULL;
+}
+
+
+static inline void
+ln_dcache_wb_all(int level, struct aarch64_cache_unit *cunit)
+{
+	unsigned int setshift = ffs(cunit->cache_line_size) - 1;
+	unsigned int wayshift = 32 - (ffs(cunit->cache_ways) - 1);
+
+	for (unsigned int way = 0; way < cunit->cache_ways; way++) {
+		for (unsigned int set = 0; set < cunit->cache_sets; set++) {
+			uint64_t x =
+			    (way << wayshift) |
+			    (set << setshift) |
+			    (level << 1);
+			__asm __volatile ("dc csw, %0" :: "r"(x));
+		}
+	}
+	/* Complete all set/way operations for this cache level. */
+	dsb(sy);
 }
 
 static int
@@ -761,32 +809,179 @@ emul_sysreg_rw(struct trapframe *tf)
 	const uint64_t dir = __SHIFTOUT(esr, ESR_ISS_SYSREG_DIRECTION);
 
 	uint32_t code = SYSREG_ENC(op0, op1, CRn, CRm, op2);
-	const struct sysreg_table *tid =
-	    sysreg_bsearch(sysreg_tid, __arraycount(sysreg_tid), code);
-	if (tid == NULL) {
+	const struct sysreg_table *sysreg =
+	    sysreg_bsearch(sysreg_trapped, __arraycount(sysreg_trapped), code);
+	if (sysreg == NULL) {
 		return -1;
 	}
 
 	struct cpu_info * const ci = aarch64nvmm_curcpu();
 	struct aarch64_cpudata * const cpudata = ci->ci_cpudata;
 
-	if (dir == 0) {
-		/* write access */
-		if (tid->writable) {
-			if (Rt == 31) {
-				cpudata->guest.tids[tid->id] = 0;
-			} else {
-				cpudata->guest.tids[tid->id] = tf->tf_reg[Rt];
+	if (sysreg->spr) {
+		if (dir == 0) {
+			uint64_t val = Rt == 31 ? 0 : tf->tf_reg[Rt];
+
+			uartprintf("PC=%016"PRIx64
+			    " msr %s, R%"__PRIuBIT" (0x%016"PRIx64")"
+			    "\n",
+			    tf->tf_pc,
+			    sysreg->name,
+			    Rt,
+			    val
+			    );
+			switch (sysreg->id) {
+			case NVMM_AARCH64_SPR_SCTLR_EL1:
+				if (e2h_enabled)
+					reg_sctlr_el12_write(val);
+				else
+					reg_sctlr_el1_write(val);
+				if ((val & SCTLR_M) != 0) {
+					cpudata->hcr_el2 &=
+					    ~(HCR_EL2_TVM | HCR_EL2_DC);
+
+					struct aarch64_cache_info * const cinfo = ci->ci_cacheinfo;
+
+					for (u_int level = 0; level < MAX_CACHE_LEVEL; level++) {
+						if (cinfo[level].cacheable == CACHE_CACHEABLE_NONE)
+							break;
+
+						dsb(ish);
+						ln_dcache_wb_all(level, &cinfo[level].dcache);
+					}
+					asm volatile ("dsb ish; ic ialluis; dsb ish; isb" ::: "memory");
+				}
+				break;
+			case NVMM_AARCH64_SPR_TTBR0_EL1:
+				if (e2h_enabled)
+					reg_ttbr0_el12_write(val);
+				else
+					reg_ttbr0_el1_write(val);
+				break;
+			case NVMM_AARCH64_SPR_TTBR1_EL1:
+				if (e2h_enabled)
+					reg_ttbr1_el12_write(val);
+				else
+					reg_ttbr1_el1_write(val);
+				break;
+			case NVMM_AARCH64_SPR_TCR_EL1:
+				if (e2h_enabled)
+					reg_tcr_el12_write(val);
+				else
+					reg_tcr_el1_write(val);
+				break;
+			case NVMM_AARCH64_SPR_ESR_EL1:
+				if (e2h_enabled)
+					reg_esr_el12_write(val);
+				else
+					reg_esr_el1_write(val);
+				break;
+			case NVMM_AARCH64_SPR_FAR_EL1:
+				if (e2h_enabled)
+					reg_far_el12_write(val);
+				else
+					reg_far_el1_write(val);
+				break;
+			case NVMM_AARCH64_SPR_MAIR_EL1:
+				if (e2h_enabled)
+					reg_mair_el12_write(val);
+				else
+					reg_mair_el1_write(val);
+				break;
+			case NVMM_AARCH64_SPR_AMAIR_EL1:
+				if (e2h_enabled)
+					reg_amair_el12_write(val);
+				else
+					reg_amair_el1_write(val);
+				break;
+			case NVMM_AARCH64_SPR_CONTEXTIDR_EL1:
+				if (e2h_enabled)
+					reg_contextidr_el12_write(val);
+				else
+					reg_contextidr_el1_write(val);
+				break;
+			default:
+				panic("How did this happen?");
 			}
 		} else {
-			// XXX: TODO: inject undefined
-			return -1;
+			uint64_t val;
+
+			switch (sysreg->id) {
+			case NVMM_AARCH64_SPR_SCTLR_EL1:
+				val = e2h_enabled ?
+				    reg_sctlr_el12_read() :
+				    reg_sctlr_el1_read() ;
+				break;
+			case NVMM_AARCH64_SPR_TTBR0_EL1:
+				val = e2h_enabled ?
+				    reg_ttbr0_el12_read() :
+				    reg_ttbr0_el1_read() ;
+				break;
+			case NVMM_AARCH64_SPR_TTBR1_EL1:
+				val = e2h_enabled ?
+				    reg_ttbr1_el12_read() :
+				    reg_ttbr1_el1_read() ;
+				break;
+			case NVMM_AARCH64_SPR_TCR_EL1:
+				val = e2h_enabled ?
+				    reg_tcr_el12_read() :
+				    reg_tcr_el1_read() ;
+				break;
+			case NVMM_AARCH64_SPR_ESR_EL1:
+				val = e2h_enabled ?
+				    reg_esr_el12_read() :
+				    reg_esr_el1_read() ;
+				break;
+			case NVMM_AARCH64_SPR_FAR_EL1:
+				val = e2h_enabled ?
+				    reg_far_el12_read() :
+				    reg_far_el1_read() ;
+				break;
+			case NVMM_AARCH64_SPR_MAIR_EL1:
+				val = e2h_enabled ?
+				    reg_mair_el12_read() :
+				    reg_mair_el1_read() ;
+				break;
+			case NVMM_AARCH64_SPR_AMAIR_EL1:
+				val = e2h_enabled ?
+				    reg_amair_el12_read() :
+				    reg_amair_el1_read() ;
+				break;
+			case NVMM_AARCH64_SPR_CONTEXTIDR_EL1:
+				val = e2h_enabled ?
+				    reg_contextidr_el12_read() :
+				    reg_contextidr_el1_read() ;
+			default:
+				panic("How did this happen?");
+			}
+
+			uartprintf("PC=%016"PRIx64
+			    " mrs R%"__PRIuBIT", %s (0x%016"PRIx64")"
+			    "\n",
+			    tf->tf_pc,
+			    Rt,
+			    sysreg->name,
+			    val
+			    );
+			/* read access */
+			if (Rt != 31)
+				tf->tf_reg[Rt] = val;
 		}
+
 	} else {
-		/* read access */
-		if (Rt != 31)
-			tf->tf_reg[Rt] = cpudata->guest.tids[tid->id];
+		if (dir == 0) {
+			/*
+			 * A write to an ID register should cause an exception
+			 * to be raised.
+			 */
+			return -1;
+		} else {
+	                /* read access */
+	                if (Rt != 31)
+				tf->tf_reg[Rt] = cpudata->guest.tids[sysreg->id];
+		}
 	}
+
 	tf->tf_pc += 4;
 
 	return 0;

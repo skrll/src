@@ -571,6 +571,14 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 				 *	ID_AA64AFR*_EL1
 				 */
 
+	    HCR_EL2_TVM |	/*
+				 * trap EL1 writes to
+				 *	SCTLR_EL1,
+				 *	TTBR0_EL1, TTBR1_EL1, TCR_EL1, ESR_EL1,
+				 *      FAR_EL1, AFSR0_EL1, AFSR1_EL1, MAIR_EL1,
+				 *	AMAIR_EL1, CONTEXTIDR_EL1
+				 * will be disabled once guest enables MMU.
+				*/
 	    HCR_EL2_DC |	/*
 				 * default cacheable for initial boot
 				 * will be disabled once guest enables MMU.
@@ -588,6 +596,8 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 				 */
 #endif
 	    0;
+
+	cpudata->hcr_el2 |= e2h_enabled ? HCR_EL2_E2H : 0;
 
 	cpudata->mdcr_el2 =
 	    MDCR_EL2_TPM |	/* trap performance monitor */
