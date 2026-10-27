@@ -577,6 +577,14 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 				 * trap ID grup1 regs:
 				 *
 				 */
+	    HCR_EL2_TVM |	/*
+				 * trap EL1 writes to
+				 *	SCTLR_EL1,
+				 *	TTBR0_EL1, TTBR1_EL1, TCR_EL1, ESR_EL1,
+				 *      FAR_EL1, AFSR0_EL1, AFSR1_EL1, MAIR_EL1,
+				 *	AMAIR_EL1, CONTEXTIDR_EL1
+				 * will be disabled once guest enables MMU.
+				*/
 #if 0
 	    HCR_EL2_DC |	/*
 				 * default cacheable for initial boot
@@ -599,6 +607,8 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    HCR_EL2_SWIO |	/* Set/Way Invalidation Override */
 	    /* HCR_EL2_TLOR | */	/* FEAT_LOR */
 	    0;
+
+	host->hcr_el2 |= e2h_enabled ? HCR_EL2_E2H : 0;
 
 	host->mdcr_el2 =
 	    MDCR_EL2_TPM |	/* trap performance monitor */
