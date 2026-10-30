@@ -964,6 +964,7 @@ nvmm_aarch64_maintain_ipa(void *nvmm_mach, uint64_t op, uint64_t ipa, uint64_t v
 				aarch64_tlbi_by_vmid_ipa(ipa);
 			}
 			if (op & NVMM_AARCH64_MAINTAIN_OP_ICACHE_SYNC) {
+				printf("%s: idcache sync call\n", __func__);
 				// XXXNH suboptimal
 				cpu_icache_sync_all();
 			}

@@ -1497,6 +1497,8 @@ pmap_protect(struct pmap *pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 			pte = _pmap_stage2_pte_adjust_prot(pte, prot, mdattr);
 
 			if (!executable && (prot & VM_PROT_EXECUTE)) {
+				printf("%s: sync_icache ipa %#lx\n",
+				    __func__, va);
 				/* non-exec -> exec */
 				if (!l3pte_readable(pte)) {
 					atomic_swap_64(ptep, pte | LX_BLKPAG_AF);
@@ -1767,8 +1769,10 @@ _pmap_pdp_addref(struct pmap *pm, paddr_t pdppa, struct vm_page *pdppg_hint)
 #if NNVMM > 0
 	/* also contatenate table for stage2 must be ignored */
 	if (pm->pm_stage2 && IN_RANGE(pdppa, pm->pm_st2_table_pa,
-	    pm->pm_st2_table_pa + PAGE_SIZE * pm->pm_st2_concatenate_num))
+	    pm->pm_st2_table_pa + PAGE_SIZE * pm->pm_st2_concatenate_num)) {
+		printf("%s: pdppa %#lx ignored (%d)\n", __func__, pdppa, pm->pm_st2_concatenate_num);
 		return;
+	}
 #endif
 
 	pg = pdppg_hint;
@@ -1776,6 +1780,9 @@ _pmap_pdp_addref(struct pmap *pm, paddr_t pdppa, struct vm_page *pdppg_hint)
 		pg = PHYS_TO_VM_PAGE(pdppa);
 	KASSERT(pg != NULL);
 
+	if (pm->pm_stage2) {
+		printf("%s: pdppa %#lx pg %p wirecount %u\n", __func__, pdppa, pg, pg->wire_count);
+	}
 	pg->wire_count++;
 
 	KASSERTMSG(pg->wire_count <= (Ln_ENTRIES + 1),
@@ -1820,6 +1827,9 @@ _pmap_pdp_delref(struct pmap *pm, paddr_t pdppa, bool do_free_pdp)
 	pg = PHYS_TO_VM_PAGE(pdppa);
 	KASSERT(pg != NULL);
 
+	if (pm->pm_stage2) {
+		printf("%s: pdppa %#lx pg %p wirecount %u\n", __func__, pdppa, pg, pg->wire_count);
+	}
 	wirecount = --pg->wire_count;
 
 	if (!do_free_pdp) {
@@ -1839,6 +1849,9 @@ _pmap_pdp_delref(struct pmap *pm, paddr_t pdppa, bool do_free_pdp)
 		pd_entry_t *ptep_in_parent, opte __diagused;
 		ptep_in_parent = VM_PAGE_TO_MD(pg)->mdpg_ptep_parent;
 		if (ptep_in_parent == NULL) {
+			if (pm->pm_stage2) {
+				printf("%s: pg %p noparent\n", __func__, pg);
+			}
 			/* no parent */
 			pmap_free_pdp(pm, pg);
 			removed = true;
@@ -1858,7 +1871,20 @@ _pmap_pdp_delref(struct pmap *pm, paddr_t pdppa, bool do_free_pdp)
 		if (pdppa == pm->pm_l0table_pa)
 			break;
 
+		/* also contatenate table for stage2 must be ignored */
+		if (pm->pm_stage2) {
+			printf("%s: pdppa %#lx pm_st2_table_pa %#lx - %#lx\n", __func__,
+			    pdppa, pm->pm_st2_table_pa,
+			    pm->pm_st2_table_pa + PAGE_SIZE * pm->pm_st2_concatenate_num);
+			if (IN_RANGE(pdppa, pm->pm_st2_table_pa,
+					pm->pm_st2_table_pa + PAGE_SIZE * pm->pm_st2_concatenate_num))
+				break;
+		}
+
 		pg = PHYS_TO_VM_PAGE(pdppa);
+		if (pm->pm_stage2) {
+			printf("%s: pdppa %#lx pg %p\n", __func__, pdppa, pg);
+		}
 		KASSERT(pg != NULL);
 		KASSERTMSG(pg->wire_count >= 1,
 		    "wire_count=%d", pg->wire_count);
@@ -1991,6 +2017,8 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 		UVMHIST_LOG(pmaphist,
 		    "stage2: IPA(va)=%016lx, PA=%016lx, prot=%08x, flags=%08x",
 		    va, pa, prot, flags);
+		printf("%s: IPA(va)=%016lx, PA=%016lx, prot=%08x, flags=%08x\n",
+                    __func__, va, pa, prot, flags);
 	}
 
 #ifdef PMAPCOUNTERS
@@ -2109,6 +2137,7 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 
 #if NNVMM > 0
 			if (pm->pm_stage2) {
+				printf("%s: pa %#lx != %#lx (old)\n", __func__, pa, l3pte_pa(opte));
 				if (need_sync_icache && l3pte_s2_executable(opte))
 					need_sync_icache = false;
 			} else
@@ -2238,6 +2267,8 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 
 #if NNVMM > 0
 	if (pm->pm_stage2) {
+		printf("%s: need_sync_icache %s ipa %#lx\n",
+		    __func__, need_sync_icache ? "true" : "false", va);
 		if (need_sync_icache) {
 			/* non-exec -> exec */
 			if (!l3pte_readable(pte)) {
@@ -2415,6 +2446,10 @@ _pmap_remove(struct pmap *pm, vaddr_t sva, vaddr_t eva, bool kremove,
 	UVMHIST_CALLARGS(pmaphist, "pm=%p, sva=%016lx, eva=%016lx, kremove=%d",
 	    pm, sva, eva, kremove);
 
+	if (pm->pm_stage2) {
+		printf("%s: pm=%p, sva=%016lx, eva=%016lx, kremove=%d\n",
+		    __func__, pm, sva, eva, kremove);
+	}
 	KASSERT(kremove || mutex_owned(&pm->pm_lock));
 
 	for (va = sva; (va < eva) && (pm->pm_stats.resident_count != 0);
@@ -2449,6 +2484,9 @@ _pmap_remove(struct pmap *pm, vaddr_t sva, vaddr_t eva, bool kremove,
 		if (!lxpde_valid(pte))
 			continue;
 
+		if (pm->pm_stage2) {
+			printf("ptep %p (%#lx) ", ptep, AARCH64_KVA_TO_PA(trunc_page((vaddr_t)ptep)));
+		}
 		pdpremoved = _pmap_pdp_delref(pm,
 		    AARCH64_KVA_TO_PA(trunc_page((vaddr_t)ptep)), true);
 
@@ -2476,6 +2514,9 @@ _pmap_remove(struct pmap *pm, vaddr_t sva, vaddr_t eva, bool kremove,
 			_pmap_adj_wired_count(pm, -1);
 		}
 		_pmap_adj_resident_count(pm, -1);
+	}
+	if (pm->pm_stage2) {
+		printf(" done\n");
 	}
 }
 
@@ -2734,6 +2775,9 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 	UVMHIST_LOG(pmaphist, "va=%016lx, pmapprot=%08x, accessprot=%08x",
 	    va, pmap_prot, accessprot, 0);
 
+	printf("va=%016lx, pmapprot=%08x, accessprot=%08x\n",
+	    va, pmap_prot, accessprot);
+
 	/* ignore except read/write */
 	accessprot &= (VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
 
@@ -2775,6 +2819,10 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 		if ((accessprot & VM_PROT_WRITE) &&
 		    ((pte & LX_S2_BLKPAG_S2AP) == LX_S2_BLKPAG_S2AP_RO)) {
 			/* pte is not RW. set modified and RW */
+
+			printf("STAGE2 MODIFIED:"
+			    " va=%016lx, pa=%016lx, pte_prot=%08x, accessprot=%08x\n",
+			    va, pa, pmap_prot, accessprot);
 
 			UVMHIST_LOG(pmaphist, "STAGE2 MODIFIED:"
 			    " va=%016lx, pa=%016lx, pte_prot=%08x, accessprot=%08x",
