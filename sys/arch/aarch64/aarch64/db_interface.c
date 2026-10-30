@@ -622,24 +622,36 @@ db_pteinfo(vaddr_t va, void (*pr)(const char *, ...) __printflike(1, 2))
 	}
 }
 
+typedef vaddr_t (*db_ttbr_pa_to_va_t)(void *, paddr_t);
+
+static vaddr_t
+db_ttbr_pa_to_kva(void *cookie __unused, paddr_t pa)
+{
+	return AARCH64_PA_TO_KVA(pa);
+}
+
 static void
 dump_ln_table(bool countmode, pd_entry_t *pdp, int level, int lnindex,
-    vaddr_t va, void (*pr)(const char *, ...) __printflike(1, 2))
+    vaddr_t va, paddr_t table_pa, bool guest, db_ttbr_pa_to_va_t pa_to_va,
+    void *cookie, void (*pr)(const char *, ...) __printflike(1, 2))
 {
 	struct vm_page *pg;
 	pd_entry_t pde;
 	paddr_t pa;
+	vaddr_t table_va;
 	int i, n;
 	const char *spaces[4] = { " ", "  ", "   ", "    " };
 	const char *spc = spaces[level];
 
-	pa = AARCH64_KVA_TO_PA((vaddr_t)pdp);
-	pg = PHYS_TO_VM_PAGE(pa);
-
-	if (pg == NULL) {
-		pr("%sL%d: pa=%lx pg=NULL\n", spc, level, pa);
+	if (guest) {
+		pr("%sL%d: guest pa=%lx\n", spc, level, table_pa);
 	} else {
-		pr("%sL%d: pa=%lx pg=%p\n", spc, level, pa, pg);
+		pg = PHYS_TO_VM_PAGE(table_pa);
+		if (pg == NULL) {
+			pr("%sL%d: pa=%lx pg=NULL\n", spc, level, table_pa);
+		} else {
+			pr("%sL%d: pa=%lx pg=%p\n", spc, level, table_pa, pg);
+		}
 	}
 
 	for (i = n = 0; i < Ln_ENTRIES; i++) {
@@ -658,9 +670,16 @@ dump_ln_table(bool countmode, pd_entry_t *pdp, int level, int lnindex,
 				if (!countmode)
 					db_pte_print(pde, level, pr);
 				pa = l0pde_pa(pde);
-				dump_ln_table(countmode,
-				    (pd_entry_t *)AARCH64_PA_TO_KVA(pa),
-				    level + 1, i, va, pr);
+				table_va = pa_to_va(cookie, pa);
+				if (table_va == 0) {
+					pr("%sL%d[%3d]: cannot find HVA for %s "
+					    "%016lx\n", spc, level, i,
+					    guest ? "guest PA" : "PA", pa);
+				} else {
+					dump_ln_table(countmode,
+					    (pd_entry_t *)table_va, level + 1, i,
+					    va, pa, guest, pa_to_va, cookie, pr);
+				}
 			} else {
 				if (!countmode)
 					db_pte_print(pde, level, pr);
@@ -694,7 +713,10 @@ static void
 db_dump_l0table(bool countmode, pd_entry_t *pdp, vaddr_t va_base,
     void (*pr)(const char *, ...) __printflike(1, 2))
 {
-	dump_ln_table(countmode, pdp, 0, 0, va_base, pr);
+	paddr_t pa = AARCH64_KVA_TO_PA((vaddr_t)pdp);
+
+	dump_ln_table(countmode, pdp, 0, 0, va_base, pa, false,
+	    db_ttbr_pa_to_kva, NULL, pr);
 }
 
 void
@@ -711,6 +733,16 @@ db_ttbrdump(bool countmode, vaddr_t va,
 
 	db_dump_l0table(countmode, pmap_l0table(pm),
 	    (pm == pmap_kernel()) ? 0xffff000000000000UL : 0, pr);
+}
+
+void
+db_ttbrdump_guest(bool countmode, paddr_t pa, vaddr_t va,
+    vaddr_t (*pa_to_va)(void *, paddr_t), void *cookie,
+    void (*pr)(const char *, ...) __printflike(1, 2))
+{
+	pr("guest TTBR=%016"PRIxPADDR", HVA=%p\n", pa, (void *)va);
+	dump_ln_table(countmode, (pd_entry_t *)va, 0, 0, 0, pa, true,
+	    pa_to_va, cookie, pr);
 }
 
 void
