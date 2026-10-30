@@ -61,6 +61,12 @@ __KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.50 2026/08/08 15:00:07 riastradh Exp $");
 #include <dev/nvmm/nvmm_internal.h>
 #include <dev/nvmm/nvmm_ioctl.h>
 
+#if defined(__aarch64__) && defined(DDB)
+#include <aarch64/armreg.h>
+#include <dev/nvmm/aarch64/nvmm_aarch64_internal.h>
+#include <machine/db_machdep.h>
+#endif
+
 #if defined(NVMM_DEBUG)
 
 #ifndef NVMMHIST_SIZE
@@ -684,6 +690,41 @@ out:
 	return error;
 }
 
+#if defined(__aarch64__) && defined(DDB)
+#if 1
+static vaddr_t
+nvmm_gpa_to_hva(void *cookie, paddr_t pa)
+{
+	struct nvmm_machine *mach = cookie;
+	struct vmspace *vm = mach->vm;
+	struct vm_map_entry *entry;
+	voff_t offset;
+	vaddr_t hva = 0;
+	gpaddr_t gpa = pa;
+	size_t i;
+
+	vm_map_lock_read(&vm->vm_map);
+	if (uvm_map_lookup_entry(&vm->vm_map, gpa, &entry) &&
+	    gpa >= entry->start && gpa < entry->end && UVM_ET_ISOBJ(entry)) {
+		offset = entry->offset + gpa - entry->start;
+		for (i = 0; i < NVMM_MAX_HMAPPINGS; i++) {
+			struct nvmm_hmapping *hmapping = &mach->hmap[i];
+
+			if (hmapping->present &&
+			    hmapping->uobj == entry->object.uvm_obj &&
+			    offset < hmapping->size) {
+				hva = hmapping->hva + offset;
+				break;
+			}
+		}
+	}
+	vm_map_unlock_read(&vm->vm_map);
+
+	return hva;
+}
+#endif
+#endif
+
 static int
 nvmm_do_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
@@ -710,8 +751,32 @@ nvmm_do_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		if (exit->u.mem.gpa >= mach->gpa_end) {
 			break;
 		}
+		printf("%s: gpa %#lx prot %1x...", __func__, exit->u.mem.gpa, exit->u.mem.prot);
 		if (uvm_fault(&vm->vm_map, exit->u.mem.gpa, exit->u.mem.prot)) {
+			printf(" nope\n");
+#if defined(__aarch64__) && defined(DDB)
+#if 1
+			struct aarch64_cpudata *cpudata = vcpu->cpudata;
+			paddr_t ttbr0;
+			vaddr_t hva;
+
+			ttbr0 = cpudata->guest.ctx.sprs[NVMM_AARCH64_SPR_TTBR0_EL1] &
+			    TTBR_BADDR;
+			ttbr0 = trunc_page(ttbr0);
+			hva = nvmm_gpa_to_hva(mach, ttbr0);
+			if (hva != 0) {
+				db_ttbrdump_guest(false, ttbr0, hva,
+				    nvmm_gpa_to_hva, mach, printf);
+			} else {
+				printf("%s: cannot find HVA for TTBR0 PA %#lx\n",
+				    __func__, (u_long)ttbr0);
+			}
+#endif
+#endif
+
 			break;
+		} else {
+			printf(" success\n");
 		}
 	}
 
@@ -944,14 +1009,18 @@ nvmm_gpa_map(struct nvmm_owner *owner, struct nvmm_ioc_gpa_map *args)
 	 */
 	gpa = args->gpa;
 	gpa_end = gpa + args->size;
+printf("%s: mach %016lx - %016lx gpa %016lx - %016lx -> hva %016lx prot %1x : ",
+    __func__, mach->gpa_begin, mach->gpa_end, gpa, gpa_end, args->hva, args->prot);
 	if (gpa_end <= gpa) {
 		error = EINVAL;
+		printf(" inverted\n");
 		goto out;
 	}
 
 	if ((gpa % PAGE_SIZE) != 0 || (args->size % PAGE_SIZE) != 0 ||
 	    (args->hva % PAGE_SIZE) != 0) {
 		error = EINVAL;
+		printf(" page_suze\n");
 		goto out;
 	}
 	if (args->hva == 0) {
@@ -961,10 +1030,12 @@ nvmm_gpa_map(struct nvmm_owner *owner, struct nvmm_ioc_gpa_map *args)
 
 	if (gpa < mach->gpa_begin || gpa >= mach->gpa_end) {
 		error = EINVAL;
+		printf(" outside\n");
 		goto out;
 	}
 	if (gpa_end  > mach->gpa_end) {
 		error = EINVAL;
+		printf(" other outside\n");
 		goto out;
 	}
 
@@ -977,10 +1048,11 @@ nvmm_gpa_map(struct nvmm_owner *owner, struct nvmm_ioc_gpa_map *args)
 	/* Take a reference for the machine. */
 	uao_reference(uobj);
 
+	printf("\n");
 	/* Map the uobj into the machine address space, as pageable. */
 	error = uvm_map(&mach->vm->vm_map, &gpa, args->size, uobj, off, 0,
 	    UVM_MAPFLAG(args->prot, UVM_PROT_RWX, UVM_INH_NONE,
-	    UVM_ADV_RANDOM, UVM_FLAG_FIXED|UVM_FLAG_UNMAP));
+	    UVM_ADV_RANDOM, UVM_FLAG_FIXED | UVM_FLAG_UNMAP));
 	if (error) {
 		uao_detach(uobj);
 		goto out;
@@ -1015,24 +1087,31 @@ nvmm_gpa_unmap(struct nvmm_owner *owner, struct nvmm_ioc_gpa_unmap *args)
 	 */
 	gpa = args->gpa;
 	gpa_end = gpa + args->size;
+printf("%s: mach %016lx - %016lx gpa %016lx - %016lx: ", __func__, mach->gpa_begin, mach->gpa_end, gpa, gpa_end);
+
 	if (gpa_end <= gpa) {
 		error = EINVAL;
+		printf(" inverted\n");
 		goto out;
 	}
 
 	if ((gpa % PAGE_SIZE) != 0 || (args->size % PAGE_SIZE) != 0) {
 		error = EINVAL;
+		printf(" page size\n");
 		goto out;
 	}
 	if (gpa < mach->gpa_begin || gpa >= mach->gpa_end) {
+		printf(" outside\n");
 		error = EINVAL;
 		goto out;
 	}
 	if (gpa_end >= mach->gpa_end) {
+		printf(" other outside\n");
 		error = EINVAL;
 		goto out;
 	}
 
+	printf("\n");
 	/* Unmap the memory from the machine. */
 	uvm_unmap(&mach->vm->vm_map, gpa, gpa + args->size);
 

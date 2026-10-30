@@ -222,6 +222,9 @@ db_addr_t db_branch_taken(db_expr_t, db_addr_t, db_regs_t *);
 void db_pteinfo(vaddr_t, void (*)(const char *, ...) __printflike(1, 2));
 void db_pte_print(pt_entry_t, int, void (*)(const char *, ...) __printflike(1, 2));
 void db_ttbrdump(bool, vaddr_t, void (*pr)(const char *, ...) __printflike(1, 2));
+void db_ttbrdump_guest(bool, paddr_t, vaddr_t,
+    vaddr_t (*)(void *, paddr_t), void *,
+    void (*)(const char *, ...) __printflike(1, 2));
 void db_machdep_cpu_init(void);
 void db_machdep_init(struct cpu_info * const);
 
