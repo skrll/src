@@ -671,13 +671,17 @@ aarch64_el2_vmexit_irq(struct trapframe *tf)
 
 	uint64_t cntv_ctl = e2h_enabled ?
 	    reg_cntv_ctl_el02_read() : reg_cntv_ctl_el0_read();
+#if 0
 	uint64_t cntp_ctl = e2h_enabled ?
 	    reg_cntp_ctl_el02_read() : reg_cntp_ctl_el0_read();
+#else
+	uint64_t cntp_ctl = 0;
+#endif
 
 	bool cntv_irq = aarch64_timer_interrupt(cntv_ctl);
 	bool cntp_irq = aarch64_timer_interrupt(cntp_ctl);
 
-	if (cntv_irq || cntp_irq) {
+	if ((tf->tf_spsr & SPSR_I) == 0 && (cntv_irq || cntp_irq)) {
 		cpudata->exit.reason = NVMM_VCPU_EXIT_IRQ;
 		cpudata->exit.exitstate.vtimer = cntv_irq;
 		cpudata->exit.exitstate.ptimer = cntp_irq;
