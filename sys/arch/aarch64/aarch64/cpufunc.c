@@ -316,7 +316,7 @@ ln_dcache_wb_all(int level, struct aarch64_cache_unit *cunit)
 		for (set = 0; set < cunit->cache_sets; set++) {
 			x = (way << wayshift) | (set << setshift) |
 			    (level << 1);
-			__asm __volatile ("dc csw, %0; dsb sy" :: "r"(x));
+			__asm __volatile ("dc csw, %0" :: "r"(x));
 		}
 	}
 }
@@ -334,7 +334,7 @@ ln_dcache_wbinv_all(int level, struct aarch64_cache_unit *cunit)
 		for (set = 0; set < cunit->cache_sets; set++) {
 			x = (way << wayshift) | (set << setshift) |
 			    (level << 1);
-			__asm __volatile ("dc cisw, %0; dsb sy" :: "r"(x));
+			__asm __volatile ("dc cisw, %0" :: "r"(x));
 		}
 	}
 }
@@ -352,7 +352,7 @@ ln_dcache_inv_all(int level, struct aarch64_cache_unit *cunit)
 		for (set = 0; set < cunit->cache_sets; set++) {
 			x = (way << wayshift) | (set << setshift) |
 			    (level << 1);
-			__asm __volatile ("dc isw, %0; dsb sy" :: "r"(x));
+			__asm __volatile ("dc isw, %0" :: "r"(x));
 		}
 	}
 }
