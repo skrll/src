@@ -431,6 +431,8 @@ el2irq_el_low(struct trapframe *tf)
 			dump_guest_regs(tf);
 	}
 
+	// XXX do we get here when the guest isn't running?
+
 	aarch64_el2_vmexit_irq(tf);
 }
 
@@ -459,6 +461,8 @@ el2fiq_el_low(struct trapframe *tf)
 		if (nvmm_uartdebug >= 10)
 			dump_guest_regs(tf);
 	}
+
+	// XXX do we get here when the guest isn't running?
 
 	aarch64_el2_vmexit_irq(tf);
 }
