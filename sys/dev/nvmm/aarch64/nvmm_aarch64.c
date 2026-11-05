@@ -97,17 +97,19 @@ fail:
 	aprint_error("%s: sysctl_createv failed (err = %d)\n", __func__, err);
 }
 
-struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
-	.gprs = {},	/* x0-x31 are all zero */
-	.fprs = {},	/* q0-q31 are all zero */
-	.sprs = {
-		/*
-		 * Rpcdtx - The following PSTATE bits are meaningful in
-		 * .        AArch64 state. Warm reset state.
-		 */
-		[NVMM_AARCH64_SPR_CPSR] =
-		    SPSR_A64_D | SPSR_A | SPSR_I | SPSR_F | SPSR_M_EL1H,
-		[NVMM_AARCH64_SPR_SCTLR_EL1] = SCTLR_RES1,
+struct nvmm_aarch64_guest_state nvmm_aarch64_reset_state = {
+	.ctx = {
+		.gprs = {},	/* x0-x31 are all zero */
+		.fprs = {},	/* q0-q31 are all zero */
+		.sprs = {
+			/*
+			 * Rpcdtx - The following PSTATE bits are meaningful in
+			 * .        AArch64 state. Warm reset state.
+			 */
+			[NVMM_AARCH64_SPR_CPSR] =
+			    SPSR_A64_D | SPSR_A | SPSR_I | SPSR_F | SPSR_M_EL1H,
+			[NVMM_AARCH64_SPR_SCTLR_EL1] = SCTLR_RES1,
+		},
 	},
 	.tids = {}	/* initted in nvmm_aarch64_init_reset_state() */
 };
@@ -558,9 +560,9 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    sizeof(vcpu->comm->state));
 
 	/* The default value of MIDR_EL1 is the same as the host */
-	vcpu->comm->state.sprs[NVMM_AARCH64_SPR_MIDR_EL1] = reg_midr_el1_read();
-	vcpu->comm->state.sprs[NVMM_AARCH64_SPR_MPIDR_EL1] =
-	    MPIDR_RES1 | vcpu->cpuid;
+	struct nvmm_aarch64_context * const ctx = &vcpu->comm->state.ctx;
+	ctx->sprs[NVMM_AARCH64_SPR_MIDR_EL1] = reg_midr_el1_read();
+	ctx->sprs[NVMM_AARCH64_SPR_MPIDR_EL1] = MPIDR_RES1 | vcpu->cpuid;
 
 	vcpu->comm->state_wanted = NVMM_AARCH64_STATE_ALL;
 	vcpu->comm->state_cached = 0;
@@ -588,14 +590,14 @@ static void
 nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 {
 	struct nvmm_comm_page * const comm = vcpu->comm;
-	const struct nvmm_aarch64_state * const state = &comm->state;
+	const struct nvmm_aarch64_guest_state * const state = &comm->state;
 	struct aarch64_cpudata * const cpudata = vcpu->cpudata;
 	const uint64_t flags = comm->state_wanted;
 	bool force_override_spsr = false;
 
 	/* sanity check */
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
-		switch (__SHIFTOUT(state->sprs[NVMM_AARCH64_SPR_CPSR], SPSR_M)) {
+		switch (__SHIFTOUT(state->ctx.sprs[NVMM_AARCH64_SPR_CPSR], SPSR_M)) {
 		case SPSR_M_EL1H:
 		case SPSR_M_EL1T:
 		case SPSR_M_EL0T:
@@ -622,20 +624,20 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 	}
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
-		memcpy(cpudata->guest.gprs, state->gprs, sizeof(state->gprs));
+		memcpy(cpudata->guest.ctx.gprs, state->ctx.gprs, sizeof(state->ctx.gprs));
+	}
+	if (flags & NVMM_AARCH64_STATE_FPRS) {
+		memcpy(cpudata->guest.ctx.fprs, state->ctx.fprs, sizeof(state->ctx.fprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
-		memcpy(cpudata->guest.sprs, state->sprs, sizeof(state->sprs));
+		memcpy(cpudata->guest.ctx.sprs, state->ctx.sprs, sizeof(state->ctx.sprs));
 		if (force_override_spsr) {
-			cpudata->guest.sprs[NVMM_AARCH64_SPR_CPSR] &= ~SPSR_M;
-			cpudata->guest.sprs[NVMM_AARCH64_SPR_CPSR] |= SPSR_M_EL1H;
+			cpudata->guest.ctx.sprs[NVMM_AARCH64_SPR_CPSR] &= ~SPSR_M;
+			cpudata->guest.ctx.sprs[NVMM_AARCH64_SPR_CPSR] |= SPSR_M_EL1H;
 		}
 	}
 	if (flags & NVMM_AARCH64_STATE_TIDS) {
 		memcpy(cpudata->guest.tids, state->tids, sizeof(state->tids));
-	}
-	if (flags & NVMM_AARCH64_STATE_FPRS) {
-		memcpy(cpudata->guest.fprs, state->fprs, sizeof(state->fprs));
 	}
 
 	comm->state_wanted = 0;
@@ -646,21 +648,21 @@ static void
 nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 {
 	struct nvmm_comm_page * const comm = vcpu->comm;
-	struct nvmm_aarch64_state * const state = &comm->state;
+	struct nvmm_aarch64_guest_state * const state = &comm->state;
 	const struct aarch64_cpudata * const cpudata = vcpu->cpudata;
 	const uint64_t flags = comm->state_wanted;
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
-		memcpy(state->gprs, cpudata->guest.gprs, sizeof(state->gprs));
+		memcpy(state->ctx.gprs, cpudata->guest.ctx.gprs, sizeof(state->ctx.gprs));
+	}
+	if (flags & NVMM_AARCH64_STATE_FPRS) {
+		memcpy(state->ctx.fprs, cpudata->guest.ctx.fprs, sizeof(state->ctx.fprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
-		memcpy(state->sprs, cpudata->guest.sprs, sizeof(state->sprs));
+		memcpy(state->ctx.sprs, cpudata->guest.ctx.sprs, sizeof(state->ctx.sprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_TIDS) {
 		memcpy(state->tids, cpudata->guest.tids, sizeof(state->tids));
-	}
-	if (flags & NVMM_AARCH64_STATE_FPRS) {
-		memcpy(state->fprs, cpudata->guest.fprs, sizeof(state->fprs));
 	}
 
 	comm->state_wanted = 0;
@@ -845,7 +847,7 @@ const struct nvmm_impl nvmm_aarch64 = {
 	.mach_conf_sizes = NULL,
 	.vcpu_conf_max = 0,
 	.vcpu_conf_sizes = NULL,
-	.state_size = sizeof(struct nvmm_aarch64_state),
+	.state_size = sizeof(struct nvmm_aarch64_guest_state),
 	.machine_create = nvmm_aarch64_machine_create,
 	.machine_destroy = nvmm_aarch64_machine_destroy,
 	.machine_configure = nvmm_aarch64_machine_configure,

@@ -187,7 +187,7 @@ struct nvmm_aarch64_event {
 #define NVMM_AARCH64_SPR_CNTP_CVAL_EL0	31
 #define NVMM_AARCH64_SPR_AFSR0_EL1	32
 #define NVMM_AARCH64_SPR_AFSR1_EL1	33
-#define NVMM_AARCH64_NSPR		64
+#define NVMM_AARCH64_NSPR		128
 
 #define NVMM_AARCH64_TID_MVFR0_EL1		0	/* HDR_EL2.TID3 */
 #define NVMM_AARCH64_TID_MVFR1_EL1		1	/* HDR_EL2.TID3 */
@@ -207,17 +207,21 @@ struct nvmm_aarch64_event {
 
 /* flags */
 #define NVMM_AARCH64_STATE_GPRS		__BIT(0)
-#define NVMM_AARCH64_STATE_SPRS		__BIT(1)
+#define NVMM_AARCH64_STATE_FPRS		__BIT(1)
 #define NVMM_AARCH64_STATE_TIDS		__BIT(2)
-#define NVMM_AARCH64_STATE_FPRS		__BIT(16)
+#define NVMM_AARCH64_STATE_SPRS		__BIT(3)
 #define NVMM_AARCH64_STATE_ALL		\
     (NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS | NVMM_AARCH64_STATE_TIDS | NVMM_AARCH64_STATE_FPRS)
 
-struct nvmm_aarch64_state {
+struct nvmm_aarch64_context {
 	uint64_t gprs[NVMM_AARCH64_NGPR];
-	uint64_t sprs[NVMM_AARCH64_NSPR];
-	uint64_t tids[NVMM_AARCH64_NTID];		/* XXX: read only. no need to include in host context */
 	union fpelem fprs[NVMM_AARCH64_NFPR];
+	uint64_t sprs[NVMM_AARCH64_NSPR];
+};
+
+struct nvmm_aarch64_guest_state {
+	struct nvmm_aarch64_context ctx;
+	uint64_t tids[NVMM_AARCH64_NTID];
 };
 
 struct nvmm_cap_md {
@@ -227,7 +231,7 @@ struct nvmm_cap_md {
 
 #define nvmm_vcpu_exit nvmm_aarch64_exit
 #define nvmm_vcpu_event nvmm_aarch64_event
-#define nvmm_vcpu_state nvmm_aarch64_state
+#define nvmm_vcpu_state nvmm_aarch64_guest_state
 
 #define NVMM_EL2_HVC_INIT		0x0000
 #define NVMM_EL2_HVC_VMENTER		0x0001

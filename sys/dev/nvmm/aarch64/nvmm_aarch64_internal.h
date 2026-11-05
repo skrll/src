@@ -42,6 +42,10 @@ aarch64nvmm_cpu_number(void)
         return aarch64nvmm_curcpu()->ci_index;
 }
 
+struct nvmm_aarch64_host_state {
+	struct nvmm_aarch64_context ctx;
+};
+
 struct aarch64_cpudata {
 	uint64_t cpudata_pa;
 	uint64_t vttbr_el2;
@@ -50,8 +54,8 @@ struct aarch64_cpudata {
 	bool evt_pending;
 
 	struct nvmm_aarch64_exit exit;
-	struct nvmm_aarch64_state host;
-	struct nvmm_aarch64_state guest;
+	struct nvmm_aarch64_host_state host;
+	struct nvmm_aarch64_guest_state guest;
 };
 
 struct nvmm_aarch64_el2_init {
