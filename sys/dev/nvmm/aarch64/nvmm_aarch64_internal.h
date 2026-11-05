@@ -39,20 +39,46 @@ aarch64nvmm_curcpu(void)
 static inline u_int
 aarch64nvmm_cpu_number(void)
 {
-        return aarch64nvmm_curcpu()->ci_index;
+	return aarch64nvmm_curcpu()->ci_index;
 }
 
+/*
+ * CPU data for AArch64 NVMM.
+ *
+ * This structure is used to store the state of the virtual CPU (VCPU) and
+ * the exit information when a VM exit occurs.
+ */
 struct aarch64_cpudata {
 	uint64_t cpudata_pa;
 	uint64_t vttbr_el2;
 	uint64_t send_event_type;
-	uint64_t send_event_esr;
 	bool evt_pending;
 
 	struct nvmm_aarch64_exit exit;
 	struct nvmm_aarch64_state host;
 	struct nvmm_aarch64_state guest;
 };
+
+/*
+ * nvmm_aarch64_state contains the guest's view of the ID registers
+ * which doesn't need to be context switched. Re-use this area for
+ * any host state.
+ *
+ * Maybe cpudata_pa and vttbr_el2, etc can move here.
+ */
+struct aarch64_cpudata_host {
+	uint64_t hcr_el2;
+	uint64_t mdcr_el2;
+};
+
+CTASSERT(sizeof(struct aarch64_cpudata_host) <=
+    sizeof(struct nvmm_aarch64_state) - offsetof(struct nvmm_aarch64_state, tids));
+
+static inline struct aarch64_cpudata_host *
+aarch64nvmm_host_cpudata(struct aarch64_cpudata *cpudata)
+{
+	return (struct aarch64_cpudata_host *)&cpudata->host.tids;
+}
 
 struct nvmm_aarch64_el2_init {
 	paddr_t		ni_cpuinfo;
