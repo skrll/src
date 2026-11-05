@@ -172,8 +172,8 @@ nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
 	ci->ci_invm = false;
 
 	// non-VHE only
-        if (!pmap_extract(pmap_kernel(), (vaddr_t)ci, &cipa))
-                panic("cannot resolve PA of cpuinfo");
+	if (!pmap_extract(pmap_kernel(), (vaddr_t)ci, &cipa))
+		panic("cannot resolve PA of cpuinfo");
 
 	struct nvmm_aarch64_el2_init ni = {
 		.ni_cpuinfo = cipa,
@@ -183,8 +183,8 @@ nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
 
 	paddr_t nipa;
 	// non-VHE only
-        if (!pmap_extract(pmap_kernel(), (vaddr_t)&ni, &nipa))
-                panic("cannot resolve PA of nvmm_aarch64_el2_init");
+	if (!pmap_extract(pmap_kernel(), (vaddr_t)&ni, &nipa))
+		panic("cannot resolve PA of nvmm_aarch64_el2_init");
 
 	/*
 	 * EL2 is currently running MMU (and caches) off so we need to
@@ -537,7 +537,8 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 
 	/*
 	 * struct aarch64_cpudata is accessed by physical address from EL2 for
-	 * non-VHE mode, and must fit on a single page.
+	 * non-VHE mode, and must fit on a single page. OR it needs to be
+	 * allocated such that the pages are physically continguous.
 	 */
 	CTASSERT(sizeof(*cpudata) < PAGE_SIZE);
 
@@ -546,8 +547,62 @@ nvmm_aarch64_vcpu_create(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    UVM_KMF_WIRED | UVM_KMF_ZERO);
 	vcpu->cpudata = cpudata;
 
+	struct aarch64_cpudata_host *host = aarch64nvmm_host_cpudata(cpudata);
+
 	/* copy vttbr_el2 for easy access from nVHE EL2 */
 	cpudata->vttbr_el2 = machdata->vttbr_el2;
+	host->hcr_el2 =
+	    HCR_EL2_RW |	/* Execution state for EL1 is AArch64 */
+	    HCR_EL2_AMO | 	/* trap SError/AsyncAbort */
+	    HCR_EL2_IMO | 	/* trap Physical IRQ */
+	    HCR_EL2_FMO |	/* trap Physical FIQ */
+	    HCR_EL2_TWI | 	/* trap WFI */
+	    HCR_EL2_TWE |	/* trap WFE */
+	    HCR_EL2_TACR |	/* trap EL1 accessing ACTLR_EL1 */
+	    HCR_EL2_TIDCP |	/* trap IMPLEMENTATION DEFINED system registers */
+	    HCR_EL2_TSC |	/* trap SMC */
+	    HCR_EL2_TID3 |	/*
+				 * trap ID group3 regs:
+				 *	ID_PFR*_EL1,  ID_DFR*_EL1,  ID_AFR*_EL1,
+				 *	ID_MMFR*_EL1, ID_ISAR*_EL1 ,ID_MVFR*_EL1,
+				 *	ID_AA64PFR*_EL1,  ID_AA64DFR*_EL1,
+				 *	ID_AA64ISAR*_EL1, ID_AA64MMFR*_EL1,
+				 *	ID_AA64AFR*_EL1
+				 */
+	    /* HCR_EL2_TID1 | */	/*
+				 * trap ID grup1 regs:
+				 *
+				 */
+#if 0
+	    HCR_EL2_DC |	/*
+				 * default cacheable for initial boot
+				 * will be disabled once guest enables MMU.
+				 */
+#endif
+	    HCR_EL2_PTW |	/* Protect table walk */
+	    HCR_EL2_VM |	/* enable Stage2 translation */
+#ifdef MULTIPROCESSOR
+	    __SHIFTIN(1, HCR_EL2_BSU) |
+				/* upgrade to inner-shareable */
+	    HCR_EL2_FB | 	/*
+				 * force broadcast of
+				 *	TLBI VMALLE1, TLBI VAE1,  TLBI ASIDE1,
+				 *	TLBI VAAE1,   TLBI VALE1, TLBI VAALE1,
+				 *	IC IALLU
+				 */
+#endif
+	    HCR_EL2_TSW |	/* trap cache operations by set/way */
+	    HCR_EL2_SWIO |	/* Set/Way Invalidation Override */
+	    /* HCR_EL2_TLOR | */	/* FEAT_LOR */
+	    0;
+
+	host->mdcr_el2 =
+	    MDCR_EL2_TPM |	/* trap performance monitor */
+	    MDCR_EL2_TPMCR |	/* trap performance monitor control reg */
+	    MDCR_EL2_TDRA |	/* trap debug register access */
+	    MDCR_EL2_TDOSA |	/* trap debug OS register access */
+	    0;
+
 
 	// non-VHE only
 	if (!pmap_extract(pmap_kernel(), (vaddr_t)cpudata, &cpudata->cpudata_pa))
@@ -624,6 +679,9 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
 		memcpy(cpudata->guest.gprs, state->gprs, sizeof(state->gprs));
 	}
+	if (flags & NVMM_AARCH64_STATE_FPRS) {
+		memcpy(cpudata->guest.fprs, state->fprs, sizeof(state->fprs));
+	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
 		memcpy(cpudata->guest.sprs, state->sprs, sizeof(state->sprs));
 		if (force_override_spsr) {
@@ -633,9 +691,6 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 	}
 	if (flags & NVMM_AARCH64_STATE_TIDS) {
 		memcpy(cpudata->guest.tids, state->tids, sizeof(state->tids));
-	}
-	if (flags & NVMM_AARCH64_STATE_FPRS) {
-		memcpy(cpudata->guest.fprs, state->fprs, sizeof(state->fprs));
 	}
 
 	comm->state_wanted = 0;
@@ -653,14 +708,14 @@ nvmm_aarch64_vcpu_getstate(struct nvmm_cpu *vcpu)
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
 		memcpy(state->gprs, cpudata->guest.gprs, sizeof(state->gprs));
 	}
+	if (flags & NVMM_AARCH64_STATE_FPRS) {
+		memcpy(state->fprs, cpudata->guest.fprs, sizeof(state->fprs));
+	}
 	if (flags & NVMM_AARCH64_STATE_SPRS) {
 		memcpy(state->sprs, cpudata->guest.sprs, sizeof(state->sprs));
 	}
 	if (flags & NVMM_AARCH64_STATE_TIDS) {
 		memcpy(state->tids, cpudata->guest.tids, sizeof(state->tids));
-	}
-	if (flags & NVMM_AARCH64_STATE_FPRS) {
-		memcpy(state->fprs, cpudata->guest.fprs, sizeof(state->fprs));
 	}
 
 	comm->state_wanted = 0;
