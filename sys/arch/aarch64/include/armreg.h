@@ -598,6 +598,9 @@ AARCH64REG_READ_INLINE(revidr_el1)
 /*
  * These are read/write registers
  */
+AARCH64REG_READWRITE_INLINE(afsr0_el1)	// Auxiliary Fault Status Register 0
+AARCH64REG_READWRITE_INLINE(afsr1_el1)	// Auxiliary Fault Status Register 1
+
 AARCH64REG_READ_INLINE3(APIAKeyLo_EL1, apiakeylo_el1, ATTR_ARCH("armv8.3-a"))
 AARCH64REG_WRITE_INLINE3(APIAKeyLo_EL1, apiakeylo_el1, ATTR_ARCH("armv8.3-a"))
 AARCH64REG_READ_INLINE3(APIAKeyHi_EL1, apiakeyhi_el1, ATTR_ARCH("armv8.3-a"))
