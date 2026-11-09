@@ -74,7 +74,11 @@ struct aarch64_cpudata_host {
 	uint64_t hcr_el2;
 	uint64_t mdcr_el2;
 	uint64_t vtimer_fired : 1;
-	uint64_t reserved : 63;
+	uint64_t enabled_pmu : 1;
+	uint64_t reserved : 62;
+	/*
+	 * Shadow registers for guest visible state.
+	 */
 };
 
 CTASSERT(sizeof(struct aarch64_cpudata_host) <=

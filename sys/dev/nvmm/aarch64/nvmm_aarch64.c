@@ -115,8 +115,6 @@ struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 static void
 nvmm_aarch64_init_reset_state(void)
 {
-	uint64_t val;
-
 	/* XXXXXXXX: For big.LITTLE, the smallest feature must be selected */
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_MVFR0_EL1] = reg_mvfr0_el1_read();
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_MVFR1_EL1] = reg_mvfr1_el1_read();
@@ -124,11 +122,18 @@ nvmm_aarch64_init_reset_state(void)
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64PFR0_EL1] = reg_id_aa64pfr0_el1_read();
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64PFR1_EL1] = reg_id_aa64pfr1_el1_read();
 
-	/* XXXXXXX: pmu not supported yet */
-	val = reg_id_aa64dfr0_el1_read();
-	val &= ~ID_AA64DFR0_EL1_PMUVER;
-	val |= __SHIFTIN(ID_AA64DFR0_EL1_PMUVER_NONE, ID_AA64DFR0_EL1_PMUVER);
-	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64DFR0_EL1] = val;
+	/*
+	 * Limit PMU to PMUv3 (for now).
+	 */
+	uint64_t dfr0 = reg_id_aa64dfr0_el1_read();
+	uint64_t pmuver = ID_AA64DFR0_EL1_PMUVER_NONE;
+	if (__SHIFTOUT(dfr0, ID_AA64DFR0_EL1_PMUVER) > ID_AA64DFR0_EL1_PMUVER_V3) {
+		pmuver = ID_AA64DFR0_EL1_PMUVER_V3;
+	}
+	dfr0 &= ~ID_AA64DFR0_EL1_PMUVER;
+	dfr0 |= __SHIFTIN(pmuver, ID_AA64DFR0_EL1_PMUVER);
+
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64DFR0_EL1] = dfr0;
 
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64DFR1_EL1] = reg_id_aa64dfr1_el1_read();
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64AFR0_EL1] = reg_id_aa64afr0_el1_read();
@@ -697,6 +702,12 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 
 		/* XXX: TODO: check if CPU core supports specified endian */
 
+		struct aarch64_cpudata_host *host = aarch64nvmm_host_cpudata(cpudata);
+		bool before = host->enabled_pmu;
+		host->enabled_pmu = (state->sprs[NVMM_AARCH64_SPR_PMCR_EL0] & PMCR_E) != 0;
+		if (before == false && host->enabled_pmu == true) {
+			printf("%s: PMU enabled\n", __func__);
+		}
 	}
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {
@@ -808,26 +819,8 @@ aarch64_exit_evt(struct aarch64_cpudata *cpudata)
 
 	cpudata->evt_pending = false;
 
-#if 0
-	info = vmx_vmread(VMCS_IDT_VECTORING_INFO);
-	if (__predict_true((info & INTR_INFO_VALID) == 0)) {
-		return;
-	}
-	err = vmx_vmread(VMCS_IDT_VECTORING_ERROR);
-
-	vmx_vmwrite(VMCS_ENTRY_INTR_INFO, info);
-	vmx_vmwrite(VMCS_ENTRY_EXCEPTION_ERROR, err);
-
-	switch (__SHIFTOUT(info, INTR_INFO_TYPE)) {
-	case INTR_TYPE_SW_INT:
-	case INTR_TYPE_PRIV_SW_EXC:
-	case INTR_TYPE_SW_EXC:
-		inslen = vmx_vmread(VMCS_EXIT_INSTRUCTION_LENGTH);
-		vmx_vmwrite(VMCS_ENTRY_INSTRUCTION_LENGTH, inslen);
-	}
-
-	cpudata->evt_pending = true;
-#endif
+	// X86 checks VMCS_IDT_VECTORING_INFO.
+	// Arm doesn't have an equivalent
 }
 
 static inline int
@@ -864,8 +857,8 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
 	NVMMHIST_FUNC();
-	NVMMHIST_CALLARGSN(nvmmdebug, 20, "mach %#jx vcpu %#jx exit %#jx", (uintptr_t)mach,
-	    (uintptr_t)vcpu, (uintptr_t)exit, 0);
+	NVMMHIST_CALLARGSN(nvmmdebug, 20, "mach %#jx vcpu %#jx exit %#jx",
+	    (uintptr_t)mach, (uintptr_t)vcpu, (uintptr_t)exit, 0);
 
 	struct aarch64_cpudata * const cpudata = vcpu->cpudata;
 
@@ -876,9 +869,13 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	vcpu->comm->state_cached = 0;
 
 	/* event commit */
-	NVMMHIST_LOGN(nvmmdebug, 20, "event commit %jd type %#jx (@ %#jx)",
-	    vcpu->comm->event_commit, vcpu->comm->event.type, (uintptr_t)&vcpu->comm->event_commit, 0);
+	if (vcpu->comm->event_commit) {
+		NVMMHIST_LOGN(nvmmdebug, 20, "event commit type %#jx (@ %#jx)",
+		    vcpu->comm->event.type,
+		     (uintptr_t)&vcpu->comm->event_commit, 0, 0);
+	}
 	if (__predict_false(aarch64_vcpu_event_commit(vcpu) != 0)) {
+		printf("%s: wtf\n", __func__);
 //		vmx_vmcs_leave(vcpu); reference drop
 		kpreempt_enable();
 		return EINVAL;
@@ -886,6 +883,7 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	int hcpu = cpu_number();
 	if (vcpu->hcpu_last != hcpu) {
+		printf("%s: cpu %d/%d\n", __func__, vcpu->hcpu_last, hcpu);
 		/* timer update */
 		vcpu->hcpu_last = hcpu;
 	}
@@ -907,12 +905,6 @@ nvmm_aarch64_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		// reason is NVMM_VCPU_EXIT_NONE
 
 		aarch64_exit_evt(cpudata);
-
-#if 0
-		// there isn't a VMCS_EXIT_REASON to read...
-		switch (...) {
-		}
-#endif
 
 		/* If no reason to return to userland, keep rolling. */
 		if (nvmm_return_needed(vcpu, &cpudata->exit)) {

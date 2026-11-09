@@ -260,11 +260,12 @@ aarch64_el2_init(struct trapframe *tf)
 #define NVMMHIST_CTXDUMP_SR4	__BIT(20)
 #define NVMMHIST_CTXDUMP_SR5	__BIT(21)
 #define NVMMHIST_CTXDUMP_SR6	__BIT(22)
+#define NVMMHIST_CTXDUMP_SR7	__BIT(23)
 
 
 static void
 vcpu_context_dump(struct trapframe *tf, const struct nvmm_aarch64_state *state,
-    bool is_enter, uint64_t hcr)
+    struct aarch64_cpudata_host *host, bool is_enter, uint64_t hcr)
 {
 	NVMMHIST_FUNC();
 	NVMMHIST_CALLARGSN(nvmmdebug, 20,
@@ -419,13 +420,97 @@ vcpu_context_dump(struct trapframe *tf, const struct nvmm_aarch64_state *state,
 	    state->sprs[NVMM_AARCH64_SPR_MDSCR_EL1],
 	    state->sprs[NVMM_AARCH64_SPR_PAR_EL1],
 	    state->sprs[NVMM_AARCH64_SPR_TCR_EL1], 0);
+	if (host->enabled_pmu) {
+		NVMMHIST_LOGM(nvmmdebug, NVMMHIST_CTXDUMP_SR7,
+		    "pmcr_el0 =        %#18jx  "
+		    "pmccntr_el0 =.    %#18jx  "
+		    "pmintenset_el1 =  %#18jx  "
+		    "pmovsset_el0 =    %#18jx",
+		    state->sprs[NVMM_AARCH64_SPR_PMCR_EL0],
+		    state->sprs[NVMM_AARCH64_SPR_PMCCNTR_EL0],
+		    state->sprs[NVMM_AARCH64_SPR_PMINTEN_EL1],
+		    state->sprs[NVMM_AARCH64_SPR_PMOVS_EL0]);
+	}
+
+
+
+
 }
 
+
+#if 0
+		state->sprs[NVMM_AARCH64_SPR_PMCR_EL0] = reg_pmcr_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMCNTEN_EL0] = reg_pmcntenset_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMINTEN_EL1] = reg_pmintenset_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_PMOVS_EL0] = reg_pmovsset_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMSELR_EL0] = reg_pmselr_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMCCFILTR_EL0] = reg_pmccfiltr_el0_read();
+
+		state->sprs[NVMM_AARCH64_SPR_PMCCNTR_EL0] = reg_pmccntr_el0_read();
+#define NVMM_AARCH64_SPR_PMCR_EL0		34 // (Performance Monitors Control Register)
+#define NVMM_AARCH64_SPR_PMSELR_EL0		35 // (Performance Monitors Event Counter Selection Register)
+#define NVMM_AARCH64_SPR_PMCNTEN_EL0		36 // (Performance Monitors Count Enable Register)
+#define NVMM_AARCH64_SPR_PMINTEN_EL1		37 // (Performance Monitors Interrupt Enable Register)
+#define NVMM_AARCH64_SPR_PMOVS_EL0		38 // (Performance Monitors Overflow Flag Status Register)
+#define NVMM_AARCH64_SPR_PMCCNTR_EL0		39 // (Performance Monitors Cycle Counter Register)
+#define NVMM_AARCH64_SPR_PMCCFILTR_EL0		40 // (Performance Monitors Cycle Count Filter Register)
+#define NVMM_AARCH64_SPR_PMEVCNTR0_EL0		41 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER0_EL0		42 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR1_EL0		43 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER1_EL0		44 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR2_EL0		45 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER2_EL0		46 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR3_EL0		47 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER3_EL0		48 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR4_EL0		49 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER4_EL0		50 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR5_EL0		51 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER5_EL0		52 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMUSERENR_EL0		53 // (Performance Monitors User Enable Register)
+
+#endif
+
+
+
 static void
-vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
+vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state,
+    struct aarch64_cpudata_host *host)
 {
 	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
 	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
+
+	if (host->enabled_pmu) {
+		/*
+		 * Save PMU registers.
+		 *
+		 * Only need to context switch PMU registers if the guest is using PMU.
+		 * If the guest is not using PMU, we can leave the PMU registers as
+		 * the host has them - if the host wants to use the PMU while the guest is
+		 * running it will have to use event counters that are either not used by
+		 * the guest or are not exposed.
+		 */
+
+		state->sprs[NVMM_AARCH64_SPR_PMCR_EL0] = reg_pmcr_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMCNTEN_EL0] = reg_pmcntenset_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMINTEN_EL1] = reg_pmintenset_el1_read();
+		state->sprs[NVMM_AARCH64_SPR_PMOVS_EL0] = reg_pmovsset_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMSELR_EL0] = reg_pmselr_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMCCFILTR_EL0] = reg_pmccfiltr_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMCCNTR_EL0] = reg_pmccntr_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVCNTR0_EL0] = reg_pmevcntr0_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVTYPER0_EL0] = reg_pmevtyper0_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVCNTR1_EL0] = reg_pmevcntr1_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVTYPER1_EL0] = reg_pmevtyper1_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVCNTR2_EL0] = reg_pmevcntr2_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVTYPER2_EL0] = reg_pmevtyper2_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVCNTR3_EL0] = reg_pmevcntr3_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVTYPER3_EL0] = reg_pmevtyper3_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVCNTR4_EL0] = reg_pmevcntr4_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVTYPER4_EL0] = reg_pmevtyper4_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVCNTR5_EL0] = reg_pmevcntr5_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMEVTYPER5_EL0] = reg_pmevtyper5_el0_read();
+		state->sprs[NVMM_AARCH64_SPR_PMUSERENR_EL0] = reg_pmuserenr_el0_read();
+	}
 
 	/*
 	 * E2H?
@@ -521,7 +606,8 @@ vcpu_context_save(struct trapframe *tf, struct nvmm_aarch64_state *state)
 }
 
 static void
-vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
+vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state,
+    struct aarch64_cpudata_host *host)
 {
 	KASSERTMSG((reg_daif_read() & DAIF_MASK) == DAIF_MASK,
 	    "DAIF=%" __PRIxBITS, __SHIFTOUT(reg_daif_read(), DAIF_MASK));
@@ -548,18 +634,13 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 		reg_sp_el1_write(state->gprs[NVMM_AARCH64_GPR_X31]);
 	}
 
-	// XXXNH
-	// PMU regs
-	// physical timer regs - always virtualise?
 	// mdccint_el1
 	// OSDLR_El1
 	// OSLAR_EL1
-	// PMSELR_EL0
 	// VTCR_EL2???
 
 	// VHE:
 	// VTTBR_EL2
-	// AFSR[012]_EL12
 	// PAUTH: AP*KEY*_EL1
 
 	reg_tpidrro_el0_write(state->sprs[NVMM_AARCH64_SPR_TPIDRRO_EL0]);
@@ -614,6 +695,55 @@ vcpu_context_load(struct trapframe *tf, const struct nvmm_aarch64_state *state)
 		reg_afsr0_el1_write(state->sprs[NVMM_AARCH64_SPR_AFSR0_EL1]);
 		reg_afsr1_el1_write(state->sprs[NVMM_AARCH64_SPR_AFSR1_EL1]);
 	}
+	/*
+	 * PMU regs
+	 * PMCR_EL0 (Performance Monitors Control Register)
+	 * PMSELR_EL0 (Performance Monitors Event Counter Selection Register)
+	 * PMCNTENSET_EL0 (Performance Monitors Count Enable Set Register)
+	 * PMCNTENCLR_EL0 (Performance Monitors Count Enable Clear Register)
+	 * PMINTENSET_EL1 (Performance Monitors Interrupt Enable Set Register)
+	 * PMINTENCLR_EL1 (Performance Monitors Interrupt Enable Clear Register)
+	 * PMOVSSET_EL0 (Performance Monitors Overflow Flag Status Set Register)
+	 * PMOVSCLR_EL0 (Performance Monitors Overflow Flag Status Clear Register)
+	 * PMSWINC_EL0 (Performance Monitors Software Increment Register)
+	 * PMCCNTR_EL0 (Performance Monitors Cycle Counter Register)
+	 * PMCCFILTR_EL0 (Performance Monitors Cycle Count Filter Register)
+	 * PMEVCNTR<n>_EL0 (Performance Monitors Event Count Register, where n is 0 to 30)
+	 * PMEVTYPER<n>_EL0 (Performance Monitors Event Type Register, where n is 0 to 30)
+	 * PMCEID0_EL0 to PMCEID3_EL0 (Performance Monitors Common Event Identification Registers 0-3)
+	 * PMUSERENR_EL0 (Performance Monitors User Enable Register)
+	 */
+
+	if (host->enabled_pmu) {
+		reg_pmcr_el0_write(0);
+
+		reg_pmcntenclr_el0_write(__BITS(63, 0));
+		reg_pmcntenset_el0_write(state->sprs[NVMM_AARCH64_SPR_PMCNTEN_EL0]);
+		reg_pmintenclr_el1_write(__BITS(63, 0));
+		reg_pmintenset_el1_write(state->sprs[NVMM_AARCH64_SPR_PMINTEN_EL1]);
+		reg_pmovsclr_el0_write(__BITS(63, 0));
+		reg_pmovsset_el0_write(state->sprs[NVMM_AARCH64_SPR_PMOVS_EL0]);
+
+		reg_pmselr_el0_write(state->sprs[NVMM_AARCH64_SPR_PMSELR_EL0]);
+		reg_pmccntr_el0_write(state->sprs[NVMM_AARCH64_SPR_PMCCNTR_EL0]);
+		reg_pmccfiltr_el0_write(state->sprs[NVMM_AARCH64_SPR_PMCCFILTR_EL0]);
+		reg_pmevcntr0_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVCNTR0_EL0]);
+		reg_pmevtyper0_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVTYPER0_EL0]);
+		reg_pmevcntr1_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVCNTR1_EL0]);
+		reg_pmevtyper1_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVTYPER1_EL0]);
+		reg_pmevcntr2_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVCNTR2_EL0]);
+		reg_pmevtyper2_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVTYPER2_EL0]);
+		reg_pmevcntr3_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVCNTR3_EL0]);
+		reg_pmevtyper3_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVTYPER3_EL0]);
+		reg_pmevcntr4_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVCNTR4_EL0]);
+		reg_pmevtyper4_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVTYPER4_EL0]);
+		reg_pmevcntr5_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVCNTR5_EL0]);
+		reg_pmevtyper5_el0_write(state->sprs[NVMM_AARCH64_SPR_PMEVTYPER5_EL0]);
+
+		reg_pmuserenr_el0_write(state->sprs[NVMM_AARCH64_SPR_PMUSERENR_EL0]);
+
+		reg_pmcr_el0_write(state->sprs[NVMM_AARCH64_SPR_PMCR_EL0]);
+	}
 }
 
 static void
@@ -634,12 +764,13 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	reg_vttbr_el2_write(0);
 	isb();
 
+	struct aarch64_cpudata_host * const host = aarch64nvmm_host_cpudata(cpudata);
 	/* save guest state */
-	vcpu_context_save(tf, &cpudata->guest);
+	vcpu_context_save(tf, &cpudata->guest, host);
 	/* load host state */
-	vcpu_context_load(tf, &cpudata->host);
+	vcpu_context_load(tf, &cpudata->host, host);
 
-	vcpu_context_dump(tf, &cpudata->guest, false, 0);
+	vcpu_context_dump(tf, &cpudata->guest, host, false, 0);
 
 	ci->ci_invm = false;
 }
@@ -722,6 +853,36 @@ struct sysreg_table {
 	const char name[32 - sizeof(uint32_t) - sizeof(int) - sizeof(bool)];	/* debug. don't use "const char *" because el2 running on PA */
 };
 
+#if 0
+/* General PMU Control & Status Registers */
+#define SYSREG_PMCR_EL0         SYSREG_ENC(3, 3,  9, 12, 0) /* 0x1b9c00 */
+#define SYSREG_PMCNTENSET_EL0   SYSREG_ENC(3, 3,  9, 12, 1) /* 0x1b9c20 */
+#define SYSREG_PMCNTENCLR_EL0   SYSREG_ENC(3, 3,  9, 12, 2) /* 0x1b9c40 */
+#define SYSREG_PMOVSCLR_EL0     SYSREG_ENC(3, 3,  9, 12, 3) /* 0x1b9c60 */
+#define SYSREG_PMSELR_EL0       SYSREG_ENC(3, 3,  9, 12, 5) /* 0x1b9ca0 */
+#define SYSREG_PMCCNTR_EL0      SYSREG_ENC(3, 3,  9, 13, 0) /* 0x1b9d00 */
+#define SYSREG_PMINTENSET_EL1   SYSREG_ENC(3, 0,  9, 14, 1) /* 0x189e20 */
+#define SYSREG_PMINTENCLR_EL1   SYSREG_ENC(3, 0,  9, 14, 2) /* 0x189e40 */
+#define SYSREG_PMOVSSET_EL0     SYSREG_ENC(3, 3,  9, 14, 3) /* 0x1b9e60 */
+#define SYSREG_PMCCFILTR_EL0    SYSREG_ENC(3, 3, 14, 15, 7) /* 0x1befe0 */
+
+/* Event Counters (PMEVCNTR<n>_EL0, n = 0..5) */
+#define SYSREG_PMEVCNTR0_EL0    SYSREG_ENC(3, 3, 14,  8, 0) /* 0x1be800 */
+#define SYSREG_PMEVCNTR1_EL0    SYSREG_ENC(3, 3, 14,  8, 1) /* 0x1be820 */
+#define SYSREG_PMEVCNTR2_EL0    SYSREG_ENC(3, 3, 14,  8, 2) /* 0x1be840 */
+#define SYSREG_PMEVCNTR3_EL0    SYSREG_ENC(3, 3, 14,  8, 3) /* 0x1be860 */
+#define SYSREG_PMEVCNTR4_EL0    SYSREG_ENC(3, 3, 14,  8, 4) /* 0x1be880 */
+#define SYSREG_PMEVCNTR5_EL0    SYSREG_ENC(3, 3, 14,  8, 5) /* 0x1be8a0 */
+
+/* Event Type Registers (PMEVTYPER<n>_EL0, n = 0..5) */
+#define SYSREG_PMEVTYPER0_EL0   SYSREG_ENC(3, 3, 14, 12, 0) /* 0x1bec00 */
+#define SYSREG_PMEVTYPER1_EL0   SYSREG_ENC(3, 3, 14, 12, 1) /* 0x1bec20 */
+#define SYSREG_PMEVTYPER2_EL0   SYSREG_ENC(3, 3, 14, 12, 2) /* 0x1bec40 */
+#define SYSREG_PMEVTYPER3_EL0   SYSREG_ENC(3, 3, 14, 12, 3) /* 0x1bec60 */
+#define SYSREG_PMEVTYPER4_EL0   SYSREG_ENC(3, 3, 14, 12, 4) /* 0x1bec80 */
+#define SYSREG_PMEVTYPER5_EL0   SYSREG_ENC(3, 3, 14, 12, 5) /* 0x1beca0 */
+#endif
+
 /* must be sorted by code */
 const struct sysreg_table sysreg_trapped[] = {
 	/*         op0 op1 CRn CRm op2 ID 					writable?  name             */
@@ -748,11 +909,45 @@ const struct sysreg_table sysreg_trapped[] = {
 	{ SYSREG_ENC(3, 0,  5,  1, 1), NVMM_AARCH64_SPR_AFSR1_EL1,		true, "AFSR1_EL1" },
 	{ SYSREG_ENC(3, 0,  5,  2, 0), NVMM_AARCH64_SPR_ESR_EL1,		true, "ESR_EL1"	},
 	{ SYSREG_ENC(3, 0,  6,  0, 0), NVMM_AARCH64_SPR_FAR_EL1,		true, "FAR_EL1"	},
+#if 0
+	{ SYSREG_ENC(3, 0,  9, 14, 1), NVMM_AARCH64_SPR_PMINTEN_EL1,		true, "PMINTENSET_EL1" },
+	{ SYSREG_ENC(3, 0,  9, 14, 2), NVMM_AARCH64_SPR_PMINTEN_EL1,		true, "PMINTENCLR_EL1" },
+#endif
 	{ SYSREG_ENC(3, 0, 10,  2, 0), NVMM_AARCH64_SPR_MAIR_EL1,		true, "MAIR_EL1" },
 	{ SYSREG_ENC(3, 0, 10,  3, 0), NVMM_AARCH64_SPR_AMAIR_EL1,		true, "AMAIR_EL1" },
 	{ SYSREG_ENC(3, 0, 13,  0, 1), NVMM_AARCH64_SPR_CONTEXTIDR_EL1,		true, "CONTEXTIDR_EL1" },
 
+#if 0
+	/* General PMU Control & Status Registers */
+	{ SYSREG_ENC(3, 3,  9, 12, 0), NVMM_AARCH64_SPR_PMCR_EL0,		true, "PMCR_EL0" },
+	{ SYSREG_ENC(3, 3,  9, 12, 1), NVMM_AARCH64_SPR_PMCNTEN_EL0,		true, "PMCNTENSET_EL0" },
+	{ SYSREG_ENC(3, 3,  9, 12, 2), NVMM_AARCH64_SPR_PMCNTEN_EL0,		true, "PMCNTENCLR_EL0" },
+	{ SYSREG_ENC(3, 3,  9, 12, 3), NVMM_AARCH64_SPR_PMOVS_EL0,		true, "PMOVSCLR_EL0" },
+	{ SYSREG_ENC(3, 3,  9, 12, 4), 0 /* NVMM_AARCH64_SPR_PMSWINC_EL0 */,	true, "PMSWINC_EL0" },
+	{ SYSREG_ENC(3, 3,  9, 12, 5), NVMM_AARCH64_SPR_PMSELR_EL0,		true, "PMSELR_EL0" },
+	{ SYSREG_ENC(3, 3,  9, 13, 0), NVMM_AARCH64_SPR_PMCCNTR_EL0,		true, "PMCCNTR_EL0" },
 
+	{ SYSREG_ENC(3, 3,  9, 14, 0), NVMM_AARCH64_SPR_PMUSERENR_EL0,		true, "PMUSERENR_EL0" },
+	{ SYSREG_ENC(3, 3,  9, 14, 3), NVMM_AARCH64_SPR_PMOVS_EL0,		true, "PMOVSSET_EL0" },
+
+	/* Event Counters (PMEVCNTR<n>_EL0, n = 0..5) */
+	{ SYSREG_ENC(3, 3, 14,  8, 0), NVMM_AARCH64_SPR_PMEVCNTR0_EL0,		true, "PMEVCNTR0_EL0" },
+	{ SYSREG_ENC(3, 3, 14,  8, 1), NVMM_AARCH64_SPR_PMEVCNTR1_EL0,		true, "PMEVCNTR1_EL0" },
+	{ SYSREG_ENC(3, 3, 14,  8, 2), NVMM_AARCH64_SPR_PMEVCNTR2_EL0,		true, "PMEVCNTR2_EL0" },
+	{ SYSREG_ENC(3, 3, 14,  8, 3), NVMM_AARCH64_SPR_PMEVCNTR3_EL0,		true, "PMEVCNTR3_EL0" },
+	{ SYSREG_ENC(3, 3, 14,  8, 4), NVMM_AARCH64_SPR_PMEVCNTR4_EL0,		true, "PMEVCNTR4_EL0" },
+	{ SYSREG_ENC(3, 3, 14,  8, 5), NVMM_AARCH64_SPR_PMEVCNTR5_EL0,		true, "PMEVCNTR5_EL0" },
+
+	/* Event Type Registers (PMEVTYPER<n>_EL0, n = 0..5) */
+	{ SYSREG_ENC(3, 3, 14, 12, 0), NVMM_AARCH64_SPR_PMEVTYPER0_EL0,		true, "PMEVTYPER0_EL0" },
+	{ SYSREG_ENC(3, 3, 14, 12, 1), NVMM_AARCH64_SPR_PMEVTYPER1_EL0,		true, "PMEVTYPER1_EL0" },
+	{ SYSREG_ENC(3, 3, 14, 12, 2), NVMM_AARCH64_SPR_PMEVTYPER2_EL0,		true, "PMEVTYPER2_EL0" },
+	{ SYSREG_ENC(3, 3, 14, 12, 3), NVMM_AARCH64_SPR_PMEVTYPER3_EL0,		true, "PMEVTYPER3_EL0" },
+	{ SYSREG_ENC(3, 3, 14, 12, 4), NVMM_AARCH64_SPR_PMEVTYPER4_EL0,		true, "PMEVTYPER4_EL0" },
+	{ SYSREG_ENC(3, 3, 14, 12, 5), NVMM_AARCH64_SPR_PMEVTYPER5_EL0,		true, "PMEVTYPER5_EL0" },
+
+	{ SYSREG_ENC(3, 3, 14, 15, 7), NVMM_AARCH64_SPR_PMCCFILTR_EL0,		true, "PMCCFILTR_EL0" },
+#endif
 };
 
 
@@ -823,6 +1018,10 @@ aarch64_idcache_inv_all(struct cpu_info *ci)
 	}
 	asm volatile ("dsb ish; ic ialluis; dsb ish; isb" ::: "memory");
 }
+
+#if defined(NVMM_DEBUG)
+extern uint64_t nvmmdebug;
+#endif
 
 static int
 emul_sysreg_rw(struct trapframe *tf)
@@ -939,6 +1138,93 @@ emul_sysreg_rw(struct trapframe *tf)
 				else
 					reg_contextidr_el1_write(val);
 				break;
+			case NVMM_AARCH64_SPR_PMCR_EL0:
+				reg_pmcr_el0_write(val);
+				struct aarch64_cpudata_host *host = aarch64nvmm_host_cpudata(cpudata);
+				const bool before = host->enabled_pmu;
+				host->enabled_pmu = (val & PMCR_E) != 0;
+				if (before != host->enabled_pmu) {
+					uartprintf("PC=%016"PRIx64
+					    " msr %s, R%"__PRIuBIT" (0x%016"PRIx64")"
+					    "\n",
+					    tf->tf_pc,
+					    sysreg->name,
+					    Rt,
+					    val
+					    );
+				}
+				break;
+			case NVMM_AARCH64_SPR_PMCNTEN_EL0:
+				if (sysreg->code == SYSREG_ENC(3, 3, 9, 12, 1)) {
+					reg_pmcntenset_el0_write(val);
+				} else {
+					reg_pmcntenclr_el0_write(val);
+				}
+				break;
+			case NVMM_AARCH64_SPR_PMINTEN_EL1:
+#ifdef notyet
+				if (sysreg->code == SYSREG_ENC(3, 0, 9, 14, 1)) {
+					reg_pmintenset_el1_write(val);
+				} else {
+					reg_pmintenclr_el1_write(val);
+				}
+#endif
+				break;
+			case NVMM_AARCH64_SPR_PMOVS_EL0:
+				if (sysreg->code == SYSREG_ENC(3, 3, 9, 15, 1)) {
+					reg_pmovsset_el0_write(val);
+				} else {
+					reg_pmovsclr_el0_write(val);
+				}
+				break;
+			case NVMM_AARCH64_SPR_PMSELR_EL0:
+				reg_pmselr_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMCCNTR_EL0:
+				reg_pmccntr_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR0_EL0:
+				reg_pmevcntr0_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR1_EL0:
+				reg_pmevcntr1_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR2_EL0:
+				reg_pmevcntr2_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR3_EL0:
+				reg_pmevcntr3_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR4_EL0:
+				reg_pmevcntr4_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR5_EL0:
+				reg_pmevcntr5_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER0_EL0:
+				reg_pmevtyper0_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER1_EL0:
+				reg_pmevtyper1_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER2_EL0:
+				reg_pmevtyper2_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER3_EL0:
+				reg_pmevtyper3_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER4_EL0:
+				reg_pmevtyper4_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER5_EL0:
+				reg_pmevtyper5_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMCCFILTR_EL0:
+				reg_pmccfiltr_el0_write(val);
+				break;
+			case NVMM_AARCH64_SPR_PMUSERENR_EL0:
+				reg_pmuserenr_el0_write(val);
+				break;
 			default:
 				panic("How did this happen?");
 			}
@@ -1001,6 +1287,77 @@ emul_sysreg_rw(struct trapframe *tf)
 				    reg_contextidr_el12_read() :
 				    reg_contextidr_el1_read() ;
 				break;
+#if 0
+			case NVMM_AARCH64_SPR_PMCR_EL0:
+#if defined(NVMM_DEBUG)
+				nvmmdebug = 0xffffff;
+#endif
+printf("%s:%d PC=%016"PRIx64" mrs R%"__PRIuBIT", %s\n",
+    __func__, __LINE__, tf->tf_pc, Rt, sysreg->name);
+				val = reg_pmcr_el0_read();
+printf("%s:%d PC=%016"PRIx64" mrs R%"__PRIuBIT", %s <- 0x%016"PRIx64"\n",
+    __func__, __LINE__, tf->tf_pc, Rt, sysreg->name, val);
+				break;
+			case NVMM_AARCH64_SPR_PMCNTEN_EL0:
+				val = reg_pmcntenset_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMINTEN_EL1:
+#ifdef notyet
+				val = reg_pmintenset_el1_read();
+#endif
+				break;
+			case NVMM_AARCH64_SPR_PMOVS_EL0:
+				val = reg_pmovsset_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMSELR_EL0:
+				val = reg_pmselr_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMCCNTR_EL0:
+				val = reg_pmccntr_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR0_EL0:
+				val = reg_pmevcntr0_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR1_EL0:
+				val = reg_pmevcntr1_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR2_EL0:
+				val = reg_pmevcntr2_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR3_EL0:
+				val = reg_pmevcntr3_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR4_EL0:
+				val = reg_pmevcntr4_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVCNTR5_EL0:
+				val = reg_pmevcntr5_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER0_EL0:
+				val = reg_pmevtyper0_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER1_EL0:
+				val = reg_pmevtyper1_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER2_EL0:
+				val = reg_pmevtyper2_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER3_EL0:
+				val = reg_pmevtyper3_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER4_EL0:
+				val = reg_pmevtyper4_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMEVTYPER5_EL0:
+				val = reg_pmevtyper5_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMCCFILTR_EL0:
+				val = reg_pmccfiltr_el0_read();
+				break;
+			case NVMM_AARCH64_SPR_PMUSERENR_EL0:
+				val = reg_pmuserenr_el0_read();
+				break;
+#endif
 			default:
 				panic("How did this happen?");
 			}
@@ -1184,12 +1541,12 @@ aarch64_el2_vmenter_context(struct trapframe *tf, struct aarch64_cpudata *cpudat
 		cpudata->send_event_type = NVMM_VCPU_EVENT_NONE;
 	}
 
-	vcpu_context_dump(tf, &cpudata->guest, true, hcr);
+	vcpu_context_dump(tf, &cpudata->guest, host, true, hcr);
 
 	/* save host state */
-	vcpu_context_save(tf, &cpudata->host);
+	vcpu_context_save(tf, &cpudata->host, host);
 	/* load guest state */
-	vcpu_context_load(tf, &cpudata->guest);
+	vcpu_context_load(tf, &cpudata->guest, host);
 
 	reg_vttbr_el2_write(cpudata->vttbr_el2);
 	reg_hstr_el2_write(0xffff);
