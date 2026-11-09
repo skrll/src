@@ -114,8 +114,6 @@ struct nvmm_aarch64_state nvmm_aarch64_reset_state = {
 static void
 nvmm_aarch64_init_reset_state(void)
 {
-	uint64_t val;
-
 	/* XXXXXXXX: For big.LITTLE, the smallest feature must be selected */
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_MVFR0_EL1] = reg_mvfr0_el1_read();
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_MVFR1_EL1] = reg_mvfr1_el1_read();
@@ -123,11 +121,18 @@ nvmm_aarch64_init_reset_state(void)
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64PFR0_EL1] = reg_id_aa64pfr0_el1_read();
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64PFR1_EL1] = reg_id_aa64pfr1_el1_read();
 
-	/* XXXXXXX: pmu not supported yet */
-	val = reg_id_aa64dfr0_el1_read();
-	val &= ~ID_AA64DFR0_EL1_PMUVER;
-	val |= __SHIFTIN(ID_AA64DFR0_EL1_PMUVER_NONE, ID_AA64DFR0_EL1_PMUVER);
-	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64DFR0_EL1] = val;
+	/*
+	 * Limit PMU to PMUv3 (for now).
+	 */
+	uint64_t dfr0 = reg_id_aa64dfr0_el1_read();
+	uint64_t pmuver = ID_AA64DFR0_EL1_PMUVER_NONE;
+	if (__SHIFTOUT(dfr0, ID_AA64DFR0_EL1_PMUVER) > ID_AA64DFR0_EL1_PMUVER_V3) {
+		pmuver = ID_AA64DFR0_EL1_PMUVER_V3;
+	}
+	dfr0 &= ~ID_AA64DFR0_EL1_PMUVER;
+	dfr0 |= __SHIFTIN(pmuver, ID_AA64DFR0_EL1_PMUVER);
+
+	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64DFR0_EL1] = dfr0;
 
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64DFR1_EL1] = reg_id_aa64dfr1_el1_read();
 	nvmm_aarch64_reset_state.tids[NVMM_AARCH64_TID_ID_AA64AFR0_EL1] = reg_id_aa64afr0_el1_read();
@@ -693,6 +698,8 @@ nvmm_aarch64_vcpu_setstate(struct nvmm_cpu *vcpu)
 
 		/* XXX: TODO: check if CPU core supports specified endian */
 
+		struct aarch64_cpudata_host *host = aarch64nvmm_host_cpudata(cpudata);
+		host->enabled_pmu = (state->sprs[NVMM_AARCH64_SPR_PMCR_EL0] & PMCR_E) != 0;
 	}
 
 	if (flags & NVMM_AARCH64_STATE_GPRS) {

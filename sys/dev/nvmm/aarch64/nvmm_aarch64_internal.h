@@ -71,8 +71,12 @@ struct aarch64_cpudata {
  * Maybe cpudata_pa and vttbr_el2, etc can move here.
  */
 struct aarch64_cpudata_host {
+	uint64_t enabled_pmu : 1;
 	uint64_t hcr_el2;
 	uint64_t mdcr_el2;
+	/*
+	 * Shadow registers for guest visible state.
+	 */
 };
 
 CTASSERT(sizeof(struct aarch64_cpudata_host) <=

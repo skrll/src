@@ -188,6 +188,34 @@ struct nvmm_aarch64_event {
 #define NVMM_AARCH64_SPR_CNTP_CVAL_EL0		31
 #define NVMM_AARCH64_SPR_AFSR0_EL1		32
 #define NVMM_AARCH64_SPR_AFSR1_EL1		33
+
+#define NVMM_AARCH64_SPR_PMCR_EL0		34 // (Performance Monitors Control Register)
+#define NVMM_AARCH64_SPR_PMSELR_EL0		35 // (Performance Monitors Event Counter Selection Register)
+#define NVMM_AARCH64_SPR_PMCNTEN_EL0		36 // (Performance Monitors Count Enable Register)
+#define NVMM_AARCH64_SPR_PMINTEN_EL1		37 // (Performance Monitors Interrupt Enable Register)
+#define NVMM_AARCH64_SPR_PMOVS_EL0		38 // (Performance Monitors Overflow Flag Status Register)
+#define NVMM_AARCH64_SPR_PMCCNTR_EL0		39 // (Performance Monitors Cycle Counter Register)
+#define NVMM_AARCH64_SPR_PMCCFILTR_EL0		40 // (Performance Monitors Cycle Count Filter Register)
+#define NVMM_AARCH64_SPR_PMEVCNTR0_EL0		41 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER0_EL0		42 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR1_EL0		43 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER1_EL0		44 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR2_EL0		45 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER2_EL0		46 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR3_EL0		47 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER3_EL0		48 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR4_EL0		49 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER4_EL0		50 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVCNTR5_EL0		51 // (Performance Monitors Event Count Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMEVTYPER5_EL0		52 // (Performance Monitors Event Type Register, where n is 0 to 30)
+#define NVMM_AARCH64_SPR_PMUSERENR_EL0		53 // (Performance Monitors User Enable Register)
+//#define PMICNTR_EL0		// FEAT_PMUv3_ICNTR	// (Performance Monitors Instruction Counter Register)
+//#define PMICFILTR_EL0		// FEAT_PMUv3_ICNTR	// (Performance Monitors Instruction Count Filter Register)
+//#define PMMIR_EL1		// FEAT_PMUv3p4		// (Performance Monitors Machine Identification Register)
+//#define PMECR_EL1		// FEAT_PMUv3_SS	// (Performance Monitors Extended Control Register)
+//#define PMCFGR_EL0				35 // (Performance Monitors Configuration Register)
+
+
 #define NVMM_AARCH64_NSPR			96
 
 /* 64-bit TID3 registers */
@@ -203,6 +231,11 @@ struct nvmm_aarch64_event {
 #define NVMM_AARCH64_TID_ID_AA64AFR0_EL1	9
 #define NVMM_AARCH64_TID_ID_AA64AFR1_EL1	10
 #define NVMM_AARCH64_TID_ID_AA64ZFR0_EL1	11
+#define NVMM_AARCH64_PMCEID0_EL0		12 // (Performance Monitors Common Event Identification Register 0)
+#define NVMM_AARCH64_PMCEID1_EL0		13 // (Performance Monitors Common Event Identification Register 1)
+#define NVMM_AARCH64_PMCEID2_EL0		14 // (Performance Monitors Common Event Identification Register 2)
+#define NVMM_AARCH64_PMCEID3_EL0		15 // (Performance Monitors Common Event Identification Register 3)
+
 #define NVMM_AARCH64_NTID			16
 
 /* 32-bit TID3 registers */
