@@ -1,0 +1,18 @@
+#
+
+include "arch/evbarm/conf/GENERIC64"
+
+# Kernel Address Sanitizer (kASan). The quarantine is optional and can
+# help KASAN find more use-after-frees. Use KASAN_PANIC if you want panics
+# instead of warnings.
+makeoptions 	KASAN=1		# mandatory
+options 	KASAN		# mandatory
+
+# RPI 5
+options 	EARLYCONS=acpi, CONSADDR=0x107d001000
+
+options 	NVMM_DEBUG
+#options 	NVMMHIST_PRINT,KERNHIST_DELAY=0
+options 	NVMM_DEBUG_DEFAULT=0
+options 	DEBUG
+options 	PMAP_DEBUG

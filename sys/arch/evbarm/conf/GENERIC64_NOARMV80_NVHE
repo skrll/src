@@ -1,0 +1,5 @@
+#
+
+include "arch/evbarm/conf/GENERIC64"
+
+no options         ARMV80_NVHE

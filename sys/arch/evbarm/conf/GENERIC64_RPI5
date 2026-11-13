@@ -1,0 +1,12 @@
+#
+
+include "arch/evbarm/conf/GENERIC64"
+
+# RPI 5
+options 	EARLYCONS=acpi, CONSADDR=0x107d001000
+
+options 	NVMM_DEBUG
+#options 	NVMMHIST_PRINT,KERNHIST_DELAY=0
+options 	NVMM_DEBUG_DEFAULT=0
+options 	DEBUG
+options 	PMAP_DEBUG
