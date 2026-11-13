@@ -1,0 +1,5 @@
+#
+
+include "arch/evbarm/conf/GENERIC64"
+
+no pseudo-device	nvmm		# NetBSD Virtual Machine Monitor

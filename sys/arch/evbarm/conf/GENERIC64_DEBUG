@@ -1,0 +1,9 @@
+#
+
+include "arch/evbarm/conf/GENERIC64"
+
+options 	NVMM_DEBUG
+#options 	NVMMHIST_PRINT,KERNHIST_DELAY=0
+options 	NVMM_DEBUG_DEFAULT=40
+options 	DEBUG
+options 	PMAP_DEBUG
