@@ -64,8 +64,10 @@ typedef uint64_t pt_entry_t;	/* L3(4k) table entry */
 #define LX_BLKPAG_UXN		__BIT(54)	/* Unprivileged Execute Never */
 #define LX_BLKPAG_XN		__BIT(54)	/* Execute Never (EL2) */
 #define LX_BLKPAG_PXN		__BIT(53)	/* Privileged Execute Never */
-#define LX_S2_BLKPAG_XN		__BITS(54,53)	/* Execute Never (stage2) */
-#define  LX_S2_BLKPAG_XN_XN	__SHIFTIN(1,LX_S2_BLKPAG_XN)
+#define LX_S2_BLKPAG_XN		__BIT(54)	/* Execute Never (stage2) */
+#define LX_S2_BLKPAG_XNX	__BITS(54,53)	/* Execute Never (stage2) FEAT_XNX */
+#define  LX_S2_BLKPAG_XNX_XN0	__SHIFTIN(1,LX_S2_BLKPAG_XNX)
+#define  LX_S2_BLKPAG_XNX_XN1	__SHIFTIN(2,LX_S2_BLKPAG_XNX)
 #define LX_BLKPAG_CONTIG	__BIT(52)	/* Hint of TLB cache */
 #define LX_BLKPAG_DBM		__BIT(51)	/* Dirty Bit Modifier (V8.1) */
 #define LX_BLKPAG_GP		__BIT(50)	/* Guarded Page (V8.5) */

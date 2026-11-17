@@ -79,6 +79,8 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.159 2026/08/23 22:08:39 riastradh Exp $")
 #define VPRINTF(...)	__nothing
 #endif
 
+int nhpmapdebug;
+
 #ifdef UVMHIST
 
 #ifndef UVMHIST_PMAPHIST_SIZE
@@ -966,10 +968,10 @@ pmap_procwr(struct proc *p, vaddr_t sva, int len)
 static pt_entry_t
 _pmap_stage2_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod)
 {
-	vm_prot_t masked;
+//	vm_prot_t masked = prot & refmod;
+	vm_prot_t masked = prot;
 
-	masked = prot & refmod;
-
+	// XXXNH really DBM?
 	pte &= ~(LX_BLKPAG_AF | LX_BLKPAG_DBM | LX_S2_BLKPAG_S2AP);
 	if (prot & VM_PROT_WRITE)
 		pte |= LX_BLKPAG_DBM;
@@ -992,7 +994,7 @@ _pmap_stage2_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod)
 
 	pte &= ~LX_S2_BLKPAG_XN;
 	if ((prot & VM_PROT_EXECUTE) == 0)
-		pte |= LX_S2_BLKPAG_XN_XN;
+		pte |= LX_S2_BLKPAG_XN;
 
 	return pte;
 }
@@ -1493,6 +1495,7 @@ pmap_protect(struct pmap *pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 #endif
 #if NNVMM > 0
 		if (pm->pm_stage2) {
+			// XXXNH
 			executable = l3pte_s2_executable(pte);
 			pte = _pmap_stage2_pte_adjust_prot(pte, prot, mdattr);
 
@@ -1991,6 +1994,10 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 		UVMHIST_LOG(pmaphist,
 		    "stage2: IPA(va)=%016lx, PA=%016lx, prot=%08x, flags=%08x",
 		    va, pa, prot, flags);
+		if (nhpmapdebug) {
+			printf("stage2: IPA(va)=%016lx, PA=%016lx, prot=%08x, flags=%08x\n",
+			    va, pa, prot, flags);
+		}
 	}
 
 #ifdef PMAPCOUNTERS
@@ -2338,6 +2345,10 @@ pmap_remove_all(struct pmap *pm)
 	if (pm->pm_stage2) {
 		UVMHIST_LOG(pmaphist, "pm=%p, VMID=%d", pm,
 		     nvmm_aarch64_vmid(pm->pm_nvmm), 0, 0);
+		if (nhpmapdebug) {
+			printf("pm=%p, VMID=%d\n", pm,
+			     nvmm_aarch64_vmid(pm->pm_nvmm));
+		}
 	} else
 #endif
 	{
@@ -2750,6 +2761,7 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 	/* pte is readable and writable, but occurred fault? probably copy(9) */
 #if NNVMM > 0
 	if (pm->pm_stage2) {
+		// XXXNH wtf?
 		if ((pte & LX_BLKPAG_AF) && ((pte & LX_S2_BLKPAG_S2AP) == LX_S2_BLKPAG_S2AP_RW))
 			goto done;
 	} else
@@ -2772,6 +2784,7 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 
 #if NNVMM > 0
 	if (pm->pm_stage2) {
+		// XXXNH really?
 		if ((accessprot & VM_PROT_WRITE) &&
 		    ((pte & LX_S2_BLKPAG_S2AP) == LX_S2_BLKPAG_S2AP_RO)) {
 			/* pte is not RW. set modified and RW */
@@ -2779,6 +2792,12 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 			UVMHIST_LOG(pmaphist, "STAGE2 MODIFIED:"
 			    " va=%016lx, pa=%016lx, pte_prot=%08x, accessprot=%08x",
 			    va, pa, pmap_prot, accessprot);
+
+			if (nhpmapdebug) {
+				printf("STAGE2 MODIFIED:"
+				    " va=%016lx, pa=%016lx, pte_prot=%08x, accessprot=%08x\n",
+				    va, pa, pmap_prot, accessprot);
+			}
 			pp->pp_pv.pv_va |= VM_PROT_WRITE;	/* set modified */
 			pte &= ~LX_S2_BLKPAG_S2AP;
 			pte |= LX_S2_BLKPAG_S2AP_RW;

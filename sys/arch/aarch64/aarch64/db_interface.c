@@ -404,7 +404,7 @@ db_pte_print(pt_entry_t pte, int level,
 		pr(", PA=%lx", l3pte_pa(pte));
 
 		if (stage2) {
-			if ((pte & LX_S2_BLKPAG_XN) == LX_S2_BLKPAG_XN_XN)
+			if ((pte & LX_S2_BLKPAG_XN) == LX_S2_BLKPAG_XN)
 				pr(", XN");
 			if (pte & LX_S2_BLKPAG_FnXS)
 				pr(", FnXN");

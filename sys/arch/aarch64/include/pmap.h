@@ -117,7 +117,7 @@ pmap_md_tlb_asid_max(void)
 #define l3pte_s1_executable(pde,user)	\
     (((pde) & ((user) ? LX_BLKPAG_UXN : LX_BLKPAG_PXN)) == 0)
 #define l3pte_s2_executable(pde)	\
-	(((pde) & LX_S2_BLKPAG_XN) != LX_S2_BLKPAG_XN_XN)
+	(((pde) & LX_S2_BLKPAG_XN) != LX_S2_BLKPAG_XN)
 #define l3pte_readable(pde)	((pde) & LX_BLKPAG_AF)
 #define l3pte_writable(pde)	\
     (((pde) & (LX_BLKPAG_AF | LX_BLKPAG_AP)) == (LX_BLKPAG_AF | LX_BLKPAG_AP_RW))

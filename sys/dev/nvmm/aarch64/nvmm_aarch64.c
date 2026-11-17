@@ -801,11 +801,14 @@ nvmm_aarch64_vcpu_inject(struct nvmm_cpu *vcpu)
 	struct aarch64_cpudata * const cpudata = vcpu->cpudata;
 	const u_int evtype = comm->event.type;
 
+	extern int nhpmapdebug;
+
 	switch (evtype) {
 	case NVMM_VCPU_EVENT_SERROR:
 		break;
 
 	case NVMM_VCPU_EVENT_IRQ:
+		nhpmapdebug = 1;
 		NVMMHIST_LOG(nvmmdebug, "NVMM_VCPU_EVENT_IRQ", 0, 0, 0, 0);
 		break;
 
