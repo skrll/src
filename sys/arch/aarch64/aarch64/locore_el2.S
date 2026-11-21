@@ -243,6 +243,7 @@ vhe_not_supported:
 	DPRINT("\n")
 	DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
 	DPRINTSREG("TCR_EL2          = ", tcr_el2)
+	DPRINTSREG("VBAR_EL2         = ", vbar_el2)
 	DPRINTSREG("HCR_EL2          = ", hcr_el2)
 	DPRINTSREG("CNTHCTL_EL2      = ", cnthctl_el2)
 	DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
@@ -273,6 +274,7 @@ vhe_not_supported:
 3:
 	CPU_DPRINTSREG("SCTLR_EL2        = ", sctlr_el2)
 	CPU_DPRINTSREG("TCR_EL2          = ", tcr_el2)
+	CPU_DPRINTSREG("VBAR_EL2         = ", vbar_el2)
 	CPU_DPRINTSREG("HCR_EL2          = ", hcr_el2)
 	CPU_DPRINTSREG("CNTHCTL_EL2      = ", cnthctl_el2)
 	CPU_DPRINTSREG("VTTBR_EL2        = ", vttbr_el2)
