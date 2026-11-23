@@ -759,6 +759,17 @@ main(void)
 #ifdef BOOT_DURATION
 	printf_nolog("kernel boot time: %"PRIu64"ms\n", boot_duration_timer());
 #endif
+
+#if NNVMM > 0
+	extern int nvmm_uartdebug;
+	nvmm_uartdebug = 5;
+#endif
+
+#if defined(NVMM_DEBUG)
+	extern int nvmmdebug;
+	nvmmdebug = 0xffffff;
+#endif
+
 	/* The scheduler is an infinite loop. */
 	uvm_scheduler();
 	/* NOTREACHED */

@@ -169,22 +169,30 @@ aarch64_get_fault_ipa(struct trapframe *tf)
 void
 aarch64_el2_init(struct trapframe *tf)
 {
+	dump_el2_trapframe(tf);
+
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	/*
 	 * Run once (i.e. when aarch64_el2_initted == 0)
 	 */
 	if (aarch64_el2_initted != 0)
 		return;
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	struct nvmm_aarch64_el2_init * ni = (struct nvmm_aarch64_el2_init *)tf->tf_reg[0];
 
+	uartprintf("%s:%d ni=%p\n", __func__, __LINE__, ni);
 	/*
 	 * tpidr_el2 is a pointer to struct cpu_info
 	 */
+	uartprintf("%s:%d ci=%lx\n", __func__, __LINE__, ni->ni_cpuinfo);
 	reg_tpidr_el2_write((uint64_t)ni->ni_cpuinfo);
 
 	/*
 	 * VTCR_EL2 is a fixed value and should be initialized here.
 	 */
+	uartprintf("%s:%d\n", __func__, __LINE__);
+	dump_el2_trapframe(tf);
 	reg_vtcr_el2_write(ni->ni_vtcr_el2);
 
 	/*
@@ -199,6 +207,7 @@ aarch64_el2_init(struct trapframe *tf)
 	 * If the MMU is already enabled, do nothing. Perhaps we should
 	 * mark the CPU as not available to NVMM?
 	 */
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	if (reg_sctlr_el2_read() & SCTLR_M) {
 		uartprintf("%s:%d: MMU is already enabled?!\n",
 		    __func__, __LINE__);
@@ -221,26 +230,47 @@ aarch64_el2_init(struct trapframe *tf)
 	    TCR_EL2_ORGN0_WB_WA |
 	    TCR_EL2_IRGN0_WB_WA |
 	    __SHIFTIN(64 - VIRT_BIT, TCR_EL2_T0SZ);
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	reg_tcr_el2_write(tcr_el2);
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	/* MAIR_EL2 = MAIR_EL1 */
 	reg_mair_el2_write(reg_mair_el1_read());
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	/* x0 := L0 table of PA */
 	reg_ttbr0_el2_write(ni->ni_ttbr0_el2);
 	isb();
 
-	if (reg_mpidr_el1_read() == 0x81000000) {
-		uartprintf("ni %p ci %lx ttbr0_el2 %lx vtcr_el2 %lx\n",
-		    ni, ni->ni_cpuinfo, ni->ni_ttbr0_el2, ni->ni_vtcr_el2);
-	}
+	uartprintf("ni %p ci %lx ttbr0_el2 %lx vtcr_el2 %lx\n",
+	    ni, ni->ni_cpuinfo, ni->ni_ttbr0_el2, ni->ni_vtcr_el2);
 
+	uartprintf("sp 0x%lx spsel %ld sp_el1 0x%lx sp_el0 0x%lx\n",
+	    reg_sp_read(), reg_spsel_read(), reg_sp_el1_read(), reg_sp_el0_read());
+
+	uartprintf("lr 0x%p\n", __builtin_return_address(0));
+
+	dump_el2_trapframe(tf);
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	aarch64_tlbi_all_local_el2();
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	/* enable Icache, Dcache, MMU! */
+	dump_el2_trapframe(tf);
 	reg_sctlr_el2_write(reg_sctlr_el2_read() |
 	     SCTLR_I | SCTLR_C | SCTLR_M);
 	isb();
+	uartprintf("%s:%d\n", __func__, __LINE__);
+
+	uartprintf("%s:%d sp 0x%lx spsel %ld sp_el1 0x%lx sp_el0 0x%lx\n",
+	    __func__, __LINE__,
+	    reg_sp_read(), reg_spsel_read(), reg_sp_el1_read(), reg_sp_el0_read());
+
+	uartprintf("lr 0x%p\n", __builtin_return_address(0));
+
+
+	// XXXNH 
+	dump_el2_trapframe(tf);
 }
 
 

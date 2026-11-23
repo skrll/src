@@ -392,6 +392,7 @@ drop_to_el1_inline_done:
 	nop
 
 #if NNVMM > 0
+	.global el2stack
 	.pushsection .bss
 	.align PGSHIFT
 	.space	PAGE_SIZE

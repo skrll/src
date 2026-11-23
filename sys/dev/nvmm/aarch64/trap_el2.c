@@ -71,6 +71,10 @@ struct nvmm_aarch64_state;
 int
 uartprintf(const char * restrict fmt, ...)
 {
+
+	if ((reg_mpidr_el1_read() & __BITS(23, 0)) != 0x100)
+		return -1;
+
 #ifdef EARLYCONS
 	va_list ap;
 	uint64_t v;
@@ -292,6 +296,24 @@ el2sync_el_low(struct trapframe *tf)
 	const uint64_t esr = tf->tf_esr;
 	const uint64_t eclass = __SHIFTOUT(esr, ESR_EC);
 
+	struct cpu_info * const ci = aarch64nvmm_curcpu();
+
+	uartprintf("%20s(%20"PRIu64"):"
+	    " CI=%p PC=%016"PRIx64
+	    " SPSR_EL2=0x%08"PRIx64" ESR_EL2=0x%08"PRIx64
+	    " SPSR_EL1=0x%08"PRIx64" ESR_EL1=0x%08"PRIx64
+	    " CNTV_CTL=0x%08"PRIx64" CNTP_CTL=0x%08"PRIx64
+	    " CNTHV_CTL=0x%08"PRIx64" CNTHP_CTL=0x%08"PRIx64
+	    "\n",
+	    __func__, reg_cntpct_el0_read(), ci, tf->tf_pc,
+	    tf->tf_spsr, tf->tf_esr,
+	    reg_spsr_el1_read(), reg_esr_el1_read(),
+	    e2h_enabled ? reg_cntv_ctl_el02_read() : reg_cntv_ctl_el0_read(),
+	    e2h_enabled ? reg_cntp_ctl_el02_read() : reg_cntp_ctl_el0_read(),
+	    e2h_enabled ? reg_cnthv_ctl_el2_read() : -1UL,
+	    e2h_enabled ? reg_cnthp_ctl_el2_read() : -1UL
+	    );
+
 	if (eclass == ESR_EC_HVC_A64) {
 		/*
 		 * Handle NVMM HVC (Hypervisor Call)
@@ -303,8 +325,6 @@ el2sync_el_low(struct trapframe *tf)
 		 * trapped to EL2.
 		 */
 #ifdef ARMV80_NVHE
-		struct cpu_info * const ci = aarch64nvmm_curcpu();
-
 		if (ci == NULL || !ci->ci_invm) {
 			/* hvc #n */
 			switch (tf->tf_esr & 0xffff) {

@@ -127,6 +127,7 @@ ASENTRY_NP(aarch64_start)
 	bl	1f
 1:	DPRINTREG("PC               = ", lr)
 	DPRINTREG("SP               = ", sp)
+	DPRINTSREG("SPSEL            = ", spsel)
 	mrs	x20, CurrentEL
 	lsr	x20, x20, #2
 	DPRINTREG("CurrentEL        = ", x20)
@@ -190,6 +191,7 @@ aarch64_fatal:
 vstart:
 	DPRINTREG("PC               = ", x20)
 	DPRINTREG("SP               = ", sp)
+	DPRINTSREG("SPSEL            = ", spsel)
 
 	/* set exception vector */
 	adrl	x0, _C_LABEL(el1_vectors)
@@ -440,6 +442,7 @@ ENTRY_NP(cpu_mpstart)
 	bl	1f
 1:	CPU_DPRINTREG("PC               = ", lr)
 	CPU_DPRINTREG("SP               = ", sp)
+	CPU_DPRINTSREG("SPSEL            = ", spsel)
 	mrs	x20, CurrentEL
 	lsr	x20, x20, #2
 	CPU_DPRINTREG("CurrentEL        = ", x20)
@@ -495,6 +498,7 @@ mp_vstart:
 
 	CPU_DPRINTREG("PC               = ", x20)
 	CPU_DPRINTREG("SP               = ", sp)
+	CPU_DPRINTSREG("SPSEL            = ", spsel)
 
 	CPU_DPRINTSREG("TTBR0            = ", ttbr0_el1)
 	CPU_DPRINTSREG("TTBR1            = ", ttbr1_el1)

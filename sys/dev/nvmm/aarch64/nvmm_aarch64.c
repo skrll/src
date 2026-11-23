@@ -175,16 +175,21 @@ nvmm_aarch64_pagealloc(void)
 static void
 nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
 {
+
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	struct cpu_info * const ci = curcpu();
 	paddr_t cipa;
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	ci->ci_invm = false;
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	if (e2h_enabled) {
 		reg_vtcr_el2_write((uintptr_t)vtcr_el2);
 		return;
 	}
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	if (!pmap_extract(pmap_kernel(), (vaddr_t)ci, &cipa))
 		panic("cannot resolve PA of cpuinfo");
 
@@ -194,11 +199,13 @@ nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
 		.ni_vtcr_el2 = (uint64_t)vtcr_el2,
 	};
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	paddr_t nipa;
 	// non-VHE only
 	if (!pmap_extract(pmap_kernel(), (vaddr_t)&ni, &nipa))
 		panic("cannot resolve PA of nvmm_aarch64_el2_init");
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	/*
 	 * EL2 is currently running MMU (and caches) off so we need to
 	 * ensure ni hits memory. Maybe EL2 should be running with
@@ -207,9 +214,19 @@ nvmm_aarch64_cpu_init(void *ttbr_pa, void *vtcr_el2)
 	 * pass more information in registers.
 	 */
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
 	cpu_dcache_wb_range((vaddr_t)&ni, sizeof(ni));
 
+	uartprintf("%s:%d\n", __func__, __LINE__);
+
+	size_t cpuindex = ci - cpu_info_store;
+	extern char el2stack[];
+	vaddr_t local_el2stack = (vaddr_t)el2stack + cpuindex * PAGE_SIZE;
+
+	cpu_dcache_wbinv_range(local_el2stack, PAGE_SIZE);
+
 	aarch64_hvc_init(nipa);
+	uartprintf("%s:%d\n", __func__, __LINE__);
 }
 
 static void

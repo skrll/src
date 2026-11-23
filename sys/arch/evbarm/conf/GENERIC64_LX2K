@@ -4,6 +4,7 @@ include "arch/evbarm/conf/GENERIC64"
 
 # LX2K
 options 	EARLYCONS=acpi, CONSADDR=0x21c0000
+options 	VERBOSE_INIT_ARM
 
 options 	NVMM_DEBUG
 #options 	NVMMHIST_PRINT,KERNHIST_DELAY=0
