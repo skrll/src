@@ -800,6 +800,35 @@ aarch64_vmexit_context(struct trapframe *tf, struct aarch64_cpudata *cpudata)
 	/* load host state */
 	vcpu_context_load(tf, &cpudata->host, host);
 
+	if (cpudata->exit.reason == NVMM_VCPU_EXIT_IRQ) {
+#ifdef NVMM_DEBUG
+		struct nvmm_aarch64_state *state = &cpudata->guest;
+#endif
+		// XXXNH
+		NVMMHIST_FUNC();
+
+		NVMMHIST_CALLARGS(nvmmdebug,
+		    "cntvct_el0 =      %#18jx  "
+		    "cntv_ctl_el0 =    %#18jx  "
+		    "cntv_cval_el0 =   %#18jx  "
+		    "cntp_cval_el0 =   %#18jx",
+		    state->sprs[NVMM_AARCH64_SPR_CNTP_CTL_EL0],
+		    state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0],
+		    state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0],
+		    0);
+
+#if 0
+		NVMMHIST_CALLARGSN(nvmmdebug, 20,
+		    "exit  %d elr_el2 %#18jx spsr_el2 %#18jx",
+		    state->sprs[NVMM_AARCH64_SPR_ELR_EL2],
+		    state->sprs[NVMM_AARCH64_SPR_SPSR_EL2]);
+
+		NVMMHIST_LOGN(nvmmdebug, 20,
+		    "esr_el2 %#18jx far_el2 %#18jx hpfar %#18lx",
+		    tf->tf_esr, tf->tf_far, reg_hpfar_el2_read(), 0);
+#endif
+	}
+
 	vcpu_context_dump(tf, &cpudata->guest, host, false, 0);
 
 	ci->ci_invm = false;

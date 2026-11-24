@@ -688,6 +688,8 @@ static int
 nvmm_do_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
+        NVMMHIST_FUNC();
+	NVMMHIST_CALLARGS(nvmmdebug, "mach %p vcpu %p exit %p", mach, vcpu, exit, 0);
 	struct vmspace *vm = mach->vm;
 	int ret;
 
@@ -711,9 +713,15 @@ nvmm_do_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 			break;
 		}
 		if (uvm_fault(&vm->vm_map, exit->u.mem.gpa, exit->u.mem.prot)) {
+			DPRINTF("map %p faulted on %#jx prot %x vmexit",
+			    &vm->vm_map, exit->u.mem.gpa, exit->u.mem.prot, 0);
 			break;
+		} else {
+			DPRINTF("map %p mapped     %#jx prot %x",
+			    &vm->vm_map, exit->u.mem.gpa, exit->u.mem.prot, 0);
 		}
 	}
+	DPRINTF("<-- exit (%x)", exit->reason, 0, 0, 0);
 
 	return 0;
 }
