@@ -53,6 +53,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <aarch64/machdep.h>
 #include <aarch64/pmap.h>
 
+#include <arm/cortex/gtmr_var.h>
+
 #define AARCH64_VMID(mach) (mach->machid + 1) /* avoid 0. 0 is host's VMID */
 
 int nvmm_available;
@@ -840,8 +842,25 @@ aarch64_vmenter(struct aarch64_cpudata *cpudata)
 {
 	if (__predict_true(e2h_enabled))
 		aarch64_e2h_vmenter(cpudata);
-	else
+	else {
+		struct aarch64_cpudata_host * const host =
+		    aarch64nvmm_host_cpudata(cpudata);
+
+		bool vtimer_blocked = false;
+		if (__predict_false(
+		    host->vtimer_fired &&
+		    cpudata->send_event_type == NVMM_VCPU_EVENT_IRQ)) {
+			gtmr_mask();
+			vtimer_blocked = true;
+		}
+
 		aarch64_hvc_vmenter(cpudata->cpudata_pa);
+
+		if (__predict_false(vtimer_blocked)) {
+			gtmr_unmask();
+			host->vtimer_fired = false;
+		}
+	}
 }
 #else
 static inline void
