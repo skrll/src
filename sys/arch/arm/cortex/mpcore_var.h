@@ -37,6 +37,7 @@ struct mpcore_attach_args {
 	bus_space_handle_t mpcaa_memh;
 	bus_size_t mpcaa_off1;
 	bus_size_t mpcaa_off2;
+	void *mpcaa_ih;
 	int mpcaa_irq;
 };
 

@@ -916,7 +916,7 @@ intr_mask(void *ih)
 	struct pic_softc * const pic = is->is_pic;
 	const int irq = is->is_irq;
 
-	if (atomic_inc_32_nv(&is->is_mask_count) == 1)
+	if (is->is_percpu || atomic_inc_32_nv(&is->is_mask_count) == 1)
 		(*pic->pic_ops->pic_block_irqs)(pic, irq & ~0x1f, __BIT(irq & 0x1f));
 }
 
@@ -927,7 +927,7 @@ intr_unmask(void *ih)
 	struct pic_softc * const pic = is->is_pic;
 	const int irq = is->is_irq;
 
-	if (atomic_dec_32_nv(&is->is_mask_count) == 0)
+	if (is->is_percpu || atomic_dec_32_nv(&is->is_mask_count) == 0)
 		(*pic->pic_ops->pic_unblock_irqs)(pic, irq & ~0x1f, __BIT(irq & 0x1f));
 }
 

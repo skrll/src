@@ -161,6 +161,11 @@ gtmr_attach(device_t parent, device_t self, void *aux)
 			panic("%s: unable to register timer interrupt", __func__);
 		aprint_normal_dev(self, "interrupting on irq %d\n",
 		    mpcaa->mpcaa_irq);
+	} else {
+		sc->sc_global_ih = mpcaa->mpcaa_ih;
+		if (sc->sc_global_ih == NULL) {
+			printf("%s: no timer handle\n", __func__);
+		}
 	}
 
 	const uint32_t cnt_frq = gtmr_cntfrq_read();
@@ -429,4 +434,30 @@ gtmr_get_timecount(struct timecounter *tc)
 	struct gtmr_softc * const sc = tc->tc_priv;
 
 	return (u_int) gtmr_read_cntct(sc);
+}
+
+void
+gtmr_mask(void)
+{
+	struct gtmr_softc * const sc = &gtmr_sc;
+
+	if (sc->sc_global_ih == NULL) {
+		printf("%s: no timer handle\n", __func__);
+		return;
+	}
+
+        intr_mask(sc->sc_global_ih);
+}
+
+void
+gtmr_unmask(void)
+{
+	struct gtmr_softc * const sc = &gtmr_sc;
+
+	if (sc->sc_global_ih == NULL) {
+		printf("%s: no timer handle\n", __func__);
+		return;
+	}
+
+	intr_unmask(sc->sc_global_ih);
 }

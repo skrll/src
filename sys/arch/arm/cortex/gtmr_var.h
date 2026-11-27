@@ -54,11 +54,15 @@ struct cpu_info;
 int	gtmr_intr(void *);
 void	gtmr_init_cpu_clock(struct cpu_info *);
 void	gtmr_delay(unsigned int n);
+void	gtmr_mask(void);
+void	gtmr_unmask(void);
+
 #ifdef __HAVE_GENERIC_CPU_INITCLOCKS
 void	gtmr_cpu_initclocks(void);
 #else
 #define gtmr_cpu_initclocks	cpu_initclocks
 #endif
+
 #endif
 
 #endif /* _ARM_CORTEX_GTMR_VAR_ */

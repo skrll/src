@@ -26,6 +26,9 @@
  * SUCH DAMAGE.
  */
 
+#include "opt_cpuoptions.h"
+#include "nvmm.h"
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: gtmr_fdt.c,v 1.12 2021/11/12 21:59:05 jmcneill Exp $");
 
@@ -115,6 +118,8 @@ gtmr_fdt_attach(device_t parent, device_t self, void *aux)
 		}
 	}
 #endif
+
+	mpcaa.mpcaa_ih = ih;
 
 	config_found(self, &mpcaa, NULL, CFARGS_NONE);
 

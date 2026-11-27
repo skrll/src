@@ -88,6 +88,8 @@ gtmr_acpi_attach(device_t parent, device_t self, void *aux)
 	memset(&mpcaa, 0, sizeof(mpcaa));
 	mpcaa.mpcaa_name = "armgtmr";
 	mpcaa.mpcaa_irq = -1;
+	mpcaa.mpcaa_ih = ih;
+
 	config_found(self, &mpcaa, NULL, CFARGS_NONE);
 
 	arm_fdt_cpu_hatch_register(self, gtmr_acpi_cpu_hatch);
