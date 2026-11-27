@@ -881,7 +881,7 @@ init_mmutable:
 	adrl	x8, _C_LABEL(fdt_addr_r)
 	ldr	x8, [x8]
 
-	mov	x0, x8				/* va */
+	mov	x0, x8				/* va = fdt_addr_r (physical) */
 	mov	x1, x8				/* pa */
 	mov	x2, #L2_SIZE			/* size */
 	mov	x3, #L2_SIZE			/* blocksize */
@@ -892,7 +892,7 @@ init_mmutable:
 #endif
 
 	VPRINT("Creating KVA=PA tables\n")
-	ldr	x0, =start			/* va */
+	ldr	x0, =start			/* va (virtual) */
 	adrl	x1, start			/* pa = start (physical) */
 	adrl	x2, _end
 	sub	x2, x2, x1			/* size = _end - start */
